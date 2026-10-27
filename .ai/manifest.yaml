@@ -1,0 +1,22 @@
+# .ai/manifest.yaml - the agent-facing contract for this repo (ai-manifest spec). Written by
+# ai-registry/scripts/register-project.mjs as the minimum the fleet reads; add capability blocks
+# freely - unknown fields are ignored by readers.
+schema: ai-manifest
+schemaVersion: 0.1.0
+generatedAt: "2026-10-27"
+
+repo:
+  name: dowser
+
+# The organization's AI registry - knowledge bundles this repo consumes and the skill
+# marketplace it installs from.
+registry:
+  remote: github:xkazm04/ai-registry
+  local: ../ai-registry
+knowledge:
+  domains: [software-engineering, agent-operations, technical-writing]
+
+# Shared skills this project uses, from the registry's skills/ lane. Empty until one is linked.
+skills:
+  - spark
+  - scan-sweep

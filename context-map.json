@@ -1,0 +1,87 @@
+{
+  "version": 2,
+  "_note": "PROVISIONAL, hand-derived from the local-scan-skill design brief (spark, 2026-10-27). Rebuild membership after the first build lands.",
+  "groups": [
+    {
+      "name": "scan-skill",
+      "domain": "feature"
+    },
+    {
+      "name": "core",
+      "domain": "shared"
+    },
+    {
+      "name": "atlassian-app",
+      "domain": "integration"
+    }
+  ],
+  "contexts": [
+    {
+      "name": "skill-procedure",
+      "group": "scan-skill",
+      "category": "config",
+      "description": "The portable scan skill run in Claude Code / Codex CLI against a local checkout: phases, lens orchestration, triage dialog, and per-project memory.",
+      "file_paths": [
+        "skill/SKILL.md",
+        "skill/references/",
+        "skill/install.mjs",
+        "AGENTS.md"
+      ]
+    },
+    {
+      "name": "lens-templates",
+      "group": "scan-skill",
+      "category": "config",
+      "description": "Versioned lens prompt packs and evidence rules (opportunity, UX friction, doc drift, security/CRA, tech debt, decision consistency, delivery risk).",
+      "file_paths": [
+        "skill/lenses/"
+      ]
+    },
+    {
+      "name": "proposal-model",
+      "group": "core",
+      "category": "lib",
+      "description": "Proposal schema, evidence references, fingerprinting for idempotent re-scans, and the local proposal and triage store.",
+      "file_paths": [
+        "skill/scripts/dowser.mjs",
+        "skill/scripts/lib/store.mjs",
+        "skill/scripts/lib/model.mjs",
+        "skill/scripts/lib/fingerprint.mjs",
+        "skill/scripts/lib/verify.mjs",
+        "skill/scripts/lib/paths.mjs",
+        "skill/scripts/lib/git.mjs",
+        "skill/schema/",
+        "docs/data-model.md"
+      ]
+    },
+    {
+      "name": "triage-memory",
+      "group": "core",
+      "category": "lib",
+      "description": "Triage history (accept / merge / reject-with-reason / snooze) and the lens-tuning memory derived from it.",
+      "file_paths": [
+        "skill/scripts/lib/memory.mjs"
+      ]
+    },
+    {
+      "name": "skill-scripts",
+      "group": "scan-skill",
+      "category": "api",
+      "description": "Dependency-light scripts the skill calls: evidence collection, store writes, fingerprinting, and sync with the core service.",
+      "file_paths": [
+        "skill/scripts/lib/sync.mjs",
+        "tools/mock-forge-mcp.mjs",
+        "docs/contracts/"
+      ]
+    },
+    {
+      "name": "forge-app",
+      "group": "atlassian-app",
+      "category": "ui",
+      "description": "The Forge app: triage inbox, evidence panel, doc impact, Rovo agent and MCP, ingestion of locally produced proposals.",
+      "file_paths": [
+        "apps/forge/"
+      ]
+    }
+  ]
+}

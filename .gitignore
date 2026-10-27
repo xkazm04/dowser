@@ -1,0 +1,7 @@
+node_modules/
+.env
+.env.*
+.spark/
+.claude/worktrees/
+.ai/skill-runs.local.jsonl
+*.local.json
