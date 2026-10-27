@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dowser:schema:dowser-proposal-1",
+  "title": "dowser-proposal/1",
+  "description": "A Dowser backlog proposal as the store returns it. Twin of skill/scripts/lib/model.mjs (change both together). Absent values are omitted: never null, never 0 for something unmeasured. A propose input line is $defs/candidate (the same record without the store-owned triage fields). Checks the schema cannot express are enforced by validateCandidate: the body carries the five '## ' sections, effort.days_low <= days_high, `kind` is one of the lens pack's kinds.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["fp", "lens", "kind", "topic", "anchors", "title", "rationale", "body", "evidence", "effort", "confidence", "confidence_why", "provenance", "status"],
+  "properties": {
+    "fp": { "$ref": "#/$defs/fp" },
+    "lens": { "$ref": "#/$defs/lens" },
+    "kind": { "$ref": "#/$defs/kind" },
+    "topic": { "$ref": "#/$defs/topic" },
+    "anchors": { "$ref": "#/$defs/anchors" },
+    "title": { "$ref": "#/$defs/title" },
+    "rationale": { "$ref": "#/$defs/text" },
+    "body": { "$ref": "#/$defs/body" },
+    "evidence": { "$ref": "#/$defs/evidenceList" },
+    "effort": { "$ref": "#/$defs/effort" },
+    "confidence": { "$ref": "#/$defs/confidence" },
+    "confidence_why": { "$ref": "#/$defs/text" },
+    "doc_impact": { "$ref": "#/$defs/stringList" },
+    "delivery_risk": { "$ref": "#/$defs/deliveryRisk" },
+    "provenance": { "$ref": "#/$defs/provenance" },
+    "status": { "enum": ["candidate", "verified", "dropped", "rejected", "snoozed", "merged", "pushed", "accepted"] },
+    "reason": { "enum": ["false-positive", "already-known", "not-our-direction", "not-worth-it", "wrong-size", "other"] },
+    "note": { "$ref": "#/$defs/text" },
+    "merged_into": { "$ref": "#/$defs/fp" },
+    "external_ref": { "$ref": "#/$defs/text" },
+    "external_url": { "$ref": "#/$defs/text" },
+    "decided_by": { "$ref": "#/$defs/decider" },
+    "decided_at": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    { "if": { "properties": { "status": { "const": "rejected" } }, "required": ["status"] }, "then": { "required": ["reason"] } },
+    { "if": { "properties": { "reason": { "const": "other" } }, "required": ["reason"] }, "then": { "required": ["note"] } },
+    { "if": { "properties": { "status": { "const": "merged" } }, "required": ["status"] }, "then": { "required": ["merged_into"] } }
+  ],
+  "$defs": {
+    "candidate": {
+      "description": "One `propose` input line: the record without status/reason/note/merged_into/external_*/decided_*. `fp`, when given, must equal the computed fingerprint; provenance.run_id/model/harness/focus default from the run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lens", "kind", "topic", "anchors", "title", "rationale", "body", "evidence", "effort", "confidence", "confidence_why", "provenance"],
+      "properties": {
+        "fp": { "$ref": "#/$defs/fp" },
+        "lens": { "$ref": "#/$defs/lens" },
+        "kind": { "$ref": "#/$defs/kind" },
+        "topic": { "$ref": "#/$defs/topic" },
+        "anchors": { "$ref": "#/$defs/anchors" },
+        "title": { "$ref": "#/$defs/title" },
+        "rationale": { "$ref": "#/$defs/text" },
+        "body": { "$ref": "#/$defs/body" },
+        "evidence": { "$ref": "#/$defs/evidenceList" },
+        "effort": { "$ref": "#/$defs/effort" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "confidence_why": { "$ref": "#/$defs/text" },
+        "doc_impact": { "$ref": "#/$defs/stringList" },
+        "delivery_risk": { "$ref": "#/$defs/deliveryRisk" },
+        "provenance": { "$ref": "#/$defs/provenance" }
+      }
+    },
+    "fp": { "type": "string", "pattern": "^[0-9a-f]{16}$", "description": "first 16 hex of sha256(lens|kind|normTopic|sortedUniqueNormAnchors)" },
+    "lens": { "enum": ["opportunity", "ux-friction", "doc-drift", "security-cra"] },
+    "kind": { "type": "string", "minLength": 1, "description": "one of the lens pack's closed `kinds`" },
+    "topic": { "type": "string", "minLength": 1, "description": "normalized to a lowercase kebab slug before fingerprinting" },
+    "anchors": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "path#symbol; line suffixes are stripped" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[^\\r\\n]+$" },
+    "text": { "type": "string", "minLength": 1 },
+    "body": { "type": "string", "minLength": 1, "description": "Markdown with ## Summary, ## Description, ## Flow, ## Expected impact, ## Evaluation" },
+    "stringList": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "evidenceList": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidence" } },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "ref"],
+      "properties": {
+        "type": { "enum": ["code", "doc", "git", "ticket", "page", "goal", "dep", "sarif"] },
+        "ref": { "type": "string", "minLength": 1, "description": "code/doc: repo-relative path, optionally :line[:col]" },
+        "quote": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "minLength": 1 }
+      },
+      "if": { "properties": { "type": { "enum": ["code", "doc"] } } },
+      "then": { "required": ["quote"] }
+    },
+    "effort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["size"],
+      "properties": {
+        "size": { "enum": ["XS", "S", "M", "L", "XL"] },
+        "days_low": { "type": "number", "exclusiveMinimum": 0 },
+        "days_high": { "type": "number", "exclusiveMinimum": 0 },
+        "basis": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "confidence": { "enum": ["low", "medium", "high"] },
+    "deliveryRisk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blast"],
+      "properties": {
+        "blast": { "enum": ["low", "medium", "high"] },
+        "bus_factor": { "type": "integer", "minimum": 1, "description": "omitted when not computed" }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lens_version"],
+      "properties": {
+        "lens_version": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "harness": { "type": "string", "minLength": 1 },
+        "run_id": { "type": "string", "minLength": 1 },
+        "focus": { "type": "string", "pattern": "^(goal|area):\\S" }
+      }
+    },
+    "decider": { "type": "string", "pattern": "^[a-z][a-z-]*:[A-Za-z0-9._@-]+$" }
+  }
+}

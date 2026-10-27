@@ -25,7 +25,7 @@ did not measure.
 | `confidence_why` | One sentence: what makes it this strong, and what would raise it. |
 | `doc_impact` | Docs or pages that must change when it ships (repo paths or page refs). Omit the key if none; do not write `[]` for "not checked". |
 | `delivery_risk` | `{blast: low|medium|high, bus_factor?}`. Include `bus_factor` only when you counted it (below). |
-| `provenance` | `{lens_version, model, harness, run_id, focus?}`: the pack's `version`, your model id, the harness, the `run_id`, and `focus` on a focused run. |
+| `provenance` | `{lens_version, model, harness, focus?}`: the pack's `version`, your model id, the harness, and `focus` on a focused run. You may omit `run_id`: `propose` stamps it from `--run`, and overwrites a different one with a `note`. |
 
 ## Title
 

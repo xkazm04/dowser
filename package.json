@@ -1,0 +1,18 @@
+{
+  "name": "dowser",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dowser local-scan skill: evidence-backed, fingerprinted backlog proposals from a checked-out repo.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "typecheck": "tsc -p jsconfig.json --noEmit",
+    "test": "node --test \"skill/scripts/tests/*.test.mjs\""
+  },
+  "devDependencies": {
+    "@types/node": "~22.20.5",
+    "typescript": "~5.9.3"
+  }
+}

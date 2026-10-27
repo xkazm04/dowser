@@ -15,13 +15,21 @@ status it expects to move from. A move that is illegal, or that comes from a sta
 | `verified` | `snoozed` | human | `move --to snoozed` |
 | `verified` | `merged` | human, or agent for a same-work duplicate | `move --to merged --into <fp>` |
 | `verified` | `pushed` | script | `ingest-push`, after `dowser_proposals_push` |
-| `pushed` | `accepted` / `rejected` / `merged` / `snoozed` | human in Jira | `ingest-verdicts`, after `dowser_verdicts_pull` |
-| `snoozed` | `candidate` | script | `propose` with any new evidence ref (resurfacing) |
+| `verified` | `accepted` | human only (`--by human:<name>`) | `move --to accepted` (offline acceptance, see below) |
+| `pushed` | `accepted` / `rejected` / `merged` / `snoozed` | human in Jira (`forge:<jira-user>`) | `ingest-verdicts`, after `dowser_verdicts_pull` |
+| `snoozed` | `candidate` | script | `propose` with any new evidence key (resurfacing) |
 | `snoozed` | `verified` | human | `move --to verified` (the runner un-snoozes it) |
 | `rejected` | `candidate` | script | `propose` that passes the rejected-resurfacing test |
+| `dropped` | `candidate` | script | `propose` with a new evidence key (a retry after a failed verify) |
 
 A resurfaced item goes back through `verify` like a new one. `decided_by` is always
-`kind:name`: `human:<name>`, `agent:<harness>`, or the Jira user a pulled verdict names.
+`kind:name`: `human:<name>` for the runner, `agent:<harness>` for the scanning agent,
+`forge:<jira-user>` for a verdict pulled from Jira, and `skill:dowser` / `skill:dowser-verify`
+for the store's own moves.
+
+An **evidence key** is what makes evidence "new". For `code` and `doc` it is the path plus the
+quote with whitespace collapsed. The line number is only a hint, so the same quote at a shifted
+line is not new evidence. For every other type, the key is the `ref`.
 
 **`accepted` is a human act.** It normally arrives from Jira. Offline, the runner may say
 explicitly "accept this one". Only then record `move <fp> --to accepted --by human:<name>`.
@@ -45,7 +53,7 @@ until the runner gives one or picks another code. The move is refused without it
 ## Snooze
 
 "Not now, but tell me if it gets stronger." The item is held back from later scans until its
-evidence grows: **any new evidence ref** at the same fingerprint resurfaces it as `candidate`.
+evidence grows: **any new evidence key** at the same fingerprint resurfaces it as `candidate`.
 No date is attached. Snoozing is not a soft reject, and it teaches no rule.
 
 ## Merge
@@ -63,15 +71,17 @@ changes are distinct.
 
 ## Resurfacing (who comes back, and when)
 
-- `snoozed`: comes back on any new evidence ref.
+- `snoozed`: comes back on any new evidence key.
 - `rejected`: comes back only if **both** of these hold:
   - a new evidence **type** appears that the item did not have when it was rejected (for
     example a `ticket` where there was only `code`);
-  - the total evidence refs are at least **double** the count at rejection time.
+  - the number of distinct evidence keys is at least **double** the count at rejection time.
 - Otherwise `propose` answers `suppressed`. Report suppressed counts per lens in dev mode, and
   never as findings.
-- `merged` and `dropped` do not resurface by themselves. A dropped item re-proposed with a
-  correct quote is a new attempt and is verified again.
+- `dropped`: comes back as `candidate` when `propose` adds a new evidence key, such as a
+  corrected quote. `verify` then checks only the evidence on that newest line. Re-proposing the
+  same quote, even at another line, leaves it `dropped`.
+- `merged` does not resurface.
 
 ## Rule offers
 

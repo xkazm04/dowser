@@ -16,8 +16,8 @@ context map is provisional until the first scaffold commit.
 
 ## Gates
 
-No gate exists yet: the repo has no manifest scripts. The first work package that adds a
-`package.json` declares `typecheck` and `test` here and in `.ai/manifest.yaml` `capabilities`.
+- `npm run typecheck`: `tsc -p jsconfig.json --noEmit` (checkJs, strict) over `skill/**/*.mjs` and `tools/**/*.mjs`.
+- `npm test`: `node --test "skill/scripts/tests/*.test.mjs"`. Tests use mkdtemp dirs and `DOWSER_HOME`, and clean up.
 
 ## Rituals
 
