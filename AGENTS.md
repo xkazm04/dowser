@@ -27,7 +27,7 @@ Dowser Forge inbox in Jira when it is connected.
 Run both before you hand back work:
 
 - `npm run typecheck`: `tsc` in checkJs mode over `skill/**/*.mjs` and `tools/**/*.mjs`.
-- `npm test`: `node --test skill/scripts/tests/`.
+- `npm test`: `node --test "skill/scripts/tests/*.test.mjs"`.
 
 ## Rules
 
