@@ -28,7 +28,7 @@ refused.
 | `transitions` | **append-only**: `fp`, `from_status` (NULL on creation), `to_status`, `by`, `at`, `reason`, `note`, `run_id`, `evidence_seq` | `evidence_seq` = max evidence id of the fp at the move |
 | `rules` | offered and accepted prompt rules (`offered\|accepted\|declined`); logic in WP2 | PK `id` |
 | `sources_cache` | tickets, pages and goals fetched per run; logic in WP4 | PK (`run_id`, `type`, `ref`) |
-| `sync_state` | Forge cursors; logic in WP4 | PK `key` |
+| `sync_state` | Forge sync bookkeeping: `verdicts_cursor`; `push_seq:<fp>` (evidence id at last push); `outbox:last` (ids actually sent); `verdict:<fp>@<decided_at>` (idempotency). See `docs/contracts/forge-mcp-1.md` | PK `key` |
 
 Append-only is enforced twice. Triggers abort any UPDATE or DELETE on `evidence` and `transitions`, and a
 test greps the sources for such statements.
@@ -87,7 +87,9 @@ An illegal move, a stale `--from`, or an unknown fp is refused with exit 2. Stdo
 - `human:<name>` for a person's call.
 - `agent:<harness>` for the scanning agent, such as a same-work merge.
 - `forge:<jira-user>` for verdicts pulled from Jira.
-- `skill:dowser` and `skill:dowser-verify` for the store's own moves (creation, resurfacing, verify).
+- `skill:dowser` and `skill:dowser-verify` for the store's own moves (creation, resurfacing, verify);
+  `skill:dowser-sync` for moves the Forge ingest makes on its own (push results).
+- A decider name may contain `:` so raw Atlassian account ids (`forge:712020:uuid`) pass; the kind is the text before the FIRST colon.
 
 `model.DECIDER_GUARDS` restricts some moves by decider kind. `verified -> accepted` is allowed only for
 `human:`. `pushed -> accepted` is open to every kind, because Forge verdicts arrive as `forge:`. A guarded

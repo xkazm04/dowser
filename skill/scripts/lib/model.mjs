@@ -64,7 +64,7 @@ export const DECIDER_GUARDS = Object.freeze({
  * A decider is `<kind>:<name>`: `human:<name>` for people, `agent:<harness>` for the scanning agent,
  * `forge:<jira-user>` for verdicts pulled from Jira, `skill:dowser` / `skill:dowser-verify` for the store's own moves.
  */
-export const DECIDER_RE = /^[a-z][a-z-]*:[A-Za-z0-9._@-]+$/;
+export const DECIDER_RE = /^[a-z][a-z-]*:[A-Za-z0-9._@:-]+$/;
 
 /**
  * True when decider `by` may make the move `from -> to` (DECIDER_GUARDS).

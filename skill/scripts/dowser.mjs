@@ -19,8 +19,19 @@
 //   verify --run <id>                      re-check code/doc quotes -> verified | dropped (verify-failed:<ref>)
 //   move <fp> --to <status> --by <kind:name> [--from s] [--reason code] [--note t] [--into fp] [--run id]
 //   status [--runs n]                      counts by status and lens, last runs, "top N of M" truncation
-//   context | similar | show | rules       (WP2, not implemented yet: exit 3)
-//   outbox | ingest-push | ingest-verdicts | ingest-sources   (WP4, not implemented yet: exit 3)
+//   context --run <id> --lens <l> [--focus f]  -> {lens, lens_version, kinds, budget, suppressed, near, rules,
+//                                          exemplars, since_sha?, focus?}
+//   similar <fp>                           same-lens items sharing an anchor or 2+ topic tokens, with the overlap
+//   show <fp>                              ask-why: the card, every evidence row, every transition (no rescan)
+//   list [--lens l] [--status s] [--title substring]  -> {proposals: [{fp, lens, status, title, decided_at?}]}
+//   rules offer | rules list [--lens l] | rules accept|decline <id> --by human:<name> [--text t]
+//   prefs get [key ...] | prefs set key=value ...   ~/.dowser/user.json (mode dev|guided, verbosity short|full)
+//   outbox --run <id>                      -> {project_key, run_id, proposals}: the dowser_proposals_push input
+//                                          (verified, not pushed yet; pushed items whose evidence grew)
+//   ingest-push --file <json>              apply a dowser_proposals_push response -> pushed | merged | refused
+//   ingest-verdicts --file <json>          apply a dowser_verdicts_pull response (CAS, idempotent), keep cursor
+//   ingest-sources --run <id> --type ticket|page|goal --file <json>   cache a dowser_sources_* response -> refs
+//                                          (contract: docs/contracts/forge-mcp-1.md; the agent calls the tools)
 //
 // Exit codes: 0 ok; 1 partial (some propose lines invalid); 2 bad input or refused move (stdout carries
 // {"error":"refused","current":<status>,...}); 3 store or connection unavailable, or not implemented.
@@ -40,6 +51,8 @@ import { headSha } from './lib/git.mjs';
 
 const store = await import('./lib/store.mjs');
 const verifyLib = await import('./lib/verify.mjs');
+const syncLib = await import('./lib/sync.mjs');
+const memory = await import('./lib/memory.mjs');
 
 /**
  * @typedef {{_: string[], [flag: string]: string | string[] | true | string[] | undefined}} Args
@@ -136,8 +149,8 @@ const notImplemented = (pkg) => () => ({ code: 3, out: { error: 'not-implemented
 /** @type {Record<string, Handler>} */
 export const COMMANDS = {
   init(_a, ctx) {
-    ctx.open();
-    return { out: { db: ctx.dbFile(), project_key: projectKey(ctx.root), repo: ctx.root, user_version: store.USER_VERSION } };
+    const db = ctx.open();
+    return { out: store.clean({ db: ctx.dbFile(), project_key: projectKey(ctx.root), verdicts_cursor: syncLib.verdictsCursor(db), repo: ctx.root, user_version: store.USER_VERSION }) };
   },
 
   run(a, ctx) {
@@ -211,15 +224,63 @@ export const COMMANDS = {
   },
 
   // WP2 - memory and learning
-  context: notImplemented('WP2'),
-  similar: notImplemented('WP2'),
-  show: notImplemented('WP2'),
-  rules: notImplemented('WP2'),
+  context(a, ctx) {
+    const db = ctx.open();
+    return { out: memory.contextPack(db, { runId: /** @type {string} */ (opt(a, 'run', true)), lens: /** @type {string} */ (opt(a, 'lens', true)), focus: opt(a, 'focus') }) };
+  },
+
+  similar(a, ctx) {
+    const fp = a._[1];
+    if (!fp) throw new DowserError('similar <fp>', 2);
+    return { out: memory.similar(ctx.open(), fp) };
+  },
+
+  show(a, ctx) {
+    const fp = a._[1];
+    if (!fp) throw new DowserError('show <fp>', 2);
+    return { out: memory.show(ctx.open(), fp) };
+  },
+
+  list(a, ctx) {
+    return { out: memory.list(ctx.open(), { lens: opt(a, 'lens'), status: opt(a, 'status'), title: opt(a, 'title') }) };
+  },
+
+  rules(a, ctx) {
+    const sub = a._[1];
+    if (sub === 'offer') return { out: memory.offerRules(ctx.open()) };
+    if (sub === 'list') return { out: memory.listRules(ctx.open(), { lens: opt(a, 'lens') }) };
+    if (sub === 'accept' || sub === 'decline') {
+      const id = a._[2];
+      if (!id) throw new DowserError(`rules ${sub} <id> --by human:<name>`, 2);
+      return { out: memory.decideRule(ctx.open(), id, sub === 'accept' ? 'accepted' : 'declined', { by: /** @type {string} */ (opt(a, 'by', true)), text: opt(a, 'text') }) };
+    }
+    throw new DowserError('rules offer | rules list [--lens l] | rules accept|decline <id> --by human:<name> [--text t]', 2);
+  },
+
+  prefs(a, ctx) {
+    const sub = a._[1];
+    if (sub === 'get') return { out: memory.getPrefs(a._.slice(2), ctx.root) };
+    if (sub === 'set') return { out: memory.setPrefs(a._.slice(2), ctx.root) };
+    throw new DowserError('prefs get [key ...] | prefs set key=value [key=value ...]', 2);
+  },
   // WP4 - the Forge seam
-  outbox: notImplemented('WP4'),
-  'ingest-push': notImplemented('WP4'),
-  'ingest-verdicts': notImplemented('WP4'),
-  'ingest-sources': notImplemented('WP4'),
+  outbox(a, ctx) {
+    return { out: syncLib.outbox(ctx.open(), { projectKey: projectKey(ctx.root), runId: /** @type {string} */ (opt(a, 'run', true)) }) };
+  },
+  'ingest-push'(a, ctx) {
+    const doc = syncLib.readResponse(/** @type {string} */ (opt(a, 'file', true)));
+    return syncLib.ingestPush(ctx.open(), doc);
+  },
+  'ingest-verdicts'(a, ctx) {
+    const doc = syncLib.readResponse(/** @type {string} */ (opt(a, 'file', true)));
+    return syncLib.ingestVerdicts(ctx.open(), doc);
+  },
+  'ingest-sources'(a, ctx) {
+    const runId = /** @type {string} */ (opt(a, 'run', true));
+    const type = /** @type {string} */ (opt(a, 'type', true));
+    const doc = syncLib.readResponse(/** @type {string} */ (opt(a, 'file', true)));
+    return syncLib.ingestSources(ctx.open(), { runId, type, doc });
+  },
 };
 
 /**

@@ -43,9 +43,9 @@ and goals unchecked".
    capability theme from steps 1-4 (for example `"export OR csv OR download"`), plus one open query
    for the most common asks (`{query: "feature request OR please add OR would be great", limit: 50}`).
    Add `since` from the context pack's `since_sha` date on an incremental run. Then
-   `ingest-sources --type ticket`.
+   `ingest-sources --run <run_id> --type ticket --file <saved-response>`.
 7. **Goals (connected).** Call `dowser_sources_goals` with `{}` once, then
-   `ingest-sources --type goal`.
+   `ingest-sources --run <run_id> --type goal --file <saved-response>`.
 
 When a step yields nothing, record it ("no feature flags found", "tickets query X: 0 results")
 and go on.

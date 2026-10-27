@@ -117,11 +117,8 @@ test('init -> run start -> propose -> verify -> move -> status, nothing written 
   const next = cli('run', 'start', '--mode', 'incremental');
   assert.equal(next.out.base_sha, start.out.head_sha, 'base = last done run head');
 
-  for (const [cmd, pkg] of [['context', 'WP2'], ['similar', 'WP2'], ['show', 'WP2'], ['rules', 'WP2'],
-    ['outbox', 'WP4'], ['ingest-push', 'WP4'], ['ingest-verdicts', 'WP4'], ['ingest-sources', 'WP4']]) {
-    const r = cli(cmd);
-    assert.equal(r.code, 3, cmd);
-    assert.deepEqual(r.out, { error: 'not-implemented', package: pkg });
+  for (const cmd of ['outbox', 'ingest-push', 'ingest-verdicts', 'ingest-sources']) {
+    assert.equal(cli(cmd).code, 2, `${cmd} without its required flags is bad input`);
   }
   assert.equal(cli('bogus').code, 2);
 

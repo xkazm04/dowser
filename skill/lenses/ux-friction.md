@@ -45,7 +45,7 @@ user-facing CLI or API error text.
    loading, success or failure state nearby.
 7. **Tickets (connected).** Call `dowser_sources_tickets` with
    `{query: "error OR stuck OR confusing OR can't find OR accessibility OR screen reader", limit: 50}`,
-   plus one query per screen you found friction on. Then `ingest-sources --type ticket`.
+   plus one query per screen you found friction on. Then `ingest-sources --run <run_id> --type ticket --file <saved-response>`.
 
 Record empty steps ("no cancel flow in this product") and go on.
 

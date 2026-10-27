@@ -45,7 +45,7 @@ Confluence pages were reachable.
 6. **Confluence pages (connected).** Call `dowser_sources_pages` with
    `{query: "<product name> OR <top module names>"}` and, when the runner named a space,
    `space`. Run one query per removed or renamed symbol from step 4. Then
-   `ingest-sources --type page`.
+   `ingest-sources --run <run_id> --type page --file <saved-response>`.
 
 Record steps that found nothing and go on.
 
