@@ -1,0 +1,139 @@
+# Dowser for Jira (the Forge app)
+
+Dowser for Jira is the Forge app in `forge/`. It receives the local skill's verified proposals over a
+`rovo:mcp` server and files them in a triage inbox inside Jira. The inbox reads like a pull request for the
+backlog. A Jira issue is created only when a person accepts a proposal. Every verdict made in the inbox, in
+the evidence panel or through the Rovo agent flows back to the skill through the same contract,
+[`forge-mcp-2`](contracts/forge-mcp-2.md). The app also serves Jira tickets, Confluence pages and Teamwork
+Graph goals to the skill as scan sources.
+
+## Module map
+
+| Manifest module | Key | Function | What it does |
+|---|---|---|---|
+| `rovo:mcp` | `dowser-mcp` | `mcp` | The six forge-mcp-2 tools, for Claude Code and Codex CLI |
+| `action` (x6) | `dowser_sources_tickets`, `dowser_sources_pages`, `dowser_sources_goals`, `dowser_proposals_push`, `dowser_verdicts_pull`, `dowser_areas_push` | `mcp` | The tools themselves. `rovo:mcp` lists them |
+| `action` (x3) | `dowser_inbox_list`, `dowser_proposal_explain`, `dowser_verdict_record` | `rovo` | The Rovo agent's actions |
+| `rovo:agent` | `dowser-agent` | - | Lists and explains proposals, and records verdicts for the person chatting with it |
+| `rovo:skill` | `dowser-skill` | - | The read actions as a skill for other agents |
+| `jira:globalPage` | `dowser-inbox` | `resolver` | The inbox, the opportunity map and settings (Custom UI) |
+| `jira:issuePanel` | `dowser-evidence` | `resolver` | The evidence trail on an accepted issue |
+| `confluence:contentBylineItem` | `dowser-doc-impact` | `resolver` | The proposals that cite or affect a page |
+| `trigger` | `dowser-migrate` | `migrate` | Forge SQL migrations on install and upgrade |
+| `sql` | `main` | - | The Forge SQL database (MySQL dialect, TiDB) |
+
+### Code layout (design F7)
+
+- `forge/src/index.js` holds the entry points. It reads the caller and the action key and then hands over.
+- `forge/src/core/` is pure and Forge-free:
+  - `app.mjs` is the one dispatch door. It checks the account, validates input and maps every failure to
+    `{error, message}`.
+  - `push.mjs`, `verdicts.mjs`, `areas.mjs`, `sources.mjs` and `cards.mjs` hold the tool and resolver logic.
+  - `store.mjs` does row access, and `adf.mjs` converts to and from ADF.
+  - The core runs against the ports in `ports.mjs`.
+- `forge/src/adapters/` maps the ports to the platform: `forge-sql.mjs` to `@forge/sql`, and
+  `atlassian.mjs` to `@forge/api` (`requestJira`, `requestConfluence` and `requestTeamworkGraph`).
+- `forge/src/sql/migrations.mjs` holds the schema as one-statement migrations, applied in order by
+  `migrationRunner`.
+- `forge/src/shared/` holds byte-copies of the skill's pure modules: `validateCandidate`, `fingerprint`,
+  `evidenceKey` and `resurfaces`. `npm run forge:check-shared` fails when a copy drifts.
+- `forge/test/` runs the core against node:sqlite with the real migrations and a fake Jira.
+
+### Data (Forge SQL)
+
+| Table | Contents |
+|---|---|
+| `counters` | `ref` is the last `DW-<n>` issued (one counter per installation). `seq:<project_key>` is the last verdict seq |
+| `inboxes` | One row per `project_key`, holding the repo URL and the accept target (Jira project and issue type) |
+| `proposals` | One row per `(project_key, fp)`. Holds the status, the record and the decision stamp |
+| `evidence` | Append-only, one row per evidence key. Each row carries the `head_sha` of the push that added it |
+| `verdicts` | Append-only verdict log. Its seq is the pull cursor |
+| `pushes` | One row per push call |
+| `areas` | Per-directory churn and authors for the opportunity map. Each push replaces the project's set |
+
+Forge SQL has no multi-statement transactions. `@forge/sql` sends each statement as its own request, and
+the query policy allows one statement per request. The core is correct without transactions:
+
+- Every status move is a compare-and-set.
+- Ids come from a compare-and-set counter (no `AUTO_INCREMENT`).
+- Inserts check first and are also guarded by a UNIQUE constraint.
+- A decision whose verdict row did not land is rebuilt from the decision stamp before the next pull.
+- An accept creates the Jira issue before it changes any state. If Jira fails, nothing is written and the
+  item stays open.
+
+## Install on a development site
+
+You need Node 22, the Forge CLI (`npm install -g @forge/cli`), and an Atlassian Cloud developer site with
+Jira, Confluence and Rovo enabled.
+
+```sh
+cd forge
+npm install
+npm run build:ui                 # builds static/app/dist, the Custom UI resource
+forge login                      # an API token from id.atlassian.com
+forge register                   # writes the real app.id into manifest.yml (replaces the placeholder)
+forge lint
+forge deploy                     # development environment
+forge install --site <your-site>.atlassian.net --product jira
+forge install --site <your-site>.atlassian.net --product confluence --upgrade   # byline module
+```
+
+The install fires `avi:forge:installed:app`, and the `migrate` function creates the tables. Forge sends
+`avi:forge:upgraded:app` only for a major version. If a later deploy adds a migration in a minor version,
+the first call that hits a missing table runs the migrations once and retries. Logs: `forge logs`.
+
+## Connect an external MCP client
+
+1. **Enable it on the site.** External MCP access to Forge apps is an early-access feature. A site admin
+   enables it per app under **Admin > Apps > Sites > (site) > Connected apps > Dowser**. The tools still
+   serve the Rovo agent inside Jira without this step.
+2. **Server URL.** Use `https://mcp.atlassian.com/forge/<appId>`. `<appId>` is the UUID after
+   `ari:cloud:ecosystem::app/` in `manifest.yml`. If that URL does not answer, try
+   `https://mcp.atlassian.com/forge/v1/<appId>`. The first smoke test decides which one works; record the
+   result here.
+3. **Claude Code:**
+
+   ```sh
+   claude mcp add --transport http dowser https://mcp.atlassian.com/forge/<appId>
+   ```
+
+   Run `/mcp` in Claude Code to sign in. The harness keeps the OAuth token, and Dowser holds no credentials.
+4. **Codex CLI.** Add the server to `~/.codex/config.toml`:
+
+   ```toml
+   [mcp_servers.dowser]
+   url = "https://mcp.atlassian.com/forge/<appId>"
+   ```
+
+   Then sign in with `codex mcp login dowser`.
+5. **Smoke test.** Ask the agent to call `dowser_verdicts_pull` with your `project_key`. Before the first
+   push, the expected answer is `{"error": "unknown-project", ...}`.
+
+Every tool runs as the signed-in person. Dowser decides who that is from the invocation, never from an
+argument. The source tools also read Jira, Confluence and Teamwork Graph as that person, so a scan sees
+only what the person can see. The first source call may ask the person to allow the app to act for them.
+
+## Teamwork Graph allowlisting
+
+`dowser_sources_goals` reads goals through the Teamwork Graph API (Forge preview). The app must be
+allowlisted for that API. To request it, send Atlassian support the app id from `manifest.yml` and a
+one-line use case ("read the site's goals as scan sources for backlog proposals"). Do this in week one,
+because approval takes time. Until the app is allowlisted, the tool answers `unavailable` with a message
+that names the allowlist, and the skill continues without goals.
+
+## Judges' setup
+
+1. Install the app on your site, following the install steps above. Alternatively, use the
+   installation link the team provides.
+2. In Jira, open **Apps > Dowser > Settings**. For each inbox, choose the Jira project and issue type that
+   an accept creates issues in.
+3. Optional: to drive Dowser from Claude Code, enable external MCP access for the app (see
+   "Connect an external MCP client" above) and add the server.
+4. Run the Dowser skill on a repository (`skill/SKILL.md`). Its push fills the inbox, and the inbox groups
+   items by scan run.
+5. Triage in **Apps > Dowser > Inbox**: accept, reject with a reason, snooze or merge. Or ask the Dowser
+   agent in Rovo ("What should we build next?"). The next scan pulls the verdicts back.
+
+## Surfaces
+
+_The UI builders add their sections here: inbox, settings, evidence panel, opportunity map and byline._

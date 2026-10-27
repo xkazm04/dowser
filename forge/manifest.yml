@@ -162,6 +162,13 @@ modules:
         - avi:forge:installed:app
         - avi:forge:upgraded:app
 
+  scheduledTrigger:
+    # upgraded:app fires only on a major version; a daily idempotent migrate covers minor deploys
+    # (the first call that hits a missing table also migrates once and retries - see src/index.js).
+    - key: dowser-migrate-daily
+      function: migrate
+      interval: day
+
   function:
     - key: resolver
       handler: index.resolver
@@ -184,6 +191,7 @@ permissions:
     - write:jira-work
     - read:jira-user
     - read:confluence-content.summary
+    - read:confluence-content.all
     - search:confluence
     - read:graph:jira
     - storage:app
