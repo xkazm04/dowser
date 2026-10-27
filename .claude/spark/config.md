@@ -34,3 +34,8 @@ context map is provisional until the first scaffold commit.
 - Accepts recommended options on architecture forks readily; spends attention on scope (picked all four gate lenses) - ask scope, decide plumbing.
 
 ## Skill improvement log
+
+- 2026-10-27 local-scan-skill: a brief that declares both a status transition table and resurfacing rules must cross-check them (builders found 3 contradictions); write the table FROM the rules.
+- 2026-10-27 local-scan-skill: a parallel builder briefed against another package's BRIEF (not its code) surfaced command-set gaps early - keep doing it for doc/procedure packages.
+- 2026-10-27 local-scan-skill: Windows - leave the worktree (cd to main checkout) before `git worktree remove`, or the session cwd lock fails the delete.
+
