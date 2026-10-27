@@ -9,7 +9,11 @@
   },
   "scripts": {
     "typecheck": "tsc -p jsconfig.json --noEmit",
-    "test": "node --test \"skill/scripts/tests/*.test.mjs\""
+    "test": "node --test \"skill/scripts/tests/*.test.mjs\"",
+    "forge:typecheck": "npm --prefix forge run typecheck",
+    "forge:test": "npm --prefix forge run test",
+    "forge:check-shared": "npm --prefix forge run check-shared",
+    "forge:build-ui": "npm --prefix forge run build:ui"
   },
   "devDependencies": {
     "@types/node": "~22.20.5",

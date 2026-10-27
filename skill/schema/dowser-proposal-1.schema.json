@@ -116,6 +116,6 @@
         "focus": { "type": "string", "pattern": "^(goal|area):\\S" }
       }
     },
-    "decider": { "type": "string", "pattern": "^[a-z][a-z-]*:[A-Za-z0-9._@-]+$" }
+    "decider": { "type": "string", "pattern": "^[a-z][a-z-]*:[A-Za-z0-9._@:-]+$" }
   }
 }

@@ -28,7 +28,7 @@ refused.
 | `transitions` | **append-only**: `fp`, `from_status` (NULL on creation), `to_status`, `by`, `at`, `reason`, `note`, `run_id`, `evidence_seq` | `evidence_seq` = max evidence id of the fp at the move |
 | `rules` | offered and accepted prompt rules (`offered\|accepted\|declined`); logic in WP2 | PK `id` |
 | `sources_cache` | tickets, pages and goals fetched per run; logic in WP4 | PK (`run_id`, `type`, `ref`) |
-| `sync_state` | Forge sync bookkeeping: `verdicts_cursor`; `push_seq:<fp>` (evidence id at last push); `outbox:last` (ids actually sent); `verdict:<fp>@<decided_at>` (idempotency). See `docs/contracts/forge-mcp-1.md` | PK `key` |
+| `sync_state` | Forge sync bookkeeping: `verdicts_cursor`; `push_seq:<fp>` (evidence id at last push); `outbox:last` (ids actually sent); `verdict:<fp>@<decided_at>` (idempotency). See `docs/contracts/forge-mcp-2.md` | PK `key` |
 
 Append-only is enforced twice. Triggers abort any UPDATE or DELETE on `evidence` and `transitions`, and a
 test greps the sources for such statements.

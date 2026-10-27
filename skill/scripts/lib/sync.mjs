@@ -1,7 +1,7 @@
 // @ts-check
 // The Forge seam, local side (D11): the AGENT calls the Forge MCP tools (the harness owns the connection and
 // its OAuth); this module only builds the push payload and ingests the tool responses. No MCP client, no
-// network, no auth here. Contract: docs/contracts/forge-mcp-1.md.
+// network, no auth here. Contract: docs/contracts/forge-mcp-2.md.
 //
 //   outbox          -> the `dowser_proposals_push` input: verified items not yet pushed, plus pushed items whose
 //                      evidence grew since their last push (tracked in sync_state `push_seq:<fp>`)

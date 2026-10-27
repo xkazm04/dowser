@@ -17,7 +17,7 @@ import { dirname, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import {
   DECIDER_RE, DowserError, LENSES, LENS_STATES, MoveRefused, RUN_MODES, STATUSES,
-  canMove, deciderAllowed, decisionProblem, isOneOf, validateCandidate,
+  canMove, deciderAllowed, decisionProblem, isOneOf, resurfaces, validateCandidate,
 } from './model.mjs';
 import { evidenceKey, fingerprint, normalizeAnchor, normalizeTopic } from './fingerprint.mjs';
 
@@ -423,32 +423,8 @@ export function evidenceSnapshot(db, fp, seq) {
   return { refs: keys.size, types: [...new Set(rows.map((r) => String(r.type)))].sort(), seq: rows.length ? Number(rows[rows.length - 1].id) : 0 };
 }
 
-/**
- * The resurfacing predicate (D4), pure. `then` is the evidence when the item entered its current status,
- * `now` the evidence after this proposal's refs were appended.
- *  - snoozed: any new evidence key (now.refs > then.refs);
- *  - dropped: any new evidence key (a retry after a failed verify);
- *  - rejected: a NEW evidence type AND now.refs >= 2 x then.refs;
- *  - any other status never resurfaces.
- * @param {string} status
- * @param {EvidenceSnapshot} then
- * @param {EvidenceSnapshot} now
- * @returns {{resurface: boolean, rule: string}}
- */
-export function resurfaces(status, then, now) {
-  if (status === 'snoozed' || status === 'dropped') {
-    return { resurface: now.refs > then.refs, rule: `${status}:refs ${then.refs}->${now.refs}` };
-  }
-  if (status === 'rejected') {
-    const newTypes = now.types.filter((t) => !then.types.includes(t));
-    const doubled = now.refs >= 2 * then.refs;
-    return {
-      resurface: newTypes.length > 0 && doubled,
-      rule: `rejected:new-types [${newTypes.join(',')}] refs ${then.refs}->${now.refs} (needs >= ${2 * then.refs})`,
-    };
-  }
-  return { resurface: false, rule: `${status}:never` };
-}
+/** The resurfacing predicate lives in model.mjs (pure, shared with the Forge app); re-exported here. */
+export { resurfaces } from './model.mjs';
 
 /**
  * Proposes one candidate line into a running run.

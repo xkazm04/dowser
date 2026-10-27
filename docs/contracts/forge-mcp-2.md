@@ -1,8 +1,19 @@
-# Forge MCP contract, version 1 (`forge-mcp-1`)
+# Forge MCP contract, version 2 (`forge-mcp-2`)
 
-This is the seam between the Dowser local skill and the Dowser Forge app (a separate spark). The Forge app
-implements these five tools on its `rovo:mcp` server. `tools/mock-forge-mcp.mjs` implements the same five tools
-locally, so the skill can be tested before Forge exists.
+This is the seam between the Dowser local skill and the Dowser Forge app (`forge/`). The Forge app
+implements these six tools on its `rovo:mcp` server. `tools/mock-forge-mcp.mjs` implements the same six tools
+locally, so the skill can be tested without a Jira site.
+
+**What changed from `forge-mcp-1`.** Version 1 was never deployed, so version 2 replaces it rather than
+being served alongside it:
+
+- A Forge `rovo:mcp` tool accepts only scalar inputs (`string`, `integer`, `number`, `boolean`). The push
+  therefore takes `proposals_json`, a JSON string, in place of the `proposals` array.
+- A push no longer creates a Jira issue. It files the proposal in the Dowser inbox. `external_ref` is the
+  inbox item (`DW-12`), and the Jira issue appears only when a person accepts: the `accepted` verdict carries
+  `issue_ref` and `issue_url`.
+- The push gains `repo_url` and `head_sha`, so the inbox can link code evidence to the exact revision.
+- A sixth tool, `dowser_areas_push`, sends per-directory churn and author counts for the opportunity map.
 
 **Who calls what (D11).** The agent calls the tools. The harness (Claude Code or Codex CLI) owns the MCP
 connection and its auth. The Dowser scripts never open a connection. They build the push payload (`outbox`)
@@ -10,9 +21,15 @@ and ingest what the tools return (`ingest-push`, `ingest-verdicts`, `ingest-sour
 response verbatim to a work file and passes it with `--file`.
 
 **Auth assumption.** The harness manages OAuth for the Forge app's `rovo:mcp` server: the person signs in
-once, and the harness attaches the token to every call. Dowser holds no credentials. Whether `rovo:mcp` OAuth
-works inside Claude Code and Codex CLI is not proven yet, and is the week-one spike. Until it is, the mock
-server keeps the whole flow testable. The skill treats a missing tool as **unconnected**, not as an error.
+once, and the harness attaches the token to every call. Dowser holds no credentials. The server URL is
+`https://mcp.atlassian.com/forge/<appId>`. Access from external clients (Claude Code, Codex CLI) is an
+Atlassian early-access feature, and a site admin must enable it for the app (Admin > Apps > Sites >
+Connected apps). It is unproven until the first smoke test; if it fails, the same tools still serve the
+Rovo agent inside Jira, and the mock keeps the skill testable. The skill treats a missing tool as
+**unconnected**, not as an error.
+
+**Who decides.** Every tool runs as the signed-in person. Forge takes the caller from the invocation
+context (`context.accountId`), never from an argument.
 
 ## Conventions
 
@@ -25,10 +42,16 @@ server keeps the whole flow testable. The skill treats a missing tool as **uncon
   holds in both directions.
 - **Timestamps** are ISO 8601 UTC strings (`2026-10-27T10:00:00.000Z`).
 - **`project_key`** is the key Dowser derives from the repo's `origin` URL (`github-com-Acme-Shop`; see
-  `docs/data-model.md`). The agent takes it from the `init` output. Forge maps it to a Jira project or
-  inbox.
+  `docs/data-model.md`). The agent takes it from the `init` output. Forge keeps one inbox per
+  `project_key` and creates it on the first push.
 - **`fp`** is the 16-hex fingerprint of a proposal. It is the identity of a proposal across both sides.
-- **`external_ref`** is the Jira issue key (`DOW-123`). **`external_url`** is a link to that issue.
+- **`external_ref`** is the Dowser inbox item (`DW-12`, unique per installation). **`external_url`** is a
+  link to that item in the inbox.
+- **`issue_ref`** is the Jira issue key (`SHOP-123`) created when the item was accepted. **`issue_url`**
+  is a link to it. Both appear only on an `accepted` verdict.
+- **JSON-string inputs.** An input whose name ends in `_json` is a string holding JSON. Forge parses it
+  and answers `bad-input` when it does not parse or has the wrong shape. Its parsed size is capped at
+  4 MB.
 
 ## Errors
 
@@ -104,27 +127,35 @@ response, and runs `ingest-push --file <saved response>`.
 Input:
 
 ```json
-{"project_key": "github-com-Acme-Shop", "run_id": "r-20261027100000-ab12", "proposals": [ ... ]}
+{"project_key": "github-com-Acme-Shop", "run_id": "r-20261027100000-ab12",
+ "repo_url": "https://github.com/Acme/Shop", "head_sha": "3f2c...", "proposals_json": "[{...}]"}
 ```
 
 | field | type | rule |
 |---|---|---|
 | `project_key` | string | required |
 | `run_id` | string | required. The Dowser run that pushed. Forge records it per push |
-| `proposals` | object[] | required. Each a full `dowser-proposal/1` record (`skill/schema/dowser-proposal-1.schema.json`): identity, card, every evidence item, sizing, risk, provenance and triage fields, with `status` `verified` (a first push) or `pushed` (a re-push after evidence grew) |
+| `proposals_json` | string | required. A JSON array; each element a full `dowser-proposal/1` record (`skill/schema/dowser-proposal-1.schema.json`): identity, card, every evidence item, sizing, risk, provenance and triage fields, with `status` `verified` (a first push) or `pushed` (a re-push after evidence grew). At most 50 records |
+| `repo_url` | string | optional. The repo's web URL, credentials stripped (`https://github.com/Acme/Shop`). Omitted when the repo has no `origin` |
+| `head_sha` | string | optional. The commit the run scanned. Forge links `code`/`doc` evidence to `<repo_url>/blob/<head_sha>/<path>#L<line>` (GitHub) or `<repo_url>/src/<head_sha>/<path>#lines-<line>` (Bitbucket), and shows the plain ref for any other host |
 
 Output: `{results: [{fp, result, external_ref?, external_url?, why?}]}`, one per input proposal, in input order.
 
 | `result` | meaning | `external_ref` / `external_url` | `why` |
 |---|---|---|---|
-| `created` | a new Jira item was made | required | omitted |
-| `updated` | an item for `(project_key, fp)` already existed. Its card and evidence were refreshed | required (the existing item) | omitted |
-| `merged-existing` | Forge judged it the same work as an existing Jira item and did not create one | required (that existing item) | optional |
+| `created` | a new inbox item was filed | required | omitted |
+| `updated` | an item for `(project_key, fp)` already existed. Its card was refreshed and its evidence united | required (the existing item) | omitted |
+| `merged-existing` | a person already merged this fp into another item in the inbox; no item was made | required (that surviving item) | optional |
 | `refused` | not accepted (invalid record, quota, policy) | omitted | required, one sentence |
 
 **Idempotency.** Push is idempotent on `(project_key, fp)`. A re-push never creates a second item: it
-updates the evidence and card of the existing one and returns `updated`. Evidence on the Forge side is a
-union by evidence key (the same key rule as `docs/data-model.md`), never a replacement that loses rows.
+updates the card of the existing one, unites its evidence and returns `updated`. Evidence on the Forge side
+is a union by evidence key (the same key rule as `docs/data-model.md`), never a replacement that loses rows.
+
+**Reopening.** When an `updated` push grew the evidence of an item a person snoozed, the item returns to the
+inbox as reopened. A rejected item returns only under the store's resurfacing rule (a new evidence type and
+at least twice the evidence it had when rejected). An accepted or merged item only gains evidence. A reopen
+writes no verdict; the item is simply open again.
 
 **What `ingest-push` does locally.**
 
@@ -132,7 +163,7 @@ union by evidence key (the same key rule as `docs/data-model.md`), never a repla
 |---|---|---|
 | `created`, `updated` | `external_ref`/`external_url` recorded. A `verified` item moves to `pushed` (CAS, decider `skill:dowser-sync`). A `pushed` item stays pushed | `pushed` or `updated` |
 | `merged-existing` | if a local item already owns that `external_ref`, the item moves to `merged` with `merged_into` = that local fp | `merged` |
-| `merged-existing` | if no local item owns it, the item is linked to that Jira item (`external_ref` set) and moves to `pushed`, so its verdicts arrive normally | `linked` |
+| `merged-existing` | if no local item owns it, the item is linked to that inbox item (`external_ref` set) and moves to `pushed`, so its verdicts arrive normally | `linked` |
 | `refused` | status unchanged | `refused` with `why` |
 
 An unknown `fp`, a malformed result, a ref that already belongs to another local item, or an item whose local
@@ -157,7 +188,9 @@ Output:
 
 ```json
 {"verdicts": [{"fp": "...", "status": "rejected", "reason": "already-known", "note": "tracked as SEC-12",
-  "decided_by": "forge:jane", "decided_at": "2026-10-27T10:00:00.000Z", "external_ref": "DOW-1"}],
+  "decided_by": "forge:712020:7d1c", "decided_at": "2026-10-27T10:00:00.000Z", "external_ref": "DW-1"},
+  {"fp": "...", "status": "accepted", "decided_by": "forge:712020:7d1c", "decided_at": "2026-10-27T10:05:00.000Z",
+  "external_ref": "DW-2", "issue_ref": "SHOP-41", "issue_url": "https://acme.atlassian.net/browse/SHOP-41"}],
  "cursor": "17"}
 ```
 
@@ -167,11 +200,17 @@ Output:
 | `verdicts[].status` | string | required: `accepted`, `rejected`, `merged` or `snoozed` |
 | `verdicts[].reason` | string | required for `rejected`: `false-positive`, `already-known`, `not-our-direction`, `not-worth-it`, `wrong-size` or `other`. Omitted otherwise |
 | `verdicts[].note` | string | optional. Required when `reason` is `other` |
-| `verdicts[].merged_into` | string | required for `merged`: the fp of the surviving proposal, or its Jira key. Omitted otherwise |
-| `verdicts[].decided_by` | string | required: `forge:<jira-user>`. The name is `[A-Za-z0-9._@:-]+`, so a raw Atlassian account id (`712020:uuid`) passes unchanged |
+| `verdicts[].merged_into` | string | required for `merged`: the fp of the surviving proposal, or the Jira key of an existing issue the evidence was folded into. Omitted otherwise |
+| `verdicts[].decided_by` | string | required: `forge:<accountId>`. The name is `[A-Za-z0-9._@:-]+`, so a raw Atlassian account id (`712020:uuid`) passes unchanged |
 | `verdicts[].decided_at` | string | required ISO timestamp of the decision in Jira. Unique per fp per decision |
-| `verdicts[].external_ref` | string | required: the Jira key of the item |
+| `verdicts[].external_ref` | string | required: the inbox item (`DW-12`) |
+| `verdicts[].issue_ref` | string | required for `accepted`: the Jira issue the accept created or updated. Omitted otherwise |
+| `verdicts[].issue_url` | string | required for `accepted`: a link to that issue. Omitted otherwise |
 | `cursor` | string | required. Opaque. Pass it back on the next pull. Returned even when `verdicts` is empty |
+
+A verdict is recorded only after it has landed: an accept that could not create its Jira issue writes no
+verdict, and the item stays open in the inbox. Verdicts made through the Rovo agent arrive the same way; the
+decider is the person who asked the agent.
 
 Verdicts are returned oldest first. A verdict appears once per decision; a changed decision is a new verdict
 with a new `decided_at`.
@@ -182,11 +221,31 @@ re-ingesting the same file is a no-op (`already-applied`). A verdict that matche
 is `in-sync`. An unknown `fp` (`unknown`), a malformed verdict (`invalid`) or a transition the local status
 does not allow (`conflict`, with the `current` status) is reported and never forced; for example
 `verified -> accepted` needs a `human:` decider, so a `forge:` acceptance of an item that is still `verified`
-locally is a conflict. Exit 0 when every verdict applied or was already applied, 1 otherwise. The `cursor`
-is stored in `sync_state` key `verdicts_cursor`, and `init` prints it as `verdicts_cursor`.
+locally is a conflict. An `accepted` verdict also records `issue_ref` and `issue_url` on the local item.
+Exit 0 when every verdict applied or was already applied, 1 otherwise. The `cursor` is stored in
+`sync_state` key `verdicts_cursor`, and `init` prints it as `verdicts_cursor`.
+
+## `dowser_areas_push`
+
+The opportunity map joins proposals to how the code around them changes. After the push, the agent runs
+`areas --run <run_id>`, calls this tool with that output exactly as printed, and needs no ingest step.
+
+Input: `{project_key, run_id, areas_json}`.
+
+| field | type | rule |
+|---|---|---|
+| `project_key` | string | required |
+| `run_id` | string | required |
+| `areas_json` | string | required. A JSON array of at most 200 `{path, files, churn_90d, authors_90d, last_change?}` |
+| `areas_json[].path` | string | a repo-relative directory, at most two levels deep, forward slashes, no trailing slash (`src/checkout`) |
+| `areas_json[].files` | integer | tracked files under the path, at least 1 |
+| `areas_json[].churn_90d` | integer | commits touching the path in the 90 days before `head_sha` |
+| `areas_json[].authors_90d` | integer | distinct author emails in those commits. Omitted when `churn_90d` is 0, since it was not measured |
+| `areas_json[].last_change` | string | ISO timestamp of the newest commit touching the path. Omitted when there is none |
+
+Output: `{stored}`, the number of areas kept. The set replaces the project's previous areas whole.
 
 ## Versioning
 
-This is `forge-mcp-1`. An additive change (a new optional field, a new error code) keeps the version. A
-removed or renamed field, a new required field, or a changed meaning makes `forge-mcp-2`, served alongside
-version 1 until the skill moves.
+This is `forge-mcp-2`. An additive change (a new optional field, a new error code, a new tool) keeps the
+version. A removed or renamed field, a new required field, or a changed meaning makes `forge-mcp-3`.

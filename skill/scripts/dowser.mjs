@@ -31,7 +31,7 @@
 //   ingest-push --file <json>              apply a dowser_proposals_push response -> pushed | merged | refused
 //   ingest-verdicts --file <json>          apply a dowser_verdicts_pull response (CAS, idempotent), keep cursor
 //   ingest-sources --run <id> --type ticket|page|goal --file <json>   cache a dowser_sources_* response -> refs
-//                                          (contract: docs/contracts/forge-mcp-1.md; the agent calls the tools)
+//                                          (contract: docs/contracts/forge-mcp-2.md; the agent calls the tools)
 //
 // Exit codes: 0 ok; 1 partial (some propose lines invalid); 2 bad input or refused move (stdout carries
 // {"error":"refused","current":<status>,...}); 3 store or connection unavailable, or not implemented.

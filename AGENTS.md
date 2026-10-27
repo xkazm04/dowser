@@ -17,8 +17,9 @@ Dowser Forge inbox in Jira when it is connected.
   - `schema/dowser-proposal-1.schema.json` is the proposal wire format.
   - `install.mjs` installs the skill: `--harness claude|codex [--scope user|project] [--dev-link] [--dry-run]`.
 - `tools/` holds development tools, such as the mock Forge MCP server.
+- `forge/` is the Forge app (Dowser for Jira): `manifest.yml`, backend in `src/` (pure logic in `src/core/`, Forge adapters in `src/adapters/`, copies of the skill's pure modules in `src/shared/`), Custom UI in `static/app/`, Rovo prompt and skill in `rovo/`.
 - `docs/` holds the product plan (`project-documentation.md`), `data-model.md` and
-  `contracts/forge-mcp-1.md`, the seam to the Forge app.
+  `contracts/forge-mcp-2.md`, the seam to the Forge app.
 - `.spark/` is the design vault (gitignored). Design decisions for the local scan skill are in
   `.spark/Spark/ideas/local-scan-skill.md`.
 

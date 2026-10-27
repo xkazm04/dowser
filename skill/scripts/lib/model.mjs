@@ -288,3 +288,30 @@ export function decisionProblem({ to, reason, note }) {
   if (reason === 'other' && !str(note)) return 'reason other needs --note';
   return undefined;
 }
+
+/**
+ * The resurfacing predicate (D4), pure. `then` is the evidence when the item entered its current status,
+ * `now` the evidence after this proposal's refs were appended.
+ *  - snoozed: any new evidence key (now.refs > then.refs);
+ *  - dropped: any new evidence key (a retry after a failed verify);
+ *  - rejected: a NEW evidence type AND now.refs >= 2 x then.refs;
+ *  - any other status never resurfaces.
+ * @param {string} status
+ * @param {{refs: number, types: string[]}} then
+ * @param {{refs: number, types: string[]}} now
+ * @returns {{resurface: boolean, rule: string}}
+ */
+export function resurfaces(status, then, now) {
+  if (status === 'snoozed' || status === 'dropped') {
+    return { resurface: now.refs > then.refs, rule: `${status}:refs ${then.refs}->${now.refs}` };
+  }
+  if (status === 'rejected') {
+    const newTypes = now.types.filter((t) => !then.types.includes(t));
+    const doubled = now.refs >= 2 * then.refs;
+    return {
+      resurface: newTypes.length > 0 && doubled,
+      rule: `rejected:new-types [${newTypes.join(',')}] refs ${then.refs}->${now.refs} (needs >= ${2 * then.refs})`,
+    };
+  }
+  return { resurface: false, rule: `${status}:never` };
+}

@@ -2,7 +2,7 @@
 // @ts-check
 // mock-forge-mcp - a zero-dependency stdio MCP server that stands in for Dowser's Forge app (rovo:mcp) until it
 // exists, so the skill and its scripts are testable end to end. It implements the five tools of
-// docs/contracts/forge-mcp-1.md over an in-memory backend, plus one test-only tool, `mock_decide`, that simulates
+// docs/contracts/forge-mcp-2.md over an in-memory backend, plus one test-only tool, `mock_decide`, that simulates
 // a person's verdict in Jira.
 //
 // Framing copied from bp's apps/mcp/bp-mcp.mjs: JSON-RPC 2.0 over newline-delimited stdin/stdout, Node builtins
@@ -55,7 +55,7 @@ export function seeded(seed) {
 
 const S = { type: 'string' };
 const I = { type: 'integer', minimum: 1 };
-/** Tool definitions (input schemas match docs/contracts/forge-mcp-1.md). */
+/** Tool definitions (input schemas match docs/contracts/forge-mcp-2.md). */
 export const TOOLS = [
   { name: 'dowser_sources_tickets', description: 'Search Jira tickets. Returns {items:[{ref,title,url,body,created_at,labels?}]}.',
     inputSchema: { type: 'object', properties: { query: S, since: S, limit: I }, required: ['query', 'limit'], additionalProperties: false } },

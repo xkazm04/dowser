@@ -5,7 +5,7 @@
 // times is offered as a preference rule; the operator accepts it) and friend/references/learning.md.
 //
 // Reads go straight to the store; every write is a compare-and-set or an idempotent insert. The resurfacing
-// predicate stays in store.mjs (`resurfaces`) - nothing here decides who comes back.
+// predicate stays in model.mjs (`resurfaces`) - nothing here decides who comes back.
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';

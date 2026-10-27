@@ -1,0 +1,189 @@
+# Dowser for Jira - Forge manifest. Tool and action keys are the forge-mcp-2 names verbatim
+# (docs/contracts/forge-mcp-2.md). `app.id` is a placeholder until `forge register` writes the real one.
+# Validate with `forge lint` after `forge login`.
+app:
+  id: ari:cloud:ecosystem::app/00000000-0000-0000-0000-000000000000
+  runtime:
+    name: nodejs22.x
+
+modules:
+  sql:
+    - key: main
+      engine: mysql
+
+  rovo:mcp:
+    - key: dowser-mcp
+      name: Dowser
+      tools:
+        - dowser_sources_tickets
+        - dowser_sources_pages
+        - dowser_sources_goals
+        - dowser_proposals_push
+        - dowser_verdicts_pull
+        - dowser_areas_push
+
+  action:
+    - key: dowser_sources_tickets
+      name: Search tickets
+      function: mcp
+      actionVerb: GET
+      description: Jira issues matching free text, as scan sources for a Dowser lens.
+      inputs:
+        query: { title: Query, type: string, required: true, description: Free text; OR between terms means any of them. }
+        since: { title: Since, type: string, required: false, description: ISO timestamp; only issues created at or after it. }
+        limit: { title: Limit, type: integer, required: true, description: Maximum items, at least 1 (50 recommended). }
+    - key: dowser_sources_pages
+      name: Search pages
+      function: mcp
+      actionVerb: GET
+      description: Confluence pages matching free text, as scan sources for a Dowser lens.
+      inputs:
+        query: { title: Query, type: string, required: true, description: Free text. }
+        space: { title: Space, type: string, required: false, description: Confluence space key. }
+    - key: dowser_sources_goals
+      name: List goals
+      function: mcp
+      actionVerb: GET
+      description: The team's goals from Teamwork Graph, as scan sources for the Opportunity lens.
+    - key: dowser_proposals_push
+      name: Push proposals
+      function: mcp
+      actionVerb: CREATE
+      description: File verified Dowser proposals in the triage inbox. Idempotent per project and fingerprint.
+      inputs:
+        project_key: { title: Project key, type: string, required: true, description: The key Dowser derives from the repo origin. }
+        run_id: { title: Run id, type: string, required: true, description: The Dowser run that pushed. }
+        proposals_json: { title: Proposals, type: string, required: true, description: JSON array of dowser-proposal/1 records, at most 50. }
+        repo_url: { title: Repo URL, type: string, required: false, description: The repo web URL without credentials. }
+        head_sha: { title: Head commit, type: string, required: false, description: The commit the run scanned. }
+    - key: dowser_verdicts_pull
+      name: Pull verdicts
+      function: mcp
+      actionVerb: GET
+      description: Triage decisions made in Jira since the cursor, oldest first.
+      inputs:
+        project_key: { title: Project key, type: string, required: true, description: The key Dowser derives from the repo origin. }
+        cursor: { title: Cursor, type: string, required: false, description: The cursor from the previous pull; omit on the first pull. }
+    - key: dowser_areas_push
+      name: Push areas
+      function: mcp
+      actionVerb: CREATE
+      description: Per-directory churn and author counts for the opportunity map. Replaces the project's previous set.
+      inputs:
+        project_key: { title: Project key, type: string, required: true, description: The key Dowser derives from the repo origin. }
+        run_id: { title: Run id, type: string, required: true, description: The Dowser run that measured the areas. }
+        areas_json: { title: Areas, type: string, required: true, description: JSON array of at most 200 areas. }
+    - key: dowser_inbox_list
+      name: List proposals
+      function: rovo
+      actionVerb: GET
+      description: Open or decided Dowser proposals, optionally for one project, lens or status.
+      inputs:
+        project_key: { title: Project key, type: string, required: false, description: Limit to one inbox. }
+        lens: { title: Lens, type: string, required: false, description: opportunity, ux-friction, doc-drift or security-cra. }
+        status: { title: Status, type: string, required: false, description: open, accepted, rejected, snoozed or merged. }
+        limit: { title: Limit, type: integer, required: false, description: Maximum items (default 20). }
+    - key: dowser_proposal_explain
+      name: Explain a proposal
+      function: rovo
+      actionVerb: GET
+      description: One proposal with its full evidence trail, effort basis, risk and triage history.
+      inputs:
+        ref: { title: Reference, type: string, required: true, description: The inbox ref (DW-12) or the fingerprint. }
+    - key: dowser_verdict_record
+      name: Record a verdict
+      function: rovo
+      actionVerb: UPDATE
+      description: Accept, reject with a reason, snooze or merge a Dowser proposal on behalf of the person asking.
+      inputs:
+        ref: { title: Reference, type: string, required: true, description: The inbox ref (DW-12) or the fingerprint. }
+        status: { title: Verdict, type: string, required: true, description: accepted, rejected, snoozed or merged. }
+        reason: { title: Reason, type: string, required: false, description: Required for rejected - false-positive, already-known, not-our-direction, not-worth-it, wrong-size or other. }
+        note: { title: Note, type: string, required: false, description: Required when the reason is other. }
+        merged_into: { title: Merge into, type: string, required: false, description: Required for merged - a DW ref or a Jira key. }
+
+  rovo:agent:
+    - key: dowser-agent
+      name: Dowser
+      description: Finds what your product should do next from evidence-backed proposals, explains them and records triage decisions.
+      prompt: resource:rovo;agent-prompt.md
+      conversationStarters:
+        - What should we build next?
+        - Explain the top open proposal
+        - What is open for the doc drift lens?
+      actions:
+        - dowser_inbox_list
+        - dowser_proposal_explain
+        - dowser_verdict_record
+        - dowser_sources_goals
+
+  rovo:skill:
+    - key: dowser-skill
+      source:
+        dir: rovo/skill
+      dependencies:
+        tools:
+          - dowser_inbox_list
+          - dowser_proposal_explain
+
+  jira:globalPage:
+    - key: dowser-inbox
+      resource: main
+      resolver:
+        function: resolver
+      title: Dowser
+      pages:
+        - title: Inbox
+          route: inbox
+        - title: Opportunity map
+          route: map
+        - title: Settings
+          route: settings
+
+  jira:issuePanel:
+    - key: dowser-evidence
+      resource: main
+      resolver:
+        function: resolver
+      title: Dowser evidence
+      icon: resource:main;icon.svg
+
+  confluence:contentBylineItem:
+    - key: dowser-doc-impact
+      resource: main
+      resolver:
+        function: resolver
+      title: Dowser
+
+  trigger:
+    - key: dowser-migrate
+      function: migrate
+      events:
+        - avi:forge:installed:app
+        - avi:forge:upgraded:app
+
+  function:
+    - key: resolver
+      handler: index.resolver
+    - key: mcp
+      handler: index.mcp
+    - key: rovo
+      handler: index.rovo
+    - key: migrate
+      handler: index.migrate
+
+resources:
+  - key: main
+    path: static/app/dist
+  - key: rovo
+    path: rovo
+
+permissions:
+  scopes:
+    - read:jira-work
+    - write:jira-work
+    - read:jira-user
+    - read:confluence-content.summary
+    - search:confluence
+    - read:graph:jira
+    - storage:app

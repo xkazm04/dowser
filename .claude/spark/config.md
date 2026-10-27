@@ -1,6 +1,6 @@
 ---
 product: "Dowser - evidence-backed backlog proposals from local repo scans"
-stack: "unknown (greenfield; planned: TypeScript/Node scripts + an LLM-CLI skill, Forge app later)"
+stack: "Node 22+ ESM .mjs + JSDoc (skill, zero-dep); Forge app in forge/ (Node backend, Forge SQL, Custom UI React + Vite)"
 vault: []
 vault_subdir: Spark
 context_map: context-map.json
@@ -18,6 +18,9 @@ context map is provisional until the first scaffold commit.
 
 - `npm run typecheck`: `tsc -p jsconfig.json --noEmit` (checkJs, strict) over `skill/**/*.mjs` and `tools/**/*.mjs`.
 - `npm test`: `node --test "skill/scripts/tests/*.test.mjs"`. Tests use mkdtemp dirs and `DOWSER_HOME`, and clean up.
+- when `forge/` changes: `npm run forge:typecheck`, `npm run forge:test`, `npm run forge:check-shared` (the shared copies of `skill/scripts/lib/{model,fingerprint}.mjs` must match; after editing either, run `npm --prefix forge run sync-shared`).
+- when `forge/static/app/` changes: `npm run forge:build-ui`.
+- when `forge/manifest.yml` changes and `forge whoami` succeeds: `forge lint` in `forge/`.
 
 ## Rituals
 

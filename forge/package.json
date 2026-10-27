@@ -1,0 +1,26 @@
+{
+  "name": "dowser-forge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dowser for Jira: the Forge app behind forge-mcp-2 (inbox, evidence panel, Rovo agent, rovo:mcp tools).",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "typecheck": "tsc -p jsconfig.json --noEmit",
+    "test": "node --test \"test/*.test.mjs\"",
+    "sync-shared": "node scripts/sync-shared.mjs",
+    "check-shared": "node scripts/sync-shared.mjs --check",
+    "build:ui": "npm --prefix static/app run build"
+  },
+  "dependencies": {
+    "@forge/api": "^8.4.0",
+    "@forge/resolver": "^2.0.2",
+    "@forge/sql": "^4.0.9"
+  },
+  "devDependencies": {
+    "@types/node": "~22.20.5",
+    "typescript": "~5.9.3"
+  }
+}
