@@ -5,3 +5,14 @@ node_modules/
 .claude/worktrees/
 .ai/skill-runs.local.jsonl
 *.local.json
+
+# BEGIN ai-registry linked skills (managed by ai-registry/scripts/link-registry.mjs)
+# Links are machine state; the declarations live in .ai/manifest.yaml (`skills:` and `knowledge.domains`).
+/.claude/skills/spark
+/.claude/skills/scan-sweep
+/.claude/rules/ai-registry-access.md
+/.claude/rules/ai-registry-software-engineering.md
+/.claude/rules/ai-registry-agent-operations.md
+/.claude/rules/ai-registry-technical-writing.md
+/.ai/skill-runs.local.jsonl
+# END ai-registry linked skills
