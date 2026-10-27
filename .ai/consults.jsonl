@@ -1,1 +1,2 @@
 {"ts":"2026-10-27T17:50:00Z","bundle":"software-engineering","subjects":["codebase-scanning"],"techniques":["sensor-pipeline","finding-lifecycle","llm-assisted-scanning","incremental-scanning"],"deviations":0}
+{"ts":"2026-10-27T21:30:00Z","bundle":"software-engineering","subjects":["triage-queues","mcp-tools"],"techniques":["verdict-writeback","queue-ordering-and-identity"],"deviations":0}

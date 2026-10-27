@@ -35,10 +35,14 @@ context map is provisional until the first scaffold commit.
 
 - Wants the scanned repo left clean: rejected committed project memory in favour of local + Forge-synced (2026-10-27). Default to nothing written into a scanned repo.
 - Accepts recommended options on architecture forks readily; spends attention on scope (picked all four gate lenses) - ask scope, decide plumbing.
+- On product-capability questions picks the richer option even against the recommendation (forge-app: Rovo records verdicts; area stats pushed from the skill; all four v1 surfaces). Do not default-recommend the lean option there; state the cost and let the operator pick (2026-10-27).
 
 ## Skill improvement log
 
 - 2026-10-27 local-scan-skill: a brief that declares both a status transition table and resurfacing rules must cross-check them (builders found 3 contradictions); write the table FROM the rules.
 - 2026-10-27 local-scan-skill: a parallel builder briefed against another package's BRIEF (not its code) surfaced command-set gaps early - keep doing it for doc/procedure packages.
 - 2026-10-27 local-scan-skill: Windows - leave the worktree (cd to main checkout) before `git worktree remove`, or the session cwd lock fails the delete.
-
+- 2026-10-27 forge-app: platform scout must state the store's atomicity unit (Forge SQL has no transactions); the brief assumed one and WP2 redesigned write-back mid-build.
+- 2026-10-27 forge-app: derive UI-facing resolver fields from each surface's state list (empty, grouped, changed) before fan-out - the UI builder found two missing fields.
+- 2026-10-27 forge-app: on Windows write files with the Write tool (or Python newline='
+'); Python text mode wrote CRLF into shared modules and Bash heredocs with long content failed twice.
