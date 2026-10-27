@@ -48,12 +48,14 @@ export function plural(n, one, many = `${one}s`) {
 }
 
 /**
- * How a card changed in the push that grouped it (F8). The Card carries no explicit marker, so it is derived:
- * `reopened` wins; a card first seen at the group's push time is new; otherwise its evidence grew.
- * @param {{reopened?: boolean, first_seen?: string}} card @param {{at: string}} group
+ * How a card changed in the push that grouped it (F8). The server sets `card.change` on open cards inside a
+ * group; when it is absent the marker is derived: `reopened` wins; a card first seen at the group's push time
+ * is new; otherwise its evidence grew.
+ * @param {{change?: 'new' | 'grew' | 'reopened', reopened?: boolean, first_seen?: string}} card @param {{at: string}} group
  * @returns {'new' | 'grew' | 'reopened'}
  */
 export function changeOf(card, group) {
+  if (card.change === 'new' || card.change === 'grew' || card.change === 'reopened') return card.change;
   if (card.reopened) return 'reopened';
   if (!card.first_seen || !group.at) return 'new';
   return Date.parse(card.first_seen) >= Date.parse(group.at) ? 'new' : 'grew';

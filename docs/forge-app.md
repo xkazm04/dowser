@@ -136,4 +136,111 @@ that names the allowlist, and the skill continues without goals.
 
 ## Surfaces
 
-_The UI builders add their sections here: inbox, settings, evidence panel, opportunity map and byline._
+One Custom UI bundle (`forge/static/app`, Vite + React 19) serves every Dowser surface. The module picks
+the surface. Inside the **Dowser** global page, the page route (`inbox`, `map`, `settings`) picks the tab.
+The surfaces call the backend only through `call()` in `src/api.js`, which uses the resolver keys in
+`forge/src/core/types.mjs`.
+
+### Inbox (Apps > Dowser > Inbox)
+
+The inbox reads like a pull request for the backlog. It is a queue grouped by push, not a sortable table.
+
+- **Groups.** Each heading names one push: its date, the short head commit, the run id, and how many cards
+  are **New**, **Evidence grew** or **Reopened**. Cards keep the server's order inside a group.
+- **Filters.** Status chips (default **Open**) and lens chips. When more than one repository pushes here,
+  an **Inbox** picker selects one repository, or all of them.
+- **Card.** Each card shows its ref (`DW-n`), lens, title and rationale. It also shows effort (size, day
+  range, and the basis behind a disclosure) and confidence with its reason. Delivery risk shows the blast
+  radius and the bus factor. A missing bus factor reads "not measured", never 0, and a bus factor of 1 gets
+  a "single owner" flag. Doc impact comes next. The evidence list links code and doc lines to the scanned
+  commit and shows their quote as code. Tickets, pages and goals link to their source.
+- **Actions.**
+  - **Accept** opens a dialog with the target Jira project and issue type, filled in from the inbox
+    setting. It previews the issue summary and description. When the accept succeeds, the issue key shows
+    as a link.
+  - **Merge** picks another open or accepted proposal by ref or title, or takes a typed Jira key.
+  - **Reject** takes one of six reasons: false positive, already known, not our direction, not worth it,
+    wrong size, other. Other needs a note.
+  - **Snooze** holds the card until its evidence grows.
+- **Bulk.** Tick cards to reject them all with one reason, or to snooze them all.
+- **Keyboard.** `j`/`k` move, `x` selects, `a` accepts, `r` rejects, `s` snoozes, `m` merges, `?` shows
+  help. The keys work only when no dialog or text field has focus.
+- A decided card leaves the view. The other cards stay where they are. A failed action shows its message
+  on the card, and the card stays. **Load more** fetches the next page (50 cards).
+- An empty view names the last push and its lenses. To get new proposals, run `/dowser` in Claude Code or
+  Codex, in the repository.
+
+### Settings (Apps > Dowser > Settings)
+
+Each inbox has one row: the repository's project key and URL, a Jira project and an issue type. **Save**
+stores them. Accept files issues there unless the Accept dialog overrides them for one proposal.
+
+### Evidence panel (on a Jira issue)
+
+On an issue that Dowser created at Accept, the **Dowser evidence** panel shows the card read-only: its
+evidence trail, doc impact, delivery risk and triage history. On any other issue, it says "This issue did
+not come from Dowser."
+
+### Theme and accessibility
+
+Colours, surfaces and fonts are Atlassian design tokens, so the Jira light and dark themes both apply
+(`view.theme.enable()`). Buttons are real buttons. Dialogs are modal: focus stays inside, Escape closes
+them, and focus goes back to the button that opened them. Focus is always visible.
+
+### Running the UI outside Jira
+
+```sh
+npm --prefix forge/static/app install
+npm --prefix forge/static/app run dev:fixture      # or VITE_DOWSER_FIXTURE=1 npm --prefix forge/static/app run dev
+```
+
+The fixture swaps `@forge/bridge` for an in-memory fake (`src/dev/bridge.js`). The fake serves three
+pushes, every evidence type, one reopened card, and one card with no bus factor. The URL hash picks what
+you see:
+
+| Hash | Shows |
+| --- | --- |
+| `#inbox` | the inbox (default) |
+| `#settings` | the settings page |
+| `#panel` | the evidence panel on an accepted issue |
+| `#panel-none` | the evidence panel on an issue that is not from Dowser |
+| `&fail=<resolver key>` | that resolver fails |
+| `&empty` | no proposals |
+| `&slow` | every call takes 1.5 s, to show the loading state |
+
+In the fake, the Billing project refuses issue creation and the Jira key `NOPE-1` fails a merge, so you can
+see both error states. The production build (`npm run forge:build-ui`) never includes the fixture. Build
+with it before every `forge deploy`.
+
+### Opportunity map (Jira: Apps > Dowser > Opportunity map)
+
+The map shows where one repository's proposals concentrate, next to how often that code changes. Pick the
+inbox at the top right (it starts on the inbox with the most open proposals).
+
+- **Proposals by area and lens.** A table: one row per area (a directory the local skill measured with
+  `dowser areas` and pushed with `dowser_areas_push`), one column per lens. The number in a cell is the open
+  proposals in that area for that lens; accepted ones show below it. The darker the blue, the more open
+  proposals, and the number is always printed. Rows sort by open proposals, then by commits.
+  - **Commits 90d** counts the commits that touched the area in the 90 days before the scanned commit.
+  - **Authors 90d** counts distinct authors in those commits. **Bus factor 1** marks an area that only one
+    person changed. "Not measured" means the area had no commits in the window, so authors were not counted.
+- **Effort vs confidence.** One dot per open proposal: across, the effort size (XS to XL); up, the
+  confidence (low to high). The dot's colour and shape give its blast radius (circle low, square medium,
+  triangle high, hollow circle not measured). The shaded corner (small effort, high confidence) is the cheap,
+  sure work. Point at or tab to a dot to read it; select it to open the card with its evidence and triage
+  history, then **Open in the inbox** to decide it. **As a list** shows the same dots as text.
+- Empty: "No areas yet - the map fills after the next scan from Claude Code or Codex." The map needs a scan
+  that pushed areas (`dowser areas`, then `dowser_areas_push`).
+
+### Doc impact on Confluence pages (the Dowser byline)
+
+On a Confluence page, the **Dowser** item in the byline opens a list of the open and accepted proposals that
+name this page: as page evidence (the quote is shown) or in their doc impact ("Listed in doc impact"). Each
+ref opens the Dowser inbox in Jira; an accepted proposal also links to its Jira issue. A page no proposal
+names says "No Dowser proposals mention this page."
+
+### Links into the inbox
+
+`<site>/jira/apps/<appId>/<envId>/inbox?ref=DW-12` opens the inbox focused on DW-12 (the card scrolls into
+view and takes keyboard focus). If DW-12 is not in the loaded page (decided, or further down the queue), it
+opens in a read-only card dialog instead.

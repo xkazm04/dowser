@@ -1,0 +1,62 @@
+/* Opportunity map and doc-impact byline (WP4). Same rules as theme.css: every colour is an Atlassian token
+   (`var(--ds-*)`, light default as the fallback), so the Jira light and dark themes both apply. Plain CSS. */
+
+.dw-root--wide { max-width: 1120px; }
+.dw-section { margin: 24px 0 8px; }
+.dw-section__head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.dw-scroll { overflow-x: auto; }
+
+/* Heat grid: a real <table>. Magnitude is one hue (blue), light to dark, and the count is always printed. */
+.dw-heat { border-collapse: separate; border-spacing: 2px; width: 100%; }
+.dw-heat caption { text-align: left; caption-side: top; padding: 0 0 6px; }
+.dw-heat th { font-size: 12px; line-height: 16px; font-weight: 653; color: var(--ds-text-subtlest, #6B6E76); text-align: left; padding: 4px 8px; vertical-align: bottom; }
+.dw-heat th[scope="row"] { color: var(--ds-text, #292A2E); font-weight: 500; font-size: 13px; vertical-align: middle; white-space: nowrap; }
+.dw-heat td { padding: 4px 8px; vertical-align: middle; font-variant-numeric: tabular-nums; }
+.dw-heat__cell { text-align: center; min-width: 72px; height: 40px; border-radius: 3px; background: var(--ds-background-neutral-subtle, transparent); }
+.dw-heat__cell--0 { color: var(--ds-text-subtlest, #6B6E76); }
+.dw-heat__cell--1 { background: var(--ds-background-accent-blue-subtlest, #E9F2FE); }
+.dw-heat__cell--2 { background: var(--ds-background-accent-blue-subtler, #CFE1FD); }
+.dw-heat__cell--3 { background: var(--ds-background-accent-blue-subtle, #669DF1); }
+.dw-heat__cell--4 { background: var(--ds-background-accent-blue-bolder, #1558BC); color: var(--ds-text-inverse, #FFFFFF); }
+.dw-heat__n { font-weight: 653; font-size: 14px; line-height: 18px; display: block; }
+.dw-heat__acc { font-size: 11px; line-height: 14px; display: block; color: inherit; opacity: .85; }
+.dw-heat__cell--0 .dw-heat__acc, .dw-heat__cell--1 .dw-heat__acc, .dw-heat__cell--2 .dw-heat__acc { color: var(--ds-text-subtle, #505258); opacity: 1; }
+.dw-heat__num { text-align: right; white-space: nowrap; }
+.dw-heat th.dw-heat__num { text-align: right; }
+.dw-heat__total { font-weight: 653; }
+
+.dw-legend { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 8px 0 0; font-size: 12px; color: var(--ds-text-subtle, #505258); }
+.dw-legend__item { display: inline-flex; align-items: center; gap: 4px; }
+.dw-legend__swatch { width: 16px; height: 12px; border-radius: 2px; display: inline-block; border: 1px solid var(--ds-border, #0B120E24); }
+
+/* Effort vs confidence */
+.dw-scatter { display: block; width: 100%; max-width: 720px; height: auto; }
+.dw-scatter text { font-family: inherit; }
+.dw-scatter__grid { fill: none; stroke: var(--ds-border, #0B120E24); stroke-width: 1; }
+.dw-scatter__band { fill: var(--ds-background-neutral-subtle-hovered, #0515240F); opacity: .5; }
+.dw-scatter__tick { fill: var(--ds-text-subtle, #505258); font-size: 12px; }
+.dw-scatter__axis { fill: var(--ds-text-subtlest, #6B6E76); font-size: 12px; font-weight: 653; }
+.dw-dot { cursor: pointer; outline: none; }
+.dw-dot__mark { stroke: var(--ds-surface, #FFFFFF); stroke-width: 2; }
+.dw-dot__hit { fill: transparent; }
+.dw-dot:hover .dw-dot__ring, .dw-dot:focus-visible .dw-dot__ring { stroke: var(--ds-border-focused, #4688EC); stroke-width: 2; fill: none; }
+.dw-dot__ring { fill: none; stroke: none; }
+.dw-blast--low { fill: var(--ds-background-accent-orange-subtle, #FCA700); }
+.dw-blast--medium { fill: var(--ds-background-accent-orange-bolder, #9E4C00); }
+.dw-blast--high { fill: var(--ds-background-accent-red-bolder, #AE2E24); }
+.dw-blast--none { fill: var(--ds-surface, #FFFFFF); stroke: var(--ds-text-subtle, #505258) !important; stroke-width: 1.5 !important; }
+.dw-legend svg { display: block; }
+.dw-readout { min-height: 20px; margin: 4px 0 0; font-size: 12px; color: var(--ds-text-subtle, #505258); }
+
+.dw-pointlist { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.dw-pointlist li { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.dw-linkbtn { font: inherit; border: 0; padding: 0; background: none; cursor: pointer; color: var(--ds-link, #1868DB); }
+.dw-linkbtn:hover { text-decoration: underline; }
+
+/* Byline popup: narrow, so a plain stacked list */
+.dw-root--byline { padding: 12px 16px; max-width: 420px; min-width: 280px; }
+.dw-byline-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.dw-byline-list li { padding-bottom: 10px; border-bottom: 1px solid var(--ds-border, #0B120E24); }
+.dw-byline-list li:last-child { border-bottom: 0; padding-bottom: 0; }
+.dw-byline__title { font-weight: 653; margin: 2px 0; display: block; }
+.dw-byline__why { margin: 2px 0 0; font-size: 12px; color: var(--ds-text-subtle, #505258); }

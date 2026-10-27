@@ -9,6 +9,8 @@ import {
   CHANGE_LABELS, LENSES, LENS_LABELS, STATUSES, STATUS_LABELS, changeOf, formatDate, plural,
 } from '../../components/labels.js';
 import { AcceptDialog, HelpDialog, MergeDialog, RejectDialog } from './dialogs.jsx';
+import { CardDialog } from '../../components/CardDialog.jsx';
+import { deepLinkRef } from '../../components/deeplink.js';
 
 /** Append a page of groups; a group split across the page boundary (same run_id) is joined. */
 function appendGroups(prev, more) {
@@ -27,7 +29,7 @@ function isTyping(target) {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
 }
 
-export default function Inbox() {
+export default function Inbox({ context }) {
   const [projectKey, setProjectKey] = useState('');
   const [status, setStatus] = useState('open');
   const [lens, setLens] = useState('');
@@ -47,6 +49,8 @@ export default function Inbox() {
   const [bulkError, setBulkError] = useState('');
   const seq = useRef(0);
   const cardEls = useRef(/** @type {Record<string, HTMLElement | null>} */ ({}));
+  const [linkRef, setLinkRef] = useState(/** @type {string | undefined} */ (undefined));
+  const linkDone = useRef(false);
 
   const filters = useMemo(() => {
     /** @type {{project_key?: string, status?: string, lens?: string}} */
@@ -80,9 +84,13 @@ export default function Inbox() {
   const flat = useMemo(() => visible.flatMap((g) => g.items), [visible]);
   const byRef = useMemo(() => new Map(flat.map((c) => [c.ref, c])), [flat]);
 
-  // Empty view: name the last push (from an unfiltered page of this inbox) instead of saying "all clear".
+  // Empty view: name the last push instead of saying "all clear". Prefer the inbox summary's `last_push`; fall
+  // back to an unfiltered page of this inbox when the server does not send it.
   useEffect(() => {
     if (load.status !== 'ready' || flat.length > 0 || next || lastPush !== undefined) return;
+    const known = inboxes.filter((i) => (!projectKey || i.project_key === projectKey) && i.last_push)
+      .map((i) => i.last_push).sort((a, b) => String(b.at).localeCompare(String(a.at)))[0];
+    if (known) { setLastPush({ run_id: known.run_id, at: known.at, lenses: [] }); return; }
     let live = true;
     call('inbox.list', projectKey ? { project_key: projectKey } : {}).then(
       (res) => {
@@ -93,7 +101,28 @@ export default function Inbox() {
       () => { if (live) setLastPush(null); },
     );
     return () => { live = false; };
-  }, [load.status, flat.length, next, lastPush, projectKey]);
+  }, [load.status, flat.length, next, lastPush, projectKey, inboxes]);
+
+  // Deep link (`inbox?ref=DW-n`, the backend's external_url): once the first page is in, focus and scroll to the
+  // card; a card outside the loaded page (another status, a later page) opens read-only via proposal.get.
+  useEffect(() => {
+    let live = true;
+    deepLinkRef(context).then((r) => { if (live) setLinkRef(r ?? ''); });
+    return () => { live = false; };
+  }, [context]);
+  useEffect(() => {
+    if (!linkRef || linkDone.current || load.status !== 'ready') return;
+    linkDone.current = true;
+    if (byRef.has(linkRef)) {
+      setFocusRef(linkRef);
+      requestAnimationFrame(() => {
+        const el = cardEls.current[linkRef];
+        if (el) { el.focus(); el.scrollIntoView?.({ block: 'center' }); }
+      });
+    } else {
+      setDialog({ kind: 'card', refs: [linkRef] });
+    }
+  }, [linkRef, load.status, byRef]);
 
   // Keep the focused card valid after removals: move to the card now at the same position.
   const focusIndex = flat.findIndex((c) => c.ref === focusRef);
@@ -303,6 +332,7 @@ export default function Inbox() {
       )}
 
       {dialog?.kind === 'help' && <HelpDialog onClose={closeDialog} />}
+      {dialog?.kind === 'card' && <CardDialog cardRef={dialog.refs[0]} onClose={closeDialog} />}
       {dialog?.kind === 'accept' && dialogCards[0] && (
         <AcceptDialog
           card={dialogCards[0]} onClose={closeDialog} onFailed={(ref, m) => fail([ref], m)}

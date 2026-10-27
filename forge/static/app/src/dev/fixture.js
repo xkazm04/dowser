@@ -48,10 +48,10 @@ const code = (path, line, quote) => ({ type: 'code', ref: `${path}:${line}`, quo
 export const CARDS = [
   // Group 1 (latest push): new, evidence grew, reopened
   card({
-    ref: 'DW-14', fp: 'a1b2c3d4e5f60718', title: 'Let users recover from a declined card payment',
+    ref: 'DW-14', fp: 'a1b2c3d4e5f60718', change: 'new', title: 'Let users recover from a declined card payment',
     rationale: 'A declined card leaves a blank error and no retry. Support sees it weekly, and it is the top checkout ticket theme.',
     confidence: 'high', confidence_why: 'Code quote shows the swallowed error and 41 tickets agree; a funnel metric would raise it.',
-    delivery_risk: { blast: 'medium', bus_factor: 1 }, doc_impact: ['docs/checkout.md', 'confluence:page/48213'],
+    delivery_risk: { blast: 'medium', bus_factor: 1 }, doc_impact: ['docs/checkout.md', '48213'],
     evidence: [
       code('src/checkout/payment.ts', 88, "catch (e) { setError(''); }"),
       { type: 'ticket', ref: 'SUP-118', quote: 'blank red box after card declined', url: 'https://acme.atlassian.net/browse/SUP-118' },
@@ -60,18 +60,18 @@ export const CARDS = [
     ],
   }),
   card({
-    ref: 'DW-9', fp: 'b2c3d4e5f6071829', lens: 'doc-drift', kind: 'stale-instruction', title: 'Fix the install guide that still names the removed --legacy flag',
+    ref: 'DW-9', fp: 'b2c3d4e5f6071829', change: 'grew', lens: 'doc-drift', kind: 'stale-instruction', title: 'Fix the install guide that still names the removed --legacy flag',
     rationale: 'The guide tells admins to pass a flag the CLI no longer accepts, so first installs fail at step 3.',
     effort: { size: 'XS', days_low: 0.25, days_high: 0.5, basis: ['docs/install.md'] },
     delivery_risk: { blast: 'low' }, doc_impact: ['docs/install.md'], first_seen: PUSHES[1].at,
     evidence: [
       { type: 'doc', ref: 'docs/install.md:42', quote: 'shopctl init --legacy', link: `${REPO}/blob/${SHA1}/docs/install.md#L42` },
       { type: 'git', ref: '7e1a2b9', quote: 'remove --legacy from shopctl init' },
-      { type: 'page', ref: 'confluence:page/90211', quote: 'Run shopctl init --legacy on a fresh host.', url: 'https://acme.atlassian.net/wiki/spaces/OPS/pages/90211' },
+      { type: 'page', ref: '90211', quote: 'Run shopctl init --legacy on a fresh host.', url: 'https://acme.atlassian.net/wiki/spaces/OPS/pages/90211' },
     ],
   }),
   card({
-    ref: 'DW-6', fp: 'c3d4e5f607182930', lens: 'security-cra', kind: 'vulnerable-dependency', reopened: true,
+    ref: 'DW-6', fp: 'c3d4e5f607182930', lens: 'security-cra', kind: 'vulnerable-dependency', reopened: true, change: 'reopened',
     title: 'Upgrade the image library with a known decoder overflow',
     rationale: 'The pinned version has a published overflow in its PNG decoder, and product images are user uploads.',
     effort: { size: 'S', days_low: 0.5, days_high: 1.5, basis: ['package.json#sharp'] }, confidence: 'high',
@@ -85,7 +85,7 @@ export const CARDS = [
   }),
   // Group 2
   card({
-    ref: 'DW-11', fp: 'd4e5f60718293041', lens: 'ux-friction', kind: 'dead-end', title: 'Keep the cart when a session times out',
+    ref: 'DW-11', fp: 'd4e5f60718293041', change: 'new', lens: 'ux-friction', kind: 'dead-end', title: 'Keep the cart when a session times out',
     rationale: 'A timed-out session empties the cart without warning; mobile users lose carts while paying in another app.',
     first_seen: PUSHES[1].at, last_push_at: PUSHES[1].at,
     provenance: { lens_version: '1.0.3', model: 'claude-opus-5-5', harness: 'codex', run_id: PUSHES[1].run_id },
@@ -96,7 +96,7 @@ export const CARDS = [
     ],
   }),
   card({
-    ref: 'DW-10', fp: 'e5f6071829304152', title: 'Export order reports as CSV from the report screen',
+    ref: 'DW-10', fp: 'e5f6071829304152', change: 'new', title: 'Export order reports as CSV from the report screen',
     rationale: 'A CSV writer already exists for invoices; finance asks for order exports every month-end.',
     confidence: 'low', confidence_why: 'Inferred from two tickets; no usage count. A count of export requests would raise it.',
     effort: { size: 'S', days_low: 1, days_high: 2, basis: ['src/reports/csv.ts#writeCsv'] },
@@ -106,21 +106,21 @@ export const CARDS = [
   }),
   // Group 3
   card({
-    ref: 'DW-3', fp: 'f60718293041526a', lens: 'ux-friction', kind: 'missing-feedback', title: 'Show progress while a large catalogue import runs',
+    ref: 'DW-3', fp: 'f60718293041526a', change: 'new', lens: 'ux-friction', kind: 'missing-feedback', title: 'Show progress while a large catalogue import runs',
     rationale: 'Imports over 5k rows show nothing for minutes, and admins re-submit, creating duplicates.',
     first_seen: PUSHES[2].at, last_push_at: PUSHES[2].at, delivery_risk: { blast: 'medium' },
     provenance: { lens_version: '1.0.3', run_id: PUSHES[2].run_id },
-    evidence: [code('src/admin/import.ts', 230, 'await importAll(rows); // no progress'), { type: 'page', ref: 'confluence:page/7781', url: 'https://acme.atlassian.net/wiki/spaces/SUP/pages/7781' }],
+    evidence: [code('src/admin/import.ts', 230, 'await importAll(rows); // no progress'), { type: 'page', ref: '7781', url: 'https://acme.atlassian.net/wiki/spaces/SUP/pages/7781' }],
   }),
   card({
-    ref: 'DW-2', fp: '0718293041526a7b', title: 'Let shops schedule price changes',
+    ref: 'DW-2', fp: '0718293041526a7b', change: 'new', title: 'Let shops schedule price changes',
     rationale: 'Price changes go live on save; shops edit at midnight to launch sales.', first_seen: PUSHES[2].at, last_push_at: PUSHES[2].at,
     provenance: { lens_version: '1.2.0', run_id: PUSHES[2].run_id }, effort: { size: 'M' },
     evidence: [code('src/catalog/price.ts', 54, 'product.price = input.price; await save(product);'), { type: 'goal', ref: 'goal/merchant-nps', url: 'https://home.atlassian.com/o/acme/goal/7' }],
   }),
   // Other inbox
   card({
-    ref: 'DW-20', fp: '18293041526a7b8c', project_key: 'github.com/acme/billing', title: 'Retry failed webhook deliveries with backoff',
+    ref: 'DW-20', fp: '18293041526a7b8c', change: 'new', project_key: 'github.com/acme/billing', title: 'Retry failed webhook deliveries with backoff',
     rationale: 'Failed webhooks are dropped after one try.', first_seen: '2026-10-25T11:00:00.000Z', last_push_at: '2026-10-25T11:00:00.000Z',
     provenance: { lens_version: '1.2.0', run_id: '2026-10-25T10-58-00Z-b2' },
     evidence: [code('src/hooks/send.ts', 31, 'if (!res.ok) log.warn(res.status);')],
@@ -129,7 +129,7 @@ export const CARDS = [
   card({
     ref: 'DW-1', fp: '293041526a7b8c9d', status: 'accepted', issue_ref: 'SHOP-101', issue_url: 'https://acme.atlassian.net/browse/SHOP-101',
     title: 'Explain shipping costs before the payment step', rationale: 'Shipping appears only on the last step; tickets call it a surprise.',
-    first_seen: PUSHES[2].at, last_push_at: PUSHES[2].at, delivery_risk: { blast: 'low', bus_factor: 3 }, doc_impact: ['docs/checkout.md'],
+    first_seen: PUSHES[2].at, last_push_at: PUSHES[2].at, delivery_risk: { blast: 'low', bus_factor: 3 }, doc_impact: ['docs/checkout.md', '90211'],
     provenance: { lens_version: '1.2.0', run_id: PUSHES[2].run_id },
     evidence: [code('src/checkout/steps.ts', 9, "const STEPS = ['cart', 'address', 'payment', 'shipping'];"), { type: 'ticket', ref: 'SUP-99', url: 'https://acme.atlassian.net/browse/SUP-99' }],
   }),
@@ -145,11 +145,45 @@ export const HISTORY = {
 };
 
 export const INBOXES = [
-  { project_key: 'github.com/acme/shop', repo_url: REPO, jira_project_key: 'SHOP', issue_type_id: '10001' },
-  { project_key: 'github.com/acme/billing', repo_url: 'https://bitbucket.org/acme/billing' },
+  {
+    project_key: 'github.com/acme/shop', repo_url: REPO, jira_project_key: 'SHOP', issue_type_id: '10001',
+    last_push: { run_id: PUSHES[0].run_id, at: PUSHES[0].at, head_sha: SHA1, created: 1, updated: 2 },
+  },
+  {
+    project_key: 'github.com/acme/billing', repo_url: 'https://bitbucket.org/acme/billing',
+    last_push: { run_id: '2026-10-25T10-58-00Z-b2', at: '2026-10-25T11:00:00.000Z', created: 1, updated: 0 },
+  },
 ];
 
 export const PROJECTS = [
   { key: 'SHOP', name: 'Shop', issue_types: [{ id: '10001', name: 'Story' }, { id: '10002', name: 'Bug' }, { id: '10003', name: 'Task' }] },
   { key: 'BILL', name: 'Billing', issue_types: [{ id: '10101', name: 'Task' }, { id: '10102', name: 'Bug' }] },
 ];
+
+// Area stats per inbox, as `map.data` serves them: the pushed areas (dowser_areas_push) joined with proposal
+// counts per lens. churn_90d counts commits; `authors_90d` is omitted when churn_90d is 0 (not measured), as
+// forge-mcp-2 says, never sent as 0.
+const lensCounts = (counts) => Object.entries(counts).map(([lens, [open, accepted]]) => ({ lens, open, accepted }));
+export const AREAS = {
+  'github.com/acme/shop': [
+    { path: 'src/checkout', files: 24, churn_90d: 184, authors_90d: 1, last_change: '2026-10-26T15:02:00.000Z',
+      proposals: lensCounts({ opportunity: [3, 1], 'ux-friction': [2, 0], 'security-cra': [1, 0] }) },
+    { path: 'src/catalog', files: 18, churn_90d: 66, authors_90d: 4, last_change: '2026-10-24T09:40:00.000Z',
+      proposals: lensCounts({ opportunity: [2, 0], 'doc-drift': [0, 1] }) },
+    { path: 'docs', files: 31, churn_90d: 12, authors_90d: 5, last_change: '2026-10-21T12:00:00.000Z',
+      proposals: lensCounts({ 'doc-drift': [4, 2] }) },
+    { path: 'src/admin', files: 14, churn_90d: 0, last_change: '2026-10-19T08:15:00.000Z',
+      proposals: lensCounts({ 'ux-friction': [1, 0], 'security-cra': [1, 0] }) },
+    { path: 'src/session', files: 6, churn_90d: 21, authors_90d: 3, last_change: '2026-10-11T17:30:00.000Z',
+      proposals: lensCounts({ 'ux-friction': [1, 0], 'security-cra': [0, 1] }) },
+    { path: '.', files: 12, churn_90d: 30, authors_90d: 2, last_change: '2026-10-22T10:00:00.000Z',
+      proposals: lensCounts({ 'security-cra': [1, 0] }) },
+    { path: 'src/reports', files: 9, churn_90d: 9, authors_90d: 2, last_change: '2026-09-30T14:00:00.000Z',
+      proposals: lensCounts({ opportunity: [1, 0] }) },
+    { path: 'src/payments-legacy', files: 7, churn_90d: 3, authors_90d: 1, last_change: '2026-03-02T09:00:00.000Z', proposals: [] },
+  ],
+  'github.com/acme/billing': [
+    { path: 'src/hooks', files: 5, churn_90d: 14, authors_90d: 1, proposals: lensCounts({ opportunity: [1, 0] }) },
+    { path: 'src/invoices', files: 11, churn_90d: 3, authors_90d: 2, proposals: [] },
+  ],
+};

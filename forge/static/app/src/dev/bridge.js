@@ -4,10 +4,12 @@
 //
 // URL hash picks the surface and test conditions:
 //   #inbox (default) | #settings | #map | #panel (accepted issue SHOP-101) | #panel-none (not from Dowser)
+//   &ref=DW-n             deep link: the inbox focuses that card (or opens it when it is not on the page)
+//   #byline (Confluence page 90211, two proposals)   &page=<id> another page (48213: one; 1: none)
 //   &fail=<resolver key>  that key answers {error, message}     &empty  no proposals at all
 //   &slow                 every call takes 1.5 s (to see skeletons)
 import { setGlobalTheme } from '@atlaskit/tokens/set-global-theme';
-import { CARDS, GROUP_OF, HISTORY, INBOXES, PROJECTS, PUSHES } from './fixture.js';
+import { AREAS, CARDS, GROUP_OF, HISTORY, INBOXES, PROJECTS, PUSHES } from './fixture.js';
 
 const PAGE = 4; // small on purpose, so "Load more" and a group split across pages are exercised
 const params = () => new URLSearchParams(location.hash.slice(1).replace(/^[a-z-]+&?/, ''));
@@ -24,6 +26,7 @@ function decide(ref, status, extra = {}) {
   if (c.status !== 'open') throw err('bad-input', `${ref} is already ${c.status}.`);
   Object.assign(c, { status }, extra);
   delete c.reopened;
+  delete c.change;
   (history[ref] ??= []).push({ fp: c.fp, status, decided_by: 'forge:dev-user', decided_at: new Date().toISOString(), external_ref: ref, ...extra });
   return c;
 }
@@ -91,8 +94,25 @@ const handlers = {
     const card = cards.find((c) => c.issue_ref === issue_key);
     return card ? { card, history: history[card.ref] ?? [] } : { history: [] };
   },
-  'map.data'() { return { areas: [], points: [] }; },
-  'byline.forPage'() { return { count: 0, cards: [] }; },
+  'map.data'({ project_key }) {
+    if (!project_key) throw err('bad-input', 'project_key is required.');
+    if (!INBOXES.some((i) => i.project_key === project_key)) throw err('unknown-project', `No inbox ${project_key}.`);
+    if (params().has('empty')) return { areas: [], points: [] };
+    const points = cards.filter((c) => c.project_key === project_key && c.status === 'open' && c.effort?.size)
+      .map((c) => {
+        const p = { ref: c.ref, lens: c.lens, effort: c.effort.size, confidence: c.confidence };
+        if (c.delivery_risk?.blast) p.blast = c.delivery_risk.blast;
+        return p;
+      });
+    return { areas: AREAS[project_key] ?? [], points };
+  },
+  'byline.forPage'({ page_id }) {
+    if (!/^[0-9]+$/.test(String(page_id ?? ''))) throw err('bad-input', 'page_id must be a Confluence page id.');
+    // As the server does: a `page` evidence ref or a doc_impact entry that is the page id (forge-mcp-2: a page ref is its id).
+    const hit = cards.filter((c) => (c.status === 'open' || c.status === 'accepted')
+      && ((c.doc_impact ?? []).includes(page_id) || c.evidence.some((e) => e.type === 'page' && e.ref === page_id)));
+    return { count: hit.length, cards: hit };
+  },
 };
 
 export async function invoke(key, payload = {}) {
@@ -114,12 +134,23 @@ export const view = {
     if (s === 'panel' || s === 'panel-none') {
       return { moduleKey: 'dowser-evidence', extension: { type: 'jira:issuePanel', issue: { key: s === 'panel' ? 'SHOP-101' : 'SHOP-1', id: '10000' } } };
     }
-    return { moduleKey: 'dowser-inbox', extension: { type: 'jira:globalPage', location: `https://acme.atlassian.net/jira/apps/dev/dowser/${s}` } };
+    const base = { siteUrl: 'https://acme.atlassian.net', environmentId: 'dev-env', localId: 'ari:cloud:ecosystem::extension/dev-app/dev-env/static/' };
+    if (s === 'byline') {
+      return {
+        ...base, localId: `${base.localId}dowser-doc-impact`, moduleKey: 'dowser-doc-impact',
+        extension: { type: 'confluence:contentBylineItem', content: { id: params().get('page') ?? '90211', type: 'page' }, space: { key: 'OPS' } },
+      };
+    }
+    return { ...base, localId: `${base.localId}dowser-inbox`, moduleKey: 'dowser-inbox', extension: { type: 'jira:globalPage', location: `https://acme.atlassian.net/jira/apps/dev/dowser/${s}${params().has('ref') ? `?ref=${params().get('ref')}` : ''}` } };
   },
   theme: { enable: async () => { await setGlobalTheme({ colorMode: 'auto' }); } },
 };
 
-export const router = { navigate: async () => {}, open: async () => {}, reload: async () => location.reload() };
+export const router = {
+  navigate: async (to) => { console.info('[fixture] router.navigate', to); },
+  open: async (to) => { console.info('[fixture] router.open', to); },
+  reload: async () => location.reload(),
+};
 
 // Reload the surface when the hash changes, so one dev tab can visit all of them.
 window.addEventListener('hashchange', () => location.reload());
