@@ -1,0 +1,178 @@
+/* Dowser Custom UI styles. Every colour, surface and font is an Atlassian Design System token
+   (`var(--ds-*)`), so the Jira light and dark themes both apply once `view.theme.enable()` has run. The second
+   argument of each var() is the token's light default, used only if the host has not loaded the tokens.
+   Plain CSS on purpose: it ships as a bundled stylesheet, which the Forge Custom UI CSP allows without
+   `permissions.content.styles: unsafe-inline` (runtime CSS-in-JS would need it). */
+
+:root {
+  color-scheme: light dark;
+}
+
+html, body {
+  margin: 0;
+  background: var(--ds-surface, #FFFFFF);
+  color: var(--ds-text, #292A2E);
+  font-family: var(--ds-font-family-body, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.dw-root { padding: 16px 20px 40px; max-width: 980px; }
+.dw-root--panel { padding: 4px 0 12px; max-width: none; }
+
+h1.dw-h1 { font-size: 20px; line-height: 24px; font-weight: 653; margin: 0 0 12px; }
+h2.dw-h2 { font-size: 16px; line-height: 20px; font-weight: 653; margin: 0; }
+h3.dw-h3 { font-size: 14px; line-height: 20px; font-weight: 653; margin: 0; }
+.dw-subtle { color: var(--ds-text-subtle, #505258); }
+.dw-subtlest { color: var(--ds-text-subtlest, #6B6E76); font-size: 12px; line-height: 16px; }
+.dw-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dw-spacer { flex: 1; }
+.dw-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+a, .dw-link { color: var(--ds-link, #1868DB); text-decoration: none; }
+a:hover, .dw-link:hover { text-decoration: underline; }
+
+:focus-visible { outline: 2px solid var(--ds-border-focused, #4688EC); outline-offset: 2px; }
+
+/* Buttons */
+.dw-btn {
+  font: inherit; font-weight: 500; border: 0; border-radius: 3px; padding: 0 10px; height: 32px;
+  display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+  background: var(--ds-background-neutral, #0515240F); color: var(--ds-text-subtle, #505258);
+}
+.dw-btn:hover { background: var(--ds-background-neutral-hovered, #0B120E24); }
+.dw-btn:active { background: var(--ds-background-neutral-pressed, #080F214A); }
+.dw-btn--primary { background: var(--ds-background-brand-bold, #1868DB); color: var(--ds-text-inverse, #FFFFFF); }
+.dw-btn--primary:hover { background: var(--ds-background-brand-bold-hovered, #1558BC); }
+.dw-btn--danger { background: var(--ds-background-danger-bold, #C9372C); color: var(--ds-text-inverse, #FFFFFF); }
+.dw-btn--danger:hover { background: var(--ds-background-danger-bold-hovered, #AE2E24); }
+.dw-btn--subtle { background: var(--ds-background-neutral-subtle, transparent); }
+.dw-btn--subtle:hover { background: var(--ds-background-neutral-subtle-hovered, #0515240F); }
+.dw-btn--compact { height: 24px; padding: 0 6px; }
+.dw-btn:disabled { cursor: not-allowed; background: var(--ds-background-disabled, #0515240F); color: var(--ds-text-disabled, #080F214A); }
+
+/* Lozenges and chips */
+.dw-lozenge {
+  display: inline-block; padding: 0 4px; border-radius: 3px; font-size: 11px; line-height: 16px; font-weight: 653;
+  text-transform: uppercase; white-space: nowrap;
+  background: var(--ds-background-neutral, #0515240F); color: var(--ds-text-subtle, #505258);
+}
+.dw-lozenge--success { background: var(--ds-background-success, #EFFFD6); color: var(--ds-text-success, #4C6B1F); }
+.dw-lozenge--removed { background: var(--ds-background-danger, #FFECEB); color: var(--ds-text-danger, #AE2E24); }
+.dw-lozenge--moved { background: var(--ds-background-warning, #FFF5DB); color: var(--ds-text-warning, #9E4C00); }
+.dw-lozenge--new { background: var(--ds-background-discovery, #F8EEFE); color: var(--ds-text-discovery, #803FA5); }
+.dw-lozenge--inprogress { background: var(--ds-background-information, #E9F2FE); color: var(--ds-text-information, #1558BC); }
+
+.dw-lens { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 12px; line-height: 20px; font-weight: 500; }
+.dw-lens--opportunity { background: var(--ds-background-accent-blue-subtler, #CFE1FD); color: var(--ds-text-accent-blue, #1558BC); }
+.dw-lens--ux-friction { background: var(--ds-background-accent-purple-subtler, #EED7FC); color: var(--ds-text-accent-purple, #803FA5); }
+.dw-lens--doc-drift { background: var(--ds-background-accent-teal-subtler, #C6EDFB); color: var(--ds-text-accent-teal, #206A83); }
+.dw-lens--security-cra { background: var(--ds-background-accent-red-subtler, #FFD5D2); color: var(--ds-text-accent-red, #AE2E24); }
+
+.dw-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; }
+.dw-chips__label { color: var(--ds-text-subtlest, #6B6E76); font-size: 12px; min-width: 48px; }
+.dw-chip {
+  font: inherit; font-size: 12px; line-height: 20px; padding: 2px 10px; border-radius: 12px; cursor: pointer;
+  border: 1px solid var(--ds-border, #0B120E24); background: var(--ds-surface, #FFFFFF); color: var(--ds-text-subtle, #505258);
+}
+.dw-chip:hover { background: var(--ds-background-neutral-subtle-hovered, #0515240F); }
+.dw-chip[aria-pressed="true"] {
+  background: var(--ds-background-selected, #E9F2FE); color: var(--ds-text-selected, #1868DB); border-color: var(--ds-border-selected, #1868DB);
+}
+
+/* Form controls */
+.dw-field { display: flex; flex-direction: column; gap: 4px; margin: 0 0 12px; }
+.dw-field > label, .dw-field > .dw-label { font-size: 12px; font-weight: 653; color: var(--ds-text-subtle, #505258); }
+.dw-input, .dw-select, .dw-textarea {
+  font: inherit; color: var(--ds-text, #292A2E); background: var(--ds-background-input, #FFFFFF);
+  border: 1px solid var(--ds-border-input, #8C8F97); border-radius: 3px; padding: 5px 8px; min-height: 32px; box-sizing: border-box;
+}
+.dw-textarea { min-height: 64px; resize: vertical; }
+.dw-input:focus, .dw-select:focus, .dw-textarea:focus { outline: 2px solid var(--ds-border-focused, #4688EC); outline-offset: -1px; }
+.dw-checkbox { width: 16px; height: 16px; margin: 0; accent-color: var(--ds-background-brand-bold, #1868DB); cursor: pointer; }
+.dw-radio-list { display: flex; flex-direction: column; gap: 6px; border: 0; padding: 0; margin: 0 0 12px; }
+.dw-radio { display: grid; grid-template-columns: 20px 1fr; gap: 2px 6px; align-items: start; cursor: pointer; }
+.dw-radio input { margin: 3px 0 0; accent-color: var(--ds-background-brand-bold, #1868DB); }
+
+/* Section messages */
+.dw-msg { display: flex; gap: 8px; padding: 12px 16px; border-radius: 3px; margin: 8px 0; background: var(--ds-background-information, #E9F2FE); }
+.dw-msg--error { background: var(--ds-background-danger, #FFECEB); }
+.dw-msg--success { background: var(--ds-background-success, #EFFFD6); }
+.dw-msg--warning { background: var(--ds-background-warning, #FFF5DB); }
+.dw-msg p { margin: 0; }
+
+/* Group and card */
+.dw-group { margin: 20px 0 8px; }
+.dw-group__head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 0 0 6px; border-bottom: 1px solid var(--ds-border, #0B120E24); }
+.dw-group__counts { display: flex; gap: 6px; flex-wrap: wrap; }
+.dw-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+
+.dw-card {
+  background: var(--ds-surface-raised, #FFFFFF); box-shadow: var(--ds-shadow-raised, 0 1px 1px #1E1F2140, 0 0 1px #1E1F214F);
+  border-radius: 6px; padding: 12px 16px; display: grid; grid-template-columns: 24px 1fr; gap: 0 8px;
+  border-left: 3px solid transparent;
+}
+.dw-card--flat { box-shadow: none; padding: 0; border-left: 0; grid-template-columns: 1fr; background: transparent; }
+.dw-card--focused { border-left-color: var(--ds-border-focused, #4688EC); }
+.dw-card--selected { background: var(--ds-background-selected, #E9F2FE); }
+.dw-card__check { padding-top: 2px; }
+.dw-card__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dw-card__title { font-size: 16px; line-height: 20px; font-weight: 653; margin: 4px 0; }
+.dw-card__rationale { margin: 0 0 8px; color: var(--ds-text-subtle, #505258); }
+.dw-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0 0 8px; }
+.dw-facts dt { color: var(--ds-text-subtlest, #6B6E76); font-size: 12px; }
+.dw-facts dd { margin: 0; }
+.dw-card__actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.dw-details summary { cursor: pointer; color: var(--ds-text-subtle, #505258); font-size: 12px; }
+.dw-details[open] summary { margin-bottom: 4px; }
+
+.dw-evidence { list-style: none; padding: 0; margin: 4px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.dw-evidence li { display: grid; grid-template-columns: 56px 1fr; gap: 0 8px; }
+.dw-evidence__type { font-size: 11px; line-height: 20px; font-weight: 653; text-transform: uppercase; color: var(--ds-text-subtlest, #6B6E76); }
+.dw-evidence__ref { font-family: var(--ds-font-family-code, ui-monospace, Menlo, monospace); font-size: 12px; word-break: break-all; }
+pre.dw-code {
+  font-family: var(--ds-font-family-code, ui-monospace, Menlo, monospace); font-size: 12px; line-height: 18px; margin: 4px 0 0;
+  padding: 6px 8px; border-radius: 3px; background: var(--ds-background-neutral, #0515240F); color: var(--ds-text, #292A2E);
+  white-space: pre-wrap; word-break: break-word; grid-column: 2;
+}
+blockquote.dw-quote { margin: 4px 0 0; padding: 0 0 0 8px; border-left: 2px solid var(--ds-border, #0B120E24); color: var(--ds-text-subtle, #505258); grid-column: 2; }
+
+.dw-history { list-style: none; padding: 0; margin: 4px 0 0; display: flex; flex-direction: column; gap: 4px; }
+
+/* Bulk bar */
+.dw-bulk {
+  position: sticky; top: 0; z-index: 2; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px; margin: 8px 0;
+  border-radius: 6px; background: var(--ds-surface-overlay, #FFFFFF); box-shadow: var(--ds-shadow-overlay, 0 8px 12px #1E1F2126, 0 0 1px #1E1F214F);
+}
+
+/* Skeleton */
+.dw-skel { border-radius: 3px; background: var(--ds-skeleton, #0515240F); animation: dw-pulse 1.4s ease-in-out infinite; }
+.dw-skel-card { height: 112px; border-radius: 6px; }
+@keyframes dw-pulse { 50% { opacity: .5; } }
+@media (prefers-reduced-motion: reduce) { .dw-skel { animation: none; } }
+
+.dw-spinner {
+  width: 16px; height: 16px; border-radius: 50%; display: inline-block; vertical-align: middle;
+  border: 2px solid var(--ds-border, #0B120E24); border-top-color: var(--ds-text-subtle, #505258); animation: dw-spin .8s linear infinite;
+}
+@keyframes dw-spin { to { transform: rotate(360deg); } }
+
+/* Dialog (native <dialog> opened with showModal(): the rest of the page is inert, so focus is trapped) */
+dialog.dw-dialog {
+  border: 0; border-radius: 6px; padding: 0; width: min(600px, calc(100vw - 32px)); max-height: calc(100vh - 64px);
+  background: var(--ds-surface-overlay, #FFFFFF); color: var(--ds-text, #292A2E);
+  box-shadow: var(--ds-shadow-overlay, 0 8px 12px #1E1F2126, 0 0 1px #1E1F214F);
+}
+dialog.dw-dialog::backdrop { background: var(--ds-blanket, #050C1F75); }
+.dw-dialog__inner { display: flex; flex-direction: column; max-height: calc(100vh - 64px); }
+.dw-dialog__head { padding: 20px 24px 8px; }
+.dw-dialog__body { padding: 4px 24px; overflow: auto; }
+.dw-dialog__foot { padding: 16px 24px 20px; display: flex; gap: 8px; justify-content: flex-end; }
+
+.dw-kbd {
+  font-family: var(--ds-font-family-code, ui-monospace, monospace); font-size: 12px; padding: 0 4px; border-radius: 3px;
+  border: 1px solid var(--ds-border, #0B120E24); background: var(--ds-background-neutral, #0515240F);
+}
+.dw-table { border-collapse: collapse; width: 100%; }
+.dw-table th, .dw-table td { text-align: left; padding: 8px 8px 8px 0; border-bottom: 1px solid var(--ds-border, #0B120E24); vertical-align: middle; }
+.dw-table th { font-size: 12px; color: var(--ds-text-subtlest, #6B6E76); font-weight: 653; }

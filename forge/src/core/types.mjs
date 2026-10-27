@@ -59,9 +59,11 @@ export const PAGE_SIZE = 50;
  * The card the Custom UI renders: the proposal record plus inbox state.
  * @typedef {{type: string, ref: string, url?: string, quote?: string, link?: string}} CardEvidence
  * @typedef {ProposalRecord & {ref: string, status: InboxStatus, project_key: string, evidence: CardEvidence[],
- *   reopened?: boolean, issue_ref?: string, issue_url?: string, first_seen: string, last_push_at: string}} Card
+ *   reopened?: boolean, change?: 'new' | 'grew' | 'reopened', issue_ref?: string, issue_url?: string, first_seen: string, last_push_at: string}} Card
+ *   `change` is set on open cards inside an InboxGroup: what that push did to the item.
  * @typedef {{run_id: string, at: string, head_sha?: string, items: Card[]}} InboxGroup
- * @typedef {{project_key: string, repo_url?: string, jira_project_key?: string, issue_type_id?: string, open: number}} InboxSummary
+ * @typedef {{run_id: string, at: string, head_sha?: string, created: number, updated: number}} LastPush
+ * @typedef {{project_key: string, repo_url?: string, jira_project_key?: string, issue_type_id?: string, open: number, last_push?: LastPush}} InboxSummary
  */
 
 /**

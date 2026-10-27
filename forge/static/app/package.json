@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:fixture": "vite --mode fixture",
     "build": "vite build"
   },
   "dependencies": {
@@ -13,6 +14,7 @@
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@atlaskit/tokens": "^20.8.2",
     "@vitejs/plugin-react": "^6.1.2",
     "vite": "^8.3.5"
   }
