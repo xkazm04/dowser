@@ -3,12 +3,16 @@
 // its OAuth); this module only builds the push payload and ingests the tool responses. No MCP client, no
 // network, no auth here. Contract: docs/contracts/forge-mcp-2.md.
 //
-//   outbox          -> the `dowser_proposals_push` input: verified items not yet pushed, plus pushed items whose
-//                      evidence grew since their last push (tracked in sync_state `push_seq:<fp>`)
-//   ingestPush      <- the `dowser_proposals_push` response: created|updated -> pushed + external_ref/url,
-//                      merged-existing -> merged, refused -> unchanged and reported
+//   outbox          -> the `dowser_proposals_push` arguments {project_key, run_id, proposals_json, repo_url?,
+//                      head_sha?, more?}: verified items not yet pushed, plus pushed items whose evidence grew
+//                      since their last push (tracked in sync_state `push_seq:<fp>`), at most PUSH_MAX per call
+//   ingestPush      <- the `dowser_proposals_push` response: created|updated -> pushed + external_ref/url (the
+//                      inbox item, `DW-12`), merged-existing -> merged|linked, refused -> unchanged and reported
 //   ingestVerdicts  <- the `dowser_verdicts_pull` response: each verdict through store.move (CAS), idempotent
-//                      per (fp, decided_at); the cursor is kept in sync_state `verdicts_cursor`
+//                      per (fp, decided_at); an accepted verdict records issue_ref/issue_url (the Jira issue);
+//                      the cursor is kept in sync_state `verdicts_cursor`
+//   areas           -> the `dowser_areas_push` arguments {project_key, run_id, areas_json}: per-directory files,
+//                      churn and authors relative to the run's head commit (read-only git; writes nothing)
 //   ingestSources   <- a `dowser_sources_*` response: rows in sources_cache, refs returned for citing
 //
 // sync_state keys this module owns:
@@ -20,6 +24,7 @@
 import { readFileSync } from 'node:fs';
 import { DowserError, MoveRefused, REASONS, isOneOf } from './model.mjs';
 import * as store from './store.mjs';
+import { commitDate, commitsSince, lastChange, treeFiles } from './git.mjs';
 
 /** The decider written for the moves this module makes on its own (verified -> pushed, merged-existing). */
 export const SYNC_DECIDER = 'skill:dowser-sync';
@@ -30,10 +35,18 @@ export const RECORD_KEYS = /** @type {const} */ (['fp', 'lens', 'kind', 'topic',
 export const PUSH_RESULTS = /** @type {const} */ (['created', 'updated', 'merged-existing', 'refused']);
 export const VERDICT_STATUSES = /** @type {const} */ (['accepted', 'rejected', 'merged', 'snoozed']);
 export const SOURCE_TYPES = /** @type {const} */ (['ticket', 'page', 'goal']);
+/** At most this many records per `dowser_proposals_push` call (forge-mcp-2). */
+export const PUSH_MAX = 50;
+/** `areas --top` default and ceiling (forge-mcp-2 `areas_json`: at most 200). */
+export const AREAS_TOP = 40;
+export const AREAS_MAX = 200;
+/** The churn window, in days before the run's head commit. */
+export const CHURN_DAYS = 90;
 
 /**
  * @typedef {import('./store.mjs').Db} Db
  * @typedef {import('./store.mjs').Row} Row
+ * @typedef {{project_key: string, run_id: string, proposals_json: string, repo_url?: string, head_sha?: string, more?: true}} OutboxArgs
  */
 
 // ------------------------------------------------------------------------------------------------ sync_state
@@ -96,20 +109,25 @@ export function proposalRecord(db, fp) {
 }
 
 /**
- * Builds the push payload `{project_key, run_id, proposals}`: every `verified` item (not pushed yet - a
- * pre-rejected, snoozed or merged item is not verified, so never included), plus every `pushed` item whose
- * evidence grew since its last push. Records the evidence seq of each in sync_state `outbox:last`.
+ * Builds the `dowser_proposals_push` arguments `{project_key, run_id, proposals_json, repo_url?, head_sha?}`:
+ * every `verified` item (not pushed yet - a pre-rejected, snoozed or merged item is not verified, so never
+ * included), plus every `pushed` item whose evidence grew since its last push, as a JSON string of
+ * `dowser-proposal/1` records. At most `limit` (PUSH_MAX) records; when more are pending, `more: true` is added
+ * (push, ingest, then run outbox again). `head_sha` is the run's; `repo_url` is the caller's web URL of origin.
+ * Records the evidence seq of each record sent in sync_state `outbox:last`.
  * @param {Db} db
- * @param {{projectKey: string, runId: string}} o
- * @returns {{project_key: string, run_id: string, proposals: Row[]}}
+ * @param {{projectKey: string, runId: string, repoUrl?: string, limit?: number}} o
+ * @returns {OutboxArgs}
  */
-export function outbox(db, { projectKey, runId }) {
-  if (!store.getRun(db, runId)) throw new DowserError(`run ${runId} does not exist`, 2);
+export function outbox(db, { projectKey, runId, repoUrl, limit = PUSH_MAX }) {
+  const run = store.getRun(db, runId);
+  if (!run) throw new DowserError(`run ${runId} does not exist`, 2);
   return store.tx(db, () => {
     /** @type {Row[]} */
     const proposals = [];
     /** @type {Record<string, number>} */
     const seqs = {};
+    let more = false;
     const rows = /** @type {Row[]} */ (db.prepare("SELECT fp, status FROM proposals WHERE status IN ('verified', 'pushed') ORDER BY lens, fp").all());
     for (const r of rows) {
       const fp = String(r.fp);
@@ -118,11 +136,15 @@ export function outbox(db, { projectKey, runId }) {
         const last = pushedSeq(db, fp);
         if (last !== undefined && seq <= last) continue;
       }
+      if (proposals.length >= limit) { more = true; break; }
       proposals.push(proposalRecord(db, fp));
       seqs[fp] = seq;
     }
     setState(db, 'outbox:last', JSON.stringify({ run_id: runId, at: store.now(), seqs }));
-    return { project_key: projectKey, run_id: runId, proposals };
+    return /** @type {OutboxArgs} */ (store.clean({
+      project_key: projectKey, run_id: runId, proposals_json: JSON.stringify(proposals),
+      repo_url: repoUrl, head_sha: typeof run.head_sha === 'string' ? run.head_sha : undefined, more: more || undefined,
+    }));
   });
 }
 
@@ -176,7 +198,7 @@ const statusOf = (db, fp) => {
 };
 
 /**
- * The local fp an external ref (Jira key) belongs to, if any.
+ * The local fp an external ref (inbox item, `DW-12`) belongs to, if any.
  * @param {Db} db
  * @param {string} ref
  * @returns {string | undefined}
@@ -209,7 +231,7 @@ function link(db, fp, ref, url) {
  *  - created | updated: external_ref/url recorded; `verified -> pushed` (CAS, by skill:dowser-sync); an item
  *    already `pushed` stays pushed (outcome `updated`); any other local status is a `conflict`, nothing changed.
  *  - merged-existing: the item merged into the local fp that owns external_ref (outcome `merged`); when no local
- *    item owns it, the item is linked to that Jira item and moved to `pushed` (outcome `linked`) - see the contract.
+ *    item owns it, the item is linked to that inbox item and moved to `pushed` (outcome `linked`) - see the contract.
  *  - refused: status unchanged, reported with `why`.
  *  - unknown fp, a malformed result, or a CAS refusal: reported, never forced.
  * The evidence seq sent (from `outbox:last`, else the current one) is stored as `push_seq:<fp>`.
@@ -268,7 +290,7 @@ function pushOne(db, raw, i, sent) {
       }
       return done({ outcome: 'merged', status: 'merged', merged_into: owner });
     }
-    // no local item owns the Jira key: this fp is now represented by it - link it and treat it as pushed
+    // no local item owns the inbox ref: this fp is now represented by it - link it and treat it as pushed
   }
 
   if (current !== 'verified' && current !== 'pushed') {
@@ -295,7 +317,8 @@ function pushOne(db, raw, i, sent) {
  * Applies a `dowser_verdicts_pull` response `{verdicts: [...], cursor}`. Each verdict goes through store.move
  * (CAS) with `by` = its `decided_by`; `decided_at` on the card becomes the verdict's. Idempotent per
  * (fp, decided_at): an ingested verdict is recorded in sync_state and skipped next time (`already-applied`).
- * A verdict that matches the local status already is `in-sync`. An unknown fp, a malformed verdict or an
+ * A verdict that matches the local status already is `in-sync`. An `accepted` verdict needs `issue_ref` and
+ * `issue_url` (else `invalid`) and records both on the proposal. An unknown fp, a malformed verdict or an
  * illegal transition is reported (`unknown`, `invalid`, `conflict`), never forced. The cursor is stored as `verdicts_cursor`.
  * @param {Db} db
  * @param {unknown} doc
@@ -336,16 +359,19 @@ function verdictOne(db, raw, i) {
   if (!str(raw.external_ref)) return invalid('external_ref is required');
   if (raw.reason !== undefined && !isOneOf(REASONS, raw.reason)) return invalid(`reason must be one of ${REASONS.join('|')}`);
   const to = String(raw.status);
+  if (to === 'accepted' && (!str(raw.issue_ref) || !str(raw.issue_url))) return invalid('an accepted verdict needs issue_ref and issue_url');
+  const issue = to === 'accepted' ? { issue_ref: String(raw.issue_ref), issue_url: String(raw.issue_url) } : undefined;
   const by = String(raw.decided_by);
   const decidedAt = String(raw.decided_at);
   const key = `verdict:${fp}@${decidedAt}`;
-  const base = { fp, status: to, decided_by: by, decided_at: decidedAt };
+  const base = { fp, status: to, decided_by: by, decided_at: decidedAt, ...issue };
   const seen = getState(db, key);
   if (seen !== undefined) return { ...base, outcome: 'already-applied' };
 
   const current = statusOf(db, fp);
   if (current === undefined) return { ...base, outcome: 'unknown', why: 'no local proposal with this fp' };
   if (current === to) {
+    if (issue) recordIssue(db, fp, issue);
     setState(db, key, JSON.stringify({ status: to, outcome: 'in-sync', at: store.now() }));
     return { ...base, outcome: 'in-sync' };
   }
@@ -369,10 +395,21 @@ function verdictOne(db, raw, i) {
     throw e;
   }
   db.prepare('UPDATE proposals SET decided_at = ? WHERE fp = ?').run(decidedAt, fp);
+  if (issue) recordIssue(db, fp, issue);
   const ref = String(raw.external_ref);
   const clash = link(db, fp, ref, undefined);
   setState(db, key, JSON.stringify({ status: to, outcome: 'applied', at: store.now() }));
   return /** @type {Row} */ (store.clean({ ...base, outcome: 'applied', from: current, merged_into: into, link_conflict: clash }));
+}
+
+/**
+ * Records on the proposal the Jira issue an accepted verdict created.
+ * @param {Db} db
+ * @param {string} fp
+ * @param {{issue_ref: string, issue_url: string}} issue
+ */
+function recordIssue(db, fp, issue) {
+  db.prepare('UPDATE proposals SET issue_ref = ?, issue_url = ?, updated_at = ? WHERE fp = ?').run(issue.issue_ref, issue.issue_url, store.now(), fp);
 }
 
 // ------------------------------------------------------------------------------------------------ ingest-sources
@@ -423,3 +460,77 @@ export function sourcesOf(db, runId, type) {
   return /** @type {Row[]} */ (rows).map((r) => /** @type {Row} */ (store.clean(r)));
 }
 
+
+// ------------------------------------------------------------------------------------------------ areas
+
+/**
+ * The directories a repo-relative file path lies under, at depth 1 and 2 (`src/checkout/a.js` -> `src`,
+ * `src/checkout`; a top-level file -> none).
+ * @param {string} path
+ * @returns {string[]}
+ */
+export function areasOf(path) {
+  const parts = path.split('/');
+  /** @type {string[]} */
+  const out = [];
+  if (parts.length >= 2) out.push(parts[0]);
+  if (parts.length >= 3) out.push(`${parts[0]}/${parts[1]}`);
+  return out;
+}
+
+/**
+ * Builds the `dowser_areas_push` arguments `{project_key, run_id, areas_json}`: the repo's directories at depth
+ * 1 and 2 in the tree of the run's head commit, each `{path, files, churn_90d, authors_90d?, last_change?}`,
+ * ranked by churn_90d desc, then files desc, then path, capped at `top` (at most AREAS_MAX).
+ *  - files: files under the path in the head commit's tree (`git ls-tree -r`);
+ *  - churn_90d / authors_90d: non-merge commits reachable from head_sha, committed in the CHURN_DAYS before the
+ *    head commit's own date (not the wall clock), that touched the path, and their distinct author e-mails -
+ *    from ONE `git log` pass over the repo; authors_90d is omitted when churn_90d is 0 (not measured);
+ *  - last_change: the newest commit touching the path - from that pass when it falls in the window, else one
+ *    `git log -1` per kept area with no churn; omitted when there is none.
+ * Reads git and the run row only; writes nothing (not the store, not the repo).
+ * @param {Db} db
+ * @param {{root: string, projectKey: string, runId: string, top?: number}} o
+ * @returns {{project_key: string, run_id: string, areas_json: string}}
+ */
+export function areas(db, { root, projectKey, runId, top = AREAS_TOP }) {
+  if (!Number.isInteger(top) || top < 1 || top > AREAS_MAX) throw new DowserError(`--top is an integer from 1 to ${AREAS_MAX}`, 2);
+  const run = store.getRun(db, runId);
+  if (!run) throw new DowserError(`run ${runId} does not exist`, 2);
+  const head = typeof run.head_sha === 'string' ? run.head_sha : undefined;
+  if (!head) throw new DowserError(`run ${runId} has no head commit; areas needs a repo with at least one commit`, 2, { error: 'no-head' });
+  const files = treeFiles(root, head);
+  const headAt = commitDate(root, head);
+  if (files === undefined || headAt === undefined) throw new DowserError(`git cannot read commit ${head} in ${root}`, 2, { error: 'no-head' });
+
+  /** @type {Map<string, {files: number, churn: number, authors: Set<string>, last?: string}>} */
+  const stats = new Map();
+  for (const f of files) {
+    for (const a of areasOf(f)) {
+      const st = stats.get(a) ?? { files: 0, churn: 0, authors: new Set() };
+      st.files++;
+      stats.set(a, st);
+    }
+  }
+  const since = new Date(Date.parse(headAt) - CHURN_DAYS * 86400000).toISOString();
+  for (const c of commitsSince(root, head, since) ?? []) {
+    for (const a of new Set(c.paths.flatMap(areasOf))) {
+      const st = stats.get(a);
+      if (!st) continue; // a directory that no longer exists at head
+      st.churn++;
+      st.authors.add(c.email);
+      if (st.last === undefined || c.at > st.last) st.last = c.at;
+    }
+  }
+  const ranked = [...stats.entries()]
+    .sort(([pa, a], [pb, b]) => b.churn - a.churn || b.files - a.files || (pa < pb ? -1 : pa > pb ? 1 : 0))
+    .slice(0, top);
+  const out = ranked.map(([path, st]) => store.clean({
+    path,
+    files: st.files,
+    churn_90d: st.churn,
+    authors_90d: st.churn > 0 ? st.authors.size : undefined,
+    last_change: st.last ?? lastChange(root, head, path),
+  }));
+  return { project_key: projectKey, run_id: runId, areas_json: JSON.stringify(out) };
+}

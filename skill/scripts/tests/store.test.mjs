@@ -3,9 +3,10 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { MoveRefused } from '../lib/model.mjs';
+import { DatabaseSync } from 'node:sqlite';
+import { DowserError, MoveRefused } from '../lib/model.mjs';
 import {
-  evidenceOf, move, openStore, propose, resurfaces, runFinish, runStart, statusSummary, transitionsOf,
+  DDL, USER_VERSION, evidenceOf, getProposal, move, openStore, propose, resurfaces, runFinish, runStart, statusSummary, transitionsOf,
 } from '../lib/store.mjs';
 import { KINDS, candidate, removeDir, tempDir } from './_fixture.mjs';
 
@@ -23,10 +24,56 @@ after(() => { db.close(); removeDir(dir); });
 /** @param {Record<string, unknown>} over */
 const prop = (over) => propose(db, run, candidate(over), { kinds: KINDS });
 
-test('the store opens WAL at user_version 1 and is re-openable', () => {
-  assert.equal(Number(/** @type {any} */ (db.prepare('PRAGMA user_version').get()).user_version), 1);
+test('the store opens WAL at user_version 2 and is re-openable', () => {
+  assert.equal(USER_VERSION, 2);
+  assert.equal(Number(/** @type {any} */ (db.prepare('PRAGMA user_version').get()).user_version), 2);
   assert.equal(String(/** @type {any} */ (db.prepare('PRAGMA journal_mode').get()).journal_mode).toLowerCase(), 'wal');
+  const cols = /** @type {any[]} */ (db.prepare('PRAGMA table_info(proposals)').all()).map((c) => c.name);
+  assert.ok(cols.includes('issue_ref') && cols.includes('issue_url'), 'a fresh store is created at v2');
   openStore(join(dir, 'dowser.db')).close();
+});
+
+/** The v1 schema: v2 without the issue columns (they are the only v1 -> v2 change). */
+const DDL_V1 = DDL.replace(/^\s*issue_(ref|url)\s.*\n/gm, '').replace(`PRAGMA user_version = ${USER_VERSION};`, 'PRAGMA user_version = 1;');
+
+test('a v1 store file is upgraded to v2 in place, data intact; an unknown version is refused', () => {
+  assert.ok(!DDL_V1.includes('issue_ref') && DDL_V1.includes('PRAGMA user_version = 1;'));
+  const file = join(dir, 'v1.db');
+  const raw = new DatabaseSync(file);
+  raw.exec(DDL_V1);
+  const at = '2026-10-01T00:00:00.000Z';
+  raw.prepare("INSERT INTO runs (id, started_at, head_sha, mode, status) VALUES ('r-1', ?, 'abc', 'full', 'done')").run(at);
+  raw.prepare(`INSERT INTO proposals (fp, lens, kind, topic, anchors_json, title, rationale, body, effort_json, confidence, confidence_why,
+    provenance_json, status, external_ref, external_url, decided_by, decided_at, first_run_id, last_run_id, created_at, updated_at)
+    VALUES ('aaaaaaaaaaaaaaaa', 'security-cra', 'secret', 't', '["a#b"]', 'Title', 'why', 'body', '{"size":"S"}', 'high', 'q',
+    '{"lens_version":"1.0.0"}', 'pushed', 'DOW-1', 'https://j/DOW-1', 'skill:dowser-sync', ?, 'r-1', 'r-1', ?, ?)`).run(at, at, at);
+  raw.prepare("INSERT INTO evidence (fp, run_id, type, ref, key, added_at) VALUES ('aaaaaaaaaaaaaaaa', 'r-1', 'ticket', 'SEC-1', 'SEC-1', ?)").run(at);
+  raw.prepare("INSERT INTO sync_state (key, value) VALUES ('verdicts_cursor', '7')").run();
+  assert.ok(!(/** @type {any[]} */ (raw.prepare('PRAGMA table_info(proposals)').all())).some((c) => c.name === 'issue_ref'));
+  raw.close();
+
+  const up = openStore(file);
+  try {
+    assert.equal(Number(/** @type {any} */ (up.prepare('PRAGMA user_version').get()).user_version), 2);
+    const p = getProposal(up, 'aaaaaaaaaaaaaaaa');
+    assert.equal(p?.status, 'pushed');
+    assert.equal(p?.external_ref, 'DOW-1');
+    assert.equal(p?.title, 'Title');
+    assert.deepEqual(p?.evidence, [{ type: 'ticket', ref: 'SEC-1' }]);
+    assert.equal(p?.issue_ref, undefined, 'the new columns start absent, never null');
+    assert.equal(/** @type {any} */ (up.prepare("SELECT value FROM sync_state WHERE key = 'verdicts_cursor'").get()).value, '7');
+    up.prepare("UPDATE proposals SET issue_ref = 'SHOP-1', issue_url = 'https://j/SHOP-1' WHERE fp = 'aaaaaaaaaaaaaaaa'").run();
+    assert.throws(() => up.prepare('DELETE FROM evidence').run(), /append-only/, 'the triggers survive the upgrade');
+  } finally { up.close(); }
+  const again = openStore(file);
+  assert.equal(getProposal(again, 'aaaaaaaaaaaaaaaa')?.issue_ref, 'SHOP-1', 'a v2 file reopens unchanged');
+  again.close();
+
+  const v3 = join(dir, 'v3.db');
+  const r3 = new DatabaseSync(v3);
+  r3.exec('PRAGMA user_version = 3');
+  r3.close();
+  assert.throws(() => openStore(v3), (e) => e instanceof DowserError && e.code === 3 && /user_version 3/.test(e.message));
 });
 
 test('propose: created, duplicate, evidence-grew, invalid', () => {

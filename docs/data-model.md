@@ -14,16 +14,22 @@ with no origin gets `local-` plus the first 12 hex of sha256(realpath(repo root)
 Nothing is ever written inside the scanned repo. Paths are compared by real path, and a store path inside
 the repo is refused with exit 3.
 
-The store is SQLite through `node:sqlite` (Node >= 22.13) with WAL and `PRAGMA user_version = 1`. The DDL
+The store is SQLite through `node:sqlite` (Node >= 22.13) with WAL and `PRAGMA user_version = 2`. The DDL
 runs in one `BEGIN IMMEDIATE` transaction that re-reads the version. A file with another version is
 refused.
+
+**Migration.** Version 2 (forge-mcp-2) adds `proposals.issue_ref` and `proposals.issue_url`. `openStore`
+upgrades a version 1 file in place, inside the same `BEGIN IMMEDIATE` transaction, after re-reading the
+version: `ALTER TABLE proposals ADD COLUMN issue_ref TEXT`, the same for `issue_url`, then
+`PRAGMA user_version = 2`. No row is rewritten, and both columns start NULL (absent). A new file is created
+at version 2. Any version other than 0 (new), 1 or 2 is refused with exit 3.
 
 ## Tables
 
 | table | role | keys |
 |---|---|---|
 | `runs` | one scan: `id`, `started_at`, `finished_at`, `head_sha`, `base_sha`, `mode` (`full\|incremental\|focused`), `focus`, `harness`, `model`, `status` (`running\|done\|failed`), `lenses_json` | PK `id` (`r-YYYYMMDDHHMMSS-xxxx`) |
-| `proposals` | the current card: identity (`lens`, `kind`, normalized `topic`, `anchors_json`), card text, `effort_json`, `confidence`, `confidence_why`, `doc_impact_json`, `delivery_risk_json`, `provenance_json`, `asserted_json` (the evidence keys the newest propose line carried; internal, not part of the record), triage fields (`status`, `reason`, `note`, `merged_into`, `external_ref`, `external_url`, `decided_by`, `decided_at`), `first_run_id`, `last_run_id` | PK `fp`; `external_ref` UNIQUE where not null |
+| `proposals` | the current card: identity (`lens`, `kind`, normalized `topic`, `anchors_json`), card text, `effort_json`, `confidence`, `confidence_why`, `doc_impact_json`, `delivery_risk_json`, `provenance_json`, `asserted_json` (the evidence keys the newest propose line carried; internal, not part of the record), triage fields (`status`, `reason`, `note`, `merged_into`, `external_ref`, `external_url`, `decided_by`, `decided_at`), `issue_ref`, `issue_url` (v2: the Jira issue an `accepted` verdict carried; not part of the record), `first_run_id`, `last_run_id` | PK `fp`; `external_ref` UNIQUE where not null |
 | `evidence` | **append-only**: `fp`, `run_id`, `type`, `ref`, `key`, `path`, `line` (hint), `quote`, `url`, `added_at`; one row per key, written when the key is first seen | UNIQUE (`fp`, `type`, `key`) |
 | `transitions` | **append-only**: `fp`, `from_status` (NULL on creation), `to_status`, `by`, `at`, `reason`, `note`, `run_id`, `evidence_seq` | `evidence_seq` = max evidence id of the fp at the move |
 | `rules` | offered and accepted prompt rules (`offered\|accepted\|declined`); logic in WP2 | PK `id` |
@@ -54,7 +60,11 @@ M = `emitted + truncated`.
   refused, and that line's output gets a `note`. `model`, `harness` and `focus` default from the run.
 - **Triage:** `status`, `reason?`, `note?`, `merged_into?`, `external_ref?`, `external_url?`,
   `decided_by` and `decided_at`. These are store-owned, so a propose line that carries one is
-  invalid.
+  invalid. `external_ref` is the Dowser inbox item (`DW-12`) and `external_url` links to it.
+
+`issue_ref` and `issue_url` are store columns, not record fields. `ingest-verdicts` sets them from an
+`accepted` verdict (an accepted verdict without them is `invalid`). The push never sends them, and `show`
+prints them beside `external_ref` when present.
 
 **Evidence key.** A `code` or `doc` item is identified by its path plus its whitespace-normalized quote,
 as `<path>\n<quote>`. The path has forward slashes, no leading `./`, and no `:line` or `#L12`. The line is
@@ -152,6 +162,28 @@ working tree.
 - If all quotes are found, the item becomes `verified`.
 - If any quote is missing, the item becomes `dropped` with note `verify-failed:<ref>`.
 - Other evidence types are reported as `unchecked`. The agent judges them.
+
+## Areas (`areas --run <id> [--top 40]`)
+
+`areas` prints the `dowser_areas_push` arguments `{project_key, run_id, areas_json}`. It reads git and the
+run row only, and writes nothing: not the store and not the repo.
+
+- **Areas** are the directories at depth 1 and 2 (`src`, `src/checkout`) in the tree of the run's
+  `head_sha`. A top-level file belongs to no area.
+- **`files`** is the number of files under the path in that tree (`git ls-tree -r <head_sha>`), so it is
+  always at least 1.
+- **`churn_90d`** is the number of non-merge commits reachable from `head_sha` that touched the path, with
+  a committer date in the 90 days before the head commit's own date (not the wall clock).
+- **`authors_90d`** is the number of distinct author e-mails (case-insensitive) in those commits. It is
+  omitted when `churn_90d` is 0, because nothing was measured.
+- **`last_change`** is the committer date of the newest commit that touched the path. It is omitted when
+  there is none.
+
+One `git log <head_sha> --since=<head date - 90d> --name-only` pass over the whole repo gives churn,
+authors and in-window `last_change` for every area. Only a kept area with no churn costs one more
+`git log -1 <head_sha> -- <path>`, for its `last_change`. Areas are ranked by `churn_90d` (descending), then
+`files` (descending), then path, and capped at `--top` (default 40, at most 200). A run without a head commit
+is refused with exit 2 (`no-head`).
 
 ## Exit codes (every script)
 

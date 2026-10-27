@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 // @ts-check
-// mock-forge-mcp - a zero-dependency stdio MCP server that stands in for Dowser's Forge app (rovo:mcp) until it
-// exists, so the skill and its scripts are testable end to end. It implements the five tools of
-// docs/contracts/forge-mcp-2.md over an in-memory backend, plus one test-only tool, `mock_decide`, that simulates
-// a person's verdict in Jira.
+// mock-forge-mcp - a zero-dependency stdio MCP server that stands in for Dowser's Forge app (rovo:mcp), so the
+// skill and its scripts are testable end to end without a Jira site. It implements the six tools of
+// docs/contracts/forge-mcp-2.md over an in-memory backend, plus two test-only tools: `mock_decide` simulates a
+// person's verdict in the inbox, and `mock_inbox` reads an inbox item back (its status and whether it reopened).
+//
+// forge-mcp-2 semantics mirrored here: tool inputs are scalar (array inputs arrive as `*_json` strings, as a
+// rovo:mcp tool requires); a push files the proposal as an inbox item `DW-<n>` (`external_ref`) and creates no
+// Jira issue; an `accepted` decision fabricates the Jira issue (`issue_ref` MOCK-<n>, `issue_url`) and the
+// verdict carries it. A re-push unites evidence by evidence key (skill/scripts/lib/fingerprint.mjs evidenceKey)
+// and reopens a snoozed item on any new key, a rejected one under the store's resurfacing rule
+// (skill/scripts/lib/model.mjs resurfaces); an accepted or merged item only gains evidence.
 //
 // Framing copied from bp's apps/mcp/bp-mcp.mjs: JSON-RPC 2.0 over newline-delimited stdin/stdout, Node builtins
 // only (no SDK); stdout carries protocol only, logs go to stderr. Methods: initialize (echoes the client's
@@ -15,7 +22,7 @@
 //              (source items in the contract's item shapes; `space` on a page and `status` on a goal are matched
 //              by the tools' filters). Read once at start when there is no state file yet.
 //     --state  JSON file the whole backend is loaded from (if it exists) and saved to after every tool call, so
-//              a second process sees the first one's issues and verdicts.
+//              a second process sees the first one's items and verdicts.
 //
 // Exit codes: 0 stdin closed, 2 bad arguments, 3 a seed/state file is unreadable.
 import { createInterface } from 'node:readline';
@@ -23,24 +30,38 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { evidenceKey } from '../skill/scripts/lib/fingerprint.mjs';
+import { resurfaces } from '../skill/scripts/lib/model.mjs';
 
 /**
  * @typedef {Record<string, any>} Obj
  * @typedef {{ref: string, title: string, url: string, body: string, created_at?: string, updated_at?: string, labels?: string[], status?: string, space?: string}} SourceItem
- * @typedef {{fp: string, external_ref: string, external_url: string, record: Obj, pushes: number, run_ids: string[], status: string}} Issue
- * @typedef {{seq: number, fp: string, status: string, reason?: string, note?: string, merged_into?: string, decided_by: string, decided_at: string, external_ref: string}} Verdict
+ * @typedef {{type: string, key: string}} EvidenceId
+ * @typedef {{refs: number, types: string[]}} Snapshot
+ * @typedef {{fp: string, external_ref: string, external_url: string, record: Obj, evidence: EvidenceId[], pushes: number,
+ *   run_ids: string[], status: string, reopened?: boolean, decided_snapshot?: Snapshot, issue_ref?: string, issue_url?: string,
+ *   repo_url?: string, head_sha?: string}} Item
+ * @typedef {{seq: number, fp: string, status: string, reason?: string, note?: string, merged_into?: string, decided_by: string,
+ *   decided_at: string, external_ref: string, issue_ref?: string, issue_url?: string}} Verdict
+ * @typedef {{path: string, files: number, churn_90d: number, authors_90d?: number, last_change?: string}} Area
+ * @typedef {{items: Record<string, Item>, verdicts: Verdict[], areas: Area[], areas_run_id?: string}} Project
  * @typedef {{
  *   tickets: SourceItem[], pages: SourceItem[], goals: SourceItem[], merge_existing: Record<string, string>,
- *   projects: Record<string, {issues: Record<string, Issue>, verdicts: Verdict[]}>, next_issue: number, next_seq: number
+ *   projects: Record<string, Project>, next_item: number, next_issue: number, next_seq: number
  * }} Backend
  */
 
-const SERVER = { name: 'dowser-forge-mock', version: '1' };
-const BASE_URL = 'https://mock-forge.example/browse/';
+const SERVER = { name: 'dowser-forge-mock', version: '2' };
+const INBOX_URL = 'https://mock-forge.example/jira/apps/dowser/inbox/';
+const JIRA_URL = 'https://mock-forge.example/browse/';
+/** forge-mcp-2 caps: records per push, areas per areas push, parsed size of a `*_json` input. */
+const PUSH_MAX = 50;
+const AREAS_MAX = 200;
+const JSON_MAX = 4 * 1024 * 1024;
 const log = (/** @type {unknown[]} */ ...a) => console.error('[mock-forge]', ...a);
 
 /** @returns {Backend} */
-export const emptyBackend = () => ({ tickets: [], pages: [], goals: [], merge_existing: {}, projects: {}, next_issue: 1, next_seq: 1 });
+export const emptyBackend = () => ({ tickets: [], pages: [], goals: [], merge_existing: {}, projects: {}, next_item: 1, next_issue: 1, next_seq: 1 });
 
 /**
  * @param {Obj} seed
@@ -53,6 +74,7 @@ export function seeded(seed) {
   return b;
 }
 
+// Input schemas are scalar only (string / integer), as a Forge rovo:mcp tool requires.
 const S = { type: 'string' };
 const I = { type: 'integer', minimum: 1 };
 /** Tool definitions (input schemas match docs/contracts/forge-mcp-2.md). */
@@ -63,12 +85,16 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { query: S, space: S }, required: ['query'], additionalProperties: false } },
   { name: 'dowser_sources_goals', description: 'List the team goals (TWG). Returns {items:[{ref,title,url,body,status?}]}.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
-  { name: 'dowser_proposals_push', description: 'Push dowser-proposal/1 records into the inbox; idempotent on (project_key, fp).',
-    inputSchema: { type: 'object', properties: { project_key: S, run_id: S, proposals: { type: 'array', items: { type: 'object' } } }, required: ['project_key', 'run_id', 'proposals'], additionalProperties: false } },
-  { name: 'dowser_verdicts_pull', description: 'Verdicts decided in Jira since the cursor. Returns {verdicts:[...], cursor}.',
+  { name: 'dowser_proposals_push', description: 'File dowser-proposal/1 records (proposals_json, a JSON array of at most 50) in the Dowser inbox; idempotent on (project_key, fp). Returns {results:[{fp,result,external_ref?,external_url?,why?}]}.',
+    inputSchema: { type: 'object', properties: { project_key: S, run_id: S, proposals_json: S, repo_url: S, head_sha: S }, required: ['project_key', 'run_id', 'proposals_json'], additionalProperties: false } },
+  { name: 'dowser_verdicts_pull', description: 'Verdicts decided in the inbox since the cursor. Returns {verdicts:[...], cursor}.',
     inputSchema: { type: 'object', properties: { project_key: S, cursor: S }, required: ['project_key'], additionalProperties: false } },
-  { name: 'mock_decide', description: 'TEST ONLY: simulate a Jira verdict on a pushed fp.',
-    inputSchema: { type: 'object', properties: { fp: S, status: { enum: ['accepted', 'rejected', 'merged', 'snoozed'] }, reason: S, note: S, merged_into: S, decided_by: S, project_key: S }, required: ['fp', 'status'], additionalProperties: false } },
+  { name: 'dowser_areas_push', description: 'Replace the project\'s area stats (areas_json, a JSON array of at most 200 {path,files,churn_90d,authors_90d?,last_change?}). Returns {stored}.',
+    inputSchema: { type: 'object', properties: { project_key: S, run_id: S, areas_json: S }, required: ['project_key', 'run_id', 'areas_json'], additionalProperties: false } },
+  { name: 'mock_decide', description: 'TEST ONLY: simulate a person\'s verdict in the inbox on a pushed fp (status accepted|rejected|merged|snoozed).',
+    inputSchema: { type: 'object', properties: { fp: S, status: S, reason: S, note: S, merged_into: S, decided_by: S, project_key: S }, required: ['fp', 'status'], additionalProperties: false } },
+  { name: 'mock_inbox', description: 'TEST ONLY: read one inbox item back. Returns {item:{fp,external_ref,status,reopened?,evidence,pushes,issue_ref?,issue_url?}}.',
+    inputSchema: { type: 'object', properties: { fp: S, project_key: S }, required: ['fp'], additionalProperties: false } },
 ];
 
 /** A tool-level error (becomes `isError: true`). */
@@ -79,6 +105,8 @@ class ToolError extends Error {
 
 /** @param {unknown} v */
 const str = (v) => typeof v === 'string' && v.trim().length > 0;
+/** @param {unknown} v @returns {v is Obj} */
+const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 /** @param {Obj} o @returns {Obj} */
 const omitAbsent = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== null));
 
@@ -98,8 +126,82 @@ const matches = (it, ts) => ts.length === 0 || ts.some((t) => `${it.title}\n${it
 /**
  * @param {Backend} b
  * @param {string} key
+ * @returns {Project}
  */
-const project = (b, key) => (b.projects[key] ??= { issues: {}, verdicts: [] });
+const project = (b, key) => {
+  const p = (b.projects[key] ??= { items: {}, verdicts: [], areas: [] });
+  p.items ??= {};
+  p.areas ??= [];
+  return p;
+};
+
+/**
+ * Parses a `*_json` string input into an array, or throws `bad-input`.
+ * @param {unknown} v
+ * @param {string} name
+ * @param {number} max
+ * @returns {unknown[]}
+ */
+function jsonArray(v, name, max) {
+  if (typeof v !== 'string') throw new ToolError('bad-input', `${name} is a string holding a JSON array`);
+  if (Buffer.byteLength(v, 'utf8') > JSON_MAX) throw new ToolError('bad-input', `${name} is larger than 4 MB`);
+  /** @type {unknown} */
+  let doc;
+  try { doc = JSON.parse(v); } catch (e) { throw new ToolError('bad-input', `${name} does not parse as JSON (${/** @type {Error} */ (e).message})`); }
+  if (!Array.isArray(doc)) throw new ToolError('bad-input', `${name} must hold a JSON array`);
+  if (doc.length > max) throw new ToolError('bad-input', `${name} holds ${doc.length} items; at most ${max}`);
+  return doc;
+}
+
+/**
+ * The evidence snapshot of an item: distinct evidence keys and the sorted evidence types.
+ * @param {EvidenceId[]} ev
+ * @returns {Snapshot}
+ */
+const snapshot = (ev) => ({ refs: ev.length, types: [...new Set(ev.map((e) => e.type))].sort() });
+
+/**
+ * Unites `record.evidence` into the item's evidence by evidence key. Returns the number of new keys.
+ * @param {Item} item
+ * @param {Obj} record
+ * @returns {number}
+ */
+function uniteEvidence(item, record) {
+  let added = 0;
+  for (const e of /** @type {Obj[]} */ (record.evidence)) {
+    if (!isObj(e) || !str(e.type) || !str(e.ref)) continue;
+    const key = evidenceKey(/** @type {{type: string, ref: string, quote?: string}} */ (e)).key;
+    if (item.evidence.some((x) => x.type === e.type && x.key === key)) continue;
+    item.evidence.push({ type: e.type, key });
+    added++;
+  }
+  return added;
+}
+
+/**
+ * Validates one `areas_json` element per the contract table, or throws `bad-input`.
+ * @param {unknown} raw
+ * @param {number} i
+ * @returns {Area}
+ */
+function checkArea(raw, i) {
+  const at = `areas_json[${i}]`;
+  if (!isObj(raw)) throw new ToolError('bad-input', `${at} is an object`);
+  const extra = Object.keys(raw).find((k) => !['path', 'files', 'churn_90d', 'authors_90d', 'last_change'].includes(k));
+  if (extra) throw new ToolError('bad-input', `${at}: unknown field ${extra}`);
+  const { path, files, churn_90d: churn, authors_90d: authors, last_change: last } = raw;
+  if (typeof path !== 'string' || !/^[^/\\]+(\/[^/\\]+)?$/.test(path) || path === '.' || path === '..' || /(^|\/)\.\.?$/.test(path)) {
+    throw new ToolError('bad-input', `${at}.path is a repo-relative directory at most two levels deep, forward slashes, no trailing slash`);
+  }
+  if (!Number.isInteger(files) || files < 1) throw new ToolError('bad-input', `${at}.files is an integer >= 1`);
+  if (!Number.isInteger(churn) || churn < 0) throw new ToolError('bad-input', `${at}.churn_90d is an integer >= 0`);
+  if (authors !== undefined) {
+    if (churn === 0) throw new ToolError('bad-input', `${at}.authors_90d is omitted when churn_90d is 0`);
+    if (!Number.isInteger(authors) || authors < 1) throw new ToolError('bad-input', `${at}.authors_90d is an integer >= 1`);
+  }
+  if (last !== undefined && (typeof last !== 'string' || Number.isNaN(Date.parse(last)))) throw new ToolError('bad-input', `${at}.last_change is an ISO timestamp`);
+  return /** @type {Area} */ (omitAbsent({ path, files, churn_90d: churn, authors_90d: authors, last_change: last }));
+}
 
 /**
  * Runs one tool against the backend. Throws ToolError for a bad call.
@@ -133,57 +235,106 @@ export function callTool(b, name, args) {
     case 'dowser_proposals_push': {
       if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
       if (!str(args.run_id)) throw new ToolError('bad-input', 'run_id is required');
-      if (!Array.isArray(args.proposals)) throw new ToolError('bad-input', 'proposals is an array');
+      for (const k of ['repo_url', 'head_sha']) if (args[k] !== undefined && !str(args[k])) throw new ToolError('bad-input', `${k} is a non-empty string (omit it when absent)`);
+      const records = jsonArray(args.proposals_json, 'proposals_json', PUSH_MAX);
       const p = project(b, args.project_key);
-      const results = args.proposals.map((/** @type {unknown} */ raw) => {
-        const r = /** @type {Obj} */ (raw && typeof raw === 'object' ? raw : {});
+      const results = records.map((raw) => {
+        const r = isObj(raw) ? raw : {};
         if (!str(r.fp)) return { fp: '', result: 'refused', why: 'missing fp' };
         if (!str(r.title) || !Array.isArray(r.evidence) || r.evidence.length === 0) return { fp: r.fp, result: 'refused', why: 'not a dowser-proposal/1 record (title and evidence are required)' };
-        const existing = p.issues[r.fp];
+        if (r.status !== 'verified' && r.status !== 'pushed') return { fp: r.fp, result: 'refused', why: `only verified or pushed records are filed, not ${String(r.status)}` };
+        const existing = p.items[r.fp];
         if (existing) {
           existing.record = r;
           existing.pushes++;
           if (!existing.run_ids.includes(args.run_id)) existing.run_ids.push(args.run_id);
+          if (str(args.repo_url)) existing.repo_url = args.repo_url;
+          if (str(args.head_sha)) existing.head_sha = args.head_sha;
+          const before = snapshot(existing.evidence);
+          const grew = uniteEvidence(existing, r) > 0;
+          // reopen on growth: snoozed on any new key; rejected only under the store's resurfacing rule
+          if (grew && existing.status === 'snoozed') { existing.status = 'open'; existing.reopened = true; }
+          if (grew && existing.status === 'rejected' && resurfaces('rejected', existing.decided_snapshot ?? before, snapshot(existing.evidence)).resurface) {
+            existing.status = 'open';
+            existing.reopened = true;
+          }
           return { fp: r.fp, result: 'updated', external_ref: existing.external_ref, external_url: existing.external_url };
         }
         const into = b.merge_existing[r.fp];
-        if (into) return { fp: r.fp, result: 'merged-existing', external_ref: into, external_url: BASE_URL + into };
-        const ref = `DOW-${b.next_issue++}`;
-        p.issues[r.fp] = { fp: r.fp, external_ref: ref, external_url: BASE_URL + ref, record: r, pushes: 1, run_ids: [args.run_id], status: 'open' };
-        return { fp: r.fp, result: 'created', external_ref: ref, external_url: BASE_URL + ref };
+        if (into) return { fp: r.fp, result: 'merged-existing', external_ref: into, external_url: INBOX_URL + into };
+        const ref = `DW-${b.next_item++}`;
+        /** @type {Item} */
+        const item = /** @type {Item} */ (omitAbsent({
+          fp: r.fp, external_ref: ref, external_url: INBOX_URL + ref, record: r, evidence: [], pushes: 1, run_ids: [args.run_id],
+          status: 'open', repo_url: str(args.repo_url) ? args.repo_url : undefined, head_sha: str(args.head_sha) ? args.head_sha : undefined,
+        }));
+        uniteEvidence(item, r);
+        p.items[r.fp] = item;
+        return { fp: r.fp, result: 'created', external_ref: ref, external_url: INBOX_URL + ref };
       });
       return { results };
     }
     case 'dowser_verdicts_pull': {
       if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
-      if (args.cursor !== undefined && !/^\d+$/.test(String(args.cursor))) throw new ToolError('bad-cursor', `cursor ${JSON.stringify(args.cursor)} was not issued by this server`);
-      const after = args.cursor === undefined ? 0 : Number(args.cursor);
       const p = project(b, args.project_key);
+      const max = p.verdicts.length ? p.verdicts[p.verdicts.length - 1].seq : 0;
+      if (args.cursor !== undefined && (!/^\d+$/.test(String(args.cursor)) || Number(args.cursor) > max)) {
+        throw new ToolError('bad-cursor', `cursor ${JSON.stringify(args.cursor)} was not issued by this server`);
+      }
+      const after = args.cursor === undefined ? 0 : Number(args.cursor);
       const page = p.verdicts.filter((v) => v.seq > after);
       const last = page.length ? page[page.length - 1].seq : after;
       return { verdicts: page.map(({ seq, ...v }) => omitAbsent(v)), cursor: String(last) };
+    }
+    case 'dowser_areas_push': {
+      if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
+      if (!str(args.run_id)) throw new ToolError('bad-input', 'run_id is required');
+      const list = jsonArray(args.areas_json, 'areas_json', AREAS_MAX).map(checkArea);
+      const paths = new Set(list.map((a) => a.path));
+      if (paths.size !== list.length) throw new ToolError('bad-input', 'areas_json lists a path twice');
+      const p = project(b, args.project_key);
+      p.areas = list; // the set replaces the previous one whole
+      p.areas_run_id = args.run_id;
+      return { stored: list.length };
     }
     case 'mock_decide': {
       if (!str(args.fp)) throw new ToolError('bad-input', 'fp is required');
       if (!['accepted', 'rejected', 'merged', 'snoozed'].includes(args.status)) throw new ToolError('bad-input', 'status is accepted|rejected|merged|snoozed');
       const keys = str(args.project_key) ? [String(args.project_key)] : Object.keys(b.projects);
-      const key = keys.find((k) => b.projects[k]?.issues[args.fp]);
-      if (!key) throw new ToolError('not-found', `no pushed issue for fp ${args.fp}`);
+      const key = keys.find((k) => b.projects[k]?.items?.[args.fp]);
+      if (!key) throw new ToolError('bad-input', `no inbox item for fp ${args.fp}`);
       const p = b.projects[key];
-      const issue = p.issues[args.fp];
-      issue.status = args.status;
+      const item = p.items[args.fp];
+      item.status = args.status;
+      delete item.reopened;
+      if (args.status === 'rejected') item.decided_snapshot = snapshot(item.evidence);
+      if (args.status === 'accepted') {
+        // an accept creates the Jira issue first; the verdict carries it
+        const issue = `MOCK-${b.next_issue++}`;
+        item.issue_ref = issue;
+        item.issue_url = JIRA_URL + issue;
+      }
       const decidedAt = new Date(Date.now() + p.verdicts.length).toISOString();
       /** @type {Verdict} */
       const v = /** @type {Verdict} */ (omitAbsent({
         seq: b.next_seq++, fp: args.fp, status: args.status, reason: args.reason, note: args.note, merged_into: args.merged_into,
-        decided_by: str(args.decided_by) ? args.decided_by : 'forge:mock-user', decided_at: decidedAt, external_ref: issue.external_ref,
+        decided_by: str(args.decided_by) ? args.decided_by : 'forge:mock-user', decided_at: decidedAt, external_ref: item.external_ref,
+        issue_ref: args.status === 'accepted' ? item.issue_ref : undefined, issue_url: args.status === 'accepted' ? item.issue_url : undefined,
       }));
       p.verdicts.push(v);
       const { seq, ...out } = v;
       return { verdict: out };
     }
+    case 'mock_inbox': {
+      if (!str(args.fp)) throw new ToolError('bad-input', 'fp is required');
+      const keys = str(args.project_key) ? [String(args.project_key)] : Object.keys(b.projects);
+      const key = keys.find((k) => b.projects[k]?.items?.[args.fp]);
+      if (!key) throw new ToolError('bad-input', `no inbox item for fp ${args.fp}`);
+      const it = b.projects[key].items[args.fp];
+      return { item: omitAbsent({ fp: it.fp, external_ref: it.external_ref, status: it.status, reopened: it.reopened, evidence: it.evidence.length, pushes: it.pushes, issue_ref: it.issue_ref, issue_url: it.issue_url }) };
+    }
     default:
-      throw new ToolError('unknown-tool', `no tool ${name}`);
+      throw new ToolError('bad-input', `no tool ${name}`);
   }
 }
 

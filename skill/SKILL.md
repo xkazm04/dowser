@@ -78,7 +78,8 @@ its environment halfway through.
    `dowser_sources_tickets`, `dowser_sources_pages`, `dowser_sources_goals`,
    `dowser_proposals_push` and `dowser_verdicts_pull`. Harnesses add a server prefix, so match on
    the ending.
-   - All five are present: **connected**.
+   - All five are present: **connected**. A sixth tool ending in `dowser_areas_push` is optional:
+     when it is missing, skip only the areas step (section 8).
    - Any is missing: **unconnected**. Tell the runner, before scanning, which lenses will be
      partial and why. Opportunity runs on code and docs only, at low confidence. Doc drift checks
      in-repo docs only. UX friction runs without user reports. Proposals stay local and are not
@@ -93,6 +94,8 @@ Memory must reflect Jira before the scan, so a rejection made in Jira suppresses
 2. Save the tool response verbatim to `<work>/verdicts.json`.
 3. Run `ingest-verdicts --file <work>/verdicts.json`. Exit 1 means some verdicts could not be
    applied (an unknown fingerprint, or a conflict). List them in the summary. Never force them.
+   An accepted verdict carries the Jira issue the person created (`issue_ref`, `issue_url`). Show
+   that issue key and link next to the card in the summary.
 
 When the pull tool errors, say "could not read decisions from Jira" and go on unconnected for
 the push step too. A half-synced memory must not push.
@@ -216,16 +219,25 @@ or from "looks good".
 
 ## 8. Push (connected only)
 
-1. Run `outbox --run <run_id>`. It returns `{project_key, run_id, proposals}`: verified,
-   un-rejected items that were not pushed yet, plus pushed items whose evidence grew.
-2. If `proposals` is empty, skip to step 9.
-3. Call `dowser_proposals_push` with that object exactly as printed, and do not edit it. Save
-   the response verbatim to `<work>/push.json`.
+1. Run `outbox --run <run_id>`. It prints the tool arguments
+   `{project_key, run_id, proposals_json, repo_url?, head_sha?, more?}`. `proposals_json` holds
+   the verified, un-rejected items that were not pushed yet, plus pushed items whose evidence
+   grew, at most 50 per call.
+2. If `proposals_json` is `"[]"`, skip to step 6.
+3. Call `dowser_proposals_push` with every field except `more`, exactly as printed. Do not edit
+   them. Save the response verbatim to `<work>/push.json`.
 4. Run `ingest-push --file <work>/push.json`. Exit 1 means some were refused. List each refused
    item with its `why`. They stay local and go out on the next push.
+5. If the outbox printed `"more": true`, go back to step 1. Stop when `more` is absent.
+6. **Areas** (skip when `dowser_areas_push` is missing). Run `areas --run <run_id>`, call
+   `dowser_areas_push` with its output exactly as printed, and check the response is `{stored}`.
+   There is no ingest step. This feeds the inbox's map of where the code changes most. If it
+   errors, say so in one line and go on. Guided mode: "Dowser also sent a summary of which parts
+   of the project change most often."
 
 When the push tool errors, say so in plain words. Items stay `verified` locally and go out on
-the next connected run. Never retry in a loop.
+the next connected run. Never retry in a loop. A push puts items in the Dowser inbox in Jira; the
+Jira issue appears only when a person accepts the item there.
 
 ## 9. Finish and summarize
 
@@ -240,7 +252,8 @@ the next connected run. Never retry in a loop.
      `focused on <goal/area> - partial`);
    - per lens: state, verified count, and "top N of M" when truncation happened;
    - skipped and partial lenses, each with its reason;
-   - triage outcome: kept, rejected, snoozed, merged; pushed, with links when connected;
+   - triage outcome: kept, rejected, snoozed, merged; pushed, with inbox links when connected;
+     accepted items with their Jira issue key and link;
    - unapplied verdicts and refused pushes, if any.
 3. **No proposals is not "all clear".** Say what ran, against what, and what was skipped or
    partial, for example: "No proposals. Opportunity ran on code and docs only (not connected),

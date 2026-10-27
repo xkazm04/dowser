@@ -21,7 +21,7 @@ import {
 } from './model.mjs';
 import { evidenceKey, fingerprint, normalizeAnchor, normalizeTopic } from './fingerprint.mjs';
 
-export const USER_VERSION = 1;
+export const USER_VERSION = 2;
 /** The decider the store itself writes for machine moves (creation, resurfacing). */
 export const SYSTEM_DECIDER = 'skill:dowser';
 
@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS proposals (
   merged_into         TEXT REFERENCES proposals (fp),
   external_ref        TEXT,
   external_url        TEXT,
+  issue_ref           TEXT, -- v2: the Jira issue an accepted verdict created (forge-mcp-2), else NULL
+  issue_url           TEXT, -- v2: a link to that issue
   decided_by          TEXT,
   decided_at          TEXT,
   first_run_id        TEXT NOT NULL REFERENCES runs (id),
@@ -143,6 +145,19 @@ CREATE TABLE IF NOT EXISTS sync_state (
 `;
 
 /**
+ * In-place upgrades, keyed by the version they start from. Each runs inside openStore's BEGIN IMMEDIATE after
+ * user_version was re-read, and ends by setting the next version. Columns are only ever added (no rewrite).
+ * @type {Record<number, string>}
+ */
+export const MIGRATIONS = {
+  1: `
+ALTER TABLE proposals ADD COLUMN issue_ref TEXT;
+ALTER TABLE proposals ADD COLUMN issue_url TEXT;
+PRAGMA user_version = 2;
+`,
+};
+
+/**
  * @typedef {import('node:sqlite').DatabaseSync} Db
  * @typedef {Record<string, any>} Row
  * @typedef {import('./model.mjs').Candidate} Candidate
@@ -179,7 +194,8 @@ const json = (v) => (v === undefined ? null : JSON.stringify(v));
 
 /**
  * Opens (and on first use creates) the store at `path`: WAL, busy timeout, the DDL in one BEGIN IMMEDIATE
- * transaction that re-reads user_version. A file with an unknown version is refused. Any failure is a
+ * transaction that re-reads user_version. An older known version (v1) is upgraded in place inside that same
+ * transaction (MIGRATIONS); a file with any other version is refused. Any failure is a
  * DowserError with exit 3 (store unavailable).
  * @param {string} path
  * @returns {Db}
@@ -198,10 +214,14 @@ export function openStore(path) {
       }
     }
     db.exec('PRAGMA foreign_keys = ON');
-    if (version(db) === 0) {
+    const before = version(db);
+    if (before === 0 || (before < USER_VERSION && MIGRATIONS[before] !== undefined)) {
       db.exec('BEGIN IMMEDIATE');
       try {
-        if (version(db) === 0) db.exec(DDL);
+        // re-read under the write lock: another process may have created or upgraded the file meanwhile
+        let v = version(db);
+        if (v === 0) db.exec(DDL);
+        while ((v = version(db)) < USER_VERSION && MIGRATIONS[v] !== undefined) db.exec(MIGRATIONS[v]);
         db.exec('COMMIT');
       } catch (e) { db.exec('ROLLBACK'); throw e; }
     }

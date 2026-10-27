@@ -37,46 +37,74 @@ function verified(topic, over = {}) {
 /** @param {string} fp */
 const statusOf = (fp) => getProposal(db, fp)?.status;
 /** @param {string} fp */
-const inOutbox = (fp) => outbox(db, { projectKey: PK, runId: run }).proposals.some((p) => p.fp === fp);
+const inOutbox = (fp) => records(outbox(db, { projectKey: PK, runId: run })).some((p) => p.fp === fp);
+/** @param {{proposals_json: string}} ob @returns {Record<string, any>[]} */
+const records = (ob) => JSON.parse(ob.proposals_json);
 
-test('outbox: full dowser-proposal/1 records of verified items, nothing store-internal', () => {
+test('outbox: the forge-mcp-2 push arguments - full dowser-proposal/1 records as proposals_json, nothing store-internal', () => {
   const fp = verified('outbox shape', { evidence: [{ type: 'code', ref: 'src/auth.js:2', quote: 'return check(user.password);' }, { type: 'ticket', ref: 'SEC-9', url: 'https://j/SEC-9' }] });
   const cand = propose(db, run, candidate({ topic: 'still a candidate' }), { kinds: KINDS }).fp;
-  const ob = outbox(db, { projectKey: PK, runId: run });
+  const ob = outbox(db, { projectKey: PK, runId: run, repoUrl: 'https://github.com/acme/shop' });
+  assert.deepEqual(Object.keys(ob), ['project_key', 'run_id', 'proposals_json', 'repo_url'], 'no head_sha: the run has none; no more: under the cap');
   assert.equal(ob.project_key, PK);
   assert.equal(ob.run_id, run);
-  const rec = ob.proposals.find((p) => p.fp === fp);
+  assert.equal(typeof ob.proposals_json, 'string');
+  assert.equal(ob.repo_url, 'https://github.com/acme/shop');
+  const rec = records(ob).find((p) => p.fp === fp);
   assert.ok(rec);
   assert.ok(Object.keys(rec).every((k) => /** @type {readonly string[]} */ (RECORD_KEYS).includes(k)), Object.keys(rec).join(','));
   assert.equal(rec.status, 'verified');
   assert.deepEqual(rec.evidence.map((/** @type {any} */ e) => e.type), ['code', 'ticket']);
   assert.equal(rec.evidence[1].url, 'https://j/SEC-9');
   assert.ok(!JSON.stringify(rec).includes('null'));
-  assert.ok(!ob.proposals.some((p) => p.fp === cand), 'a candidate is not pushed');
+  assert.ok(!records(ob).some((p) => p.fp === cand), 'a candidate is not pushed');
   assert.throws(() => outbox(db, { projectKey: PK, runId: 'r-nope' }), /does not exist/);
+});
+
+test('outbox: at most `limit` records per call, `more: true` while more are pending; outbox:last holds only what was sent', () => {
+  const dir2 = tempDir('sync-cap');
+  const db2 = openStore(join(dir2, 'dowser.db'));
+  try {
+    const run2 = runStart(db2, { mode: 'full', headSha: 'abc123' }).id;
+    const fps = ['cap a', 'cap b', 'cap c'].map((topic) => {
+      const fp = /** @type {string} */ (propose(db2, run2, candidate({ topic }), { kinds: KINDS }).fp);
+      move(db2, fp, 'verified', { from: 'candidate', by: 'skill:dowser-verify' });
+      return fp;
+    });
+    const first = outbox(db2, { projectKey: PK, runId: run2, limit: 2 });
+    assert.equal(first.more, true);
+    assert.equal(first.head_sha, 'abc123', "head_sha is the run's");
+    const sent = records(first).map((p) => p.fp);
+    assert.equal(sent.length, 2);
+    assert.deepEqual(Object.keys(JSON.parse(getState(db2, 'outbox:last') ?? '{}').seqs).sort(), [...sent].sort());
+    ingestPush(db2, { results: sent.map((fp, i) => ({ fp, result: 'created', external_ref: `DW-${i + 1}` })) });
+    const second = outbox(db2, { projectKey: PK, runId: run2, limit: 2 });
+    assert.equal(second.more, undefined);
+    assert.deepEqual(records(second).map((p) => p.fp), fps.filter((fp) => !sent.includes(fp)));
+  } finally { db2.close(); removeDir(dir2); }
 });
 
 test('ingest-push: created -> pushed with external_ref; re-push updated; evidence growth re-enters the outbox', () => {
   const fp = verified('push lifecycle');
   assert.ok(inOutbox(fp));
-  const r = ingestPush(db, { results: [{ fp, result: 'created', external_ref: 'DOW-1', external_url: 'https://j/DOW-1' }] });
+  const r = ingestPush(db, { results: [{ fp, result: 'created', external_ref: 'DW-1', external_url: 'https://j/DW-1' }] });
   assert.equal(r.code, 0);
   assert.equal(r.out.results[0].outcome, 'pushed');
   const p = getProposal(db, fp);
   assert.equal(p?.status, 'pushed');
-  assert.equal(p?.external_ref, 'DOW-1');
+  assert.equal(p?.external_ref, 'DW-1');
   assert.equal(p?.decided_by, 'skill:dowser-sync');
   assert.ok(!inOutbox(fp), 'a pushed item with no new evidence is not re-sent');
 
   // same response again: still pushed, no new transition
   const n = transitionsOf(db, fp).length;
-  assert.equal(ingestPush(db, { results: [{ fp, result: 'created', external_ref: 'DOW-1' }] }).out.results[0].outcome, 'updated');
+  assert.equal(ingestPush(db, { results: [{ fp, result: 'created', external_ref: 'DW-1' }] }).out.results[0].outcome, 'updated');
   assert.equal(transitionsOf(db, fp).length, n);
 
   // new evidence on a pushed item -> back in the outbox, and an `updated` result keeps it pushed
   assert.equal(propose(db, run, candidate({ topic: 'push lifecycle', evidence: [{ type: 'ticket', ref: 'SEC-77' }] }), { kinds: KINDS }).result, 'evidence-grew');
   assert.ok(inOutbox(fp));
-  assert.equal(ingestPush(db, { results: [{ fp, result: 'updated', external_ref: 'DOW-1' }] }).out.results[0].outcome, 'updated');
+  assert.equal(ingestPush(db, { results: [{ fp, result: 'updated', external_ref: 'DW-1' }] }).out.results[0].outcome, 'updated');
   assert.equal(statusOf(fp), 'pushed');
   assert.ok(!inOutbox(fp));
 });
@@ -90,11 +118,11 @@ test('ingest-push: refused, unknown, invalid and conflicts are reported (exit 1)
   const r = ingestPush(db, {
     results: [
       { fp: a, result: 'refused', why: 'quota' },
-      { fp: '0000000000000000', result: 'created', external_ref: 'DOW-404' },
+      { fp: '0000000000000000', result: 'created', external_ref: 'DW-404' },
       { fp: a, result: 'created' },
       { fp: a, result: 'bogus' },
-      { fp: b, result: 'created', external_ref: 'DOW-2' },
-      { fp: c, result: 'created', external_ref: 'DOW-1' },
+      { fp: b, result: 'created', external_ref: 'DW-2' },
+      { fp: c, result: 'created', external_ref: 'DW-1' },
     ],
   });
   assert.equal(r.code, 1);
@@ -107,13 +135,13 @@ test('ingest-push: refused, unknown, invalid and conflicts are reported (exit 1)
   assert.equal(getProposal(db, b)?.external_ref, undefined);
 });
 
-test('ingest-push: merged-existing merges into the local owner of the Jira key, else links to it', () => {
+test('ingest-push: merged-existing merges into the local owner of the inbox ref, else links to it', () => {
   const owner = verified('merge owner');
-  ingestPush(db, { results: [{ fp: owner, result: 'created', external_ref: 'DOW-50' }] });
+  ingestPush(db, { results: [{ fp: owner, result: 'created', external_ref: 'DW-50' }] });
   const dup = verified('merge dup');
   const lone = verified('merge lone');
   const r = ingestPush(db, { results: [
-    { fp: dup, result: 'merged-existing', external_ref: 'DOW-50' },
+    { fp: dup, result: 'merged-existing', external_ref: 'DW-50' },
     { fp: lone, result: 'merged-existing', external_ref: 'OLD-7', external_url: 'https://j/OLD-7' },
   ] });
   assert.equal(r.code, 0);
@@ -130,17 +158,17 @@ test('ingest-verdicts: applied through CAS with the forge decider, idempotent pe
   const acc = verified('verdict accept');
   const mrg = verified('verdict merge');
   ingestPush(db, { results: [
-    { fp: rej, result: 'created', external_ref: 'DOW-60' },
-    { fp: acc, result: 'created', external_ref: 'DOW-61' },
-    { fp: mrg, result: 'created', external_ref: 'DOW-62' },
+    { fp: rej, result: 'created', external_ref: 'DW-60' },
+    { fp: acc, result: 'created', external_ref: 'DW-61' },
+    { fp: mrg, result: 'created', external_ref: 'DW-62' },
   ] });
   assert.equal(verdictsCursor(db), undefined);
   const page = {
     verdicts: [
-      { fp: rej, status: 'rejected', reason: 'already-known', note: 'dup of PROJ-1', decided_by: 'forge:jane', decided_at: '2026-10-27T10:00:00.000Z', external_ref: 'DOW-60' },
-      { fp: acc, status: 'accepted', decided_by: 'forge:bob', decided_at: '2026-10-27T10:01:00.000Z', external_ref: 'DOW-61' },
-      { fp: mrg, status: 'merged', merged_into: 'DOW-61', decided_by: 'forge:bob', decided_at: '2026-10-27T10:02:00.000Z', external_ref: 'DOW-62' },
-      { fp: 'ffffffffffffffff', status: 'rejected', reason: 'other', note: 'x', decided_by: 'forge:bob', decided_at: '2026-10-27T10:03:00.000Z', external_ref: 'DOW-99' },
+      { fp: rej, status: 'rejected', reason: 'already-known', note: 'dup of PROJ-1', decided_by: 'forge:jane', decided_at: '2026-10-27T10:00:00.000Z', external_ref: 'DW-60' },
+      { fp: acc, status: 'accepted', decided_by: 'forge:bob', decided_at: '2026-10-27T10:01:00.000Z', external_ref: 'DW-61', issue_ref: 'SHOP-41', issue_url: 'https://acme.atlassian.net/browse/SHOP-41' },
+      { fp: mrg, status: 'merged', merged_into: 'DW-61', decided_by: 'forge:bob', decided_at: '2026-10-27T10:02:00.000Z', external_ref: 'DW-62' },
+      { fp: 'ffffffffffffffff', status: 'rejected', reason: 'other', note: 'x', decided_by: 'forge:bob', decided_at: '2026-10-27T10:03:00.000Z', external_ref: 'DW-99' },
     ],
     cursor: '17',
   };
@@ -154,6 +182,11 @@ test('ingest-verdicts: applied through CAS with the forge decider, idempotent pe
   assert.equal(p?.decided_at, '2026-10-27T10:00:00.000Z');
   assert.equal(transitionsOf(db, rej).at(-1)?.by, 'forge:jane');
   assert.equal(statusOf(acc), 'accepted');
+  assert.equal(getProposal(db, acc)?.issue_ref, 'SHOP-41', 'an accepted verdict records the Jira issue');
+  assert.equal(getProposal(db, acc)?.issue_url, 'https://acme.atlassian.net/browse/SHOP-41');
+  assert.equal(getProposal(db, acc)?.external_ref, 'DW-61', 'external_ref stays the inbox item');
+  assert.equal(getProposal(db, rej)?.issue_ref, undefined, 'only an accept carries an issue');
+  assert.equal(r.out.verdicts[1].issue_ref, 'SHOP-41');
   assert.equal(getProposal(db, mrg)?.merged_into, acc, 'merged_into resolved from the Jira key');
   assert.equal(verdictsCursor(db), '17');
 
@@ -170,13 +203,17 @@ test('ingest-verdicts: an illegal transition is a conflict, never forced; a matc
   move(db, fp2, 'snoozed', { by: 'human:jane' });
   const fp3 = verified('verdict forge accept on verified');
   const r = ingestVerdicts(db, { verdicts: [
-    { fp, status: 'rejected', reason: 'not-worth-it', decided_by: 'forge:jane', decided_at: '2026-10-27T11:00:00.000Z', external_ref: 'DOW-70' },
-    { fp: fp2, status: 'snoozed', decided_by: 'forge:jane', decided_at: '2026-10-27T11:01:00.000Z', external_ref: 'DOW-71' },
-    { fp: fp3, status: 'accepted', decided_by: 'forge:jane', decided_at: '2026-10-27T11:02:00.000Z', external_ref: 'DOW-72' },
-    { fp: fp3, status: 'rejected', reason: 'nope', decided_by: 'forge:jane', decided_at: '2026-10-27T11:03:00.000Z', external_ref: 'DOW-72' },
+    { fp, status: 'rejected', reason: 'not-worth-it', decided_by: 'forge:jane', decided_at: '2026-10-27T11:00:00.000Z', external_ref: 'DW-70' },
+    { fp: fp2, status: 'snoozed', decided_by: 'forge:jane', decided_at: '2026-10-27T11:01:00.000Z', external_ref: 'DW-71' },
+    { fp: fp3, status: 'accepted', decided_by: 'forge:jane', decided_at: '2026-10-27T11:02:00.000Z', external_ref: 'DW-72', issue_ref: 'SHOP-9', issue_url: 'https://j/SHOP-9' },
+    { fp: fp3, status: 'rejected', reason: 'nope', decided_by: 'forge:jane', decided_at: '2026-10-27T11:03:00.000Z', external_ref: 'DW-72' },
+    { fp: fp3, status: 'accepted', decided_by: 'forge:jane', decided_at: '2026-10-27T11:04:00.000Z', external_ref: 'DW-72' },
+    { fp: fp3, status: 'accepted', decided_by: 'forge:jane', decided_at: '2026-10-27T11:05:00.000Z', external_ref: 'DW-72', issue_ref: 'SHOP-9' },
   ], cursor: '20' });
   assert.equal(r.code, 1);
-  assert.deepEqual(r.out.verdicts.map((/** @type {any} */ v) => v.outcome), ['conflict', 'in-sync', 'conflict', 'invalid']);
+  assert.deepEqual(r.out.verdicts.map((/** @type {any} */ v) => v.outcome), ['conflict', 'in-sync', 'conflict', 'invalid', 'invalid', 'invalid']);
+  assert.match(r.out.verdicts[4].why, /issue_ref and issue_url/);
+  assert.equal(getProposal(db, fp3)?.issue_ref, undefined, 'a conflicting accept records no issue');
   assert.equal(r.out.verdicts[0].current, 'merged');
   assert.equal(statusOf(fp), 'merged');
   assert.equal(statusOf(fp3), 'verified', 'verified -> accepted needs a human decider');

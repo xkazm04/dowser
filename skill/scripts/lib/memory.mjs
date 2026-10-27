@@ -206,7 +206,7 @@ export function show(db, fp) {
   delete card.evidence;
   const evidence = evidenceOf(db, fp).map(({ id: _id, fp: _fp, key: _key, ...rest }) => rest);
   const transitions = transitionsOf(db, fp).map(({ id: _id, fp: _fp, evidence_seq: _seq, ...rest }) => rest);
-  return /** @type {Row} */ (clean({ fp, external_ref: card.external_ref, external_url: card.external_url, card, evidence, transitions }));
+  return /** @type {Row} */ (clean({ fp, external_ref: card.external_ref, external_url: card.external_url, issue_ref: card.issue_ref, issue_url: card.issue_url, card, evidence, transitions }));
 }
 
 /**

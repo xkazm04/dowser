@@ -26,10 +26,14 @@
 //   list [--lens l] [--status s] [--title substring]  -> {proposals: [{fp, lens, status, title, decided_at?}]}
 //   rules offer | rules list [--lens l] | rules accept|decline <id> --by human:<name> [--text t]
 //   prefs get [key ...] | prefs set key=value ...   ~/.dowser/user.json (mode dev|guided, verbosity short|full)
-//   outbox --run <id>                      -> {project_key, run_id, proposals}: the dowser_proposals_push input
-//                                          (verified, not pushed yet; pushed items whose evidence grew)
+//   outbox --run <id>                      -> {project_key, run_id, proposals_json, repo_url?, head_sha?, more?}:
+//                                          the dowser_proposals_push arguments (verified, not pushed yet; pushed
+//                                          items whose evidence grew), at most 50; `more: true` = run it again
 //   ingest-push --file <json>              apply a dowser_proposals_push response -> pushed | merged | refused
-//   ingest-verdicts --file <json>          apply a dowser_verdicts_pull response (CAS, idempotent), keep cursor
+//   ingest-verdicts --file <json>          apply a dowser_verdicts_pull response (CAS, idempotent), keep cursor;
+//                                          an accepted verdict records issue_ref/issue_url
+//   areas --run <id> [--top 40]            -> {project_key, run_id, areas_json}: the dowser_areas_push arguments
+//                                          (directories at depth 1-2: files, churn_90d, authors_90d?, last_change?)
 //   ingest-sources --run <id> --type ticket|page|goal --file <json>   cache a dowser_sources_* response -> refs
 //                                          (contract: docs/contracts/forge-mcp-2.md; the agent calls the tools)
 //
@@ -47,7 +51,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DowserError, LENSES } from './lib/model.mjs';
 import { dbPath, projectKey, repoRoot } from './lib/paths.mjs';
-import { headSha } from './lib/git.mjs';
+import { headSha, originUrl, webUrl } from './lib/git.mjs';
 
 const store = await import('./lib/store.mjs');
 const verifyLib = await import('./lib/verify.mjs');
@@ -265,7 +269,8 @@ export const COMMANDS = {
   },
   // WP4 - the Forge seam
   outbox(a, ctx) {
-    return { out: syncLib.outbox(ctx.open(), { projectKey: projectKey(ctx.root), runId: /** @type {string} */ (opt(a, 'run', true)) }) };
+    const origin = originUrl(ctx.root);
+    return { out: syncLib.outbox(ctx.open(), { projectKey: projectKey(ctx.root), runId: /** @type {string} */ (opt(a, 'run', true)), repoUrl: origin ? webUrl(origin) : undefined }) };
   },
   'ingest-push'(a, ctx) {
     const doc = syncLib.readResponse(/** @type {string} */ (opt(a, 'file', true)));
@@ -274,6 +279,11 @@ export const COMMANDS = {
   'ingest-verdicts'(a, ctx) {
     const doc = syncLib.readResponse(/** @type {string} */ (opt(a, 'file', true)));
     return syncLib.ingestVerdicts(ctx.open(), doc);
+  },
+  areas(a, ctx) {
+    const topArg = opt(a, 'top');
+    const top = topArg === undefined ? undefined : Number(topArg);
+    return { out: syncLib.areas(ctx.open(), { root: ctx.root, projectKey: projectKey(ctx.root), runId: /** @type {string} */ (opt(a, 'run', true)), top }) };
   },
   'ingest-sources'(a, ctx) {
     const runId = /** @type {string} */ (opt(a, 'run', true));

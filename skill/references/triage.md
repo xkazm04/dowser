@@ -31,7 +31,9 @@ An **evidence key** is what makes evidence "new". For `code` and `doc` it is the
 quote with whitespace collapsed. The line number is only a hint, so the same quote at a shifted
 line is not new evidence. For every other type, the key is the `ref`.
 
-**`accepted` is a human act.** It normally arrives from Jira. Offline, the runner may say
+**`accepted` is a human act.** It normally arrives from Jira: a person accepts the item in the
+Dowser inbox, which creates the Jira issue, and the pulled verdict records that issue on the card
+(`issue_ref`, `issue_url`). Offline, the runner may say
 explicitly "accept this one". Only then record `move <fp> --to accepted --by human:<name>`.
 If that move exits 2, the transition table does not allow it from the current status. Say so;
 the item stays kept and is pushed on the next connected run.

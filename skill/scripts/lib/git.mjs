@@ -82,3 +82,104 @@ export function authorsOf(root, paths) {
   }
   return out;
 }
+
+/**
+ * A remote URL as the repo's web URL (`https://host/owner/repo`): credentials, a port on an ssh remote and a
+ * trailing `.git` stripped; `git@host:owner/repo`, `ssh://` and `git://` remotes become `https://`. An `http(s)`
+ * remote keeps its scheme and port. Returns undefined for a remote with no web form (a local path, `file://`).
+ * @param {string} remote
+ * @returns {string | undefined}
+ */
+export function webUrl(remote) {
+  const s = remote.trim();
+  /** @type {string} */ let scheme;
+  /** @type {string} */ let host;
+  /** @type {string} */ let path;
+  const proto = s.match(/^([a-z][a-z0-9+.-]*):\/\/([^/]*)(\/.*)?$/i);
+  if (proto) {
+    const p = proto[1].toLowerCase();
+    if (!['http', 'https', 'ssh', 'git', 'git+ssh', 'ssh+git'].includes(p)) return undefined;
+    const authority = proto[2].replace(/^[^@]*@/, ''); // credentials / ssh user
+    scheme = p === 'http' ? 'http' : 'https';
+    host = scheme === 'https' && p !== 'https' ? authority.replace(/:\d+$/, '') : authority; // an ssh port is not the web port
+    path = proto[3] ?? '';
+  } else {
+    const scp = s.match(/^(?:[^@/:]+@)?([^/:]+):(?!\/\/)(.+)$/); // scp-like `user@host:owner/repo`
+    if (!scp || /^[a-z]$/i.test(scp[1])) return undefined; // `C:\...` is a Windows path, not a host
+    scheme = 'https';
+    host = scp[1];
+    path = `/${scp[2]}`;
+  }
+  path = path.replace(/\/+$/, '').replace(/\.git$/i, '').replace(/^\/+/, '/');
+  if (!host || path.length < 2) return undefined;
+  return `${scheme}://${host.toLowerCase()}${path}`;
+}
+
+/**
+ * The committer date of `rev` as an ISO 8601 UTC string, or undefined when git does not know the rev.
+ * @param {string} root
+ * @param {string} rev
+ * @returns {string | undefined}
+ */
+export function commitDate(root, rev) {
+  const out = git(root, ['show', '-s', '--format=%cI', rev, '--']);
+  if (!out) return undefined;
+  const t = Date.parse(out);
+  return Number.isNaN(t) ? undefined : new Date(t).toISOString();
+}
+
+/**
+ * Every file tracked in the tree of `rev` (`git ls-tree -r --name-only -z`), repo-relative with forward
+ * slashes. Undefined when git cannot read the tree.
+ * @param {string} root
+ * @param {string} rev
+ * @returns {string[] | undefined}
+ */
+export function treeFiles(root, rev) {
+  const out = git(root, ['-c', 'core.quotePath=false', 'ls-tree', '-r', '--name-only', '-z', rev]);
+  if (out === undefined) return undefined;
+  return out.split('\0').filter(Boolean);
+}
+
+/**
+ * The non-merge commits reachable from `rev` whose committer date is at or after `since`, newest first, each
+ * with its author e-mail (lowercased), committer date (ISO UTC) and the paths it touched. One `git log` pass.
+ * Undefined when git cannot walk the history.
+ * @param {string} root
+ * @param {string} rev
+ * @param {string} since ISO timestamp
+ * @returns {{email: string, at: string, paths: string[]}[] | undefined}
+ */
+export function commitsSince(root, rev, since) {
+  const out = git(root, ['-c', 'core.quotePath=false', 'log', rev, `--since=${since}`, '--no-merges', '--no-renames',
+    '--format=%x1e%ae%x1f%cI', '--name-only', '-z', '--']);
+  if (out === undefined) return undefined;
+  /** @type {{email: string, at: string, paths: string[]}[]} */
+  const commits = [];
+  for (const rec of out.split('\x1e').slice(1)) {
+    // one record: `<email>\x1f<date>\0`, a newline, then the NUL-terminated paths the commit touched
+    const sep = rec.indexOf('\x1f');
+    if (sep < 0) continue;
+    const [date, ...paths] = rec.slice(sep + 1).split('\0');
+    const t = Date.parse(date.trim());
+    if (Number.isNaN(t)) continue;
+    commits.push({
+      email: rec.slice(0, sep).trim().toLowerCase(),
+      at: new Date(t).toISOString(),
+      paths: paths.map((p) => p.replace(/^\n+/, '')).filter(Boolean),
+    });
+  }
+  return commits;
+}
+
+/**
+ * The committer date (ISO UTC) of the newest commit reachable from `rev` that touched `path`, or undefined.
+ * @param {string} root
+ * @param {string} rev
+ * @param {string} path
+ * @returns {string | undefined}
+ */
+export function lastChange(root, rev, path) {
+  const sha = git(root, ['log', '-1', '--format=%H', rev, '--', path]);
+  return sha ? commitDate(root, sha) : undefined;
+}
