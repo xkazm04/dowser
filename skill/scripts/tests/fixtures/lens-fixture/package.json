@@ -9,14 +9,23 @@
   "bin": {
     "pebble": "cli/pebble.js"
   },
+  "files": [
+    "src/",
+    "cli/",
+    "public/"
+  ],
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test test/"
+    "test": "node --test test/",
+    "seed": "node scripts/seed-demo.js"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
     "lodash": "4.17.15"
+  },
+  "devDependencies": {
+    "minimist": "1.2.5"
   }
 }

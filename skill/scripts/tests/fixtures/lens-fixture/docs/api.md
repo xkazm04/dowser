@@ -26,3 +26,12 @@ Answers `201 {"ok": true, "count": <items in cart>}`, or `409` when the cart is 
 ## `POST /checkout/payment`
 
 Charges the card and places the order. Answers `{"ok": true, "orderId": <id>}`.
+
+## `POST /wishlist`
+
+Saves a product for later (signed-in customers): `{"sku": "MUG-01"}`. Answers
+`{"ok": true, "message": "..."}`, or `401` when nobody is signed in.
+
+## `GET /wishlist`
+
+The signed-in customer's saved products, newest first: `{"items": [{"sku", "saved_at"}]}`.

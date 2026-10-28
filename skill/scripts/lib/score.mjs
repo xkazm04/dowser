@@ -12,22 +12,36 @@
 // that also cites a shared file (a config module) still counts once, for the finding it is about. Kind is
 // reported, not required.
 //
-// Numbers. recall = found / seeded; precision = matched / emitted, where an emission assigned to no expected item
-// counts against precision as unverified and is listed under `unmatched` for the hand check; one assigned to a
-// decoy is a decoy hit. Absent, never 0: `recall` when nothing is seeded, `precision` when nothing was emitted.
+// Direction. A seeded item marked `excluded_by_direction` is a real finding the team's direction (the fixture's
+// `_sources.json` `directions` seed) rules out: proposing it is a direction violation, counted against precision
+// like a decoy hit. It is out of scope, so it is not counted in `seeded`. One marked `focus_by_direction` is the
+// one the direction's focus should pull into the budget.
+//
+// Numbers. recall = found / seeded; recall_at_budget = found / min(seeded, budget), so a lens that proposes at most
+// `budget` cards can reach 1 on a fixture that seeds more findings than that - it is judged on choosing well;
+// priority1_found / priority1_total counts the seeded items of `priority: 1` (the ones a good choice never leaves
+// out). precision = matched / emitted, where an emission assigned to no expected item counts against precision as
+// unverified and is listed under `unmatched` for the hand check; one assigned to a decoy is a decoy hit, one
+// assigned to an excluded item a direction violation. Absent, never 0: `recall` when nothing is seeded,
+// `recall_at_budget` also when no budget was given, `priority1_*` and `focus_*` when the fixture has none,
+// `precision` when nothing was emitted.
 import { artifactsProblem } from './model.mjs';
 import { normalizeAnchor } from './fingerprint.mjs';
 
 /**
  * @typedef {{lens: string, id: string, anchor: string, also?: string[], kind?: string, hypothesis?: string,
- *   must?: true, decoy?: true, why: string}} Expected
+ *   must?: true, decoy?: true, priority?: 1 | 2 | 3, excluded_by_direction?: true, focus_by_direction?: true,
+ *   why: string}} Expected
  * @typedef {{lens: string, kind?: string, title?: string, anchors?: string[], evidence?: {ref: string}[],
  *   artifacts?: unknown}} Emitted
  * @typedef {{
- *   lens: string, seeded: number, found: number, recall?: number, found_exact: number, kind_matched: number,
- *   emitted: number, matched: number, precision?: number, decoy_hits: number,
+ *   lens: string, seeded: number, found: number, recall?: number, budget?: number, recall_at_budget?: number,
+ *   priority1_found?: number, priority1_total?: number, focus_found?: number, focus_total?: number,
+ *   found_exact: number, kind_matched: number,
+ *   emitted: number, matched: number, precision?: number, decoy_hits: number, direction_violations: number,
  *   artifacts_total: number, artifacts_valid: number, verify_dropped?: number,
- *   missed?: string[], path_only?: string[], decoys?: string[], unmatched?: string[], artifact_problems?: string[]
+ *   missed?: string[], path_only?: string[], decoys?: string[], violations?: string[], unmatched?: string[],
+ *   artifact_problems?: string[]
  * }} Score
  */
 
@@ -106,24 +120,27 @@ export function assign(items, anchors) {
 
 /**
  * Scores one lens's emission against the fixture's expectations.
- * @param {{expected: unknown, emitted: Emitted[], lens: string, verify_dropped?: number}} o
+ * @param {{expected: unknown, emitted: Emitted[], lens: string, verify_dropped?: number, budget?: number}} o
  *   `emitted` is what reached the person (verify survivors); `verify_dropped` the count verify removed, when
- *   measured.
+ *   measured; `budget` the pack's card budget, when known.
  * @returns {Score}
  */
-export function scoreLens({ expected, emitted, lens, verify_dropped }) {
+export function scoreLens({ expected, emitted, lens, verify_dropped, budget }) {
   const items = expectedFor(expected, lens);
-  const seeded = items.filter((e) => !e.decoy);
+  const seeded = items.filter((e) => !e.decoy && !e.excluded_by_direction);
   const mine = emitted.filter((c) => c.lens === lens);
 
   /** @type {Map<string, {exact: boolean, kind: boolean}>} */
   const hits = new Map();
   /** @type {Set<string>} */
   const decoyHit = new Set();
+  /** @type {Set<string>} */
+  const violated = new Set();
   /** @type {string[]} */
   const unmatched = [];
   let matched = 0;
   let decoyHits = 0;
+  let violations = 0;
   let artifactsTotal = 0;
   let artifactsValid = 0;
   /** @type {string[]} */
@@ -133,7 +150,7 @@ export function scoreLens({ expected, emitted, lens, verify_dropped }) {
     const anchors = Array.isArray(c.anchors) ? c.anchors : [];
     const a = assign(items, anchors);
     if (!a) unmatched.push(c.title ?? anchors.join(', '));
-    else if (a.item.decoy) { decoyHits++; decoyHit.add(a.item.id); } else {
+    else if (a.item.decoy) { decoyHits++; decoyHit.add(a.item.id); } else if (a.item.excluded_by_direction) { violations++; violated.add(a.item.id); } else {
       matched++;
       const prev = hits.get(a.item.id) ?? { exact: false, kind: false };
       hits.set(a.item.id, { exact: prev.exact || a.exact, kind: prev.kind || (a.item.kind !== undefined && c.kind === a.item.kind) });
@@ -164,10 +181,17 @@ export function scoreLens({ expected, emitted, lens, verify_dropped }) {
     emitted: mine.length,
     matched,
     decoy_hits: decoyHits,
+    direction_violations: violations,
     artifacts_total: artifactsTotal,
     artifacts_valid: artifactsValid,
   };
   if (seeded.length) out.recall = ratio(hits.size, seeded.length);
+  if (budget !== undefined) out.budget = budget;
+  if (budget !== undefined && budget > 0 && seeded.length) out.recall_at_budget = ratio(hits.size, Math.min(seeded.length, budget));
+  const p1 = seeded.filter((s) => s.priority === 1);
+  if (p1.length) { out.priority1_found = p1.filter((s) => hits.has(s.id)).length; out.priority1_total = p1.length; }
+  const focus = seeded.filter((s) => s.focus_by_direction);
+  if (focus.length) { out.focus_found = focus.filter((s) => hits.has(s.id)).length; out.focus_total = focus.length; }
   if (mine.length) out.precision = ratio(matched, mine.length);
   if (verify_dropped !== undefined) out.verify_dropped = verify_dropped;
   const missed = seeded.filter((s) => !hits.has(s.id)).map((s) => s.id);
@@ -175,6 +199,7 @@ export function scoreLens({ expected, emitted, lens, verify_dropped }) {
   if (missed.length) out.missed = missed;
   if (pathOnly.length) out.path_only = pathOnly;
   if (decoyHit.size) out.decoys = [...decoyHit];
+  if (violated.size) out.violations = [...violated];
   if (unmatched.length) out.unmatched = unmatched;
   if (artifactProblems.length) out.artifact_problems = artifactProblems;
   return out;

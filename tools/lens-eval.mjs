@@ -21,6 +21,10 @@
 //
 // For security-cra, `npm audit` is answered from the fixture's _auditor/npm-audit.json by an `npm` shim put
 // first on the scan's PATH, so `dowser deps` and the pack's own audit step see captured, offline output.
+// The fixture's direction seed (_sources.json `directions`) is keyed by the placeholder FIXTURE_PROJECT; the temp
+// copy has no origin, so its project key is `local-<hash of its path>`. The mock is seeded from a copy of
+// _sources.json whose `directions` is re-keyed to the key `dowser init` reports, so `dowser_direction_get` answers
+// the scan with the team direction the scorer's `excluded_by_direction` / `focus_by_direction` items assume.
 // Env: CLAUDE_BIN (default `claude`). Exit codes: 0 scored (or dry run), 1 the scan failed, 2 bad arguments.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { appendFileSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -30,8 +34,11 @@ import { fileURLToPath } from 'node:url';
 import { LENSES, isOneOf } from '../skill/scripts/lib/model.mjs';
 import { dowserHome } from '../skill/scripts/lib/paths.mjs';
 import { scoreLens } from '../skill/scripts/lib/score.mjs';
+import { callTool, seeded } from './mock-forge-mcp.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
+/** The placeholder project key the fixture's direction seed is written under. */
+const FIXTURE_PROJECT = 'pebble-shop';
 const FIXTURE = join(ROOT, 'skill/scripts/tests/fixtures/lens-fixture');
 const CLI = join(ROOT, 'skill/scripts/dowser.mjs');
 const INSTALL = join(ROOT, 'skill/install.mjs');
@@ -75,6 +82,27 @@ function parseArgs(argv) {
 function lensVersion(lens) {
   const m = readFileSync(join(ROOT, 'skill/lenses', `${lens}.md`), 'utf8').match(/^version:\s*(\S+)/m);
   return m ? m[1] : 'unknown';
+}
+
+/** A lens pack's frontmatter `budget`, or undefined when it names none. @param {string} lens */
+function lensBudget(lens) {
+  const m = readFileSync(join(ROOT, 'skill/lenses', `${lens}.md`), 'utf8').match(/^budget:\s*(\d+)\s*$/m);
+  return m ? Number(m[1]) : undefined;
+}
+
+/**
+ * Writes the mock's seed: the fixture's _sources.json with its direction re-keyed from FIXTURE_PROJECT to the temp
+ * copy's project key (no direction seed: the file as it is).
+ * @param {string} file the seed file to write
+ * @param {string} projectKey
+ * @returns {any} the seed
+ */
+function writeSeed(file, projectKey) {
+  const seed = JSON.parse(readFileSync(join(FIXTURE, '_sources.json'), 'utf8'));
+  const dir = seed.directions?.[FIXTURE_PROJECT];
+  if (dir) seed.directions = { [projectKey]: dir };
+  writeFileSync(file, JSON.stringify(seed, null, 2));
+  return seed;
 }
 
 /** Every file of the final fixture tree, repo-relative with forward slashes; top-level `_` entries left out. */
@@ -208,20 +236,23 @@ const q = (s) => (/[\s"'&|<>^]/.test(s) ? JSON.stringify(s) : s);
 
 const o = parseArgs(process.argv.slice(2));
 const version = lensVersion(o.lens);
+const budget = lensBudget(o.lens);
 const work = mkdtempSync(join(tmpdir(), `dowser-lens-eval-${o.lens}-`));
 const w = { repo: join(work, 'repo'), home: join(work, 'home') };
 const bin = join(work, 'bin');
 const mcpConfig = join(work, 'mcp.json');
+const seedFile = join(work, 'sources.json');
 let failed = false;
 try {
   const built = buildRepo(w.repo);
   mkdirSync(w.home, { recursive: true });
   const install = spawnSync(process.execPath, [INSTALL, '--harness', 'claude', '--scope', 'project', ...(o.devLink ? ['--dev-link'] : [])], { cwd: w.repo, encoding: 'utf8' });
   if (install.status !== 0) throw new Error(`install -> ${install.status}\n${install.stderr}`);
-  cli(w, 'init');
+  const { project_key: projectKey } = cli(w, 'init');
   cli(w, 'prefs', 'set', 'mode=dev');
+  const seed = writeSeed(seedFile, projectKey);
   writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { dowser: { type: 'stdio', command: process.execPath,
-    args: [MOCK, '--seed', join(FIXTURE, '_sources.json'), '--state', join(work, 'forge-state.json')] } } }, null, 2));
+    args: [MOCK, '--seed', seedFile, '--state', join(work, 'forge-state.json')] } } }, null, 2));
   const realNpm = o.lens === 'security-cra' ? writeNpmShim(bin) : undefined;
   const env = { ...process.env, DOWSER_HOME: w.home, ...(o.lens === 'security-cra' ? { PATH: `${bin}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH ?? ''}` } : {}) };
   const args = ['-p', prompt(o.lens), '--mcp-config', mcpConfig, '--strict-mcp-config', '--add-dir', tmpdir(),
@@ -238,13 +269,20 @@ try {
       dowser_home: w.home,
       skill: { target: join(w.repo, '.claude/skills/dowser'), method: o.devLink ? 'link (exposes scripts/tests to the agent)' : 'copy (tests/ left out)' },
       mock_forge: mcpConfig,
+      // what the mock answers the skill's direction step (SKILL.md section 4), from the seed file it is started with
+      direction: (() => {
+        const call = { project_key: projectKey, lens: 'all' };
+        const { lenses } = callTool(seeded(seed), 'dowser_direction_get', call);
+        return { seed: seedFile, call, answer_for_lens: lenses[o.lens] ?? 'none seeded', lenses_seeded: Object.keys(lenses) };
+      })(),
+      budget: budget ?? 'none in the pack frontmatter',
       npm_audit_shim: o.lens === 'security-cra' ? { bin, serves: join(FIXTURE, '_auditor/npm-audit.json'), forwards_to: realNpm ?? 'nothing (no npm found)' } : 'not used for this lens',
       steps: [
         `cd ${q(w.repo)}`,
         `DOWSER_HOME=${q(w.home)}${o.lens === 'security-cra' ? ` PATH=${q(bin)}:$PATH` : ''} ${CLAUDE} ${args.map(q).join(' ')} > ${q(join(work, 'claude.json'))}`,
         `node ${q(CLI)} list --lens ${o.lens} --repo ${q(w.repo)}   (DOWSER_HOME=${q(w.home)}), then show <fp> for each`,
         `score the cards that survived verify against ${q(join(FIXTURE, '_expected.json'))} (skill/scripts/lib/score.mjs)`,
-        `append {ts, lens, lens_version, recall?, precision?, decoy_hits, artifacts_valid, artifacts_total, verify_dropped, n} to ${q(o.evals)}`,
+        `append {ts, lens, lens_version, recall?, precision?, decoy_hits, artifacts_valid, artifacts_total, verify_dropped, n, budget?, recall_at_budget?, priority1_found?, priority1_total?, focus_found?, focus_total?, direction_violations} to ${q(o.evals)}`,
       ],
       warnings: existsSync(userSkill) ? [`a user-scope dowser skill exists at ${userSkill}; the scan may load it instead of the project-scope copy`] : [],
       kept: o.keep,
@@ -268,7 +306,7 @@ try {
       const emitted = survivors.map((/** @type {any} */ s) => ({ lens: s.card.lens, kind: s.card.kind, title: s.card.title, anchors: s.card.anchors,
         evidence: s.evidence, ...(s.card.artifacts !== undefined ? { artifacts: s.card.artifacts } : {}) }));
       const expected = JSON.parse(readFileSync(join(FIXTURE, '_expected.json'), 'utf8'));
-      const score = scoreLens({ expected, emitted, lens: o.lens, verify_dropped: dropped });
+      const score = scoreLens({ expected, emitted, lens: o.lens, verify_dropped: dropped, budget });
       /** @type {Record<string, unknown>} */
       const row = { ts: new Date().toISOString(), lens: o.lens, lens_version: version };
       if (score.recall !== undefined) row.recall = score.recall;
@@ -276,6 +314,13 @@ try {
       Object.assign(row, { decoy_hits: score.decoy_hits, artifacts_valid: score.artifacts_valid, artifacts_total: score.artifacts_total,
         verify_dropped: dropped, n: score.emitted });
       if (o.model) row.model = o.model;
+      // added with fixture_version 2; older rows simply lack them
+      for (const k of /** @type {const} */ (['budget', 'recall_at_budget', 'priority1_found', 'priority1_total', 'focus_found', 'focus_total'])) {
+        if (score[k] !== undefined) row[k] = score[k];
+      }
+      row.direction_violations = score.direction_violations;
+      const fv = expected.fixture_version;
+      if (Number.isInteger(fv)) row.fixture_version = fv;
       mkdirSync(dirname(o.evals), { recursive: true });
       appendFileSync(o.evals, JSON.stringify(row) + '\n');
       console.log(JSON.stringify({ score, appended_to: o.evals, cost_usd: result.total_cost_usd, turns: result.num_turns, ...(o.keep ? { work } : {}) }, null, 2));

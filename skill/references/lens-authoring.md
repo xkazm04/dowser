@@ -54,9 +54,10 @@ Sources map to evidence types: `docs` -> `doc`, `deps` -> `dep`. The others keep
    pointed at something. The run's lens report names the hypotheses checked.
 4. **Evidence rules**: what each kind must cite, beyond `references/cards.md`.
 5. **Topic naming**: how to build the stable `topic` slug.
-6. **Examples**: two candidate lines, as a `jsonl` code block. Each must pass `propose`'s
-   validation (title 80 characters or fewer, five body sections, quotes on code and doc
-   evidence).
+6. **Examples**: two or more candidate lines, as a `jsonl` code block: one per supporting view
+   the pack maps, plus one with no view. Each must pass `propose`'s validation (title 80
+   characters or fewer, five body sections, quotes on code and doc evidence, `artifacts`
+   within the contract).
 7. **No finding**: the exact form of a lens report with zero proposals.
 
 Keep a pack under 200 lines. Long background belongs in a separate `references/` file that the
@@ -104,30 +105,52 @@ number and not an impression.
 
 - **The fixture** is `scripts/tests/fixtures/lens-fixture/`: a small web shop (checkout with a
   payment step, an admin CLI, README and `docs/`, a lockfile pinning a package with known
-  advisories). `_expected.json` lists, per lens, 3-4 **seeded** findings (taken from the pack's
-  hypotheses) and at least 2 **decoys**: code that looks like a finding but is not, such as a
-  correct doc, an error that does recover, or a test-only key. `_sources.json` seeds the mock
-  Forge with tickets, pages and goals; `_auditor/npm-audit.json` is captured audit output;
-  `_history/commits.json` replays a short git history. Files starting with `_` never reach the
-  scanned copy.
+  advisories). `_expected.json` lists, per lens, 6-8 **seeded** findings (taken from the pack's
+  hypotheses), more than the pack's budget of 4, so a lens is judged on choosing well and not
+  only on finding. Each has a `priority`: 1 must be in the top 4, 2 is good, 3 is minor, from
+  the impact its evidence shows (ticket counts and spread, user-facing or internal, severity).
+  At least one priority-1 finding per lens only shows its strength through connected sources:
+  ticket labels, components and dates (opportunity, ux-friction), a Confluence page in a named
+  space (doc-drift), or `dowser deps` output (security-cra). Each lens also has 3-5 **decoys**:
+  code that a careless read proposes but that is not a finding, such as a doc that is correct
+  for a still-supported version, demand a past release already met, an error that does
+  recover, a test-only key, or a vulnerable package that is dev-only and never shipped.
+  `_sources.json` seeds the mock Forge with tickets, pages, goals and a team **direction** per
+  lens: its focus should pull the item marked `focus_by_direction` (priority 2) into the top 4,
+  and its exclude rules out the item marked `excluded_by_direction`, which must not be
+  proposed. `_auditor/npm-audit.json` is captured audit output; `_history/commits.json` replays
+  a short git history. Files starting with `_` never reach the scanned copy, and nothing in the
+  scanned files says it is a test.
 - **Run it** from the repository root: `node tools/lens-eval.mjs --lens <id> [--model <m>]`.
   It copies the fixture to a temp folder, makes it a git repo, gives it a temp `DOWSER_HOME`,
   connects the mock Forge, runs one headless Claude Code scan of that lens only, scores the
   cards and appends one row to `~/.dowser/evals.jsonl` (`--evals <file>` to change it).
-  `--dry-run` builds the workspace and prints the plan without calling Claude. A real run
-  costs tokens.
-- **The numbers.** A card counts for the one seeded item or decoy its anchors land on most
-  strongly. `recall` is seeded items found over seeded items. `precision` is cards on a
-  seeded item over cards that survived `verify`; a card on nothing expected counts against it
-  and is listed under `unmatched` so you can judge it by hand. `decoy_hits` is cards on a
-  decoy and should be 0. `artifacts_valid` of `artifacts_total` is how many supporting views
-  pass validation, and `verify_dropped` is how many cards `verify` removed. A value that was
-  not measured is left out, never 0: no `precision` when nothing was emitted.
+  The mock answers `dowser_direction_get` with the fixture's direction, re-keyed to the temp
+  copy's project key. `--dry-run` builds the workspace and prints the plan, including the
+  direction the mock will answer for the lens, without calling Claude. A real run costs
+  tokens.
+- **The numbers.** A card counts for the one expected item its anchors land on most strongly.
+  The headline is `recall_at_budget`: seeded items found over the smaller of the seeded count
+  and the pack's budget, so 1 means every card was spent on a real finding. Read it with
+  `priority1_found` of `priority1_total` (a lens that fills its budget with minor findings
+  scores well on recall and badly here) and `focus_found` of `focus_total` (whether the team's
+  focus moved the choice). `recall` is seeded items found over all seeded items; with more
+  findings than the budget it cannot reach 1 and is kept for comparison. `precision` is cards
+  on a seeded item over cards that survived `verify`; a card on nothing expected counts
+  against it and is listed under `unmatched` so you can judge it by hand. `decoy_hits` is
+  cards on a decoy and `direction_violations` cards on an item the direction excludes; both
+  should be 0 and both count against precision. `artifacts_valid` of `artifacts_total` is how
+  many supporting views pass validation, and `verify_dropped` is how many cards `verify`
+  removed. A value that was not measured is left out, never 0: no `precision` when nothing was
+  emitted, no `recall_at_budget` when the pack names no budget. Rows from before
+  `fixture_version` 2 lack the budget signals and were measured on an easier fixture; compare
+  a pack only with rows of the same `fixture_version`.
 - **What the fixture does not prove.** The fixture tests the pack's mechanics on findings its
   author planted. Precision that matters is measured on a real repository: hand-verify a
   sample of 10 cards (or all, if fewer) and count the true ones.
 - **Record it.** The pack's changelog line for the new version states both: the fixture
   score and the hand-verified precision, each with its `n` and date, for example
-  `0.2.0 - direction, artifacts; fixture recall 4/4, 0 decoys (2026-11-02); precision 8/10 on
-  acme-shop (2026-11-03)`. If fixture recall falls or a decoy is hit, explain why in that
-  changelog line before the pack ships.
+  `0.2.0 - direction, artifacts; fixture v2 recall@4 4/4, priority-1 3/3, 0 decoys, 0 direction
+  violations (2026-11-02); precision 8/10 on acme-shop (2026-11-03)`. If `recall_at_budget` or
+  `priority1_found` falls, or a decoy or excluded item is hit, explain why in that changelog
+  line before the pack ships.

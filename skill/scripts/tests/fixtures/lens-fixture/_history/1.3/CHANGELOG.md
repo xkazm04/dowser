@@ -3,6 +3,7 @@
 ## 1.3.0
 
 - Added: Pebble Box monthly subscription.
+- Added: Save for later - signed-in customers keep products aside (`/wishlist`).
 - Added: `pebble orders sync` pushes new orders to the accounting system.
 
 ## 1.2.0

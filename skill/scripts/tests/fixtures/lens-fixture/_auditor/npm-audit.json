@@ -44,10 +44,32 @@
       "range": "<=4.17.20",
       "nodes": ["node_modules/lodash"],
       "fixAvailable": { "name": "lodash", "version": "4.17.21", "isSemVerMajor": false }
+    },
+    "minimist": {
+      "name": "minimist",
+      "severity": "critical",
+      "isDirect": true,
+      "via": [
+        {
+          "source": 1097678,
+          "name": "minimist",
+          "dependency": "minimist",
+          "title": "Prototype Pollution in minimist",
+          "url": "https://github.com/advisories/GHSA-xvch-5gv4-984h",
+          "severity": "critical",
+          "cwe": ["CWE-1321"],
+          "cvss": { "score": 9.8, "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H" },
+          "range": ">=1.0.0 <1.2.6"
+        }
+      ],
+      "effects": [],
+      "range": "1.0.0 - 1.2.5",
+      "nodes": ["node_modules/minimist"],
+      "fixAvailable": { "name": "minimist", "version": "1.2.8", "isSemVerMajor": false }
     }
   },
   "metadata": {
-    "vulnerabilities": { "info": 0, "low": 0, "moderate": 0, "high": 1, "critical": 0, "total": 1 },
-    "dependencies": { "prod": 2, "dev": 0, "optional": 0, "peer": 0, "peerOptional": 0, "total": 1 }
+    "vulnerabilities": { "info": 0, "low": 0, "moderate": 0, "high": 1, "critical": 1, "total": 2 },
+    "dependencies": { "prod": 2, "dev": 1, "optional": 0, "peer": 0, "peerOptional": 0, "total": 2 }
   }
 }

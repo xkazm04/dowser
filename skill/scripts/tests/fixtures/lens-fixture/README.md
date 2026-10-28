@@ -19,7 +19,7 @@ Every setting is an environment variable. See [docs/configuration.md](docs/confi
 
 ## Admin CLI
 
-The `pebble` command handles receipts, bulk price updates and the nightly report. See
+The `pebble` command handles receipts, bulk price updates, packing slips and the nightly report. See
 [docs/cli.md](docs/cli.md).
 
 ## API
@@ -31,3 +31,8 @@ The storefront talks to a small JSON API. See [docs/api.md](docs/api.md).
 ```sh
 npm test
 ```
+
+## Development
+
+`npm run seed -- --products 20` fills a local database with demo products. Upgrading an
+existing shop: see [docs/upgrading.md](docs/upgrading.md).

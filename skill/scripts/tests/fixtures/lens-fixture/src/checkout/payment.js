@@ -28,9 +28,12 @@ async function submitPayment(req, res) {
   if (!req.session.userId && !allowGuestCheckout(req)) {
     return res.status(401).json({ error: 'sign-in-required', message: 'Sign in to pay.', actions: [{ label: 'Sign in', href: '/login' }] });
   }
+  const total = req.session.cartTotal;
+  if (!total) {
+    return res.status(440).json({ error: 'session-expired', message: messages.SESSION_EXPIRED, actions: [{ label: 'Sign in', href: '/login' }] });
+  }
   const { card, address } = req.body;
   req.session.checkoutForm = { card, address };
-  const total = req.session.cartTotal;
   const result = await charge(card, total);
   if (!result.ok) return onPaymentError(req, res, result);
   const orderId = run('INSERT INTO orders (session, total, address, status) VALUES (?, ?, ?, ?)', [req.session.id, total, JSON.stringify(address), 'paid']);

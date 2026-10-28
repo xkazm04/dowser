@@ -8,6 +8,7 @@ const { addToCart } = require('./checkout/cart');
 const { submitPayment } = require('./checkout/payment');
 const { saveAddress } = require('./checkout/address');
 const { subscribe, cancelSubscription } = require('./account/subscription');
+const { saveForLater, listSaved } = require('./account/wishlist');
 const { session, jsonBody, withJson, serveStatic } = require('./http');
 
 const routes = [
@@ -20,6 +21,8 @@ const routes = [
   ['POST', /^\/checkout\/payment$/, submitPayment],
   ['POST', /^\/box\/subscribe$/, subscribe],
   ['POST', /^\/box\/cancel$/, cancelSubscription],
+  ['GET', /^\/wishlist$/, listSaved],
+  ['POST', /^\/wishlist$/, saveForLater],
 ];
 
 const server = http.createServer(async (req, res) => {
