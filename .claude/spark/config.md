@@ -35,6 +35,7 @@ context map is provisional until the first scaffold commit.
 
 - Wants the scanned repo left clean: rejected committed project memory in favour of local + Forge-synced (2026-10-27). Default to nothing written into a scanned repo.
 - Accepts recommended options on architecture forks readily; spends attention on scope (picked all four gate lenses) - ask scope, decide plumbing.
+- On surface/scope multi-selects picks every surface offered (forge-ui-prototypes took all four; 2026-10-28). Offer full coverage as the recommendation when cost allows.
 - On product-capability questions picks the richer option even against the recommendation (forge-app: Rovo records verdicts; area stats pushed from the skill; all four v1 surfaces). Do not default-recommend the lean option there; state the cost and let the operator pick (2026-10-27).
 
 ## Skill improvement log
@@ -48,3 +49,7 @@ context map is provisional until the first scaffold commit.
 '); Python text mode wrote CRLF into shared modules and Bash heredocs with long content failed twice.
 - 2026-10-28 forge-reflect-ui: verify a Director-committed contract by grepping every new key before fan-out; a str.replace on a JSDoc block missed on indentation and WP1 had to add the resolver keys.
 - 2026-10-28 forge-reflect-ui: a port-based core (forge/src/core + ports.mjs) let a local real-core server be built with zero core edits; prefer port-level fakes over contract mocks for e2e.
+- 2026-10-28 forge-ui-prototypes: a router-level variant contract (pages/modules override, fallback to current, DEV-only import) let three UI builders run in parallel with zero shared edits - reuse for multi-direction prototypes.
+- 2026-10-28 forge-ui-prototypes: UI builders listed screenshots they "took but did not view" and one shipped a wrapped toolbar at the PRIMARY viewport; UI briefs must require the primary-viewport shot re-taken and viewed after the last CSS change, after document.fonts.ready.
+- 2026-10-28 forge-ui-prototypes: two builders generated committed CSS from scratchpad-only sources; UI briefs must say "author repo files directly, no out-of-repo generators".
+- 2026-10-28 live verification: a CDP tab created with background:true throttles timers (~1/min) and hung a 2-min script for 2 h; drive live pages in a foreground tab with focus emulation and a hard timeout.
