@@ -69,7 +69,7 @@ export const CHANGE_LABELS = { new: 'New', grew: 'Evidence grew', reopened: 'Reo
  * @param {{title: string, rationale?: string, body?: string, ref: string, evidence?: {type: string, ref: string, quote?: string}[]}} card
  */
 export function issuePreview(card) {
-  return { summary: card.title, rationale: String(card.rationale ?? ''), body: String(card.body ?? ''), evidence: card.evidence ?? [] };
+  return { summary: card.title, rationale: String(card.rationale ?? ''), body: String(card.body ?? '').replace(/^(\s*#{1,6}\s+)Description\s*#*\s*$/m, '$1Details'), evidence: card.evidence ?? [] };
 }
 
 /**

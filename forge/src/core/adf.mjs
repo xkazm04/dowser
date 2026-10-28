@@ -96,6 +96,14 @@ function evidenceList(card) {
 }
 
 /**
+ * The card body as the issue shows it. Jira already titles the field "Description", so the card's own
+ * Description section reads "Details" there (the accept preview applies the same rename).
+ * @param {unknown} body
+ * @returns {string}
+ */
+export const issueBody = (body) => String(body ?? '').replace(/^(\s*#{1,6}\s+)Description\s*#*\s*$/m, '$1Details');
+
+/**
  * The description of the issue an accept creates (contract amendment 3, the UI preview shows the same order):
  * rationale, the card body (its five sections), the evidence list with links, then "Proposed by Dowser (DW-n)".
  * @param {Card} card
@@ -105,7 +113,7 @@ function evidenceList(card) {
 export function issueDescription(card, inboxUrl) {
   /** @type {AdfNode[]} */
   const content = [paragraph(inline(String(card.rationale)))];
-  content.push(...markdownToAdf(String(card.body ?? '')));
+  content.push(...markdownToAdf(issueBody(card.body)));
   content.push(heading(3, 'Evidence'), evidenceList(card));
   content.push(paragraph([text('Proposed by Dowser ('), text(card.ref, inboxUrl ? [linkMark(inboxUrl)] : undefined), text(')')]));
   return { type: 'doc', version: 1, content };
