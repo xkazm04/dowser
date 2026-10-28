@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Checkout - Pebble Shop</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main>
+    <h1>Checkout</h1>
+    <form id="address-form">
+      <h2>Delivery address</h2>
+      <input type="text" name="name" placeholder="Full name">
+      <input type="text" name="street" placeholder="Street and number">
+      <input type="text" name="city" placeholder="City">
+      <button type="button" id="save-address">Save address</button>
+    </form>
+    <form id="payment-form">
+      <h2>Payment</h2>
+      <div class="card-brands">
+        <img src="/img/visa.svg">
+        <img src="/img/mastercard.svg">
+      </div>
+      <input type="text" name="card" inputmode="numeric" placeholder="Card number">
+      <input type="text" name="expiry" placeholder="MM/YY">
+      <input type="text" name="cvc" placeholder="CVC">
+      <p class="status-dot" style="color: red">&#9679;</p>
+      <div class="pay" onclick="pay()"><svg class="icon-lock" viewBox="0 0 16 16"><path d="M4 7V5a4 4 0 0 1 8 0v2h1v8H3V7z"/></svg></div>
+    </form>
+    <p id="payment-message" role="alert"></p>
+  </main>
+  <script src="/app.js"></script>
+  <script src="/address.js"></script>
+</body>
+</html>

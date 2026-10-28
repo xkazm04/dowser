@@ -1,0 +1,22 @@
+{
+  "name": "pebble-shop",
+  "version": "1.4.0",
+  "description": "A small web shop for handmade goods: catalogue, cart, checkout and an admin CLI.",
+  "license": "MIT",
+  "private": true,
+  "type": "commonjs",
+  "main": "src/server.js",
+  "bin": {
+    "pebble": "cli/pebble.js"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "lodash": "4.17.15"
+  }
+}

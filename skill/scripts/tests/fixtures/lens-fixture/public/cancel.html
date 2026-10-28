@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Cancel Pebble Box - Pebble Shop</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main>
+    <h1>Before you go</h1>
+    <form id="cancel-form" method="post" action="/box/cancel">
+      <section data-step="1">
+        <h2>Why are you leaving?</h2>
+        <label><input type="radio" name="reason" value="price"> Too expensive</label>
+        <label><input type="radio" name="reason" value="taste"> Not my style</label>
+        <label><input type="radio" name="reason" value="other"> Something else</label>
+      </section>
+      <section data-step="2" hidden>
+        <h2>Stay for 30% off your next 3 boxes?</h2>
+        <p>Only today: this offer ends in <span id="countdown">09:59</span>.</p>
+        <button type="submit" name="accept_offer" value="1">Yes, keep my box</button>
+      </section>
+      <section data-step="3" hidden>
+        <h2>Pause instead?</h2>
+        <label><input type="checkbox" name="pause" checked> Pause my box for 3 months instead of cancelling</label>
+      </section>
+      <section data-step="4" hidden>
+        <h2>Are you sure you want to leave the Pebble Box family?</h2>
+        <button type="submit" name="step" value="4">Cancel my subscription</button>
+      </section>
+      <button type="submit" class="next">Continue</button>
+    </form>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

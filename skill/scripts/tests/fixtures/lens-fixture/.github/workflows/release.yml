@@ -1,0 +1,25 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm test
+      - run: npm pack
+      - name: Software bill of materials (CycloneDX)
+        run: npm sbom --sbom-format cyclonedx --omit dev > pebble-shop.cdx.json
+      - name: Publish the tarball and its SBOM on the release page
+        run: gh release create "$GITHUB_REF_NAME" pebble-shop-*.tgz pebble-shop.cdx.json --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

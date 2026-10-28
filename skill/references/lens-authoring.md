@@ -96,3 +96,38 @@ it with its provenance (cluster, who accepted it, when). `context --lens <id>` r
 `rules`, and the agent applies it as binding on top of the pack. To make a rule permanent for
 everyone who uses the pack, copy its text into the pack's hypotheses or evidence rules, bump
 `version` (patch), and note the rule id in the changelog line.
+
+## Measuring a lens
+
+Every pack change is measured before and after, on a seeded fixture, so a "better" pack is a
+number and not an impression.
+
+- **The fixture** is `scripts/tests/fixtures/lens-fixture/`: a small web shop (checkout with a
+  payment step, an admin CLI, README and `docs/`, a lockfile pinning a package with known
+  advisories). `_expected.json` lists, per lens, 3-4 **seeded** findings (taken from the pack's
+  hypotheses) and at least 2 **decoys**: code that looks like a finding but is not, such as a
+  correct doc, an error that does recover, or a test-only key. `_sources.json` seeds the mock
+  Forge with tickets, pages and goals; `_auditor/npm-audit.json` is captured audit output;
+  `_history/commits.json` replays a short git history. Files starting with `_` never reach the
+  scanned copy.
+- **Run it** from the repository root: `node tools/lens-eval.mjs --lens <id> [--model <m>]`.
+  It copies the fixture to a temp folder, makes it a git repo, gives it a temp `DOWSER_HOME`,
+  connects the mock Forge, runs one headless Claude Code scan of that lens only, scores the
+  cards and appends one row to `~/.dowser/evals.jsonl` (`--evals <file>` to change it).
+  `--dry-run` builds the workspace and prints the plan without calling Claude. A real run
+  costs tokens.
+- **The numbers.** A card counts for the one seeded item or decoy its anchors land on most
+  strongly. `recall` is seeded items found over seeded items. `precision` is cards on a
+  seeded item over cards that survived `verify`; a card on nothing expected counts against it
+  and is listed under `unmatched` so you can judge it by hand. `decoy_hits` is cards on a
+  decoy and should be 0. `artifacts_valid` of `artifacts_total` is how many supporting views
+  pass validation, and `verify_dropped` is how many cards `verify` removed. A value that was
+  not measured is left out, never 0: no `precision` when nothing was emitted.
+- **What the fixture does not prove.** The fixture tests the pack's mechanics on findings its
+  author planted. Precision that matters is measured on a real repository: hand-verify a
+  sample of 10 cards (or all, if fewer) and count the true ones.
+- **Record it.** The pack's changelog line for the new version states both: the fixture
+  score and the hand-verified precision, each with its `n` and date, for example
+  `0.2.0 - direction, artifacts; fixture recall 4/4, 0 decoys (2026-11-02); precision 8/10 on
+  acme-shop (2026-11-03)`. If fixture recall falls or a decoy is hit, explain why in that
+  changelog line before the pack ships.

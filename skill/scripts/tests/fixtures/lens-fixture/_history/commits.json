@@ -1,0 +1,32 @@
+{
+  "about": "The fixture's git history, oldest first. tools/lens-eval.mjs builds each commit from the final tree (the fixture minus files starting with _), with `files` overriding paths for that commit: a value is a file under the fixture root holding the older content, null means the path does not exist yet (or any more). The last commit is the final tree. Dates are `days_ago` from the eval run, so the doc-drift lens's 120-day window always sees the recent commits.",
+  "author": { "name": "Mira Stone", "email": "mira@pebble-shop.example" },
+  "commits": [
+    {
+      "days_ago": 210,
+      "message": "Pebble Shop 1.3.0: Pebble Box subscription, orders sync command",
+      "files": {
+        "src/config.js": "_history/1.3/src/config.js",
+        "src/checkout/payment.js": "_history/1.3/src/checkout/payment.js",
+        "src/checkout/guest.js": null,
+        "src/jobs/orders-sync.js": "_history/1.3/src/jobs/orders-sync.js",
+        "cli/pebble.js": "_history/1.3/cli/pebble.js",
+        "CHANGELOG.md": "_history/1.3/CHANGELOG.md"
+      }
+    },
+    {
+      "days_ago": 60,
+      "message": "Remove the orders sync command (the nightly report replaces it); lower the cart limit to 20 items",
+      "files": {
+        "src/config.js": "_history/1.4-pre/src/config.js",
+        "src/checkout/payment.js": "_history/1.3/src/checkout/payment.js",
+        "src/checkout/guest.js": null
+      }
+    },
+    {
+      "days_ago": 25,
+      "message": "Guest checkout behind PEBBLE_GUEST_CHECKOUT",
+      "files": {}
+    }
+  ]
+}

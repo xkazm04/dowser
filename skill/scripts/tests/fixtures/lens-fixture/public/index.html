@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Pebble Shop</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <a href="/"><img src="/img/logo.svg" alt="Pebble Shop home"></a>
+    <form action="/search" role="search">
+      <label for="q">Search the shop</label>
+      <input id="q" name="q" type="search" autocomplete="off">
+      <button type="submit" aria-label="Search"><svg class="icon-search" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5"/></svg></button>
+    </form>
+  </header>
+  <main>
+    <h1>Handmade goods, made to last</h1>
+    <ul id="products"></ul>
+    <section class="box-promo">
+      <h2>Pebble Box</h2>
+      <p>A monthly box of seasonal goods. Cancel any time from your account.</p>
+      <button type="button" id="subscribe">Subscribe</button>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
