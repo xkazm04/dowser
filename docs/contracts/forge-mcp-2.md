@@ -1,8 +1,9 @@
 # Forge MCP contract, version 2 (`forge-mcp-2`)
 
 This is the seam between the Dowser local skill and the Dowser Forge app (`forge/`). The Forge app
-implements these six tools on its `rovo:mcp` server. `tools/mock-forge-mcp.mjs` implements the same six tools
-locally, so the skill can be tested without a Jira site.
+implements these seven tools on its `rovo:mcp` server (the original six plus `dowser_reflect_sync`, added
+without a version change). `tools/mock-forge-mcp.mjs` implements the same tools locally, so the skill can be
+tested without a Jira site.
 
 **What changed from `forge-mcp-1`.** Version 1 was never deployed, so version 2 replaces it rather than
 being served alongside it:
@@ -244,6 +245,57 @@ Input: `{project_key, run_id, areas_json}`.
 | `areas_json[].last_change` | string | ISO timestamp of the newest commit touching the path. Omitted when there is none |
 
 Output: `{stored}`, the number of areas kept. The set replaces the project's previous areas whole.
+
+## `dowser_reflect_sync`
+
+The seventh tool, additive to `forge-mcp-2`. The skill learns rules from what people reject ("do not
+propose `csv` items for the opportunity lens again") and offers them for a person to accept or decline.
+Forge is where the person decides. This tool is one idempotent round trip: the skill pushes its `offered`
+rules and reads back every rule decided in Forge and the recorded outcomes of accepted items.
+
+Input: `{project_key, rules_json?}`.
+
+| field | type | rule |
+|---|---|---|
+| `project_key` | string | required. The inbox must exist (a push creates it), else `unknown-project` |
+| `rules_json` | string | optional. A JSON array of at most 50 offered rules. Send `"[]"` (or omit it) to only read. When a transport gives no tool name, a call with `rules_json` is routed here by its shape, so send `"[]"` rather than omitting it |
+| `rules_json[].id` | string | required, 1-64 characters of letters, digits and `. _ : -`. Unique per `project_key` |
+| `rules_json[].lens` | string | required: `opportunity`, `ux-friction`, `doc-drift` or `security-cra` |
+| `rules_json[].text` | string | required, 1-2000 characters. The draft wording |
+| `rules_json[].titles` | string[] | optional, at most 10, the titles of the rejected items behind the rule. Omitted when there are none |
+| `rules_json[].offered_at` | string | required ISO timestamp |
+
+A single invalid rule refuses the whole call with `bad-input` (the message names its index) and stores nothing.
+
+Output:
+
+```json
+{"rules": [{"id": "rule-3fa9", "lens": "opportunity", "state": "accepted", "text": "Do not propose csv items",
+  "decided_by": "forge:712020:7d1c", "decided_at": "2026-10-27T11:00:00.000Z"}],
+ "outcomes": [{"ref": "DW-2", "fp": "...", "rating": "partly", "note": "shipped without the filter",
+  "issue_ref": "SHOP-41", "decided_by": "forge:712020:7d1c", "recorded_at": "2026-10-29T08:00:00.000Z"}]}
+```
+
+| field | type | rule |
+|---|---|---|
+| `rules[]` | | every rule a person decided in Forge, oldest decision first. Rules that are still `offered` are not returned |
+| `rules[].state` | string | `accepted` or `declined` |
+| `rules[].text` | string | the wording on file: the person's edit when they edited it while accepting, else the offered text |
+| `rules[].decided_by`, `decided_at` | string | like a verdict: `forge:<accountId>` and an ISO timestamp |
+| `outcomes[]` | | the newest 200 outcomes of the project, newest first. An outcome is how the person who owns the issue rates an accepted item |
+| `outcomes[].rating` | string | `right`, `partly` or `wrong` |
+| `outcomes[].note` | string | optional. Omitted when the person gave none |
+| `outcomes[].ref`, `fp`, `issue_ref` | string | the inbox item, its fingerprint and the Jira issue it created |
+
+**Idempotency and precedence.** Rules upsert by `(project_key, id)`. A rule that is still offered has its
+`lens`, `text`, `titles` and `offered_at` refreshed by a later push. A rule a person has decided in Forge
+is **never reverted** by a push, and its decided text is never overwritten: the Forge decision wins.
+Repeating a call changes nothing. The skill applies the returned decisions the way it applies verdicts
+(accepted rule: the lens prompt carries it; declined: it is never offered again).
+
+**Notes on every decision.** `Verdict.note` was already optional. Forge now also accepts a note when a
+person **accepts** or **snoozes** an item (in the inbox and through the Rovo agent), and it arrives in the
+verdict like a reject note. A note is at most 2000 characters on every decision.
 
 ## Versioning
 

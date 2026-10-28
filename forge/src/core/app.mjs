@@ -5,6 +5,8 @@
 import { getProposal, bylineForPage, inboxSummaries, listInbox, panelForIssue, cardOf, historyOf } from './cards.mjs';
 import { mapData, pushAreas } from './areas.mjs';
 import { pushProposals } from './push.mjs';
+import { observed } from './observe.mjs';
+import { outcomeRecord, reflectData, reflectSync, ruleDecide } from './reflect.mjs';
 import { sourcesGoals, sourcesPages, sourcesTickets } from './sources.mjs';
 import { findProposal, needInbox } from './store.mjs';
 import { accept, deciderOf, merge, pullVerdicts, record, reject, snooze } from './verdicts.mjs';
@@ -23,9 +25,9 @@ import { LENSES, isOneOf } from '../shared/model.mjs';
 /** A missing table: the schema is not migrated yet (index.js runs the migrations once and retries). */
 export const NO_TABLE_RE = /doesn't exist|no such table|Unknown table/i;
 
-/** The six forge-mcp-2 tools. */
+/** The seven forge-mcp-2 tools (reflect_sync is additive to the original six). */
 export const TOOL_NAMES = /** @type {const} */ (['dowser_sources_tickets', 'dowser_sources_pages', 'dowser_sources_goals',
-  'dowser_proposals_push', 'dowser_verdicts_pull', 'dowser_areas_push']);
+  'dowser_proposals_push', 'dowser_verdicts_pull', 'dowser_areas_push', 'dowser_reflect_sync']);
 /** The Rovo agent actions (dowser_sources_goals is shared with the MCP tools). */
 export const ROVO_ACTIONS = /** @type {const} */ (['dowser_inbox_list', 'dowser_proposal_explain', 'dowser_verdict_record']);
 
@@ -37,6 +39,7 @@ const TOOLS = {
   dowser_proposals_push: (d, a) => pushProposals(d, a),
   dowser_verdicts_pull: (d, a) => pullVerdicts(d, a),
   dowser_areas_push: (d, a) => pushAreas(d, a),
+  dowser_reflect_sync: (d, a) => reflectSync(d, a),
 };
 
 /** @param {string} accountId @param {Via} via */
@@ -79,11 +82,11 @@ const argsOf = (payload) => (isObj(payload) ? payload : {});
  * @returns {Promise<object>} the tool's JSON, or `{error, message}`
  */
 export function runTool(deps, name, payload, accountId) {
-  return answer(async () => {
+  return observed(deps, 'tool', name, payload, () => answer(async () => {
     const id = needAccount(accountId);
     if (!name || !Object.hasOwn(TOOLS, name)) throw new AppError('bad-input', `unknown tool ${JSON.stringify(name)}`);
     return TOOLS[/** @type {typeof TOOL_NAMES[number]} */ (name)](deps, argsOf(payload), id);
-  });
+  }));
 }
 
 /**
@@ -92,10 +95,10 @@ export function runTool(deps, name, payload, accountId) {
  */
 export const RESOLVERS = {
   'inbox.list': (d, p) => listInbox(d.db, { project_key: optStr(p, 'project_key'), status: optStr(p, 'status'), lens: optStr(p, 'lens'), cursor: optStr(p, 'cursor') }),
-  'proposal.get': (d, p) => getProposal(d.db, needStr(p, 'ref')),
-  'verdict.accept': (d, p, id, via) => accept(d, { ref: needStr(p, 'ref'), jira_project_key: optStr(p, 'jira_project_key'), issue_type_id: optStr(p, 'issue_type_id') }, who(id, via)),
+  'proposal.get': (d, p) => getProposal(d, needStr(p, 'ref')),
+  'verdict.accept': (d, p, id, via) => accept(d, { ref: needStr(p, 'ref'), jira_project_key: optStr(p, 'jira_project_key'), issue_type_id: optStr(p, 'issue_type_id'), note: p.note }, who(id, via)),
   'verdict.reject': (d, p, id, via) => reject(d, { refs: p.refs, reason: p.reason, note: p.note }, who(id, via)),
-  'verdict.snooze': (d, p, id, via) => snooze(d, { refs: p.refs }, who(id, via)),
+  'verdict.snooze': (d, p, id, via) => snooze(d, { refs: p.refs, note: p.note }, who(id, via)),
   'verdict.merge': (d, p, id, via) => merge(d, { ref: p.ref, into: p.into }, who(id, via)),
   'settings.get': async (d) => ({ inboxes: await inboxSummaries(d.db) }),
   'settings.set': (d, p) => setSettings(d, p),
@@ -108,10 +111,13 @@ export const RESOLVERS = {
   'panel.forIssue': (d, p) => {
     const key = needStr(p, 'issue_key');
     if (!ISSUE_KEY_RE.test(key)) throw new AppError('bad-input', `${key} is not a Jira issue key`);
-    return panelForIssue(d.db, key);
+    return panelForIssue(d, key);
   },
   'map.data': (d, p) => mapData(d.db, needStr(p, 'project_key')),
   'byline.forPage': (d, p) => bylineForPage(d.db, needStr(p, 'page_id')),
+  'reflect.data': (d, p) => reflectData(d, p),
+  'rule.decide': (d, p, id) => ruleDecide(d, p, id),
+  'outcome.record': (d, p, id) => outcomeRecord(d, p, id),
 };
 
 /**
@@ -142,11 +148,11 @@ async function setSettings(d, p) {
  * @returns {Promise<object>}
  */
 export function runResolver(deps, key, payload, accountId, via) {
-  return answer(async () => {
+  return observed(deps, 'resolver', key, payload, () => answer(async () => {
     const id = needAccount(accountId);
     if (!Object.hasOwn(RESOLVERS, key)) throw new AppError('bad-input', `unknown resolver ${key}`);
     return RESOLVERS[/** @type {keyof ResolverContract} */ (key)](deps, argsOf(payload), id, via);
-  });
+  }));
 }
 
 // ------------------------------------------------------------------------------------------------- rovo
@@ -209,11 +215,11 @@ const ROVO = {
  */
 export function runRovo(deps, name, payload, accountId) {
   if (name && /** @type {readonly string[]} */ (TOOL_NAMES).includes(name)) return runTool(deps, name, payload, accountId);
-  return answer(async () => {
+  return observed(deps, 'rovo', name, payload, () => answer(async () => {
     const id = needAccount(accountId);
     if (!name || !Object.hasOwn(ROVO, name)) throw new AppError('bad-input', `unknown action ${JSON.stringify(name)}`);
     return ROVO[/** @type {typeof ROVO_ACTIONS[number]} */ (name)](deps, argsOf(payload), id);
-  });
+  }));
 }
 
 
@@ -224,8 +230,9 @@ const has = (v, k) => isObj(v) && v[k] !== undefined && v[k] !== null;
  * Which tool or action a call is for. The action key comes from the invocation (`getAppContext().moduleKey`,
  * else a `moduleKey` the platform put on the context or payload). When none of those is a known name (the
  * rovo:mcp docs do not say which key a tool call carries), it is inferred from the argument shape, which is
- * unambiguous across the six tools: proposals_json -> push, areas_json -> areas, query+limit -> tickets,
- * query -> pages, project_key -> pull, nothing -> goals. Rovo: ref+status -> record, ref -> explain, else list.
+ * unambiguous across the seven tools: proposals_json -> push, areas_json -> areas, rules_json -> reflect,
+ * query+limit -> tickets, query -> pages, project_key -> pull, nothing -> goals. A reflect call without
+ * rules_json looks like a pull by shape alone, so callers send `rules_json: "[]"` (the skill's sync does). Rovo: ref+status -> record, ref -> explain, else list.
  * @param {'mcp' | 'rovo'} surface
  * @param {(string | undefined)[]} candidates  moduleKey values in order of trust
  * @param {unknown} payload
@@ -238,6 +245,7 @@ export function actionName(surface, candidates, payload) {
   if (surface === 'mcp') {
     if (has(payload, 'proposals_json')) return 'dowser_proposals_push';
     if (has(payload, 'areas_json')) return 'dowser_areas_push';
+    if (has(payload, 'rules_json')) return 'dowser_reflect_sync';
     if (has(payload, 'query')) return has(payload, 'limit') ? 'dowser_sources_tickets' : 'dowser_sources_pages';
     if (has(payload, 'project_key')) return 'dowser_verdicts_pull';
     return 'dowser_sources_goals';

@@ -148,4 +148,37 @@ export const MIGRATIONS = Object.freeze([
   PRIMARY KEY (project_key, path)
 )`,
   },
+  {
+    name: 'v012_rules',
+    // Rules the skill offered (dowser_reflect_sync). text/titles refresh while state = offered; a decided rule
+    // (accepted|declined, by a person in Forge) is never reverted by a later push. decided_by = forge:<accountId>.
+    statement: `CREATE TABLE IF NOT EXISTS rules (
+  project_key VARCHAR(191) NOT NULL,
+  id VARCHAR(64) NOT NULL,
+  lens VARCHAR(32) NOT NULL,
+  text TEXT NOT NULL,
+  titles_json TEXT,
+  state VARCHAR(16) NOT NULL,
+  offered_at VARCHAR(32) NOT NULL,
+  decided_by VARCHAR(255),
+  decided_at VARCHAR(32),
+  PRIMARY KEY (project_key, id)
+)`,
+  },
+  {
+    name: 'v013_outcomes',
+    // One outcome per accepted item (PK ref): how the person who owns the issue rates it. Append-only.
+    statement: `CREATE TABLE IF NOT EXISTS outcomes (
+  ref VARCHAR(32) NOT NULL,
+  project_key VARCHAR(191) NOT NULL,
+  fp CHAR(16) NOT NULL,
+  rating VARCHAR(16) NOT NULL,
+  note TEXT,
+  issue_ref VARCHAR(64) NOT NULL,
+  decided_by VARCHAR(255) NOT NULL,
+  recorded_at VARCHAR(32) NOT NULL,
+  PRIMARY KEY (ref)
+)`,
+  },
+  { name: 'v014_outcomes_project_ix', statement: 'CREATE INDEX ix_outcomes_project ON outcomes (project_key, recorded_at)' },
 ]);

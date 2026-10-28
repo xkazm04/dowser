@@ -22,6 +22,10 @@ export const OUTCOME_RATINGS = /** @type {const} */ (['right', 'partly', 'wrong'
 export const RULES_MAX = 50;
 export const OUTCOMES_MAX = 200;
 export const PUSH_MAX = 50;
+/** Longest decision note (reject, accept, snooze, outcome) and rule text, in characters. */
+export const NOTE_MAX = 2000;
+export const RULE_TEXT_MAX = 2000;
+export const RULE_TITLES_MAX = 10;
 export const AREAS_MAX = 200;
 /** Inbox page size (the Custom UI invoke payload cap is 500 KB). */
 export const PAGE_SIZE = 50;
@@ -47,6 +51,7 @@ export const PAGE_SIZE = 50;
  * @typedef {{project_key: string, cursor?: string}} PullInput
  * @typedef {{fp: string, status: VerdictStatus, reason?: string, note?: string, merged_into?: string, decided_by: string,
  *   decided_at: string, external_ref: string, issue_ref?: string, issue_url?: string}} Verdict
+ * @typedef {Verdict & {decided_by_name?: string}} HistoryRow  a Verdict as the Custom UI reads it (never sent to the skill)
  * @typedef {{verdicts: Verdict[], cursor: string}} PullOutput
  * @typedef {{path: string, files: number, churn_90d: number, authors_90d?: number, last_change?: string}} Area
  * @typedef {{project_key: string, run_id: string, areas_json: string}} AreasInput
@@ -103,17 +108,20 @@ export const PAGE_SIZE = 50;
  * Resolver contract (invoke key -> payload -> result). Every resolver answers `{error, message}` on failure.
  * @typedef {{
  *   'inbox.list': [{project_key?: string, status?: InboxStatus, lens?: string, cursor?: string}, {inboxes: InboxSummary[], groups: InboxGroup[], next?: string}],
- *   'proposal.get': [{ref: string}, {card: Card, history: Verdict[]}],
- *   'verdict.accept': [{ref: string, jira_project_key?: string, issue_type_id?: string}, {card: Card}],
+ *   'proposal.get': [{ref: string}, {card: Card, history: HistoryRow[]}],
+ *   'verdict.accept': [{ref: string, jira_project_key?: string, issue_type_id?: string, note?: string}, {card: Card}],
  *   'verdict.reject': [{refs: string[], reason: string, note?: string}, {cards: Card[]}],
- *   'verdict.snooze': [{refs: string[]}, {cards: Card[]}],
+ *   'verdict.snooze': [{refs: string[], note?: string}, {cards: Card[]}],
  *   'verdict.merge': [{ref: string, into: string}, {card: Card}],
  *   'settings.get': [{}, {inboxes: InboxSummary[]}],
  *   'settings.set': [{project_key: string, jira_project_key: string, issue_type_id: string}, {inbox: InboxSummary}],
  *   'jira.projects': [{}, {projects: {key: string, name: string, issue_types: {id: string, name: string}[]}[]}],
- *   'panel.forIssue': [{issue_key: string}, {card?: Card, history: Verdict[]}],
+ *   'panel.forIssue': [{issue_key: string}, {card?: Card, history: HistoryRow[]}],
  *   'map.data': [{project_key: string}, {areas: (Area & {proposals: {lens: string, open: number, accepted: number}[]})[], points: {ref: string, lens: string, effort: string, confidence: string, blast?: string}[]}],
  *   'byline.forPage': [{page_id: string}, {count: number, cards: Card[]}],
+ *   'reflect.data': [{project_key: string}, ReflectData],
+ *   'rule.decide': [{project_key: string, id: string, state: 'accepted' | 'declined', text?: string}, {rule: RuleRow}],
+ *   'outcome.record': [{ref: string, rating: OutcomeRating, note?: string}, {outcome: Outcome & {title: string, decided_by_name?: string}, candidates: OutcomeCandidate[]}],
  * }} ResolverContract
  */
 

@@ -38,7 +38,9 @@
  *   createIssue: (f: {projectKey: string, issueTypeId: string, summary: string, description: AdfDoc}) => Promise<{key: string, url: string}>,
  *   addComment: (issueKey: string, body: AdfDoc) => Promise<void>,
  *   listProjects: () => Promise<{key: string, name: string, issue_types: {id: string, name: string}[]}[]>,
+ *   issueStatuses: (keys: string[]) => Promise<Record<string, {name: string, category: 'new' | 'indeterminate' | 'done'}>>,
  * }} Jira
+ *  `issueStatuses` answers only the keys Jira returned (a missing key is unreadable or gone); it throws on failure.
  */
 
 /**
@@ -59,8 +61,15 @@
  */
 
 /**
- * Everything a core function may need. `now` is injected so tests control time.
- * @typedef {{db: Db, jira?: Jira, sources?: Sources, links: Links, now: () => Date}} Deps
+ * Display names for Atlassian account ids. Best effort: an id Jira will not name is absent from the answer, and
+ * the adapter tolerates a failed batch (the core then omits the names).
+ * @typedef {{names: (accountIds: string[]) => Promise<Record<string, string>>}} Users
+ */
+
+/**
+ * Everything a core function may need. `now` is injected so tests control time; `log` receives the dispatch
+ * door's structured lines (default console.log).
+ * @typedef {{db: Db, jira?: Jira, sources?: Sources, links: Links, users?: Users, now: () => Date, log?: (line: string) => void}} Deps
  */
 
 export {};

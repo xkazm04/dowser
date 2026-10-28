@@ -28,6 +28,7 @@ modules:
         - dowser_proposals_push
         - dowser_verdicts_pull
         - dowser_areas_push
+        - dowser_reflect_sync
 
   action:
     - key: dowser_sources_tickets
@@ -80,6 +81,14 @@ modules:
         project_key: { title: Project key, type: string, required: true, description: The key Dowser derives from the repo origin. }
         run_id: { title: Run id, type: string, required: true, description: The Dowser run that measured the areas. }
         areas_json: { title: Areas, type: string, required: true, description: JSON array of at most 200 areas. }
+    - key: dowser_reflect_sync
+      name: Sync reflection
+      function: mcp
+      actionVerb: CREATE
+      description: Offer the skill's learned rules and read back the rules decided in Jira and the outcomes of accepted items. Idempotent.
+      inputs:
+        project_key: { title: Project key, type: string, required: true, description: The key Dowser derives from the repo origin. }
+        rules_json: { title: Rules, type: string, required: false, description: JSON array of at most 50 offered rules with id and lens and text and offered_at and optional titles. Send an empty array to only read. }
     - key: dowser_inbox_list
       name: List proposals
       function: rovo
@@ -106,7 +115,7 @@ modules:
         ref: { title: Reference, type: string, required: true, description: The inbox ref (DW-12) or the fingerprint. }
         status: { title: Verdict, type: string, required: true, description: accepted, rejected, snoozed or merged. }
         reason: { title: Reason, type: string, required: false, description: Required for rejected - false-positive, already-known, not-our-direction, not-worth-it, wrong-size or other. }
-        note: { title: Note, type: string, required: false, description: Required when the reason is other. }
+        note: { title: Note, type: string, required: false, description: Required when the reason is other; optional for accepted and snoozed. }
         merged_into: { title: Merge into, type: string, required: false, description: Required for merged - a DW ref or a Jira key. }
 
   rovo:agent:
@@ -144,6 +153,8 @@ modules:
           route: inbox
         - title: Opportunity map
           route: map
+        - title: Learning
+          route: reflect
         - title: Settings
           route: settings
 

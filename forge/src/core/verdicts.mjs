@@ -11,7 +11,7 @@ import { REASONS, decisionProblem, isOneOf } from '../shared/model.mjs';
 import { issueDescription, mergeComment } from './adf.mjs';
 import { cardOf, toVerdict } from './cards.mjs';
 import { counterValue, findProposal, needInbox, nextCounter, toProposal } from './store.mjs';
-import { REF_RE, VERDICT_STATUSES } from './types.mjs';
+import { NOTE_MAX, REF_RE, VERDICT_STATUSES } from './types.mjs';
 import { AppError, DuplicateKey, FP_RE, ISSUE_KEY_RE, needStr, optStr, sqlv, str } from './util.mjs';
 
 /**
@@ -34,6 +34,19 @@ export const CLAIM_MS = 120_000;
 
 /** @param {string} accountId @returns {string} */
 export const deciderOf = (accountId) => `forge:${accountId}`;
+
+/**
+ * An optional decision note: trimmed, absent when empty, at most NOTE_MAX characters.
+ * @param {unknown} v
+ * @returns {string | undefined}
+ */
+function noteOf(v) {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== 'string') throw new AppError('bad-input', 'note must be a string');
+  const n = v.trim();
+  if (n.length > NOTE_MAX) throw new AppError('bad-input', `note is longer than ${NOTE_MAX} characters`);
+  return n || undefined;
+}
 
 /** @param {string} projectKey */
 const seqName = (projectKey) => `seq:${projectKey}`;
@@ -128,13 +141,14 @@ const needOpen = (p) => {
  * Accept (F5): create the Jira issue as the app, then record status + verdict. An item already accepted
  * returns its card (and issue) unchanged.
  * @param {Deps} deps
- * @param {{ref: string, jira_project_key?: string, issue_type_id?: string}} args
+ * @param {{ref: string, jira_project_key?: string, issue_type_id?: string, note?: unknown}} args
  * @param {Decider} who
  * @returns {Promise<{card: Card}>}
  */
 export async function accept(deps, args, who) {
   const { db, links } = deps;
   if (!deps.jira) throw new AppError('unavailable', 'Jira is not reachable from this module');
+  const note = noteOf(args.note);
   const p = await findProposal(db, needStr(args, 'ref'));
   if (p.status === 'accepted') return { card: await cardOf(db, p) };
   needOpen(p);
@@ -167,7 +181,7 @@ export async function accept(deps, args, who) {
     throw new AppError('unavailable', `Jira did not create the issue (${/** @type {Error} */ (e).message}); ${p.ref} stays open`);
   }
   try {
-    const after = await decide(deps, p, { to: 'accepted', issue_ref: issue.key, issue_url: issue.url, claim }, who);
+    const after = await decide(deps, p, { to: 'accepted', note, issue_ref: issue.key, issue_url: issue.url, claim }, who);
     return { card: await cardOf(db, after) };
   } catch (e) {
     if (e instanceof AppError) throw new AppError(e.code, `${e.message}. Jira issue ${issue.key} was created; link or delete it by hand`);
@@ -224,7 +238,7 @@ async function decideAll(deps, items, d, who) {
  */
 export async function reject(deps, args, who) {
   const reason = typeof args.reason === 'string' ? args.reason : undefined;
-  const note = str(args.note) ? args.note.trim() : undefined;
+  const note = noteOf(args.note);
   if (!isOneOf(REASONS, reason)) throw new AppError('bad-input', `reason must be one of ${REASONS.join(', ')}`);
   const problem = decisionProblem({ to: 'rejected', reason, note });
   if (problem) throw new AppError('bad-input', problem.replace(/--/g, ''));
@@ -234,12 +248,13 @@ export async function reject(deps, args, who) {
 /**
  * Snooze one or more items; any new evidence key reopens them (F3).
  * @param {Deps} deps
- * @param {{refs: unknown}} args
+ * @param {{refs: unknown, note?: unknown}} args
  * @param {Decider} who
  * @returns {Promise<{cards: Card[]}>}
  */
 export async function snooze(deps, args, who) {
-  return decideAll(deps, await openItems(deps.db, args.refs), { to: 'snoozed' }, who);
+  const note = noteOf(args.note);
+  return decideAll(deps, await openItems(deps.db, args.refs), { to: 'snoozed', note }, who);
 }
 
 /**
@@ -283,9 +298,9 @@ export async function merge(deps, args, who) {
 export async function record(deps, args, who) {
   const ref = needStr(args, 'ref');
   switch (args.status) {
-    case 'accepted': return accept(deps, { ref }, who);
+    case 'accepted': return accept(deps, { ref, note: args.note }, who);
     case 'rejected': return { card: (await reject(deps, { refs: [ref], reason: args.reason, note: args.note }, who)).cards[0] };
-    case 'snoozed': return { card: (await snooze(deps, { refs: [ref] }, who)).cards[0] };
+    case 'snoozed': return { card: (await snooze(deps, { refs: [ref], note: args.note }, who)).cards[0] };
     case 'merged': return merge(deps, { ref, into: args.merged_into }, who);
     default: throw new AppError('bad-input', `status must be one of ${VERDICT_STATUSES.join(', ')}`);
   }

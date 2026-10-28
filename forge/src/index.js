@@ -6,7 +6,7 @@ import ResolverPkg from '@forge/resolver';
 import { getAppContext } from '@forge/api';
 import { NO_TABLE_RE, actionName, runResolver, runRovo, runTool } from './core/app.mjs';
 import { forgeDb, runMigrations } from './adapters/forge-sql.mjs';
-import { jira, links, sources } from './adapters/atlassian.mjs';
+import { jira, links, sources, users } from './adapters/atlassian.mjs';
 
 // @forge/resolver is CommonJS: tsc (nodenext) sees module.exports, the Forge bundler sees the class.
 /** @type {typeof import('@forge/resolver').default} */
@@ -16,7 +16,7 @@ const Resolver = /** @type {any} */ (ResolverPkg).default ?? ResolverPkg;
 /** @typedef {import('./core/ports.mjs').Deps} Deps */
 
 /** @returns {Deps} */
-const deps = () => ({ db: forgeDb, jira, sources, links, now: () => new Date() });
+const deps = () => ({ db: forgeDb, jira, sources, links, users, now: () => new Date() });
 
 let migrated = false;
 
@@ -63,7 +63,7 @@ const safe = async (fn) => {
 const resolver = new Resolver();
 /** @type {(keyof ResolverContract)[]} */
 const KEYS = ['inbox.list', 'proposal.get', 'verdict.accept', 'verdict.reject', 'verdict.snooze', 'verdict.merge',
-  'settings.get', 'settings.set', 'jira.projects', 'panel.forIssue', 'map.data', 'byline.forPage'];
+  'settings.get', 'settings.set', 'jira.projects', 'panel.forIssue', 'map.data', 'byline.forPage', 'reflect.data', 'rule.decide', 'outcome.record'];
 for (const key of KEYS) {
   resolver.define(key, async ({ payload, context }) => {
     // The issue panel is the only surface that decides from inside an issue; everything else is the inbox.

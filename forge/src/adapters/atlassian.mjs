@@ -16,16 +16,18 @@
 //   POST /rest/api/3/issue/{key}/comment
 //   GET  /rest/api/3/project/search?expand=issueTypes
 //   POST /rest/api/3/search/jql                         (the enhanced JQL search; /search is retired)
+//   GET  /rest/api/3/user/bulk?accountId=&accountId=    -> display names (asApp, read:jira-user)
 //   GET  /wiki/rest/api/content/search?cql=&expand=body.storage,version
 import { NeedsAuthenticationError, asApp, asUser, getAppContext, route } from '@forge/api';
 import { adfToText, htmlToText, trimText } from '../core/adf.mjs';
 import { BODY_MAX } from '../core/sources.mjs';
-import { AppError, omitAbsent } from '../core/util.mjs';
+import { AppError, ISSUE_KEY_RE, omitAbsent } from '../core/util.mjs';
 
 /**
  * @typedef {import('../core/ports.mjs').Jira} Jira
  * @typedef {import('../core/ports.mjs').Sources} Sources
  * @typedef {import('../core/ports.mjs').Links} Links
+ * @typedef {import('../core/ports.mjs').Users} Users
  * @typedef {import('../core/ports.mjs').SourceItem} SourceItem
  * @typedef {import('@forge/api').APIResponse} APIResponse
  */
@@ -115,6 +117,44 @@ export const jira = {
       }
       if (page.isLast !== false || !(page.values ?? []).length) break;
       startAt += page.values.length;
+    }
+    return out;
+  },
+  async issueStatuses(keys) {
+    /** @type {Record<string, {name: string, category: 'new' | 'indeterminate' | 'done'}>} */
+    const out = {};
+    const valid = [...new Set(keys)].filter((k) => ISSUE_KEY_RE.test(k));
+    for (let i = 0; i < valid.length; i += 50) {
+      const chunk = valid.slice(i, i + 50);
+      const res = await asApp().requestJira(route`/rest/api/3/search/jql`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ jql: `key in (${chunk.join(',')})`, maxResults: chunk.length, fields: ['status'] }),
+      });
+      const page = await json(res, 'Jira issue statuses');
+      for (const issue of /** @type {any[]} */ (page.issues ?? [])) {
+        const cat = issue.fields?.status?.statusCategory?.key;
+        if (cat === 'new' || cat === 'indeterminate' || cat === 'done') out[String(issue.key)] = { name: String(issue.fields.status.name ?? cat), category: cat };
+      }
+    }
+    return out;
+  },
+};
+
+/** @type {Users} */
+export const users = {
+  // Names are a nicety: a failed batch is skipped, so a Jira hiccup never costs a decision or a page.
+  async names(accountIds) {
+    /** @type {Record<string, string>} */
+    const out = {};
+    const ids = [...new Set(accountIds)].filter((a) => /^[A-Za-z0-9:_-]{1,128}$/.test(a));
+    for (let i = 0; i < ids.length; i += 50) {
+      try {
+        const q = new URLSearchParams({ maxResults: '50' });
+        for (const id of ids.slice(i, i + 50)) q.append('accountId', id);
+        const page = await json(await asApp().requestJira(route`/rest/api/3/user/bulk?${q}`), 'Jira user bulk');
+        for (const u of /** @type {any[]} */ (page.values ?? [])) if (u.accountId && u.displayName) out[String(u.accountId)] = String(u.displayName);
+      } catch { /* omit this batch's names */ }
     }
     return out;
   },

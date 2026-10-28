@@ -11,12 +11,12 @@ Graph goals to the skill as scan sources.
 
 | Manifest module | Key | Function | What it does |
 |---|---|---|---|
-| `rovo:mcp` | `dowser-mcp` | `mcp` | The six forge-mcp-2 tools, for Claude Code and Codex CLI |
-| `action` (x6) | `dowser_sources_tickets`, `dowser_sources_pages`, `dowser_sources_goals`, `dowser_proposals_push`, `dowser_verdicts_pull`, `dowser_areas_push` | `mcp` | The tools themselves. `rovo:mcp` lists them |
+| `rovo:mcp` | `dowser-mcp` | `mcp` | The seven forge-mcp-2 tools, for Claude Code and Codex CLI |
+| `action` (x7) | `dowser_sources_tickets`, `dowser_sources_pages`, `dowser_sources_goals`, `dowser_proposals_push`, `dowser_verdicts_pull`, `dowser_areas_push`, `dowser_reflect_sync` | `mcp` | The tools themselves. `rovo:mcp` lists them |
 | `action` (x3) | `dowser_inbox_list`, `dowser_proposal_explain`, `dowser_verdict_record` | `rovo` | The Rovo agent's actions |
 | `rovo:agent` | `dowser-agent` | - | Lists and explains proposals, and records verdicts for the person chatting with it |
 | `rovo:skill` | `dowser-skill` | - | The read actions as a skill for other agents |
-| `jira:globalPage` | `dowser-inbox` | `resolver` | The inbox, the opportunity map and settings (Custom UI) |
+| `jira:globalPage` | `dowser-inbox` | `resolver` | The inbox, the opportunity map, the Learning tab (route `reflect`) and settings (Custom UI) |
 | `jira:issuePanel` | `dowser-evidence` | `resolver` | The evidence trail on an accepted issue |
 | `confluence:contentBylineItem` | `dowser-doc-impact` | `resolver` | The proposals that cite or affect a page |
 | `trigger` | `dowser-migrate` | `migrate` | Forge SQL migrations on install and upgrade |
@@ -28,7 +28,8 @@ Graph goals to the skill as scan sources.
 - `forge/src/core/` is pure and Forge-free:
   - `app.mjs` is the one dispatch door. It checks the account, validates input and maps every failure to
     `{error, message}`.
-  - `push.mjs`, `verdicts.mjs`, `areas.mjs`, `sources.mjs` and `cards.mjs` hold the tool and resolver logic.
+  - `push.mjs`, `verdicts.mjs`, `areas.mjs`, `sources.mjs`, `cards.mjs` and `reflect.mjs` hold the tool and
+    resolver logic. `names.mjs` resolves display names, and `observe.mjs` writes the call log.
   - `store.mjs` does row access, and `adf.mjs` converts to and from ADF.
   - The core runs against the ports in `ports.mjs`.
 - `forge/src/adapters/` maps the ports to the platform: `forge-sql.mjs` to `@forge/sql`, and
@@ -50,6 +51,8 @@ Graph goals to the skill as scan sources.
 | `verdicts` | Append-only verdict log. Its seq is the pull cursor |
 | `pushes` | One row per push call |
 | `areas` | Per-directory churn and authors for the opportunity map. Each push replaces the project's set |
+| `rules` | Rules the skill offered, one row per `(project_key, id)`. While `offered` a later sync refreshes the text; once a person accepted or declined it (`decided_by`, `decided_at`) a sync never reverts it |
+| `outcomes` | One row per accepted item (`ref` is the key): the owner's rating (`right`, `partly`, `wrong`), an optional note and the issue |
 
 Forge SQL has no multi-statement transactions. `@forge/sql` sends each statement as its own request, and
 the query policy allows one statement per request. The core is correct without transactions:
@@ -60,6 +63,52 @@ the query policy allows one statement per request. The core is correct without t
 - A decision whose verdict row did not land is rebuilt from the decision stamp before the next pull.
 - An accept creates the Jira issue before it changes any state. If Jira fails, nothing is written and the
   item stays open.
+
+### Ports
+
+The core runs against these ports (`ports.mjs`); the adapters map them to the platform.
+
+- `Db`: Forge SQL. `Jira`: create issue, add comment, list projects, and `issueStatuses(keys)`, which
+  reads the status name and status category (`new`, `indeterminate`, `done`) of issues, as the app.
+- `Users`: `names(accountIds)` reads display names through `/rest/api/3/user/bulk`, as the app. It is best
+  effort. A failed batch or a missing name leaves the name out and never fails the call.
+- `Sources`, `Links`.
+
+### The Learning tab backend (reflection)
+
+Three resolvers serve the Learning tab (page route `reflect`), and tool 7 serves the skill.
+
+| Key | Does |
+|---|---|
+| `reflect.data` `{project_key}` | Everything the tab shows, derived from the existing tables plus `rules` and `outcomes`: `totals` by status, `rejects` by lens and reason, the newest 10 decision `notes`, the newest 8 `pushes` with today's status of their items, `lens_yield`, `rules`, `candidates` and `outcomes` |
+| `rule.decide` `{project_key, id, state, text?}` | Moves a rule `offered` -> `accepted` or `declined` as the caller (compare-and-set). `text` replaces the draft and goes only with accept. A rule that is no longer offered is refused with its current state |
+| `outcome.record` `{ref, rating, note?}` | Records how an accepted item turned out, once per ref, as the caller. It refuses an item that is not accepted and never overwrites. It answers the outcome and the refreshed candidates |
+
+Choices the data makes:
+
+- **Push retro.** An item belongs to the push in which it first appeared (`proposals.first_run_id`), not
+  the latest push that grew it (`last_run_id`). `last_run_id` moves an item to a newer push whenever its
+  evidence grows, so the older scan's yield would shrink on its own. `open`, `accepted`, `rejected` and
+  `snoozed` are the status of those items today. Merged items count in no column. Pushes of one `run_id`
+  (a run over 50 records is several calls) are one row. `dup_rate` is `updated / (created + updated)` and is
+  omitted when the push had neither.
+- **Lens yield.** Only lenses that proposed at least one item appear. A lens with no row was not run, which
+  is not the same as proposing nothing.
+- **Notes** come from the verdict log (accept, reject and snooze decisions that carry a note), newest first.
+- **Candidates** are accepted items with no outcome. Their Jira status is read once per call for the 200
+  newest. Items whose issue is done come first, then the rest by newest decision, at most 20. If Jira cannot
+  be read, or no longer returns an issue, the candidate answers `issue_status: "unknown"` and
+  `done: false`. The call never fails for it.
+- **Names.** `decided_by_name` is added to `proposal.get` and `panel.forIssue` history rows and to the
+  Learning data. The verdicts the skill pulls carry no names.
+
+### Logging
+
+The dispatch door writes one JSON line to the Forge log (`forge logs`) for every tool, resolver and Rovo
+call: `{"dowser":"call","surface":"tool|resolver|rovo","key":"dowser_verdicts_pull","project_key":"...","ok":true,"ms":12}`.
+A failed call carries `"ok":false,"error":"<code>"`. A failed resolver call also writes a
+`{"dowser":"resolver-error", ...}` line with the error code and message. A line never carries a payload
+body, a note, a token or an account id. `project_key` is present when the call has one.
 
 ## Install on a development site
 
@@ -150,9 +199,9 @@ that names the allowlist, and the skill continues without goals.
 ## Surfaces
 
 One Custom UI bundle (`forge/static/app`, Vite + React 19) serves every Dowser surface. The module picks
-the surface. Inside the **Dowser** global page, the page route (`inbox`, `map`, `settings`) picks the tab.
+the surface. Inside the **Dowser** global page, the page route (`inbox`, `map`, `reflect`, `settings`) picks the tab.
 The surfaces call the backend only through `call()` in `src/api.js`, which uses the resolver keys in
-`forge/src/core/types.mjs`.
+`forge/src/core/types.mjs`. The page routes are `inbox`, `map`, `reflect` (Learning) and `settings`.
 
 ### Inbox (Apps > Dowser > Inbox)
 

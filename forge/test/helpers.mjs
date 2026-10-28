@@ -12,6 +12,9 @@ import { MIGRATIONS } from '../src/sql/migrations.mjs';
  * @typedef {import('../src/core/ports.mjs').AdfDoc} AdfDoc
  */
 
+export const ME_ID = '712020:7d1c-person';
+export const ME = ME_ID;
+
 /** @param {unknown} v */
 const bind = (v) => (typeof v === 'boolean' ? Number(v) : /** @type {any} */ (v));
 
@@ -52,7 +55,11 @@ export function sqliteDb() {
 export function fakeJira() {
   const j = {
     fail: false,
+    /** `true` makes issueStatuses throw (Jira unreadable). */
+    failStatus: false,
     n: 40,
+    /** @type {Record<string, {name: string, category: 'new' | 'indeterminate' | 'done'}>} */
+    statuses: {},
     /** @type {{projectKey: string, issueTypeId: string, summary: string, description: AdfDoc}[]} */
     created: [],
     /** @type {{issueKey: string, body: AdfDoc}[]} */
@@ -62,6 +69,7 @@ export function fakeJira() {
       if (j.fail) throw new Error('Jira answered 503');
       j.created.push(f);
       const key = `${f.projectKey}-${++j.n}`;
+      j.statuses[key] = { name: 'To Do', category: 'new' };
       return { key, url: `https://acme.atlassian.net/browse/${key}` };
     },
     /** @param {string} issueKey @param {AdfDoc} body */
@@ -69,9 +77,37 @@ export function fakeJira() {
       if (j.fail) throw new Error('Jira answered 503');
       j.comments.push({ issueKey, body });
     },
+    /** Moves an issue to Done in the fake. @param {string} key */
+    setDone(key) { j.statuses[key] = { name: 'Done', category: 'done' }; },
+    /** @param {string[]} keys */
+    async issueStatuses(keys) {
+      if (j.failStatus) throw new Error('Jira answered 503');
+      /** @type {Record<string, {name: string, category: 'new' | 'indeterminate' | 'done'}>} */
+      const out = {};
+      for (const k of keys) if (j.statuses[k]) out[k] = j.statuses[k];
+      return out;
+    },
     async listProjects() { return [{ key: 'SHOP', name: 'Shop', issue_types: [{ id: '10001', name: 'Story' }] }]; },
   };
   return j;
+}
+
+/** A fake directory: account id -> display name; `fail = true` makes it throw. */
+export function fakeUsers() {
+  const u = {
+    fail: false,
+    /** @type {Record<string, string>} */
+    directory: { [ME_ID]: 'Pat Person' },
+    /** @type {string[][]} */
+    calls: [],
+    /** @param {string[]} ids */
+    async names(ids) {
+      u.calls.push(ids);
+      if (u.fail) throw new Error('Jira answered 500');
+      return Object.fromEntries(ids.filter((i) => u.directory[i]).map((i) => [i, u.directory[i]]));
+    },
+  };
+  return u;
 }
 
 /** A clock the test moves. */
@@ -86,14 +122,17 @@ export function clock(start = '2026-10-27T10:00:00.000Z') {
 
 /**
  * Deps over fresh in-memory ports.
- * @returns {Deps & {db: ReturnType<typeof sqliteDb>, jira: ReturnType<typeof fakeJira>, clock: ReturnType<typeof clock>}}
+ * @returns {Deps & {db: ReturnType<typeof sqliteDb>, jira: ReturnType<typeof fakeJira>, users: ReturnType<typeof fakeUsers>, logs: string[], clock: ReturnType<typeof clock>}}
  */
 export function makeDeps() {
   const c = clock();
   const db = sqliteDb();
   const jira = fakeJira();
+  const users = fakeUsers();
+  /** @type {string[]} */
+  const logs = [];
   return {
-    db, jira, clock: c, now: c.now,
+    db, jira, users, logs, clock: c, now: c.now, log: (/** @type {string} */ l) => { logs.push(l); },
     links: { inboxUrl: async (ref) => `https://acme.atlassian.net/jira/apps/app/env/inbox?ref=${ref}` },
     sources: {
       tickets: async () => [],
@@ -138,4 +177,4 @@ export const pushArgs = (records, o = {}) => ({
   proposals_json: JSON.stringify(records),
 });
 
-export const ME = '712020:7d1c-person';
+

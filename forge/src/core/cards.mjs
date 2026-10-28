@@ -2,6 +2,7 @@
 // The card the Custom UI and the Rovo agent read: the stored proposal record plus inbox state and its evidence
 // with links (F2). Read-side queries: the inbox (F8 run-diff groups), one card, the panel, the byline.
 import { parseRef } from '../shared/fingerprint.mjs';
+import { withNames } from './names.mjs';
 import { evidenceOf, findProposal, getInbox, listInboxRows, toProposal } from './store.mjs';
 import { AppError, omitAbsent } from './util.mjs';
 import { INBOX_STATUSES, PAGE_SIZE } from './types.mjs';
@@ -100,13 +101,13 @@ export async function historyOf(db, p) {
 
 /**
  * `proposal.get`: one card and its history, by DW ref or fp.
- * @param {Db} db
+ * @param {import('./ports.mjs').Deps} deps
  * @param {string} ref
- * @returns {Promise<{card: Card, history: Verdict[]}>}
+ * @returns {Promise<{card: Card, history: import('./types.mjs').HistoryRow[]}>}
  */
-export async function getProposal(db, ref) {
-  const p = await findProposal(db, ref);
-  return { card: await cardOf(db, p), history: await historyOf(db, p) };
+export async function getProposal(deps, ref) {
+  const p = await findProposal(deps.db, ref);
+  return { card: await cardOf(deps.db, p), history: await withNames(deps, await historyOf(deps.db, p)) };
 }
 
 /**
@@ -175,15 +176,16 @@ export async function listInbox(db, q) {
 
 /**
  * `panel.forIssue`: the accepted proposal behind a Jira issue, and its history.
- * @param {Db} db
+ * @param {import('./ports.mjs').Deps} deps
  * @param {string} issueKey
- * @returns {Promise<{card?: Card, history: Verdict[]}>}
+ * @returns {Promise<{card?: Card, history: import('./types.mjs').HistoryRow[]}>}
  */
-export async function panelForIssue(db, issueKey) {
+export async function panelForIssue(deps, issueKey) {
+  const { db } = deps;
   const rows = await db.query('SELECT * FROM proposals WHERE issue_ref = ? ORDER BY id', [issueKey]);
   if (rows.length === 0) return { history: [] };
   const p = toProposal(rows[0]);
-  return { card: await cardOf(db, p), history: await historyOf(db, p) };
+  return { card: await cardOf(db, p), history: await withNames(deps, await historyOf(db, p)) };
 }
 
 /**
