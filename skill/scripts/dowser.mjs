@@ -20,11 +20,18 @@
 //   move <fp> --to <status> --by <kind:name> [--from s] [--reason code] [--note t] [--into fp] [--run id]
 //   status [--runs n]                      counts by status and lens, last runs, "top N of M" truncation
 //   context --run <id> --lens <l> [--focus f]  -> {lens, lens_version, kinds, budget, suppressed, near, rules,
-//                                          exemplars, since_sha?, focus?}
+//                                          exemplars, outcomes?: {right, partly, wrong}, since_sha?, focus?}
 //   similar <fp>                           same-lens items sharing an anchor or 2+ topic tokens, with the overlap
 //   show <fp>                              ask-why: the card, every evidence row, every transition (no rescan)
 //   list [--lens l] [--status s] [--title substring]  -> {proposals: [{fp, lens, status, title, decided_at?}]}
 //   rules offer | rules list [--lens l] | rules accept|decline <id> --by human:<name> [--text t]
+//   reflect export                         -> {project_key, rules_json?, more?}: the dowser_reflect_sync arguments
+//                                          (rules in state `offered`, oldest first, at most 50; read-only;
+//                                          run `rules offer` first)
+//   reflect ingest --file <json>           apply a dowser_reflect_sync response: each rule Forge decided is a CAS
+//                                          offered -> accepted|declined (others skipped), each outcome an
+//                                          append-only row -> {rules_applied, rules_skipped, outcomes_added,
+//                                          outcomes_seen}; idempotent
 //   prefs get [key ...] | prefs set key=value ...   ~/.dowser/user.json (mode dev|guided, verbosity short|full)
 //   outbox --run <id>                      -> {project_key, run_id, proposals_json, repo_url?, head_sha?, more?}:
 //                                          the dowser_proposals_push arguments (verified, not pushed yet; pushed
@@ -57,6 +64,7 @@ const store = await import('./lib/store.mjs');
 const verifyLib = await import('./lib/verify.mjs');
 const syncLib = await import('./lib/sync.mjs');
 const memory = await import('./lib/memory.mjs');
+const reflectLib = await import('./lib/reflect.mjs');
 
 /**
  * @typedef {{_: string[], [flag: string]: string | string[] | true | string[] | undefined}} Args
@@ -259,6 +267,13 @@ export const COMMANDS = {
       return { out: memory.decideRule(ctx.open(), id, sub === 'accept' ? 'accepted' : 'declined', { by: /** @type {string} */ (opt(a, 'by', true)), text: opt(a, 'text') }) };
     }
     throw new DowserError('rules offer | rules list [--lens l] | rules accept|decline <id> --by human:<name> [--text t]', 2);
+  },
+
+  reflect(a, ctx) {
+    const sub = a._[1];
+    if (sub === 'export') return { out: reflectLib.exportOffers(ctx.open(), projectKey(ctx.root)) };
+    if (sub === 'ingest') return reflectLib.ingestReflect(ctx.open(), syncLib.readResponse(/** @type {string} */ (opt(a, 'file', true))));
+    throw new DowserError('reflect export | reflect ingest --file <json>', 2);
   },
 
   prefs(a, ctx) {

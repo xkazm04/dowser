@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 // @ts-check
 // mock-forge-mcp - a zero-dependency stdio MCP server that stands in for Dowser's Forge app (rovo:mcp), so the
-// skill and its scripts are testable end to end without a Jira site. It implements the six tools of
-// docs/contracts/forge-mcp-2.md over an in-memory backend, plus two test-only tools: `mock_decide` simulates a
-// person's verdict in the inbox, and `mock_inbox` reads an inbox item back (its status and whether it reopened).
+// skill and its scripts are testable end to end without a Jira site. It implements the seven tools of
+// docs/contracts/forge-mcp-2.md over an in-memory backend, plus four test-only tools: `mock_decide` simulates a
+// person's verdict in the inbox, `mock_inbox` reads an inbox item back (its status and whether it reopened),
+// `mock_decide_rule` simulates a person accepting or declining an offered rule in Forge, and `mock_outcome`
+// simulates a person rating an accepted item's built result.
+//
+// Tool 7, `dowser_reflect_sync` {project_key, rules_json?}: rules_json (a JSON array of at most 50 RuleOffer
+// {id, lens, text, titles?(<=10), offered_at}) is upserted - a new id is stored `offered`, an `offered` one takes
+// the new text and titles, a decided one is never reverted - and the reply is {rules, outcomes}: every rule a
+// person decided (RuleDecision) and the newest 200 outcomes (oldest first). Idempotent both ways.
 //
 // forge-mcp-2 semantics mirrored here: tool inputs are scalar (array inputs arrive as `*_json` strings, as a
 // rovo:mcp tool requires); a push files the proposal as an inbox item `DW-<n>` (`external_ref`) and creates no
@@ -44,7 +51,11 @@ import { resurfaces } from '../skill/scripts/lib/model.mjs';
  * @typedef {{seq: number, fp: string, status: string, reason?: string, note?: string, merged_into?: string, decided_by: string,
  *   decided_at: string, external_ref: string, issue_ref?: string, issue_url?: string}} Verdict
  * @typedef {{path: string, files: number, churn_90d: number, authors_90d?: number, last_change?: string}} Area
- * @typedef {{items: Record<string, Item>, verdicts: Verdict[], areas: Area[], areas_run_id?: string}} Project
+ * @typedef {{id: string, lens: string, text: string, titles?: string[], offered_at: string, state: 'offered' | 'accepted' | 'declined',
+ * decided_by?: string, decided_at?: string}} RuleRecord
+ * @typedef {{ref: string, fp: string, rating: string, note?: string, issue_ref: string, decided_by: string, recorded_at: string}} OutcomeRecord
+ * @typedef {{items: Record<string, Item>, verdicts: Verdict[], areas: Area[], areas_run_id?: string,
+ *   rules?: Record<string, RuleRecord>, outcomes?: OutcomeRecord[]}} Project
  * @typedef {{
  *   tickets: SourceItem[], pages: SourceItem[], goals: SourceItem[], merge_existing: Record<string, string>,
  *   projects: Record<string, Project>, next_item: number, next_issue: number, next_seq: number
@@ -58,6 +69,10 @@ const JIRA_URL = 'https://mock-forge.example/browse/';
 const PUSH_MAX = 50;
 const AREAS_MAX = 200;
 const JSON_MAX = 4 * 1024 * 1024;
+const RULES_MAX = 50;
+const TITLES_MAX = 10;
+const OUTCOMES_MAX = 200;
+const RATINGS = ['right', 'partly', 'wrong'];
 const log = (/** @type {unknown[]} */ ...a) => console.error('[mock-forge]', ...a);
 
 /** @returns {Backend} */
@@ -91,8 +106,14 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { project_key: S, cursor: S }, required: ['project_key'], additionalProperties: false } },
   { name: 'dowser_areas_push', description: 'Replace the project\'s area stats (areas_json, a JSON array of at most 200 {path,files,churn_90d,authors_90d?,last_change?}). Returns {stored}.',
     inputSchema: { type: 'object', properties: { project_key: S, run_id: S, areas_json: S }, required: ['project_key', 'run_id', 'areas_json'], additionalProperties: false } },
+  { name: 'dowser_reflect_sync', description: 'Offer rules (rules_json, a JSON array of at most 50 {id,lens,text,titles?,offered_at}) and read back every rule a person decided plus the newest 200 outcomes. Idempotent. Returns {rules:[{id,lens,state,text,decided_by,decided_at}], outcomes:[{ref,fp,rating,note?,issue_ref,decided_by,recorded_at}]}.',
+    inputSchema: { type: 'object', properties: { project_key: S, rules_json: S }, required: ['project_key'], additionalProperties: false } },
   { name: 'mock_decide', description: 'TEST ONLY: simulate a person\'s verdict in the inbox on a pushed fp (status accepted|rejected|merged|snoozed).',
     inputSchema: { type: 'object', properties: { fp: S, status: S, reason: S, note: S, merged_into: S, decided_by: S, project_key: S }, required: ['fp', 'status'], additionalProperties: false } },
+  { name: 'mock_decide_rule', description: 'TEST ONLY: simulate a person accepting or declining an offered rule in Forge (state accepted|declined, text = the edited wording).',
+    inputSchema: { type: 'object', properties: { project_key: S, id: S, state: S, text: S, decided_by: S }, required: ['project_key', 'id', 'state'], additionalProperties: false } },
+  { name: 'mock_outcome', description: 'TEST ONLY: simulate a person rating the built result of an accepted item (ref = its inbox ref DW-n; rating right|partly|wrong).',
+    inputSchema: { type: 'object', properties: { ref: S, rating: S, note: S, project_key: S, decided_by: S }, required: ['ref', 'rating'], additionalProperties: false } },
   { name: 'mock_inbox', description: 'TEST ONLY: read one inbox item back. Returns {item:{fp,external_ref,status,reopened?,evidence,pushes,issue_ref?,issue_url?}}.',
     inputSchema: { type: 'object', properties: { fp: S, project_key: S }, required: ['fp'], additionalProperties: false } },
 ];
@@ -132,6 +153,8 @@ const project = (b, key) => {
   const p = (b.projects[key] ??= { items: {}, verdicts: [], areas: [] });
   p.items ??= {};
   p.areas ??= [];
+  p.rules ??= {};
+  p.outcomes ??= [];
   return p;
 };
 
@@ -296,6 +319,60 @@ export function callTool(b, name, args) {
       p.areas = list; // the set replaces the previous one whole
       p.areas_run_id = args.run_id;
       return { stored: list.length };
+    }
+    case 'dowser_reflect_sync': {
+      if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
+      const offers = args.rules_json === undefined ? [] : jsonArray(args.rules_json, 'rules_json', RULES_MAX);
+      const p = project(b, args.project_key);
+      const rules = /** @type {Record<string, RuleRecord>} */ (p.rules);
+      offers.forEach((raw, i) => {
+        const at = `rules_json[${i}]`;
+        if (!isObj(raw)) throw new ToolError('bad-input', `${at} is an object`);
+        for (const k of ['id', 'lens', 'text', 'offered_at']) if (!str(raw[k])) throw new ToolError('bad-input', `${at}.${k} is required`);
+        if (raw.titles !== undefined && (!Array.isArray(raw.titles) || raw.titles.length > TITLES_MAX || raw.titles.some((/** @type {unknown} */ t) => !str(t)))) {
+          throw new ToolError('bad-input', `${at}.titles is at most ${TITLES_MAX} non-empty strings`);
+        }
+      });
+      for (const raw of /** @type {Obj[]} */ (offers)) {
+        const cur = rules[raw.id];
+        if (cur && cur.state !== 'offered') continue; // a decided rule is never reverted
+        rules[raw.id] = /** @type {RuleRecord} */ (omitAbsent({ id: raw.id, lens: raw.lens, text: raw.text, titles: raw.titles, offered_at: raw.offered_at, state: 'offered' }));
+      }
+      const decided = Object.values(rules).filter((r) => r.state !== 'offered')
+        .sort((x, y) => String(x.decided_at).localeCompare(String(y.decided_at)) || x.id.localeCompare(y.id))
+        .map((r) => omitAbsent({ id: r.id, lens: r.lens, state: r.state, text: r.text, decided_by: r.decided_by, decided_at: r.decided_at }));
+      const outcomes = /** @type {OutcomeRecord[]} */ (p.outcomes).slice(-OUTCOMES_MAX).map((o) => omitAbsent(o));
+      return { rules: decided, outcomes };
+    }
+    case 'mock_decide_rule': {
+      if (!str(args.project_key) || !str(args.id)) throw new ToolError('bad-input', 'project_key and id are required');
+      if (args.state !== 'accepted' && args.state !== 'declined') throw new ToolError('bad-input', 'state is accepted|declined');
+      const p = project(b, args.project_key);
+      const rule = /** @type {Record<string, RuleRecord>} */ (p.rules)[args.id];
+      if (!rule) throw new ToolError('bad-input', `no rule ${args.id} offered in ${args.project_key}`);
+      if (rule.state !== 'offered') throw new ToolError('bad-input', `rule ${args.id} is already ${rule.state}`);
+      rule.state = args.state;
+      if (args.state === 'accepted' && str(args.text)) rule.text = args.text.trim();
+      rule.decided_by = str(args.decided_by) ? args.decided_by : 'forge:mock-user';
+      rule.decided_at = new Date(Date.now() + b.next_seq++).toISOString();
+      return { rule: omitAbsent({ id: rule.id, lens: rule.lens, state: rule.state, text: rule.text, decided_by: rule.decided_by, decided_at: rule.decided_at }) };
+    }
+    case 'mock_outcome': {
+      if (!str(args.ref)) throw new ToolError('bad-input', 'ref is required');
+      if (!RATINGS.includes(args.rating)) throw new ToolError('bad-input', `rating is ${RATINGS.join('|')}`);
+      const keys = str(args.project_key) ? [String(args.project_key)] : Object.keys(b.projects);
+      const key = keys.find((k) => Object.values(b.projects[k]?.items ?? {}).some((it) => it.external_ref === args.ref));
+      if (!key) throw new ToolError('bad-input', `no inbox item ${args.ref}`);
+      const item = Object.values(b.projects[key].items).find((it) => it.external_ref === args.ref);
+      if (!item || item.status !== 'accepted' || !item.issue_ref) throw new ToolError('bad-input', `${args.ref} is not an accepted item with a Jira issue`);
+      const p = project(b, key);
+      const recordedAt = new Date(Date.now() + b.next_seq++).toISOString();
+      const o = /** @type {OutcomeRecord} */ (omitAbsent({
+        ref: item.external_ref, fp: item.fp, rating: args.rating, note: str(args.note) ? args.note : undefined, issue_ref: item.issue_ref,
+        decided_by: str(args.decided_by) ? args.decided_by : 'forge:mock-user', recorded_at: recordedAt,
+      }));
+      /** @type {OutcomeRecord[]} */ (p.outcomes).push(o);
+      return { outcome: o };
     }
     case 'mock_decide': {
       if (!str(args.fp)) throw new ToolError('bad-input', 'fp is required');

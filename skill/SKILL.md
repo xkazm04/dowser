@@ -79,8 +79,10 @@ its environment halfway through.
    `dowser_verdicts_pull`. Harnesses add a server prefix (`mcp__dowser__`), and a non-production
    Forge install adds an environment suffix (`_development`, `_staging`), so match on the name
    with either added. Use whatever full names you found for every call below.
-   - All five are present: **connected**. A sixth, `dowser_areas_push`, is optional:
-     when it is missing, skip only the areas step (section 8).
+   - All five are present: **connected**. Two more are optional: `dowser_areas_push` (when it
+     is missing, skip only the areas step, section 8) and `dowser_reflect_sync` (when it is
+     missing, skip only the reflect steps, sections 3 and 8; rules are then decided locally
+     and no outcomes arrive).
    - Any is missing: **unconnected**. Tell the runner, before scanning, which lenses will be
      partial and why. Opportunity runs on code and docs only, at low confidence. Doc drift checks
      in-repo docs only. UX friction runs without user reports. Proposals stay local and are not
@@ -97,6 +99,33 @@ Memory must reflect Jira before the scan, so a rejection made in Jira suppresses
    applied (an unknown fingerprint, or a conflict). List them in the summary. Never force them.
    An accepted verdict carries the Jira issue the person created (`issue_ref`, `issue_url`). Show
    that issue key and link next to the card in the summary.
+
+4. **Reflect** (skip when `dowser_reflect_sync` is missing). This brings back what people
+   decided about the rules offered on an earlier run, and how accepted items turned out once
+   built. Run the reflect sync below. Rules it accepted reach this run's `context`, and the
+   outcomes show which patterns were accepted but turned out wrong.
+
+**Reflect sync.** The order is `rules offer` -> `reflect export` -> call `dowser_reflect_sync` ->
+`reflect ingest`. `rules offer` is the only command that creates offers, and the runner is shown
+each new offer once, in section 7 step 5. So `rules offer` runs there and **not** here: the sync
+in this section starts at `reflect export`, and the one in section 8 comes after the offers were
+presented.
+
+1. `reflect export`. It prints the tool arguments `{project_key, rules_json?, more?}`:
+   the rules still `offered` (oldest first, at most 50, each with up to 10 titles of the items
+   behind it). `rules_json` is omitted when nothing is offered. Call the tool anyway: decisions
+   and outcomes come back in the same response. Export is read-only and repeatable.
+2. Call `dowser_reflect_sync` with every field except `more`, exactly as printed. Save the
+   response verbatim to `<work>/reflect.json`.
+3. `reflect ingest --file <work>/reflect.json`. It prints
+   `{rules_applied, rules_skipped, outcomes_added, outcomes_seen}`. A rule that is no longer
+   `offered` locally is skipped, never overwritten, so a replay changes nothing. Exit 1 means an
+   entry was malformed (listed under `invalid`); the rest is applied.
+4. Report in one line: rules decided in Jira (accepted ones with their wording), new outcomes.
+   Guided mode: "People rated N finished items since the last scan."
+
+A rule the runner decides in the triage dialog (section 7) is decided locally; Forge's later
+decision for the same rule is skipped. Whichever is first wins.
 
 When the pull tool errors, say "could not read decisions from Jira" and go on unconnected for
 the push step too. A half-synced memory must not push.
@@ -129,7 +158,10 @@ For each lens, print one progress line (`<lens>: gathering (tickets 42, code)`),
    run. It returns `suppressed` (fingerprints never to re-propose), `near` (known items, so you
    do not re-word one into a "new" proposal), `rules` (accepted runner rules for this lens, which
    bind like the pack's own rules), `exemplars` (accepted proposals as the bar to match),
-   `budget` and `since_sha`.
+   `outcomes` (`{right, partly, wrong}`: how this lens's accepted items fared once built, absent
+   when none was rated), `budget` and `since_sha`. Many `wrong` or `partly` outcomes mean the
+   lens's accepted patterns did not deliver: propose fewer of that kind and say what makes this
+   one different.
 3. **Sources (connected only).** Call the lens's source tools named in its pack, with queries
    built from the pack's hypotheses. Save each response verbatim to
    `<work>/<lens>-<type>.json`, then run
@@ -235,6 +267,10 @@ or from "looks good".
    There is no ingest step. This feeds the inbox's map of where the code changes most. If it
    errors, say so in one line and go on. Guided mode: "Dowser also sent a summary of which parts
    of the project change most often."
+7. **Reflect** (skip when `dowser_reflect_sync` is missing). Run the reflect sync from
+   section 3 again. The rule offers from section 7 step 5 now go to Forge, where a person can
+   accept or decline them; their decision arrives on the next run's section 3. If the call
+   errors, say so in one line and go on; the offers stay `offered` locally.
 
 When the push tool errors, say so in plain words. Items stay `verified` locally and go out on
 the next connected run. Never retry in a loop. A push puts items in the Dowser inbox in Jira; the

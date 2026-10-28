@@ -24,19 +24,20 @@ after(() => { db.close(); removeDir(dir); });
 /** @param {Record<string, unknown>} over */
 const prop = (over) => propose(db, run, candidate(over), { kinds: KINDS });
 
-test('the store opens WAL at user_version 2 and is re-openable', () => {
-  assert.equal(USER_VERSION, 2);
-  assert.equal(Number(/** @type {any} */ (db.prepare('PRAGMA user_version').get()).user_version), 2);
+test('the store opens WAL at user_version 3 and is re-openable', () => {
+  assert.equal(USER_VERSION, 3);
+  assert.equal(Number(/** @type {any} */ (db.prepare('PRAGMA user_version').get()).user_version), 3);
   assert.equal(String(/** @type {any} */ (db.prepare('PRAGMA journal_mode').get()).journal_mode).toLowerCase(), 'wal');
   const cols = /** @type {any[]} */ (db.prepare('PRAGMA table_info(proposals)').all()).map((c) => c.name);
-  assert.ok(cols.includes('issue_ref') && cols.includes('issue_url'), 'a fresh store is created at v2');
+  assert.ok(cols.includes('issue_ref') && cols.includes('issue_url'), 'a fresh store has the v2 columns');
+  assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'outcomes'").get(), 'and the v3 outcomes table');
   openStore(join(dir, 'dowser.db')).close();
 });
 
-/** The v1 schema: v2 without the issue columns (they are the only v1 -> v2 change). */
-const DDL_V1 = DDL.replace(/^\s*issue_(ref|url)\s.*\n/gm, '').replace(`PRAGMA user_version = ${USER_VERSION};`, 'PRAGMA user_version = 1;');
+/** The v1 schema: the current one without the v3 outcomes block and without the issue columns (v1 -> v2). */
+const DDL_V1 = DDL.split('-- v3:')[0].replace(/^\s*issue_(ref|url)\s.*\n/gm, '').replace(`PRAGMA user_version = ${USER_VERSION};`, 'PRAGMA user_version = 1;');
 
-test('a v1 store file is upgraded to v2 in place, data intact; an unknown version is refused', () => {
+test('a v1 store file is upgraded to the current version in place, data intact; an unknown version is refused', () => {
   assert.ok(!DDL_V1.includes('issue_ref') && DDL_V1.includes('PRAGMA user_version = 1;'));
   const file = join(dir, 'v1.db');
   const raw = new DatabaseSync(file);
@@ -50,11 +51,13 @@ test('a v1 store file is upgraded to v2 in place, data intact; an unknown versio
   raw.prepare("INSERT INTO evidence (fp, run_id, type, ref, key, added_at) VALUES ('aaaaaaaaaaaaaaaa', 'r-1', 'ticket', 'SEC-1', 'SEC-1', ?)").run(at);
   raw.prepare("INSERT INTO sync_state (key, value) VALUES ('verdicts_cursor', '7')").run();
   assert.ok(!(/** @type {any[]} */ (raw.prepare('PRAGMA table_info(proposals)').all())).some((c) => c.name === 'issue_ref'));
+  assert.ok(!raw.prepare("SELECT 1 FROM sqlite_master WHERE name = 'outcomes'").get());
   raw.close();
 
   const up = openStore(file);
   try {
-    assert.equal(Number(/** @type {any} */ (up.prepare('PRAGMA user_version').get()).user_version), 2);
+    assert.equal(Number(/** @type {any} */ (up.prepare('PRAGMA user_version').get()).user_version), 3);
+    assert.ok(up.prepare("SELECT 1 FROM sqlite_master WHERE name = 'outcomes'").get());
     const p = getProposal(up, 'aaaaaaaaaaaaaaaa');
     assert.equal(p?.status, 'pushed');
     assert.equal(p?.external_ref, 'DOW-1');
@@ -66,14 +69,14 @@ test('a v1 store file is upgraded to v2 in place, data intact; an unknown versio
     assert.throws(() => up.prepare('DELETE FROM evidence').run(), /append-only/, 'the triggers survive the upgrade');
   } finally { up.close(); }
   const again = openStore(file);
-  assert.equal(getProposal(again, 'aaaaaaaaaaaaaaaa')?.issue_ref, 'SHOP-1', 'a v2 file reopens unchanged');
+  assert.equal(getProposal(again, 'aaaaaaaaaaaaaaaa')?.issue_ref, 'SHOP-1', 'an upgraded file reopens unchanged');
   again.close();
 
-  const v3 = join(dir, 'v3.db');
-  const r3 = new DatabaseSync(v3);
-  r3.exec('PRAGMA user_version = 3');
-  r3.close();
-  assert.throws(() => openStore(v3), (e) => e instanceof DowserError && e.code === 3 && /user_version 3/.test(e.message));
+  const v9 = join(dir, 'v9.db');
+  const r9 = new DatabaseSync(v9);
+  r9.exec('PRAGMA user_version = 9');
+  r9.close();
+  assert.throws(() => openStore(v9), (e) => e instanceof DowserError && e.code === 3 && /user_version 9/.test(e.message));
 });
 
 test('propose: created, duplicate, evidence-grew, invalid', () => {

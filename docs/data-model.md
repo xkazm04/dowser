@@ -14,7 +14,7 @@ with no origin gets `local-` plus the first 12 hex of sha256(realpath(repo root)
 Nothing is ever written inside the scanned repo. Paths are compared by real path, and a store path inside
 the repo is refused with exit 3.
 
-The store is SQLite through `node:sqlite` (Node >= 22.13) with WAL and `PRAGMA user_version = 2`. The DDL
+The store is SQLite through `node:sqlite` (Node >= 22.13) with WAL and `PRAGMA user_version = 3`. The DDL
 runs in one `BEGIN IMMEDIATE` transaction that re-reads the version. A file with another version is
 refused.
 
@@ -22,7 +22,9 @@ refused.
 upgrades a version 1 file in place, inside the same `BEGIN IMMEDIATE` transaction, after re-reading the
 version: `ALTER TABLE proposals ADD COLUMN issue_ref TEXT`, the same for `issue_url`, then
 `PRAGMA user_version = 2`. No row is rewritten, and both columns start NULL (absent). A new file is created
-at version 2. Any version other than 0 (new), 1 or 2 is refused with exit 3.
+at the current version. Version 3 adds the `outcomes` table (below): `CREATE TABLE IF NOT EXISTS` plus its index and
+triggers, then `PRAGMA user_version = 3`. An existing file is upgraded one step at a time (1 -> 2 -> 3) and no row is
+rewritten. Any version other than 0 (new), 1, 2 or 3 is refused with exit 3.
 
 ## Tables
 
@@ -32,12 +34,36 @@ at version 2. Any version other than 0 (new), 1 or 2 is refused with exit 3.
 | `proposals` | the current card: identity (`lens`, `kind`, normalized `topic`, `anchors_json`), card text, `effort_json`, `confidence`, `confidence_why`, `doc_impact_json`, `delivery_risk_json`, `provenance_json`, `asserted_json` (the evidence keys the newest propose line carried; internal, not part of the record), triage fields (`status`, `reason`, `note`, `merged_into`, `external_ref`, `external_url`, `decided_by`, `decided_at`), `issue_ref`, `issue_url` (v2: the Jira issue an `accepted` verdict carried; not part of the record), `first_run_id`, `last_run_id` | PK `fp`; `external_ref` UNIQUE where not null |
 | `evidence` | **append-only**: `fp`, `run_id`, `type`, `ref`, `key`, `path`, `line` (hint), `quote`, `url`, `added_at`; one row per key, written when the key is first seen | UNIQUE (`fp`, `type`, `key`) |
 | `transitions` | **append-only**: `fp`, `from_status` (NULL on creation), `to_status`, `by`, `at`, `reason`, `note`, `run_id`, `evidence_seq` | `evidence_seq` = max evidence id of the fp at the move |
-| `rules` | offered and accepted prompt rules (`offered\|accepted\|declined`); logic in WP2 | PK `id` |
+| `rules` | offered and accepted prompt rules (`offered\|accepted\|declined`). `cluster_json` keeps the source fingerprints, who decided (`decided_by`: a human at the prompt, or `forge:<account>`) and, when the wording was edited, the original as `draft_text` | PK `id` |
+| `outcomes` | **append-only** (v3): how an accepted item turned out once built, as a person rated it in Forge. `fp`, `ref` (the inbox item `DW-n`), `rating` (`right|partly|wrong`), `note`, `issue_ref`, `decided_by` (`forge:<account>`), `recorded_at`. Written only by `reflect ingest`. No foreign key on `fp`: an outcome may name an item this store never saw (it is kept, and not counted in `context`) | UNIQUE (`fp`, `recorded_at`), so a replayed sync adds nothing |
 | `sources_cache` | tickets, pages and goals fetched per run; logic in WP4 | PK (`run_id`, `type`, `ref`) |
 | `sync_state` | Forge sync bookkeeping: `verdicts_cursor`; `push_seq:<fp>` (evidence id at last push); `outbox:last` (ids actually sent); `verdict:<fp>@<decided_at>` (idempotency). See `docs/contracts/forge-mcp-2.md` | PK `key` |
 
-Append-only is enforced twice. Triggers abort any UPDATE or DELETE on `evidence` and `transitions`, and a
-test greps the sources for such statements.
+Append-only is enforced twice. Triggers abort any UPDATE or DELETE on `evidence`, `transitions` and `outcomes`, and a
+test greps the sources for such statements on the first two.
+
+## Reflection (`reflect`)
+
+The seam is the `dowser_reflect_sync` Forge tool (additive tool 7 of forge-mcp-2; wire types in
+`forge/src/core/types.mjs`). Like every Forge tool the skill never calls it: the agent does, and the CLI prints and
+reads the payloads.
+
+- `reflect export` prints `{project_key, rules_json?, more?}`, the tool's arguments: the rules in state `offered`,
+  oldest first, at most 50, each `{id, lens, text, titles?, offered_at}` with at most 10 titles. It writes nothing. It
+  does not create offers (`rules offer` does, once, in the triage dialog), so run `rules offer` first. `rules_json` is
+  omitted when nothing is offered; the call is still made, because decisions and outcomes come back in its answer.
+  `more: true` means over 50 are offered; the agent does not pass it on.
+- `reflect ingest --file <json>` applies the answer `{rules, outcomes}` and prints
+  `{rules_applied, rules_skipped, outcomes_added, outcomes_seen}` (plus `invalid` and exit 1 for a malformed entry;
+  the rest is applied). Each rule decision is a compare-and-set `offered -> accepted|declined` that records the
+  Forge decider (a bare account id is stored as `forge:<id>`) and the decision time; Forge-edited wording replaces the
+  draft on accept. A rule that is unknown or no longer `offered` is skipped, so a replay and a late decision for a rule
+  the runner already settled change nothing. Each outcome is one `outcomes` row; `outcomes_seen` counts the response's
+  outcomes, `outcomes_added` the new ones.
+- `context` gains `outcomes: {right, partly, wrong}` per lens: the latest rating of each of the lens's items that
+  has one. It is omitted when the lens has none. `show <fp>` lists the item's outcome rows (omitted when none).
+  `status` is unchanged.
+- A verdict `note` on an `accepted` or `snoozed` verdict is stored on the transition and on the card, like any other.
 
 `runs.lenses_json` holds one record per lens:
 `{state: ran|skipped|partial, reason?, emitted?, verified?, dropped?, truncated?}`. A skipped or partial

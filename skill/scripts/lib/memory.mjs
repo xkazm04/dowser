@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DECIDER_RE, DowserError, LENSES, STATUSES, isOneOf } from './model.mjs';
 import { dowserHome, isInside } from './paths.mjs';
+import { outcomeCounts, outcomesOf } from './reflect.mjs';
 import { clean, evidenceOf, getProposal, getRun, now, transitionsOf, tx } from './store.mjs';
 
 /**
@@ -116,7 +117,9 @@ const parsed = (r, k) => (r[k] === null || r[k] === undefined ? undefined : JSON
 
 /**
  * The context pack for one lens in one run: what the lens must not re-propose, what it already knows, the
- * runner's accepted rules and the accepted exemplars, plus the pack's version, kinds and budget.
+ * runner's accepted rules and the accepted exemplars, plus the pack's version, kinds and budget. `outcomes`
+ * counts how the lens's accepted items fared once built ({right, partly, wrong}, latest rating per item); omitted
+ * when none was recorded.
  * `since_sha` is the run's base_sha on an incremental run (omitted otherwise). Absent values are omitted.
  * @param {Db} db
  * @param {{runId: string, lens: string, focus?: string, lensDir?: string}} o
@@ -149,6 +152,7 @@ export function contextPack(db, { runId, lens, focus, lensDir }) {
 
   return /** @type {Row} */ (clean({
     lens, lens_version: pack.version, kinds: pack.kinds, budget: pack.budget, suppressed, near, rules, exemplars,
+    outcomes: outcomeCounts(db, lens),
     since_sha: run.mode === 'incremental' ? run.base_sha : undefined,
     focus: focus ?? run.focus,
   }));
@@ -206,7 +210,8 @@ export function show(db, fp) {
   delete card.evidence;
   const evidence = evidenceOf(db, fp).map(({ id: _id, fp: _fp, key: _key, ...rest }) => rest);
   const transitions = transitionsOf(db, fp).map(({ id: _id, fp: _fp, evidence_seq: _seq, ...rest }) => rest);
-  return /** @type {Row} */ (clean({ fp, external_ref: card.external_ref, external_url: card.external_url, issue_ref: card.issue_ref, issue_url: card.issue_url, card, evidence, transitions }));
+  const outcomes = outcomesOf(db, fp);
+  return /** @type {Row} */ (clean({ fp, external_ref: card.external_ref, external_url: card.external_url, issue_ref: card.issue_ref, issue_url: card.issue_url, card, evidence, transitions, outcomes: outcomes.length ? outcomes : undefined }));
 }
 
 /**

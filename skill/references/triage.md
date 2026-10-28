@@ -95,6 +95,10 @@ token, `rules offer` drafts a rule, for example:
 - Present each new offer **once**, with its draft text and the titles it came from.
 - The runner accepts (`rules accept <id> --by human:<name>`, optionally with
   `--text "<edited wording>"`) or declines (`rules decline <id> --by human:<name>`).
+- When Dowser for Jira is connected, an offered rule is also sent to Forge (`reflect export`,
+  `dowser_reflect_sync`, `reflect ingest`). A person can accept (with edited wording) or decline it
+  there. Whoever decides first wins; a rule that is no longer `offered` locally is never
+  overwritten. A Forge decision is recorded as decided by `forge:<account>`.
 - Only accepted rules reach a lens's `context` pack. There they bind like the pack's own
   rules. A declined cluster is never offered again.
 - Rules change **what** a lens proposes and **how**, never how many. The budget stays 4 per lens.

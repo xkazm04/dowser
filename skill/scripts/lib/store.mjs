@@ -10,6 +10,7 @@
 //  - every status move is a compare-and-set against model.TRANSITIONS and appends one `transitions` row;
 //  - proposals are written only into a run whose status is `running`;
 //  - absent values are NULL in SQL and omitted in JSON, never 0 or null placeholders.
+//  - `outcomes` is append-only too (triggers); lib/reflect.mjs writes it.
 // `rules`, `sources_cache` and `sync_state` are DDL only here; WP2 (memory) and WP4 (sync) own their logic.
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
@@ -21,7 +22,7 @@ import {
 } from './model.mjs';
 import { evidenceKey, fingerprint, normalizeAnchor, normalizeTopic } from './fingerprint.mjs';
 
-export const USER_VERSION = 2;
+export const USER_VERSION = 3;
 /** The decider the store itself writes for machine moves (creation, resurfacing). */
 export const SYSTEM_DECIDER = 'skill:dowser';
 
@@ -142,6 +143,23 @@ CREATE TABLE IF NOT EXISTS sync_state (
   key    TEXT PRIMARY KEY,
   value  TEXT
 );
+
+-- v3: what a person said about an accepted item once it was built (dowser_reflect_sync). Append-only; unique
+-- (fp, recorded_at) makes a replayed sync a no-op. No FK on fp: an outcome may name an item this store never saw.
+CREATE TABLE IF NOT EXISTS outcomes (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  fp           TEXT NOT NULL,
+  ref          TEXT NOT NULL,
+  rating       TEXT NOT NULL CHECK (rating IN ('right','partly','wrong')),
+  note         TEXT,
+  issue_ref    TEXT NOT NULL,
+  decided_by   TEXT NOT NULL,
+  recorded_at  TEXT NOT NULL,
+  UNIQUE (fp, recorded_at)
+);
+CREATE INDEX IF NOT EXISTS outcomes_fp ON outcomes (fp, id);
+CREATE TRIGGER IF NOT EXISTS outcomes_no_update BEFORE UPDATE ON outcomes BEGIN SELECT RAISE(ABORT, 'outcomes is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS outcomes_no_delete BEFORE DELETE ON outcomes BEGIN SELECT RAISE(ABORT, 'outcomes is append-only'); END;
 `;
 
 /**
@@ -154,6 +172,25 @@ export const MIGRATIONS = {
 ALTER TABLE proposals ADD COLUMN issue_ref TEXT;
 ALTER TABLE proposals ADD COLUMN issue_url TEXT;
 PRAGMA user_version = 2;
+`,
+  2: `
+-- v3: what a person said about an accepted item once it was built (dowser_reflect_sync). Append-only; unique
+-- (fp, recorded_at) makes a replayed sync a no-op. No FK on fp: an outcome may name an item this store never saw.
+CREATE TABLE IF NOT EXISTS outcomes (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  fp           TEXT NOT NULL,
+  ref          TEXT NOT NULL,
+  rating       TEXT NOT NULL CHECK (rating IN ('right','partly','wrong')),
+  note         TEXT,
+  issue_ref    TEXT NOT NULL,
+  decided_by   TEXT NOT NULL,
+  recorded_at  TEXT NOT NULL,
+  UNIQUE (fp, recorded_at)
+);
+CREATE INDEX IF NOT EXISTS outcomes_fp ON outcomes (fp, id);
+CREATE TRIGGER IF NOT EXISTS outcomes_no_update BEFORE UPDATE ON outcomes BEGIN SELECT RAISE(ABORT, 'outcomes is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS outcomes_no_delete BEFORE DELETE ON outcomes BEGIN SELECT RAISE(ABORT, 'outcomes is append-only'); END;
+PRAGMA user_version = 3;
 `,
 };
 
