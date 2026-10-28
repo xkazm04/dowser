@@ -11,7 +11,7 @@ import { useCommitWindow } from '../../components/useCommitWindow.js';
 import { CardDialog } from '../../components/CardDialog.jsx';
 import { deepLinkRef } from '../../components/deeplink.js';
 import {
-  CHANGE_LABELS, LENSES, LENS_LABELS, REASON_LABELS, STATUSES, STATUS_APPEARANCE, STATUS_LABELS, changeOf, formatDate, formatDay, plural,
+  CHANGE_LABELS, LENSES, LENS_LABELS, REASON_LABELS, STATUSES, STATUS_APPEARANCE, STATUS_LABELS, changeOf, formatDate, plural,
 } from '../../components/labels.js';
 import { AcceptDialog, MergeDialog, RejectDialog, SnoozeStep } from './dialogs.jsx';
 import { Detail } from './Detail.jsx';
@@ -527,7 +527,7 @@ function Toolbar({ inboxes, projectKey, onProject, status, onStatus, lens, onLen
       <span className="dwr-spacer" />
       <p className="dwr-runline" aria-label="Run summary">
         {last
-          ? <>Last push {formatDay(last.at).replace(/ \d{4}$/, '')} · {last.created ?? 0} new, {last.updated ?? 0} updated</>
+          ? <>Last push {shortWhen(last.at)} · {last.created ?? 0} new, {last.updated ?? 0} updated</>
           : <>No push has reached {count > 1 ? 'these inboxes' : 'this inbox'} yet</>}
       </p>
       <button type="button" className="dwr-iconbtn" onClick={onHelp} aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button>
@@ -537,13 +537,16 @@ function Toolbar({ inboxes, projectKey, onProject, status, onStatus, lens, onLen
 
 // ---- list ----------------------------------------------------------------------------------------------------
 
+/** "28 Oct, 19:21": several pushes a day are common, so the time is what tells them apart; the year is noise. */
+const shortWhen = (iso) => formatDate(iso).replace(/ \d{4}/, '');
+
 function GroupHead({ group, leaving }) {
   const counts = { new: 0, grew: 0, reopened: 0 };
   for (const c of group.items) if (c.status === 'open' && !leaving.has(c.ref)) counts[changeOf(c, group)] += 1;
   const bits = Object.entries(counts).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${CHANGE_LABELS[k].toLowerCase()}`);
   return (
     <h2 className="dwr-group__head" id={`dwr-g-${group.run_id}`} title={group.head_sha ? `Scanned at ${group.head_sha.slice(0, 7)}, run ${group.run_id}` : `Run ${group.run_id}`}>
-      <span>Push of {formatDay(group.at)}</span>
+      <span>Push of {shortWhen(group.at)}</span>
       {bits.length > 0 && <span className="dwr-group__counts">{bits.join(' · ')}</span>}
     </h2>
   );
