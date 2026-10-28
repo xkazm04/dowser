@@ -1,1 +1,265 @@
-/* Variant 1 - Evolution. Every selector is scoped under :root[data-variant="1"]. */
+/* Variant 1 - Evolution. Every selector is scoped under :root[data-variant="1"].
+   Colours: every colour is an ADS token (var(--ds-*)); the brand colours come from brand.css (--dw-teal, --dw-indigo,
+   --dw-ink). No literal colour is used, so there is no dark block to keep: ADS text tokens are >= 4.5:1 on their
+   surfaces in both modes. Spacing is the 8px grid (4px for tight pairs). One shape app-wide: 3px radius rectangles
+   (filter buttons, lens badges, lozenges, signal chips, buttons); the card is the only 6px surface. */
+
+:root[data-variant="1"] {
+  --dw1-gutter: 24px;
+  --dw1-chip-bg: var(--ds-background-neutral, #0515240F);
+  --dw1-hairline: var(--ds-border, #0B120E24);
+  --dw1-radius: 3px;
+}
+
+/* ---- Page frame: fluid, centred, 24px gutters ----------------------------------------------------------------- */
+:root[data-variant="1"] .dw-root { max-width: 1200px; margin: 0 auto; padding: 0 var(--dw1-gutter) 48px; box-sizing: border-box; }
+:root[data-variant="1"] .dw-root--wide { max-width: 1200px; }
+:root[data-variant="1"] .dw-root--panel { max-width: none; margin: 0; padding: 8px 12px 16px; }
+:root[data-variant="1"] .dw1-spacer { flex: 1; }
+
+/* ---- Header: 48px, one row ------------------------------------------------------------------------------------ */
+:root[data-variant="1"] .dw1-bar__row { display: flex; align-items: center; gap: 8px; height: 48px; border-bottom: 1px solid var(--dw1-hairline); }
+:root[data-variant="1"] .dw1-bar__mark { display: inline-flex; flex: none; padding-right: 8px; }
+:root[data-variant="1"] .dw1-bar__mark svg { display: block; }
+:root[data-variant="1"] .dw1-tabs { display: flex; align-self: stretch; gap: 4px; margin: 0; }
+:root[data-variant="1"] .dw1-tab {
+  display: inline-flex; align-items: center; padding: 0 12px; position: relative; text-decoration: none; white-space: nowrap;
+  font-weight: 500; color: var(--ds-text-subtle, #505258); border-radius: var(--dw1-radius);
+}
+:root[data-variant="1"] a.dw1-tab:hover { background: var(--ds-background-neutral-subtle-hovered, #0515240F); color: var(--ds-text, #292A2E); text-decoration: none; }
+:root[data-variant="1"] .dw1-tab[aria-current="page"] { color: var(--ds-text, #292A2E); font-weight: 653; border-radius: 0; }
+:root[data-variant="1"] .dw1-tab[aria-current="page"]::after {
+  content: ''; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 2px; background: var(--dw-grad);
+}
+:root[data-variant="1"] .dw1-bar__summary { margin: 0; font-size: 12px; line-height: 16px; color: var(--ds-text-subtlest, #6B6E76); white-space: nowrap; }
+:root[data-variant="1"] .dw1-bar__summary strong { color: var(--ds-text-subtle, #505258); font-weight: 653; font-variant-numeric: tabular-nums; }
+:root[data-variant="1"] .dw1-select { height: 28px; min-height: 28px; padding: 0 8px; font-size: 13px; max-width: 300px; }
+
+/* The shared header (Opportunity map, Settings fall back to it): same calm, from CSS alone */
+:root[data-variant="1"] .dw-appbar { margin: 0 0 16px; }
+:root[data-variant="1"] .dw-appbar__strip, :root[data-variant="1"] .dw-brand__word { display: none; }
+:root[data-variant="1"] .dw-appbar__row { height: 48px; padding: 0; border-bottom: 1px solid var(--dw1-hairline); gap: 8px; flex-wrap: nowrap; }
+:root[data-variant="1"] .dw-brand svg { width: 20px; height: 20px; margin-right: 8px; }
+:root[data-variant="1"] .dw-nav { align-self: stretch; gap: 4px; flex-wrap: nowrap; }
+:root[data-variant="1"] .dw-nav__link { display: inline-flex; align-items: center; padding: 0 12px; border-radius: var(--dw1-radius); }
+:root[data-variant="1"] .dw-nav__link[aria-current="page"] { color: var(--ds-text, #292A2E); border-radius: 0; }
+:root[data-variant="1"] .dw-nav__link[aria-current="page"]::after { left: 12px; right: 12px; bottom: -1px; }
+:root[data-variant="1"] .dw-appbar__summary { margin: 4px 0 0; }
+
+/* ---- Filters: one chip shape ---------------------------------------------------------------------------------- */
+:root[data-variant="1"] .dw1-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 16px 0 0; }
+:root[data-variant="1"] .dw1-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 4px; background: var(--dw1-chip-bg); }
+:root[data-variant="1"] .dw1-lenses { display: flex; flex-wrap: wrap; gap: 4px; }
+:root[data-variant="1"] .dw1-chipbtn {
+  font: inherit; font-size: 13px; font-weight: 500; height: 28px; padding: 0 8px; border: 0; border-radius: var(--dw1-radius);
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap;
+  background: transparent; color: var(--ds-text-subtle, #505258);
+}
+:root[data-variant="1"] .dw1-seg .dw1-chipbtn { height: 24px; }
+:root[data-variant="1"] .dw1-chipbtn:hover { background: var(--ds-background-neutral-subtle-hovered, #0515240F); color: var(--ds-text, #292A2E); }
+:root[data-variant="1"] .dw1-chipbtn[aria-pressed="true"] { background: var(--ds-background-selected, #E9F2FE); color: var(--ds-text-selected, #1868DB); font-weight: 653; }
+:root[data-variant="1"] .dw1-chipbtn[aria-pressed="true"]:hover { background: var(--ds-background-selected-hovered, #CFE1FD); }
+:root[data-variant="1"] .dw1-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ds-border-bold, #7D818A); flex: none; }
+:root[data-variant="1"] .dw1-lens--opportunity .dw1-dot { background: var(--ds-background-accent-blue-bolder, #1558BC); }
+:root[data-variant="1"] .dw1-lens--ux-friction .dw1-dot { background: var(--ds-background-accent-purple-bolder, #803FA5); }
+:root[data-variant="1"] .dw1-lens--doc-drift .dw1-dot { background: var(--ds-background-accent-teal-bolder, #206A83); }
+:root[data-variant="1"] .dw1-lens--security-cra .dw1-dot { background: var(--ds-background-accent-red-bolder, #AE2E24); }
+
+/* ---- Buttons, lozenges, lens badges: one shape --------------------------------------------------------------- */
+:root[data-variant="1"] .dw-btn { border-radius: var(--dw1-radius); }
+:root[data-variant="1"] .dw-btn--compact { height: 28px; padding: 0 10px; }
+:root[data-variant="1"] .dw-btn--subtle { color: var(--ds-text-subtle, #505258); }
+:root[data-variant="1"] .dw-lozenge { border-radius: var(--dw1-radius); }
+:root[data-variant="1"] .dw-lens { border-radius: var(--dw1-radius); font-size: 12px; line-height: 20px; padding: 0 6px; }
+:root[data-variant="1"] .dw-card__ref { font-variant-numeric: tabular-nums; }
+
+/* ---- Bulk bar and group heads -------------------------------------------------------------------------------- */
+:root[data-variant="1"] .dw-bulk { top: 8px; margin: 8px 0 0; padding: 8px 12px; border-radius: 6px; }
+:root[data-variant="1"] .dw1-group { margin: 24px 0 0; }
+:root[data-variant="1"] .dw1-group__head { display: flex; align-items: baseline; gap: 12px; margin: 0 0 8px; }
+:root[data-variant="1"] .dw1-group__title { margin: 0; font-size: 14px; line-height: 20px; font-weight: 653; cursor: default; }
+:root[data-variant="1"] .dw1-group__counts { display: flex; align-items: baseline; font-size: 12px; line-height: 16px; color: var(--ds-text-subtlest, #6B6E76); }
+:root[data-variant="1"] .dw1-group__counts strong { font-weight: 653; color: var(--ds-text-subtle, #505258); font-variant-numeric: tabular-nums; }
+:root[data-variant="1"] .dw1-group__counts > span + span::before { content: '\00B7'; margin: 0 8px; }
+:root[data-variant="1"] .dw1-list { margin: 0; }
+:root[data-variant="1"] .dw-item { margin-bottom: 8px; }
+:root[data-variant="1"] .dw1-more-row { margin: 16px 0 0; }
+
+/* ---- Card: one outline, no shadow, no spine ------------------------------------------------------------------ */
+:root[data-variant="1"] .dw1-card {
+  display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 0 8px; position: relative;
+  padding: 12px 16px; border-radius: 6px; background: var(--ds-surface, #FFFFFF); border: 1px solid var(--dw1-hairline);
+}
+:root[data-variant="1"] .dw1-card:hover { border-color: var(--ds-border-bold, #7D818A); }
+:root[data-variant="1"] .dw1-card--focused, :root[data-variant="1"] .dw1-card--focused:hover { border-color: var(--ds-border-focused, #4688EC); box-shadow: 0 0 0 1px var(--ds-border-focused, #4688EC); }
+:root[data-variant="1"] .dw1-card:focus-visible { outline: none; }
+:root[data-variant="1"] .dw1-card--selected { background: var(--ds-background-selected, #E9F2FE); border-color: var(--ds-border-selected, #1868DB); }
+:root[data-variant="1"] .dw1-card__check { padding-top: 6px; }
+:root[data-variant="1"] .dw1-card__main { min-width: 0; }
+:root[data-variant="1"] .dw1-card__head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; min-height: 28px; }
+:root[data-variant="1"] .dw1-card__issue { font-size: 12px; }
+:root[data-variant="1"] .dw1-card__actions { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+:root[data-variant="1"] .dw1-card__title { margin: 4px 0 2px; font-size: 16px; line-height: 20px; font-weight: 653; letter-spacing: 0; }
+:root[data-variant="1"] .dw1-card__rationale { margin: 0 0 8px; color: var(--ds-text-subtle, #505258); }
+:root[data-variant="1"] .dw1-card .dw-details { margin-top: 4px; }
+
+/* signals: one line of same-shaped chips */
+:root[data-variant="1"] .dw1-signals { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 24px; }
+:root[data-variant="1"] .dw1-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 6px; border-radius: var(--dw1-radius);
+  font-size: 12px; line-height: 20px; white-space: nowrap; background: var(--dw1-chip-bg); color: var(--ds-text, #292A2E);
+}
+:root[data-variant="1"] .dw1-chip strong { font-weight: 653; }
+:root[data-variant="1"] .dw1-chip__k { color: var(--ds-text-subtle, #505258); }
+:root[data-variant="1"] .dw1-chip__v { color: var(--ds-text-subtle, #505258); font-variant-numeric: tabular-nums; }
+:root[data-variant="1"] .dw1-chip--warn { background: var(--ds-background-warning, #FFF5DB); color: var(--ds-text-warning, #9E4C00); font-weight: 653; gap: 4px; }
+:root[data-variant="1"] .dw1-chip .dw-meter__seg { width: 10px; height: 4px; }
+:root[data-variant="1"] .dw1-chip .dw-pip { width: 5px; height: 5px; }
+:root[data-variant="1"] .dw1-toggle {
+  font: inherit; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 6px 0 8px;
+  border: 0; border-radius: var(--dw1-radius); background: none; color: var(--ds-text-subtle, #505258); cursor: pointer;
+}
+:root[data-variant="1"] .dw1-toggle:hover { background: var(--ds-background-neutral-subtle-hovered, #0515240F); color: var(--ds-text, #292A2E); }
+:root[data-variant="1"] .dw1-toggle__chev { transition: transform .12s ease; }
+:root[data-variant="1"] .dw1-toggle[aria-expanded="true"] .dw1-toggle__chev { transform: rotate(180deg); }
+
+/* expanded: facts left, evidence right when there is room */
+:root[data-variant="1"] .dw1-details { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px 32px; margin-top: 12px; animation: dw1-rise .14s ease-out; }
+@media (min-width: 880px) { :root[data-variant="1"] .dw1-details { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); } }
+:root[data-variant="1"] .dw1-subhead { margin: 0 0 8px; font-size: 12px; line-height: 16px; font-weight: 653; color: var(--ds-text-subtle, #505258); }
+:root[data-variant="1"] .dw1-fields { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px 16px; margin: 0; }
+:root[data-variant="1"] .dw1-fields dt { font-size: 12px; line-height: 20px; color: var(--ds-text-subtlest, #6B6E76); }
+:root[data-variant="1"] .dw1-fields dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+:root[data-variant="1"] .dw1-inline { display: inline-flex; align-items: center; gap: 8px; }
+:root[data-variant="1"] .dw1-history { margin-top: 16px; }
+@keyframes dw1-rise { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
+
+:root[data-variant="1"] .dw-evidence { margin: 0; gap: 8px; }
+:root[data-variant="1"] .dw-evidence li { grid-template-columns: 40px minmax(0, 1fr); gap: 0 8px; }
+:root[data-variant="1"] .dw-evidence__type { font-size: 11px; line-height: 20px; letter-spacing: .02em; }
+:root[data-variant="1"] .dw-evidence__ref { font-size: 12px; line-height: 20px; }
+:root[data-variant="1"] pre.dw-code { border-radius: var(--dw1-radius); padding: 4px 8px; margin-top: 4px; }
+
+/* decided cards: the triage history is a quiet line under the card body */
+:root[data-variant="1"] .dw1-card .dw-details summary { cursor: pointer; font-size: 12px; color: var(--ds-text-subtle, #505258); }
+
+/* ---- Overflow menu -------------------------------------------------------------------------------------------- */
+:root[data-variant="1"] .dw1-more { position: relative; display: inline-flex; }
+:root[data-variant="1"] .dw1-more__btn { padding: 0 6px; }
+:root[data-variant="1"] .dw1-more__menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 10; min-width: 160px; padding: 4px 0; border-radius: 4px;
+  background: var(--ds-surface-overlay, #FFFFFF); box-shadow: var(--ds-shadow-overlay, 0 8px 12px #1E1F2126, 0 0 1px #1E1F214F);
+}
+:root[data-variant="1"] .dw1-more__item { display: block; width: 100%; text-align: left; font: inherit; padding: 6px 12px; border: 0; background: none; color: var(--ds-text, #292A2E); cursor: pointer; }
+:root[data-variant="1"] .dw1-more__item:hover, :root[data-variant="1"] .dw1-more__item:focus-visible { background: var(--ds-background-neutral-subtle-hovered, #0515240F); outline: none; }
+:root[data-variant="1"] .dw1-more__item:focus-visible { box-shadow: inset 2px 0 0 var(--ds-border-focused, #4688EC); }
+
+/* ---- Snooze step, empty, skeleton ---------------------------------------------------------------------------- */
+:root[data-variant="1"] .dw-step { margin-top: 12px; padding: 12px; border-radius: 4px; gap: 8px; }
+:root[data-variant="1"] .dw-empty { border: 0; padding: 48px 16px 40px; margin: 8px 0; }
+:root[data-variant="1"] .dw-empty svg { width: 72px; height: 72px; }
+:root[data-variant="1"] .dw-skel-card { height: 120px; border-radius: 6px; }
+
+/* ---- Dialogs: shared markup, calmer ---------------------------------------------------------------------------- */
+:root[data-variant="1"] dialog.dw-dialog { width: min(560px, calc(100vw - 32px)); border-radius: 6px; }
+:root[data-variant="1"] .dw-dialog__head { padding: 24px 24px 8px; }
+:root[data-variant="1"] .dw-dialog__head .dw-h2 { font-size: 20px; line-height: 24px; }
+:root[data-variant="1"] .dw-dialog__body { padding: 8px 24px; }
+:root[data-variant="1"] .dw-dialog__foot { padding: 16px 24px 24px; }
+:root[data-variant="1"] .dw-radio-list { gap: 4px; }
+:root[data-variant="1"] .dw-radio {
+  padding: 8px 12px; border: 1px solid var(--dw1-hairline); border-radius: var(--dw1-radius); grid-template-columns: 20px minmax(0, 1fr); gap: 0 8px; align-items: start;
+}
+:root[data-variant="1"] .dw-radio:hover { background: var(--ds-background-neutral-subtle-hovered, #0515240F); border-color: var(--ds-border-bold, #7D818A); }
+:root[data-variant="1"] .dw-radio:has(input:checked) { background: var(--ds-background-selected, #E9F2FE); border-color: var(--ds-border-selected, #1868DB); }
+:root[data-variant="1"] .dw-radio:has(input:focus-visible) { outline: 2px solid var(--ds-border-focused, #4688EC); outline-offset: 1px; }
+:root[data-variant="1"] .dw-radio input { margin: 2px 0 0; }
+:root[data-variant="1"] .dw-preview { border: 0; border-radius: 4px; padding: 12px 16px; background: var(--ds-surface-sunken, #F8F8F8); max-height: 240px; }
+:root[data-variant="1"] .dw-table td { padding: 8px 12px 8px 0; }
+
+/* ---- Evidence panel (360px): fields like Jira's ----------------------------------------------------------------- */
+:root[data-variant="1"] .dw1-panel__brand { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 12px; font-weight: 653; color: var(--ds-text-subtle, #505258); }
+:root[data-variant="1"] .dw1-panel .dw1-card { display: block; padding: 0; border: 0; border-radius: 0; background: transparent; }
+:root[data-variant="1"] .dw1-panel .dw1-card:hover { border-color: transparent; }
+:root[data-variant="1"] .dw1-panel .dw1-card__head { min-height: 24px; }
+:root[data-variant="1"] .dw1-panel .dw1-fields { grid-template-columns: 96px minmax(0, 1fr); gap: 8px 12px; margin-top: 8px; }
+:root[data-variant="1"] .dw1-panel .dw1-subhead { margin-top: 16px; }
+:root[data-variant="1"] .dw1-panel .dw-evidence li { grid-template-columns: minmax(0, 1fr); }
+:root[data-variant="1"] .dw1-panel .dw-evidence__type { line-height: 16px; }
+:root[data-variant="1"] .dw1-panel pre.dw-code, :root[data-variant="1"] .dw1-panel blockquote.dw-quote { grid-column: 1; }
+
+@media (max-width: 480px) {
+  :root[data-variant="1"] .dw-root { padding-left: 12px; padding-right: 12px; }
+  :root[data-variant="1"] .dw1-card__actions { margin-left: 0; width: 100%; }
+}
+@media (max-width: 760px) {
+  :root[data-variant="1"] .dw1-bar__summary { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-variant="1"] .dw1-details { animation: none; }
+  :root[data-variant="1"] .dw1-toggle__chev { transition: none; }
+}
+:root[data-variant="1"] .dw-radio input:focus-visible { outline: none; }
+
+/* ---- Learning: sections separated by space and one hairline, no boxes inside boxes --------------------------------- */
+:root[data-variant="1"] .dw1-intro { margin: 16px 0 0; color: var(--ds-text-subtle, #505258); max-width: 80ch; }
+:root[data-variant="1"] .dw1-sec { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--dw1-hairline); }
+:root[data-variant="1"] .dw1-sec:first-of-type { margin-top: 24px; padding-top: 0; border-top: 0; }
+:root[data-variant="1"] .dw1-sec__head { margin: 0 0 16px; }
+:root[data-variant="1"] .dw1-sec__title { margin: 0; font-size: 16px; line-height: 20px; font-weight: 653; }
+:root[data-variant="1"] .dw1-sec__hint { margin: 4px 0 0; font-size: 13px; line-height: 20px; color: var(--ds-text-subtle, #505258); }
+:root[data-variant="1"] .dw1-h3 { margin: 0; font-size: 14px; line-height: 20px; font-weight: 653; }
+:root[data-variant="1"] .dw1-h3--gap { margin-top: 24px; margin-bottom: 8px; }
+:root[data-variant="1"] .dw1-h4 { margin: 16px 0 8px; font-size: 12px; line-height: 16px; font-weight: 653; color: var(--ds-text-subtle, #505258); }
+:root[data-variant="1"] .dw1-num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* lens yield: a compact table with an inline bar */
+:root[data-variant="1"] .dw1-yield { width: 100%; max-width: 760px; border-collapse: collapse; }
+:root[data-variant="1"] .dw1-yield th, :root[data-variant="1"] .dw1-yield td { padding: 6px 0; text-align: left; font-weight: 400; vertical-align: middle; }
+:root[data-variant="1"] .dw1-yield thead th { font-size: 12px; line-height: 16px; font-weight: 653; color: var(--ds-text-subtlest, #6B6E76); padding-bottom: 8px; }
+:root[data-variant="1"] .dw1-yield thead th.dw1-num, :root[data-variant="1"] .dw1-yield td.dw1-num { width: 72px; text-align: right; }
+:root[data-variant="1"] .dw1-yield tbody th { width: 232px; }
+:root[data-variant="1"] .dw1-yield__bar { padding: 6px 16px; }
+:root[data-variant="1"] .dw1-track { display: block; height: 8px; border-radius: var(--dw1-radius); background: var(--dw1-chip-bg); overflow: hidden; }
+:root[data-variant="1"] .dw1-fill { display: block; height: 100%; border-radius: var(--dw1-radius); background: var(--dw-indigo); }
+
+/* scan retro: numbers on one grid */
+:root[data-variant="1"] .dw1-metrics { display: flex; flex-wrap: wrap; gap: 8px 40px; margin: 12px 0 8px; }
+:root[data-variant="1"] .dw1-metrics > div { display: flex; flex-direction: column; }
+:root[data-variant="1"] .dw1-metrics dd { margin: 0; font-size: 28px; line-height: 32px; font-weight: 653; font-variant-numeric: tabular-nums; color: var(--ds-text, #292A2E); }
+:root[data-variant="1"] .dw1-metrics dt { font-size: 12px; line-height: 16px; color: var(--ds-text-subtle, #505258); }
+:root[data-variant="1"] .dw1-reading { margin: 0; max-width: 80ch; color: var(--ds-text-subtle, #505258); }
+:root[data-variant="1"] .dw-stack { height: 24px; border-radius: var(--dw1-radius); max-width: 760px; }
+:root[data-variant="1"] .dw-stack__legend { margin-top: 8px; gap: 4px 16px; }
+:root[data-variant="1"] .dw-trends { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px 32px; }
+:root[data-variant="1"] .dw-fig { max-width: none; }
+:root[data-variant="1"] .dw-fig__cap { font-size: 12px; margin-bottom: 4px; }
+:root[data-variant="1"] .dw-details { margin-top: 12px; }
+:root[data-variant="1"] .dw-details summary { color: var(--ds-text-subtle, #505258); cursor: pointer; }
+:root[data-variant="1"] .dw-details[open] summary { margin-bottom: 8px; }
+:root[data-variant="1"] .dw-table th, :root[data-variant="1"] .dw-table td { border-bottom: 0; padding: 6px 12px 6px 0; font-variant-numeric: tabular-nums; }
+:root[data-variant="1"] .dw-table thead th { border-bottom: 1px solid var(--dw1-hairline); padding-bottom: 8px; }
+
+/* why we say no: columns, no cards */
+:root[data-variant="1"] .dw-nogrid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px 40px; }
+:root[data-variant="1"] .dw-nocard { padding: 0; background: none; box-shadow: none; border-radius: 0; }
+:root[data-variant="1"] .dw-hbars { margin-top: 12px; gap: 8px; }
+:root[data-variant="1"] .dw-hbars__track { height: 8px; border-radius: var(--dw1-radius); }
+:root[data-variant="1"] .dw-hbars__bar { border-radius: var(--dw1-radius); }
+:root[data-variant="1"] .dw-notes { gap: 16px; }
+:root[data-variant="1"] .dw-notes > li { padding: 0; border-bottom: 0; }
+:root[data-variant="1"] .dw-note { border-left-color: var(--ds-border-bold, #7D818A); margin: 4px 0; }
+
+/* rules and ratings: the same outlined card as the inbox */
+:root[data-variant="1"] .dw-rules { gap: 8px; }
+:root[data-variant="1"] .dw-rulecard { padding: 12px 16px; border-radius: 6px; background: var(--ds-surface, #FFFFFF); border: 1px solid var(--dw1-hairline); border-left-width: 1px; box-shadow: none; }
+:root[data-variant="1"] .dw-rulecard--done { border-left-color: var(--dw1-hairline); }
+:root[data-variant="1"] .dw-doneCue { color: var(--ds-text-success, #4C6B1F); }
+:root[data-variant="1"] .dw-rate { gap: 4px; }
+:root[data-variant="1"] .dw-rate__opt { height: 28px; padding: 0 10px; border-radius: var(--dw1-radius); border-color: var(--dw1-hairline); box-sizing: border-box; }
+:root[data-variant="1"] .dw-rate__opt:has(input:checked) { background: var(--ds-background-selected, #E9F2FE); border-color: var(--ds-border-selected, #1868DB); color: var(--ds-text-selected, #1868DB); }
+:root[data-variant="1"] .dw-rulecard .dw-card__title { font-size: 14px; line-height: 20px; }
+:root[data-variant="1"] .dw-rulecard .dw-card__actions { margin-top: 8px; }
+:root[data-variant="1"] .dw-textarea, :root[data-variant="1"] .dw-input { border-radius: var(--dw1-radius); }
+
