@@ -13,6 +13,7 @@
 //   &page=<n>             inbox page size (default 4)     &mode=dark|light   colour mode (default: the OS)
 import { setGlobalTheme } from '@atlaskit/tokens/set-global-theme';
 import { AREAS, CARDS, GROUP_OF, HISTORY, INBOXES, PROJECTS, PUSHES, REFLECT } from './fixture.js';
+import { STATUSES } from '../components/labels.js';
 
 const PAGE = 4; // small on purpose, so "Load more" and a group split across pages are exercised
 const params = () => new URLSearchParams(location.hash.slice(1).replace(/^[a-z-]+&?/, ''));
@@ -24,6 +25,11 @@ const history = structuredClone(HISTORY);
 const reflect = structuredClone(REFLECT);
 const EMPTY_REFLECT = { totals: { open: 0, accepted: 0, rejected: 0, snoozed: 0, merged: 0 }, rejects: [], notes: [], pushes: [], lens_yield: [], rules: [], candidates: [], outcomes: [] };
 
+/** An inbox summary as inbox.list / settings.* return it: the open count and the count per status. */
+function summary(i) {
+  const by_status = Object.fromEntries(STATUSES.map((s) => [s, cards.filter((c) => c.project_key === i.project_key && c.status === s).length]));
+  return { ...i, open: by_status.open, by_status };
+}
 function err(error, message) { return { error, message }; }
 function decide(ref, status, extra = {}) {
   const c = cards.find((x) => x.ref === ref);
@@ -57,7 +63,7 @@ const handlers = {
       g.items.push(c);
     }
     const out = {
-      inboxes: INBOXES.map((i) => ({ ...i, open: cards.filter((c) => c.project_key === i.project_key && c.status === 'open').length })),
+      inboxes: INBOXES.map(summary),
       groups,
     };
     if (start + size < ordered.length) out.next = String(start + size);
@@ -87,13 +93,13 @@ const handlers = {
     return { card: decide(ref, 'merged', { merged_into: into }) };
   },
   'settings.get'() {
-    return { inboxes: INBOXES.map((i) => ({ ...i, open: cards.filter((c) => c.project_key === i.project_key && c.status === 'open').length })) };
+    return { inboxes: INBOXES.map(summary) };
   },
   'settings.set'({ project_key, jira_project_key, issue_type_id }) {
     const i = INBOXES.find((x) => x.project_key === project_key);
     if (!i) throw err('unknown-project', `No inbox ${project_key}.`);
     Object.assign(i, { jira_project_key, issue_type_id });
-    return { inbox: { ...i, open: cards.filter((c) => c.project_key === project_key && c.status === 'open').length } };
+    return { inbox: summary(i) };
   },
   'jira.projects'() { return { projects: PROJECTS }; },
   'panel.forIssue'({ issue_key }) {

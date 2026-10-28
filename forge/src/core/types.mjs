@@ -84,7 +84,8 @@ export const PAGE_SIZE = 50;
  *   `change` is set on open cards inside an InboxGroup: what that push did to the item.
  * @typedef {{run_id: string, at: string, head_sha?: string, items: Card[]}} InboxGroup
  * @typedef {{run_id: string, at: string, head_sha?: string, created: number, updated: number}} LastPush
- * @typedef {{project_key: string, repo_url?: string, jira_project_key?: string, issue_type_id?: string, open: number, last_push?: LastPush}} InboxSummary
+ * @typedef {{project_key: string, repo_url?: string, jira_project_key?: string, issue_type_id?: string, open: number,
+ *   by_status: Record<InboxStatus, number>, last_push?: LastPush}} InboxSummary
  */
 
 /**

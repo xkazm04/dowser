@@ -163,7 +163,8 @@ test('accept creates the issue first, then records issue_ref/issue_url and an ac
   }]);
   // the issue text: rationale, the five sections, the evidence list, then the closing line
   const text = adfToText(d.jira.created[0].description);
-  const order = ['Customers keep asking', 'Summary', 'Description', 'Flow', 'Expected impact', 'Evaluation', 'Evidence', 'Proposed by Dowser (DW-1)'];
+  const order = ['Customers keep asking', 'Summary', 'Details', 'Flow', 'Expected impact', 'Evaluation', 'Evidence', 'Proposed by Dowser (DW-1)'];
+  assert.ok(!/^Description$/m.test(text), 'Jira titles the field Description; the body does not repeat it');
   let at = -1;
   for (const s of order) { const i = text.indexOf(s, at + 1); assert.ok(i > at, `${s} in order`); at = i; }
   assert.ok(text.trimEnd().endsWith('Proposed by Dowser (DW-1)'));
@@ -298,10 +299,14 @@ test('inbox.list groups by push (new / grew), policy order inside, last_push on 
     ['r-1', 'abc123', [['DW-2', 'new']]],
   ]);
   assert.deepEqual(page.inboxes, [{ project_key: PK, repo_url: 'https://github.com/Acme/Shop', open: 2,
+    by_status: { open: 2, accepted: 0, rejected: 0, snoozed: 0, merged: 0 },
     last_push: { run_id: 'r-2', at: '2026-10-27T10:00:01.000Z', head_sha: 'def456', created: 0, updated: 2 } }]);
   const rejected = await res(d, 'inbox.list', { status: 'rejected' });
   assert.deepEqual(rejected.groups, []);
   assert.equal(rejected.inboxes[0].last_push.run_id, 'r-2', 'last_push regardless of the status filter');
+  await res(d, 'verdict.reject', { refs: ['DW-2'], reason: 'not-worth-it' });
+  const after = (await res(d, 'inbox.list', { status: 'rejected' })).inboxes[0];
+  assert.deepEqual([after.open, after.by_status], [1, { open: 1, accepted: 0, rejected: 1, snoozed: 0, merged: 0 }], 'counts per status, whatever the filter');
   assert.equal((await res(d, 'inbox.list', { cursor: 'x' })).error, 'bad-cursor');
 });
 

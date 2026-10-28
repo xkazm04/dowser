@@ -385,7 +385,7 @@ export default function Inbox({ context }) {
   return (
     <main className={`dwr-root${wide ? ' dwr-root--wide' : ''}`}>
       <Toolbar
-        inboxes={inboxes} projectKey={projectKey} onProject={setProjectKey} status={status} onStatus={setStatus}
+        inboxes={inboxes} decided={decided} projectKey={projectKey} onProject={setProjectKey} status={status} onStatus={setStatus}
         lens={lens} onLens={setLens} onHelp={() => setDialog({ kind: 'help', refs: [] })}
       />
       <h1 className="dwr-visually-hidden">Dowser inbox</h1>
@@ -489,15 +489,22 @@ export default function Inbox({ context }) {
 
 // ---- toolbar -------------------------------------------------------------------------------------------------
 
-function summarise(inboxes, projectKey) {
+/** The counts as loaded, moved by the decisions made since: every listed card had the filtered status. */
+function summarise(inboxes, projectKey, status, decided) {
   const list = (inboxes ?? []).filter((i) => !projectKey || i.project_key === projectKey);
-  const open = list.reduce((n, i) => n + (i.open ?? 0), 0);
+  // by_status is newer than open: an older backend sends only open, and the other segments then show no count.
+  const by = Object.fromEntries(STATUSES.map((s) => [s, list.some((i) => i.by_status) ? list.reduce((n, i) => n + (i.by_status?.[s] ?? 0), 0) : undefined]));
+  by.open = list.reduce((n, i) => n + (i.open ?? 0), 0);
+  for (const to of decided?.values() ?? []) {
+    if (by[status] !== undefined) by[status] -= 1;
+    if (by[to] !== undefined) by[to] += 1;
+  }
   const last = list.map((i) => i.last_push).filter(Boolean).sort((a, b) => String(b.at).localeCompare(String(a.at)))[0];
-  return { open, last, count: list.length };
+  return { by, last, count: list.length };
 }
 
-function Toolbar({ inboxes, projectKey, onProject, status, onStatus, lens, onLens, onHelp }) {
-  const { open, last, count } = summarise(inboxes, projectKey);
+function Toolbar({ inboxes, decided, projectKey, onProject, status, onStatus, lens, onLens, onHelp }) {
+  const { by, last, count } = summarise(inboxes, projectKey, status, decided);
   return (
     <header className="dwr-toolbar">
       <span className="dwr-toolbar__mark"><Mark size={16} /></span>
@@ -513,7 +520,7 @@ function Toolbar({ inboxes, projectKey, onProject, status, onStatus, lens, onLen
       <div className="dwr-seg" role="group" aria-label="Filter by status">
         {STATUSES.map((s) => (
           <button key={s} type="button" className="dwr-seg__btn" aria-pressed={status === s} onClick={() => onStatus(s)}>
-            {STATUS_LABELS[s]}{s === 'open' && inboxes.length > 0 && <span className="dwr-seg__n">{open}</span>}
+            {STATUS_LABELS[s]}{inboxes.length > 0 && by[s] !== undefined && <span className="dwr-seg__n">{by[s]}</span>}
           </button>
         ))}
       </div>

@@ -18,6 +18,7 @@ import { LENSES, isOneOf } from '../shared/model.mjs';
  * @typedef {import('./types.mjs').Verdict} Verdict
  * @typedef {import('./types.mjs').InboxGroup} InboxGroup
  * @typedef {import('./types.mjs').InboxSummary} InboxSummary
+ * @typedef {import('./types.mjs').InboxStatus} InboxStatus
  */
 
 /**
@@ -111,21 +112,30 @@ export async function getProposal(deps, ref) {
 }
 
 /**
- * The inbox summaries (settings, the inbox header and its empty state): target settings, the open count and
- * the newest push (`last_push`), whatever status the inbox is filtered to.
+ * The inbox summaries (settings, the inbox header and its empty state): target settings, the open count, the
+ * count per status (`by_status`, every status present: a zero is a count, not an absence) and the newest push
+ * (`last_push`), whatever status the inbox is filtered to.
  * @param {Db} db
  * @returns {Promise<InboxSummary[]>}
  */
 export async function inboxSummaries(db) {
-  const counts = new Map((await db.query("SELECT project_key, COUNT(*) AS n FROM proposals WHERE status = 'open' GROUP BY project_key"))
-    .map((r) => [String(r.project_key), Number(r.n)]));
+  /** @returns {Record<InboxStatus, number>} */
+  const zero = () => /** @type {any} */ (Object.fromEntries(INBOX_STATUSES.map((s) => [s, 0])));
+  /** @type {Map<string, Record<string, number>>} */
+  const counts = new Map();
+  for (const r of await db.query('SELECT project_key, status, COUNT(*) AS n FROM proposals GROUP BY project_key, status')) {
+    const by = /** @type {Record<string, number>} */ (counts.get(String(r.project_key)) ?? zero());
+    counts.set(String(r.project_key), by);
+    if (String(r.status) in by) by[String(r.status)] = Number(r.n);
+  }
   /** @type {InboxSummary[]} */
   const out = [];
   for (const i of await listInboxRows(db)) {
     const push = (await db.query('SELECT * FROM pushes WHERE project_key = ? ORDER BY at DESC, id LIMIT 1', [i.project_key]))[0];
     out.push(/** @type {InboxSummary} */ (omitAbsent({
       project_key: i.project_key, repo_url: i.repo_url, jira_project_key: i.jira_project_key, issue_type_id: i.issue_type_id,
-      open: counts.get(i.project_key) ?? 0,
+      open: counts.get(i.project_key)?.open ?? 0,
+      by_status: counts.get(i.project_key) ?? zero(),
       last_push: push ? omitAbsent({ run_id: String(push.run_id), at: String(push.at), head_sha: push.head_sha, created: Number(push.created), updated: Number(push.updated) }) : undefined,
     })));
   }
