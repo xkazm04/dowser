@@ -63,10 +63,53 @@ export function changeOf(card, group) {
 export const CHANGE_LABELS = { new: 'New', grew: 'Evidence grew', reopened: 'Reopened' };
 
 /**
- * The issue the accept will create, as a preview: summary is the card title, the description is the card's
- * five body sections. The server builds the real issue (verdict.accept); this preview only mirrors it.
- * @param {{title: string, body?: string, ref: string}} card
+ * The issue the accept will create, as a preview of what forge/src/core/adf.mjs `issueDescription` builds, in the
+ * same order: the rationale, the card body (rendered by the markdown subset in markdown.js), an Evidence list, then
+ * "Proposed by Dowser (DW-n)". The server builds the real issue (verdict.accept); this preview only mirrors it.
+ * @param {{title: string, rationale?: string, body?: string, ref: string, evidence?: {type: string, ref: string, quote?: string}[]}} card
  */
 export function issuePreview(card) {
-  return { summary: card.title, description: `${(card.body ?? '').trim()}\n\nProposed by Dowser (${card.ref}).` };
+  return { summary: card.title, rationale: String(card.rationale ?? ''), body: String(card.body ?? ''), evidence: card.evidence ?? [] };
+}
+
+/**
+ * How well an item's evidence stands, derived only from what the card carries: the number of distinct evidence
+ * kinds (code, ticket, doc, ...), moved one step by the confidence the scan stated. 0 = no evidence at all.
+ * @param {{evidence?: {type: string}[], confidence?: string}} card
+ * @returns {{level: 0|1|2|3|4, label: string, count: number, kinds: number}}
+ */
+export function evidenceStrength(card) {
+  const ev = card.evidence ?? [];
+  const kinds = new Set(ev.map((e) => e.type)).size;
+  if (ev.length === 0) return { level: 0, label: 'None', count: 0, kinds: 0 };
+  const shift = card.confidence === 'high' ? 1 : card.confidence === 'low' ? -1 : 0;
+  const level = /** @type {1|2|3|4} */ (Math.max(1, Math.min(4, kinds + shift)));
+  return { level, label: STRENGTH_LABELS[level], count: ev.length, kinds };
+}
+export const STRENGTH_LABELS = ['None', 'Thin', 'Fair', 'Solid', 'Strong'];
+
+/** The three ways to rate an accepted item once it has shipped (`outcome.record`). */
+export const RATINGS = [
+  { code: 'right', label: 'Right call', mark: '✓' },
+  { code: 'partly', label: 'Partly', mark: '∼' },
+  { code: 'wrong', label: 'Wrong call', mark: '✕' },
+];
+export const RATING_LABELS = Object.fromEntries(RATINGS.map((r) => [r.code, r.label]));
+export const RATING_APPEARANCE = { right: 'success', partly: 'moved', wrong: 'removed' };
+
+/** `forge:<accountId>` / `human:<name>` -> a short label (a resolved display name wins when there is one). */
+export function deciderName(by, name) {
+  if (name) return name;
+  if (!by) return 'unknown';
+  const [kind, ...rest] = String(by).split(':');
+  const who = rest.join(':');
+  return kind === 'forge' ? `Jira user ${who}` : who || kind;
+}
+
+/** @param {string | undefined} iso */
+export function formatDay(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }

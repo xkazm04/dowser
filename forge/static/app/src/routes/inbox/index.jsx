@@ -1,16 +1,25 @@
 // The Dowser inbox (F8): a queue grouped by push, like a pull request for the backlog. Not a sortable table:
-// the server order inside a group is kept, and a decided card leaves the view without reordering the rest
-// (a removal from a set, not a position change).
+// the server order inside a group is kept (the order is policy), and a decided card leaves the view without
+// reordering the rest (a removal from a set, not a position change).
+//
+// Snooze and Reject are reversible by design: the card leaves at once, a toast offers Undo for 6 s and the
+// resolver call fires when that window ends (see useCommitWindow). Accept creates a Jira issue, so it is not
+// deferred; Merge writes into another item, same.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { call } from '../../api.js';
 import { Button, ErrorState, SectionMessage, SkeletonList } from '../../components/ui.jsx';
-import { ProposalCard } from '../../components/ProposalCard.jsx';
+import { LazyHistory, ProposalCard } from '../../components/ProposalCard.jsx';
+import { AppHeader, EmptyArt } from '../../components/Brand.jsx';
+import { ToastRegion } from '../../components/Toast.jsx';
+import { useCommitWindow } from '../../components/useCommitWindow.js';
 import {
-  CHANGE_LABELS, LENSES, LENS_LABELS, STATUSES, STATUS_LABELS, changeOf, formatDate, plural,
+  CHANGE_LABELS, LENSES, LENS_LABELS, REASON_LABELS, STATUSES, STATUS_LABELS, changeOf, formatDate, plural,
 } from '../../components/labels.js';
-import { AcceptDialog, HelpDialog, MergeDialog, RejectDialog } from './dialogs.jsx';
+import { AcceptDialog, HelpDialog, MergeDialog, RejectDialog, SnoozeStep } from './dialogs.jsx';
 import { CardDialog } from '../../components/CardDialog.jsx';
 import { deepLinkRef } from '../../components/deeplink.js';
+
+const EXIT_MS = 240;
 
 /** Append a page of groups; a group split across the page boundary (same run_id) is joined. */
 function appendGroups(prev, more) {
@@ -29,6 +38,9 @@ function isTyping(target) {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
 }
 
+const reducedMotion = () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const withoutKeys = (set, refs) => { const s = new Set(set); refs.forEach((r) => s.delete(r)); return s; };
+
 export default function Inbox({ context }) {
   const [projectKey, setProjectKey] = useState('');
   const [status, setStatus] = useState('open');
@@ -40,17 +52,20 @@ export default function Inbox({ context }) {
   const [moreState, setMoreState] = useState(/** @type {'idle'|'loading'|string} */ ('idle'));
   const [lastPush, setLastPush] = useState(/** @type {{run_id: string, at: string, lenses: string[]} | null | undefined} */ (undefined));
   const [removed, setRemoved] = useState(() => new Set());
+  const [leaving, setLeaving] = useState(() => new Set());
+  const [decided, setDecided] = useState(() => new Map());
   const [selected, setSelected] = useState(() => new Set());
   const [errors, setErrors] = useState(/** @type {Record<string, string>} */ ({}));
-  const [busy, setBusy] = useState(/** @type {Record<string, boolean>} */ ({}));
   const [focusRef, setFocusRef] = useState('');
+  const [focusReq, setFocusReq] = useState('');
+  const [snoozeFor, setSnoozeFor] = useState('');
   const [dialog, setDialog] = useState(/** @type {{kind: string, refs: string[]} | null} */ (null));
-  const [notice, setNotice] = useState(/** @type {React.ReactNode} */ (null));
-  const [bulkError, setBulkError] = useState('');
   const seq = useRef(0);
   const cardEls = useRef(/** @type {Record<string, HTMLElement | null>} */ ({}));
+  const exitTimers = useRef(/** @type {Map<string, ReturnType<typeof setTimeout>>} */ (new Map()));
   const [linkRef, setLinkRef] = useState(/** @type {string | undefined} */ (undefined));
   const linkDone = useRef(false);
+  const cw = useCommitWindow();
 
   const filters = useMemo(() => {
     /** @type {{project_key?: string, status?: string, lens?: string}} */
@@ -62,8 +77,10 @@ export default function Inbox({ context }) {
 
   const reload = useCallback(() => {
     const mine = ++seq.current;
+    cw.flush();
     setLoad({ status: 'loading' });
-    setRemoved(new Set()); setSelected(new Set()); setErrors({}); setLastPush(undefined); setMoreState('idle'); setBulkError('');
+    setRemoved(new Set()); setLeaving(new Set()); setDecided(new Map()); setSelected(new Set()); setErrors({}); setLastPush(undefined);
+    setMoreState('idle'); setSnoozeFor('');
     call('inbox.list', filters).then(
       (res) => {
         if (mine !== seq.current) return;
@@ -74,20 +91,23 @@ export default function Inbox({ context }) {
       },
       (error) => { if (mine === seq.current) setLoad({ status: 'error', error }); },
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
   useEffect(() => { reload(); }, [reload]);
 
-  // Visible groups: decided cards removed, empty groups dropped. Server order is untouched.
+  // Visible groups: decided cards removed, empty groups dropped. Server order is untouched. A card that is
+  // animating out is still rendered (collapsing) but no longer part of keyboard navigation.
   const visible = useMemo(() => groups
     .map((g) => ({ ...g, items: g.items.filter((c) => !removed.has(c.ref)) }))
     .filter((g) => g.items.length > 0), [groups, removed]);
-  const flat = useMemo(() => visible.flatMap((g) => g.items), [visible]);
-  const byRef = useMemo(() => new Map(flat.map((c) => [c.ref, c])), [flat]);
+  const shown = useMemo(() => visible.flatMap((g) => g.items), [visible]);
+  const flat = useMemo(() => shown.filter((c) => !leaving.has(c.ref)), [shown, leaving]);
+  const byRef = useMemo(() => new Map(shown.map((c) => [c.ref, c])), [shown]);
 
   // Empty view: name the last push instead of saying "all clear". Prefer the inbox summary's `last_push`; fall
   // back to an unfiltered page of this inbox when the server does not send it.
   useEffect(() => {
-    if (load.status !== 'ready' || flat.length > 0 || next || lastPush !== undefined) return;
+    if (load.status !== 'ready' || shown.length > 0 || next || lastPush !== undefined) return;
     const known = inboxes.filter((i) => (!projectKey || i.project_key === projectKey) && i.last_push)
       .map((i) => i.last_push).sort((a, b) => String(b.at).localeCompare(String(a.at)))[0];
     if (known) { setLastPush({ run_id: known.run_id, at: known.at, lenses: [] }); return; }
@@ -101,7 +121,7 @@ export default function Inbox({ context }) {
       () => { if (live) setLastPush(null); },
     );
     return () => { live = false; };
-  }, [load.status, flat.length, next, lastPush, projectKey, inboxes]);
+  }, [load.status, shown.length, next, lastPush, projectKey, inboxes]);
 
   // Deep link (`inbox?ref=DW-n`, the backend's external_url): once the first page is in, focus and scroll to the
   // card; a card outside the loaded page (another status, a later page) opens read-only via proposal.get.
@@ -132,8 +152,15 @@ export default function Inbox({ context }) {
     if (!focusRef || flat.length === 0) return;
     const ref = flat[Math.min(lastIndex.current, flat.length - 1)].ref;
     setFocusRef(ref);
-    if (!dialog) cardEls.current[ref]?.focus();
-  }, [focusIndex, focusRef, flat, dialog]);
+    if (!dialog && !snoozeFor) cardEls.current[ref]?.focus();
+  }, [focusIndex, focusRef, flat, dialog, snoozeFor]);
+
+  // After an Undo (or a failed commit) the card is back; give it the focus once it is in the DOM.
+  useEffect(() => {
+    if (!focusReq) return;
+    const el = cardEls.current[focusReq];
+    if (el) { el.focus(); el.scrollIntoView?.({ block: 'nearest' }); setFocusReq(''); }
+  }, [focusReq, removed, leaving]);
 
   function moveFocus(delta) {
     if (flat.length === 0) return;
@@ -148,37 +175,77 @@ export default function Inbox({ context }) {
     setSelected((prev) => { const s = new Set(prev); if (s.has(ref)) s.delete(ref); else s.add(ref); return s; });
   }
 
-  function leave(cards) {
+  /** A decided card collapses out of the list (at once under reduced motion). */
+  function leave(cards, to) {
     const refs = cards.map((c) => c.ref);
-    setRemoved((prev) => new Set([...prev, ...refs]));
-    setSelected((prev) => { const s = new Set(prev); refs.forEach((r) => s.delete(r)); return s; });
+    setDecided((prev) => { const m = new Map(prev); refs.forEach((r) => m.set(r, to)); return m; });
+    setSelected((prev) => withoutKeys(prev, refs));
     setErrors((prev) => { const e = { ...prev }; refs.forEach((r) => delete e[r]); return e; });
+    if (reducedMotion()) { setRemoved((prev) => new Set([...prev, ...refs])); return; }
+    setLeaving((prev) => new Set([...prev, ...refs]));
+    for (const r of refs) {
+      exitTimers.current.set(r, setTimeout(() => {
+        exitTimers.current.delete(r);
+        setRemoved((prev) => new Set([...prev, r]));
+        setLeaving((prev) => withoutKeys(prev, [r]));
+      }, EXIT_MS));
+    }
+  }
+
+  /** Put cards back in place (Undo, or a deferred call that failed). */
+  function restore(refs, focus = true) {
+    for (const r of refs) { clearTimeout(exitTimers.current.get(r)); exitTimers.current.delete(r); }
+    setRemoved((prev) => withoutKeys(prev, refs));
+    setLeaving((prev) => withoutKeys(prev, refs));
+    setDecided((prev) => { const m = new Map(prev); refs.forEach((r) => m.delete(r)); return m; });
+    if (focus) { setFocusRef(refs[0]); setFocusReq(refs[0]); }
   }
 
   function fail(refs, message) {
     setErrors((prev) => ({ ...prev, ...Object.fromEntries(refs.map((r) => [r, message])) }));
   }
 
-  async function snooze(refs, bulk = false) {
-    setBusy((b) => ({ ...b, ...Object.fromEntries(refs.map((r) => [r, true])) }));
-    setBulkError('');
-    try {
-      const res = await call('verdict.snooze', { refs });
-      leave(res.cards ?? []);
-      setNotice(<>{refs.length === 1 ? `${refs[0]} snoozed.` : `${plural(refs.length, 'proposal')} snoozed.`} It comes back when its evidence grows.</>);
-    } catch (e) {
-      const msg = String(e?.message ?? 'The snooze failed.');
-      fail(refs, msg);
-      if (bulk) setBulkError(msg);
-    } finally {
-      setBusy((b) => { const n = { ...b }; refs.forEach((r) => delete n[r]); return n; });
-    }
+  function failDeferred(refs, what, e) {
+    const message = String(e?.message ?? `The ${what} failed.`);
+    restore(refs, false);
+    fail(refs, message);
+    cw.notify(`Could not ${what} ${refs.length === 1 ? refs[0] : plural(refs.length, 'proposal')}: ${message} It is back in the list.`, 'error');
+  }
+
+  /** Snooze: leaves now, the call fires after the undo window. A note is only sent when the person wrote one. */
+  function deferSnooze(cards, note = '') {
+    const refs = cards.map((c) => c.ref);
+    setSnoozeFor('');
+    leave(cards, 'snoozed');
+    cw.schedule({
+      message: refs.length === 1 ? `Snoozed ${refs[0]}` : `Snoozed ${plural(refs.length, 'proposal')}`,
+      run: () => call('verdict.snooze', note ? { refs, note } : { refs }),
+      onUndo: () => restore(refs),
+      onError: (e) => failDeferred(refs, 'snooze', e),
+    });
+  }
+
+  function deferReject(cards, { reason, note }) {
+    const refs = cards.map((c) => c.ref);
+    leave(cards, 'rejected');
+    cw.schedule({
+      message: `${refs.length === 1 ? `Rejected ${refs[0]}` : `Rejected ${plural(refs.length, 'proposal')}`} (${REASON_LABELS[reason] ?? reason})`,
+      run: () => call('verdict.reject', note ? { refs, reason, note } : { refs, reason }),
+      onUndo: () => restore(refs),
+      onError: (e) => failDeferred(refs, 'reject', e),
+    });
   }
 
   function open(kind, refs) {
     if (refs.length === 0) return;
-    setBulkError('');
+    setSnoozeFor('');
     setDialog({ kind, refs });
+  }
+
+  function cancelSnooze() {
+    const ref = snoozeFor;
+    setSnoozeFor('');
+    requestAnimationFrame(() => cardEls.current[ref]?.focus());
   }
 
   // Keyboard: only when no dialog is open and no text field has focus.
@@ -186,7 +253,7 @@ export default function Inbox({ context }) {
     function onKey(e) {
       if (dialog || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
       const focused = focusIndex >= 0 ? flat[focusIndex] : undefined;
-      const actionable = focused && focused.status === 'open' && !busy[focused.ref];
+      const actionable = focused && focused.status === 'open';
       const many = [...selected].filter((r) => byRef.has(r));
       switch (e.key) {
         case 'j': moveFocus(1); break;
@@ -198,8 +265,11 @@ export default function Inbox({ context }) {
           if (many.length > 0) open('reject', many); else if (actionable) open('reject', [focused.ref]); else return;
           break;
         case 's':
-          if (many.length > 0) snooze(many, true); else if (actionable) snooze([focused.ref]); else return;
+          if (many.length > 0) deferSnooze(many.map((r) => byRef.get(r)));
+          else if (actionable) setSnoozeFor(focused.ref);
+          else return;
           break;
+        case 'u': if (!cw.undoLatest()) return; break;
         case '?': setDialog({ kind: 'help', refs: [] }); break;
         default: return;
       }
@@ -227,23 +297,19 @@ export default function Inbox({ context }) {
   const dialogCards = (dialog?.refs ?? []).map((r) => byRef.get(r)).filter(Boolean);
   const selectedVisible = [...selected].filter((r) => byRef.has(r));
   const closeDialog = () => setDialog(null);
+  const tally = useMemo(() => {
+    const t = { accepted: 0, rejected: 0, snoozed: 0, merged: 0, total: 0 };
+    for (const v of decided.values()) { t[v] += 1; t.total += 1; }
+    return t;
+  }, [decided]);
 
   return (
     <main className="dw-root">
-      <div className="dw-row" style={{ marginBottom: 8 }}>
-        <h1 className="dw-h1" style={{ margin: 0 }}>Dowser inbox</h1>
-        <span className="dw-spacer" />
-        {inboxes.length > 1 && (
-          <label className="dw-row">
-            <span className="dw-subtlest">Inbox</span>
-            <select className="dw-select" value={projectKey} onChange={(e) => setProjectKey(e.target.value)}>
-              <option value="">All inboxes</option>
-              {inboxes.map((i) => <option key={i.project_key} value={i.project_key}>{i.project_key} ({i.open} open)</option>)}
-            </select>
-          </label>
-        )}
-        <Button appearance="subtle" compact onClick={() => setDialog({ kind: 'help', refs: [] })} aria-label="Keyboard shortcuts">?</Button>
-      </div>
+      <AppHeader
+        context={context} active="inbox" title="Dowser inbox" inboxes={inboxes}
+        projectKey={projectKey} onProjectChange={setProjectKey} allOption
+        extra={<Button appearance="subtle" compact onClick={() => setDialog({ kind: 'help', refs: [] })} aria-label="Keyboard shortcuts">?</Button>}
+      />
 
       <div className="dw-chips" role="group" aria-label="Filter by status">
         <span className="dw-chips__label">Status</span>
@@ -259,62 +325,63 @@ export default function Inbox({ context }) {
         ))}
       </div>
 
-      <div aria-live="polite">
-        {notice && <SectionMessage appearance="success" role="status"><p>{notice} <Button appearance="subtle" compact onClick={() => setNotice(null)}>Dismiss</Button></p></SectionMessage>}
-      </div>
-
       {selectedVisible.length > 0 && (
         <div className="dw-bulk" role="region" aria-label="Bulk actions">
           <strong>{plural(selectedVisible.length, 'selected', 'selected')}</strong>
           <Button appearance="danger" compact onClick={() => open('reject', selectedVisible)}>Reject…</Button>
-          <Button compact onClick={() => snooze(selectedVisible, true)} busy={selectedVisible.some((r) => busy[r])}>Snooze</Button>
+          <Button compact onClick={() => deferSnooze(selectedVisible.map((r) => byRef.get(r)))}>Snooze</Button>
           <Button appearance="subtle" compact onClick={() => setSelected(new Set())}>Clear selection</Button>
-          {bulkError && <span role="alert" className="dw-subtle" style={{ color: 'var(--ds-text-danger, #AE2E24)' }}>{bulkError}</span>}
         </div>
       )}
 
       {load.status === 'loading' && <SkeletonList label="Loading the inbox" />}
       {load.status === 'error' && <ErrorState what="The inbox" error={load.error} onRetry={reload} />}
-      {load.status === 'ready' && flat.length === 0 && !next && <EmptyState status={status} lens={lens} lastPush={lastPush} />}
+      {load.status === 'ready' && shown.length === 0 && !next && <EmptyState status={status} lens={lens} lastPush={lastPush} tally={tally} />}
 
       {load.status === 'ready' && visible.map((g) => (
         <section key={g.run_id} className="dw-group" aria-labelledby={`dw-g-${g.run_id}`}>
-          <GroupHead group={g} />
+          <GroupHead group={g} leaving={leaving} />
           <ul className="dw-list">
             {g.items.map((card) => {
               const isOpen = card.status === 'open';
-              const cardBusy = Boolean(busy[card.ref]);
               const titleId = `dw-t-${card.ref}`;
+              const isLeaving = leaving.has(card.ref);
               return (
-                <li key={card.ref}>
-                  <ProposalCard
-                    card={card}
-                    change={changeOf(card, g)}
-                    showStatus={!isOpen}
-                    titleId={titleId}
-                    tabIndex={-1}
-                    ref={(el) => { cardEls.current[card.ref] = el; }}
-                    focused={card.ref === focusRef}
-                    selected={selected.has(card.ref)}
-                    onFocus={(e) => { if (e.target === e.currentTarget) setFocusRef(card.ref); }}
-                    select={isOpen && (
-                      <input
-                        type="checkbox" className="dw-checkbox" checked={selected.has(card.ref)} onChange={() => toggle(card.ref)}
-                        aria-label={`Select ${card.ref}`} onFocus={() => setFocusRef(card.ref)}
-                      />
-                    )}
-                    actions={isOpen && (
-                      <>
-                        <Button appearance="primary" compact disabled={cardBusy} onClick={() => open('accept', [card.ref])} onFocus={() => setFocusRef(card.ref)}>Accept</Button>
-                        <Button compact disabled={cardBusy} onClick={() => open('merge', [card.ref])} onFocus={() => setFocusRef(card.ref)}>Merge</Button>
-                        <Button compact disabled={cardBusy} onClick={() => open('reject', [card.ref])} onFocus={() => setFocusRef(card.ref)}>Reject</Button>
-                        <Button compact busy={cardBusy} onClick={() => snooze([card.ref])} onFocus={() => setFocusRef(card.ref)}>Snooze</Button>
-                      </>
-                    )}
-                    footer={errors[card.ref] && (
-                      <SectionMessage appearance="error"><p>{errors[card.ref]}</p></SectionMessage>
-                    )}
-                  />
+                <li key={card.ref} className={`dw-item${isLeaving ? ' dw-item--leaving' : ''}`} aria-hidden={isLeaving || undefined}>
+                  <div className="dw-item__inner">
+                    <ProposalCard
+                      card={card}
+                      change={isOpen ? changeOf(card, g) : undefined}
+                      showStatus={!isOpen}
+                      titleId={titleId}
+                      tabIndex={-1}
+                      ref={(el) => { cardEls.current[card.ref] = el; }}
+                      focused={card.ref === focusRef}
+                      selected={selected.has(card.ref)}
+                      onFocus={(e) => { if (e.target === e.currentTarget) setFocusRef(card.ref); }}
+                      select={isOpen && (
+                        <input
+                          type="checkbox" className="dw-checkbox" checked={selected.has(card.ref)} onChange={() => toggle(card.ref)}
+                          aria-label={`Select ${card.ref}`} onFocus={() => setFocusRef(card.ref)}
+                        />
+                      )}
+                      actions={isOpen && (
+                        <>
+                          <Button appearance="primary" compact onClick={() => open('accept', [card.ref])} onFocus={() => setFocusRef(card.ref)}>Accept</Button>
+                          <Button compact onClick={() => open('merge', [card.ref])} onFocus={() => setFocusRef(card.ref)}>Merge</Button>
+                          <Button compact onClick={() => open('reject', [card.ref])} onFocus={() => setFocusRef(card.ref)}>Reject</Button>
+                          <Button compact onClick={() => setSnoozeFor(card.ref)} onFocus={() => setFocusRef(card.ref)} aria-expanded={snoozeFor === card.ref}>Snooze</Button>
+                        </>
+                      )}
+                      footer={(
+                        <>
+                          {snoozeFor === card.ref && isOpen && <SnoozeStep cardRef={card.ref} onSubmit={(note) => deferSnooze([card], note)} onCancel={cancelSnooze} />}
+                          {!isOpen && <LazyHistory cardRef={card.ref} />}
+                          {errors[card.ref] && <SectionMessage appearance="error"><p>{errors[card.ref]}</p></SectionMessage>}
+                        </>
+                      )}
+                    />
+                  </div>
                 </li>
               );
             })}
@@ -335,41 +402,39 @@ export default function Inbox({ context }) {
       {dialog?.kind === 'card' && <CardDialog cardRef={dialog.refs[0]} onClose={closeDialog} />}
       {dialog?.kind === 'accept' && dialogCards[0] && (
         <AcceptDialog
-          card={dialogCards[0]} onClose={closeDialog} onFailed={(ref, m) => fail([ref], m)}
+          card={dialogCards[0]} onClose={closeDialog} onFailed={(ref, m) => fail([ref], m)} onBeforeSubmit={cw.flush}
           onDone={(card) => {
             const c = card ?? dialogCards[0];
-            closeDialog(); leave([c]);
-            setNotice(<>{c.ref} accepted{c.issue_ref && <> as {c.issue_url ? <a href={c.issue_url} target="_blank" rel="noreferrer noopener">{c.issue_ref}</a> : c.issue_ref}</>}.</>);
+            closeDialog(); leave([c], 'accepted');
+            cw.notify(<>{c.ref} accepted{c.issue_ref && <> as {c.issue_url ? <a href={c.issue_url} target="_blank" rel="noreferrer noopener">{c.issue_ref}</a> : c.issue_ref}</>}.</>);
           }}
         />
       )}
       {dialog?.kind === 'merge' && dialogCards[0] && (
         <MergeDialog
-          card={dialogCards[0]} openCards={flat.filter((c) => c.status === 'open')} onClose={closeDialog} onFailed={(ref, m) => fail([ref], m)}
+          card={dialogCards[0]} openCards={flat.filter((c) => c.status === 'open')} onClose={closeDialog} onFailed={(ref, m) => fail([ref], m)} onBeforeSubmit={cw.flush}
           onDone={(card) => {
             const c = card ?? dialogCards[0];
-            closeDialog(); leave([c]);
-            setNotice(<>{c.ref} merged{c.merged_into ? ` into ${c.merged_into}` : ''}.</>);
+            closeDialog(); leave([c], 'merged');
+            cw.notify(`${c.ref} merged${c.merged_into ? ` into ${c.merged_into}` : ''}.`);
           }}
         />
       )}
       {dialog?.kind === 'reject' && dialogCards.length > 0 && (
         <RejectDialog
-          cards={dialogCards} onClose={closeDialog} onFailed={(refs, m) => fail(refs, m)}
-          onDone={(cards) => {
-            const done = cards.length ? cards : dialogCards;
-            closeDialog(); leave(done);
-            setNotice(<>{done.length === 1 ? `${done[0].ref} rejected.` : `${plural(done.length, 'proposal')} rejected.`}</>);
-          }}
+          cards={dialogCards} onClose={closeDialog}
+          onSubmit={(decision) => { closeDialog(); deferReject(dialogCards, decision); }}
         />
       )}
+      <ToastRegion cw={cw} />
     </main>
   );
 }
 
-function GroupHead({ group }) {
+function GroupHead({ group, leaving }) {
   const counts = { new: 0, grew: 0, reopened: 0 };
-  for (const c of group.items) counts[changeOf(c, group)] += 1;
+  // Only items still waiting for a decision carry a change marker.
+  for (const c of group.items) if (c.status === 'open' && !leaving.has(c.ref)) counts[changeOf(c, group)] += 1;
   return (
     <div className="dw-group__head">
       <h2 className="dw-h2" id={`dw-g-${group.run_id}`}>Push of {formatDate(group.at)}</h2>
@@ -385,18 +450,45 @@ function GroupHead({ group }) {
   );
 }
 
-function EmptyState({ status, lens, lastPush }) {
+/** The healthiest state is empty, and when the person got it there it says so. */
+function EmptyState({ status, lens, lastPush, tally }) {
   const what = `${STATUS_LABELS[status].toLowerCase()} proposals${lens ? ` for ${LENS_LABELS[lens]}` : ''}`;
-  return (
-    <SectionMessage appearance="information" title={`No ${what} here.`} role="status">
+  const lastLine = (
+    <>
       {lastPush === undefined && <p className="dw-subtle">Checking the last push…</p>}
       {lastPush && (
-        <p>
+        <p className="dw-subtle">
           The last push was run {lastPush.run_id} on {formatDate(lastPush.at)}
           {lastPush.lenses.length > 0 && <> ({lastPush.lenses.map((l) => LENS_LABELS[l] ?? l).join(', ')})</>}.
         </p>
       )}
-      {lastPush === null && <p>No push has reached this inbox yet.</p>}
+      {lastPush === null && <p className="dw-subtle">No push has reached this inbox yet.</p>}
+    </>
+  );
+  if (status === 'open' && !lens) {
+    const parts = [['accepted', 'accepted'], ['rejected', 'rejected'], ['snoozed', 'snoozed'], ['merged', 'merged']].filter(([k]) => tally[k] > 0).map(([k, w]) => `${tally[k]} ${w}`);
+    return (
+      <section className="dw-empty" role="status" aria-label="Queue is empty">
+        <EmptyArt />
+        {tally.total > 0 ? (
+          <>
+            <h2 className="dw-h2">Queue cleared.</h2>
+            <p>You decided {plural(tally.total, 'proposal')} this session: {parts.join(', ')}. Nothing is waiting on you.</p>
+          </>
+        ) : (
+          <>
+            <h2 className="dw-h2">Nothing waiting on you.</h2>
+            <p>Every proposal in this inbox has been decided.</p>
+          </>
+        )}
+        {lastLine}
+        <p className="dw-subtlest">To file new proposals, run a scan: <code>/dowser</code> in Claude Code or Codex, in the repository.</p>
+      </section>
+    );
+  }
+  return (
+    <SectionMessage appearance="information" title={`No ${what} here.`} role="status">
+      {lastLine}
       <p style={{ marginTop: 8 }}>
         To file new proposals, run a scan: <code>/dowser</code> in Claude Code or Codex, in the repository. Verified proposals
         are pushed here.

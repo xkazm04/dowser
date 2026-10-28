@@ -1,19 +1,22 @@
-// Verdict dialogs of the inbox: Accept, Merge, Reject (single or bulk) and keyboard help. Each dialog runs
-// its resolver call itself and reports the result through onDone / onFailed; a failure stays visible in the
-// dialog so the person can correct the input.
+// Verdict dialogs of the inbox: Accept, Merge, Reject (single or bulk), the inline Snooze step and keyboard
+// help. Accept and Merge run their resolver call themselves and report through onDone / onFailed (a failure stays
+// visible in the dialog so the person can correct the input). Reject and Snooze only COLLECT the decision: the
+// inbox sends them after the undo window (useCommitWindow).
 import React, { useEffect, useMemo, useState } from 'react';
 import { call } from '../../api.js';
 import { Button, Dialog, SectionMessage, Spinner } from '../../components/ui.jsx';
 import { DW_REF_RE, JIRA_KEY_RE, REASONS, issuePreview, plural } from '../../components/labels.js';
+import { Markdown } from '../../components/Markdown.jsx';
 
 /**
  * Accept: target Jira project + issue type, pre-filled with the inbox default; preview of the issue.
- * @param {{card: any, onClose: () => void, onDone: (card: any) => void, onFailed: (ref: string, message: string) => void}} props
+ * @param {{card: any, onClose: () => void, onDone: (card: any) => void, onFailed: (ref: string, message: string) => void, onBeforeSubmit?: () => void}} props
  */
-export function AcceptDialog({ card, onClose, onDone, onFailed }) {
+export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }) {
   const [meta, setMeta] = useState(/** @type {{inbox?: any, projects?: any[], error?: string} | null} */ (null));
   const [project, setProject] = useState('');
   const [issueType, setIssueType] = useState('');
+  const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -39,8 +42,10 @@ export function AcceptDialog({ card, onClose, onDone, onFailed }) {
 
   async function submit() {
     setBusy(true); setError('');
-    /** @type {{ref: string, jira_project_key?: string, issue_type_id?: string}} */
+    onBeforeSubmit?.();
+    /** @type {{ref: string, jira_project_key?: string, issue_type_id?: string, note?: string}} */
     const payload = { ref: card.ref };
+    if (note.trim()) payload.note = note.trim();
     if (meta?.projects && project && issueType) { payload.jira_project_key = project; payload.issue_type_id = issueType; }
     try {
       const res = await call('verdict.accept', payload);
@@ -85,12 +90,26 @@ export function AcceptDialog({ card, onClose, onDone, onFailed }) {
         </>
       )}
       <div className="dw-field">
-        <span className="dw-label">Summary</span>
-        <span>{preview.summary}</span>
+        <label htmlFor="dw-acc-note">What made this worth doing? (optional)</label>
+        <textarea id="dw-acc-note" className="dw-textarea" value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} aria-describedby="dw-acc-note-help" />
+        <span id="dw-acc-note-help" className="dw-subtlest">Kept in the triage history. Dowser reads these notes to learn what you value.</span>
       </div>
       <div className="dw-field">
-        <span className="dw-label">Description (preview)</span>
-        <pre className="dw-code" style={{ maxHeight: 220, overflow: 'auto' }}>{preview.description}</pre>
+        <span className="dw-label">Issue preview</span>
+        <div className="dw-preview" tabIndex={0} role="region" aria-label="Preview of the Jira issue">
+          <div className="dw-preview__summary">{preview.summary}</div>
+          <div className="dw-md"><p>{preview.rationale}</p></div>
+          <Markdown source={preview.body} />
+          <div className="dw-md">
+            <h4>Evidence</h4>
+            <ul>
+              {preview.evidence.map((e, i) => (
+                <li key={i}>{e.type}: <span className="dw-evidence__ref">{e.ref}</span>{e.quote && <> - &ldquo;{e.quote.replace(/\s+/g, ' ').trim().slice(0, 200)}&rdquo;</>}</li>
+              ))}
+            </ul>
+            <p>Proposed by Dowser ({card.ref})</p>
+          </div>
+        </div>
       </div>
       {error && <SectionMessage appearance="error"><p>{error}</p></SectionMessage>}
     </Dialog>
@@ -99,9 +118,9 @@ export function AcceptDialog({ card, onClose, onDone, onFailed }) {
 
 /**
  * Merge into another open/accepted item (by ref or title) or into a Jira issue key.
- * @param {{card: any, openCards: any[], onClose: () => void, onDone: (card: any) => void, onFailed: (ref: string, message: string) => void}} props
+ * @param {{card: any, openCards: any[], onClose: () => void, onDone: (card: any) => void, onFailed: (ref: string, message: string) => void, onBeforeSubmit?: () => void}} props
  */
-export function MergeDialog({ card, openCards, onClose, onDone, onFailed }) {
+export function MergeDialog({ card, openCards, onClose, onDone, onFailed, onBeforeSubmit }) {
   const [accepted, setAccepted] = useState(/** @type {any[] | null} */ (null));
   const [query, setQuery] = useState('');
   const [picked, setPicked] = useState('');
@@ -131,6 +150,7 @@ export function MergeDialog({ card, openCards, onClose, onDone, onFailed }) {
 
   async function submit() {
     setBusy(true); setError('');
+    onBeforeSubmit?.();
     try {
       const res = await call('verdict.merge', { ref: card.ref, into });
       onDone(res.card);
@@ -176,28 +196,19 @@ export function MergeDialog({ card, openCards, onClose, onDone, onFailed }) {
 
 /**
  * Reject one or many with one reason code; `other` needs a note.
- * @param {{cards: any[], onClose: () => void, onDone: (cards: any[]) => void, onFailed: (refs: string[], message: string) => void}} props
+ * The inbox sends the verdict after the undo window; this dialog only collects it.
+ * @param {{cards: any[], onClose: () => void, onSubmit: (decision: {reason: string, note?: string}) => void}} props
  */
-export function RejectDialog({ cards, onClose, onDone, onFailed }) {
+export function RejectDialog({ cards, onClose, onSubmit }) {
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
   const noteMissing = reason === 'other' && !note.trim();
-  const refs = cards.map((c) => c.ref);
 
-  async function submit() {
-    setBusy(true); setError('');
-    /** @type {{refs: string[], reason: string, note?: string}} */
-    const payload = { refs, reason };
-    if (note.trim()) payload.note = note.trim();
-    try {
-      const res = await call('verdict.reject', payload);
-      onDone(res.cards ?? []);
-    } catch (e) {
-      const msg = String(e?.message ?? 'The reject failed.');
-      setError(msg); onFailed(refs, msg); setBusy(false);
-    }
+  function submit() {
+    /** @type {{reason: string, note?: string}} */
+    const decision = { reason };
+    if (note.trim()) decision.note = note.trim();
+    onSubmit(decision);
   }
 
   return (
@@ -206,7 +217,7 @@ export function RejectDialog({ cards, onClose, onDone, onFailed }) {
       onClose={onClose}
       footer={<>
         <Button appearance="subtle" onClick={onClose}>Cancel</Button>
-        <Button appearance="danger" onClick={submit} disabled={!reason || noteMissing || busy} busy={busy}>Reject</Button>
+        <Button appearance="danger" onClick={submit} disabled={!reason || noteMissing}>Reject</Button>
       </>}
     >
       <fieldset className="dw-radio-list">
@@ -223,8 +234,7 @@ export function RejectDialog({ cards, onClose, onDone, onFailed }) {
         <textarea id="dw-reject-note" className="dw-textarea" value={note} onChange={(e) => setNote(e.target.value)} aria-invalid={noteMissing || undefined} required={reason === 'other'} />
         {noteMissing && <span className="dw-subtlest">A note is required for Other.</span>}
       </div>
-      <p className="dw-subtlest">The reason teaches the next scan what to leave out.</p>
-      {error && <SectionMessage appearance="error"><p>{error}</p></SectionMessage>}
+      <p className="dw-subtlest">The reason teaches the next scan what to leave out. You get 6 seconds to undo.</p>
     </Dialog>
   );
 }
@@ -234,8 +244,9 @@ const KEYS = [
   ['x', 'Select or unselect the proposal'],
   ['a', 'Accept'],
   ['r', 'Reject (all selected, when some are selected)'],
-  ['s', 'Snooze (all selected, when some are selected)'],
+  ['s', 'Snooze, with an optional note (all selected, when some are selected: no note)'],
   ['m', 'Merge'],
+  ['u', 'Undo the last snooze or reject while its notice is showing'],
   ['?', 'Show this help'],
 ];
 
@@ -249,5 +260,30 @@ export function HelpDialog({ onClose }) {
       </table>
       <p className="dw-subtlest">Shortcuts work when no dialog or text field has focus.</p>
     </Dialog>
+  );
+}
+
+/**
+ * The inline step before a single snooze: an optional "revisit when / why not now" note. Enter or the Snooze
+ * button snoozes (with or without a note); Escape or Cancel closes it.
+ * @param {{cardRef: string, onSubmit: (note: string) => void, onCancel: () => void}} props
+ */
+export function SnoozeStep({ cardRef, onSubmit, onCancel }) {
+  const [note, setNote] = useState('');
+  const id = `dw-snz-${cardRef}`;
+  return (
+    <form
+      className="dw-step" aria-label={`Snooze ${cardRef}`}
+      onSubmit={(e) => { e.preventDefault(); onSubmit(note.trim()); }}
+      onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onCancel(); } }}
+    >
+      <label htmlFor={id}>Revisit when / why not now? (optional)</label>
+      <input id={id} className="dw-input" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} autoComplete="off" autoFocus placeholder="e.g. after the checkout rewrite" />
+      <div className="dw-row">
+        <Button type="submit" appearance="primary" compact>Snooze</Button>
+        <Button appearance="subtle" compact onClick={onCancel}>Cancel</Button>
+        <span className="dw-subtlest">It comes back when its evidence grows.</span>
+      </div>
+    </form>
   );
 }

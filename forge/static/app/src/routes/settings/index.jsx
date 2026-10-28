@@ -3,8 +3,9 @@
 import React, { useState } from 'react';
 import { call } from '../../api.js';
 import { Button, ErrorState, SectionMessage, SkeletonList, useAsync } from '../../components/ui.jsx';
+import { AppHeader } from '../../components/Brand.jsx';
 
-export default function Settings() {
+export default function Settings({ context }) {
   const data = useAsync(async () => {
     const [settings, jira] = await Promise.all([call('settings.get'), call('jira.projects')]);
     return { inboxes: settings.inboxes ?? [], projects: jira.projects ?? [] };
@@ -12,7 +13,7 @@ export default function Settings() {
 
   return (
     <main className="dw-root">
-      <h1 className="dw-h1">Dowser settings</h1>
+      <AppHeader context={context} active="settings" title="Dowser settings" />
       <p className="dw-subtle">
         Each inbox receives the proposals of one repository. Accept creates the Jira issue in the project and issue type
         set here; the Accept dialog can override it for one proposal.
@@ -25,6 +26,7 @@ export default function Settings() {
         </SectionMessage>
       )}
       {data.status === 'ready' && data.data.inboxes.length > 0 && (
+        <div className="dw-scroll">
         <table className="dw-table">
           <thead>
             <tr><th scope="col">Inbox</th><th scope="col">Jira project</th><th scope="col">Issue type</th><th scope="col"><span className="dw-visually-hidden">Save</span></th></tr>
@@ -35,6 +37,7 @@ export default function Settings() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </main>
   );

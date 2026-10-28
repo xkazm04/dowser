@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { router } from '@forge/bridge';
 import { call } from '../../api.js';
 import { ErrorState, SectionMessage, SkeletonList, useAsync } from '../../components/ui.jsx';
+import { AppHeader } from '../../components/Brand.jsx';
 import { CardDialog } from '../../components/CardDialog.jsx';
 import { plural } from '../../components/labels.js';
 import { HeatGrid } from './HeatGrid.jsx';
@@ -29,18 +30,10 @@ export default function MapView({ context }) {
 
   return (
     <main className="dw-root dw-root--wide">
-      <div className="dw-row" style={{ marginBottom: 8 }}>
-        <h1 className="dw-h1" style={{ margin: 0 }}>Opportunity map</h1>
-        <span className="dw-spacer" />
-        {inboxes.status === 'ready' && inboxes.data.length > 0 && (
-          <label className="dw-row">
-            <span className="dw-subtlest">Inbox</span>
-            <select className="dw-select" value={projectKey} onChange={(e) => setProjectKey(e.target.value)}>
-              {inboxes.data.map((i) => <option key={i.project_key} value={i.project_key}>{i.project_key} ({i.open} open)</option>)}
-            </select>
-          </label>
-        )}
-      </div>
+      <AppHeader
+        context={context} active="map" title="Opportunity map" inboxes={inboxes.status === 'ready' ? inboxes.data : undefined}
+        projectKey={projectKey} onProjectChange={setProjectKey}
+      />
       <p className="dw-subtle" style={{ margin: '0 0 8px' }}>
         Where the proposals of one repository concentrate, next to how often that code changes and how many people
         change it.

@@ -4,6 +4,7 @@ import React from 'react';
 import { call } from '../../api.js';
 import { ErrorState, SectionMessage, SkeletonList, useAsync } from '../../components/ui.jsx';
 import { ProposalCard } from '../../components/ProposalCard.jsx';
+import { Mark } from '../../components/Brand.jsx';
 
 export default function Panel({ context }) {
   const issueKey = context?.extension?.issue?.key;
@@ -13,6 +14,7 @@ export default function Panel({ context }) {
   );
   return (
     <main className="dw-root dw-root--panel">
+      <div className="dw-brand" style={{ marginBottom: 6 }}><Mark size={16} /><span className="dw-subtlest" style={{ color: 'var(--dw-ink)', fontWeight: 653 }}>Dowser evidence</span></div>
       {data.status === 'loading' && <SkeletonList count={1} label="Loading Dowser evidence" />}
       {data.status === 'error' && <ErrorState what="Dowser evidence" error={data.error} onRetry={data.reload} />}
       {data.status === 'ready' && !data.data.card && (

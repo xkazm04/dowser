@@ -6,6 +6,7 @@ import { router } from '@forge/bridge';
 import { call } from '../../api.js';
 import { ErrorState, Lozenge, SectionMessage, SkeletonList, useAsync } from '../../components/ui.jsx';
 import { LensBadge } from '../../components/ProposalCard.jsx';
+import { Mark } from '../../components/Brand.jsx';
 import { STATUS_APPEARANCE, STATUS_LABELS, plural } from '../../components/labels.js';
 import '../../components/viz.css';
 
@@ -58,7 +59,7 @@ export default function Byline({ context }) {
       )}
       {data.status === 'ready' && (data.data.cards ?? []).length > 0 && (
         <>
-          <h2 className="dw-h2">{plural(data.data.count ?? data.data.cards.length, 'Dowser proposal')}</h2>
+          <h2 className="dw-h2 dw-row" style={{ gap: 6, flexWrap: 'nowrap' }}><Mark size={18} />{plural(data.data.count ?? data.data.cards.length, 'Dowser proposal')}</h2>
           <p className="dw-subtlest" style={{ margin: '2px 0 0' }}>Open or accepted proposals that name this page.</p>
           <ul className="dw-byline-list">
             {data.data.cards.map((card) => {
