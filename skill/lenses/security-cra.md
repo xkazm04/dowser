@@ -185,4 +185,4 @@ Direction: <excluded / off-focus topics, or none set>.
 ```
 
 Changelog: 0.1.0 - first pack.
-0.2.0 - `deps` as the only dependency source (skipped auditor = partial); scope and reach per dep ref; exposure classes and a ranked budget; direction (focus, exclude, notes); dependency table, reach flow and CRA obligation matrix views. Measured: pending (Director runs tools/lens-eval.mjs)
+0.2.0 - `deps` as the only dependency source (skipped auditor = partial); scope and reach per dep ref; exposure classes and a ranked budget; direction (focus, exclude, notes); dependency table, reach flow and CRA obligation matrix views. Measured 2026-10-28 (tools/lens-eval.mjs, fixture v2, default model, n = 2 runs of 4 cards): recall at budget 1.0, precision 1.0, decoy hits 0 (dev-only critical and test key cleared), direction violations 0, views 1/1 both runs (0.1.0: 0/0). The lodash advisory was cut at rank 4 with its reason (constant template, unreachable); the fixture's priority-1 label for it is under review.
