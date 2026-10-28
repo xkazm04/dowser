@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ME, makeDeps, pushArgs, record } from './helpers.mjs';
-import { actionName, runResolver, runRovo, runTool } from '../src/core/app.mjs';
+import { actionName, answer, isNoTable, runResolver, runRovo, runTool } from '../src/core/app.mjs';
 import { GRACE_MS } from '../src/core/verdicts.mjs';
 import { areaOf } from '../src/core/areas.mjs';
 import { codeLink } from '../src/core/cards.mjs';
@@ -375,4 +375,16 @@ test('ADF and HTML to plain text', () => {
   const adf = { type: 'doc', version: 1, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hello' }, { type: 'hardBreak' }, { type: 'text', text: 'world' }] }, { type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'one' }] }] }] }] };
   assert.equal(adfToText(adf), 'Hello\nworld\none');
   assert.equal(htmlToText('<p>A &amp; B</p><p>C&#39;s<br/>D</p><script>x</script>'), "A & B\nC's\nD");
+});
+
+test('a missing table escapes answer() so the entry point migrates: node:sqlite and Forge SQL error shapes', async () => {
+  // Forge SQL keeps the cause in context.debug; its message is generic.
+  const forge = Object.assign(new Error('Unknown SQL execution error'), {
+    code: 'SQL_EXECUTION_ERROR', context: { debug: { code: 'ER_NO_SUCH_TABLE', errno: 1146, message: "Table 'x.rules' doesn't exist" } },
+  });
+  assert.equal(isNoTable(forge), true);
+  assert.equal(isNoTable(new Error('no such table: rules')), true);
+  assert.equal(isNoTable(new Error('Unknown SQL execution error')), false);
+  await assert.rejects(answer(async () => { throw forge; }), forge);
+  assert.equal(/** @type {any} */ (await answer(async () => { throw new Error('boom'); })).error, 'unavailable');
 });

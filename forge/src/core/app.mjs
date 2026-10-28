@@ -22,8 +22,21 @@ import { LENSES, isOneOf } from '../shared/model.mjs';
  * @typedef {(deps: Deps, args: Record<string, any>, accountId: string) => Promise<object>} Handler
  */
 
-/** A missing table: the schema is not migrated yet (index.js runs the migrations once and retries). */
-export const NO_TABLE_RE = /doesn't exist|no such table|Unknown table/i;
+const NO_TABLE_RE = /doesn't exist|no such table|Unknown table/i;
+
+/**
+ * A missing table: the schema is not migrated yet (index.js runs the migrations once and retries). Forge SQL
+ * throws `Unknown SQL execution error` with the real cause only in `context.debug` (ER_NO_SUCH_TABLE, 1146),
+ * node:sqlite puts it in the message, so both are read.
+ * @param {unknown} e
+ * @returns {boolean}
+ */
+export function isNoTable(e) {
+  const err = /** @type {any} */ (e);
+  const debug = err?.context?.debug;
+  if (debug?.code === 'ER_NO_SUCH_TABLE' || debug?.errno === 1146) return true;
+  return NO_TABLE_RE.test(`${String(err?.message ?? err)} ${String(debug?.message ?? '')}`);
+}
 
 /** The seven forge-mcp-2 tools (reflect_sync is additive to the original six). */
 export const TOOL_NAMES = /** @type {const} */ (['dowser_sources_tickets', 'dowser_sources_pages', 'dowser_sources_goals',
@@ -56,7 +69,7 @@ export async function answer(fn) {
     return await fn();
   } catch (e) {
     if (e instanceof AppError) return { error: e.code, message: e.message };
-    if (NO_TABLE_RE.test(String(/** @type {Error} */ (e)?.message ?? e))) throw e; // the entry point migrates and retries
+    if (isNoTable(e)) throw e; // the entry point migrates and retries
     console.error('dowser: unexpected failure', e);
     return { error: 'unavailable', message: 'Dowser hit an unexpected error; try again, and report it if it repeats' };
   }
