@@ -52,22 +52,3 @@ export function inboxUrl(location, ref) {
     return undefined;
   }
 }
-
-/**
- * The URL of another route of the global page (…/map -> …/reflect), from the current page's location.
- * @param {string | undefined} location @param {string} route
- */
-export function pageUrl(location, route) {
-  if (!location) return undefined;
-  try {
-    const u = new URL(location);
-    const parts = u.pathname.replace(/\/+$/, '').split('/');
-    parts[parts.length - 1] = route;
-    u.pathname = parts.join('/');
-    u.search = '';
-    u.hash = '';
-    return u.toString();
-  } catch {
-    return undefined;
-  }
-}

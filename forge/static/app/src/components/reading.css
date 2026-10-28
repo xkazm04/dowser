@@ -226,12 +226,28 @@
 :root .dwr-detail--compact .dwr-section, :root .dwr-detail--compact .dwr-more { margin-top: 16px; }
 :root .dwr-detail--compact .dwr-ev__item { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 
-/* ---- Fallback pages (Opportunity map, Settings) keep their markup; only the chrome is calmed -------------- */
-:root .dw-appbar__strip, :root .dw-brand__word { display: none; }
-:root .dw-appbar__row { padding-top: 0; }
-:root .dw-root { padding: 16px 24px 40px; }
-:root .dw-nav__link[aria-current="page"]::after { background: var(--ds-border-selected, #1868DB); }
-:root .dw-nav__link[aria-current="page"] { color: var(--ds-text-selected, #1868DB); }
+/* ---- Page shell (Learning, Opportunity map, Settings): one bar with the h1 and the inbox, then sections ------
+   Jira's own page tabs are the navigation, so the shell carries none. */
+:root .dwr-page { max-width: 1120px; padding-bottom: 48px; }
+:root .dwr-page--narrow { max-width: 860px; }
+:root .dwr-page__bar { display: flex; align-items: center; gap: 8px; min-height: var(--dwr-bar-h); padding: 8px 24px; box-sizing: border-box; border-bottom: 1px solid var(--ds-border, #0B120E24); }
+:root .dwr-page__bar .dwr-select { max-width: none; }
+:root .dwr-page__h1 { font-size: 16px; line-height: 20px; font-weight: 653; margin: 0; }
+:root .dwr-page__intro { margin: 20px 24px 0; max-width: 72ch; color: var(--ds-text-subtle, #505258); }
+:root .dwr-page__sub { font-size: 16px; line-height: 20px; font-weight: 653; margin: 32px 24px 12px; }
+:root .dwr-page__body { padding: 0 24px; }
+:root .dwr-page > .dw-skel, :root .dwr-page > .dw-msg, :root .dwr-page > .dwr-empty, :root .dwr-page > [role="status"] { margin: 24px; }
+:root .dwr-secs { display: flex; flex-direction: column; gap: 32px; padding: 24px 24px 0; }
+:root .dwr-sec { min-width: 0; }
+:root .dwr-sec--wide { grid-column: 1 / -1; }
+:root .dwr-sec__h { font-size: 14px; line-height: 20px; font-weight: 653; margin: 0; }
+:root .dwr-sec__hint { margin: 0 0 12px; font-size: 12px; line-height: 16px; color: var(--ds-text-subtle, #505258); }
+:root .dwr-sec__hint .dwr-sec__n { font-variant-numeric: tabular-nums; }
+:root .dw-table th, :root .dw-table td { border-bottom-color: transparent; padding: 4px 8px 4px 0; }
+:root .dw-table thead th { border-bottom: 1px solid var(--ds-border, #0B120E24); }
+:root .dwr-settings td { padding-top: 12px; padding-bottom: 12px; vertical-align: top; }
+:root .dwr-settings tbody tr + tr td { border-top: 1px solid var(--ds-border, #0B120E24); }
+:root .dwr-settings .dwr-select { max-width: 240px; }
 
 @media (prefers-reduced-motion: reduce) {
   :root .dwr-item { transition: none; }

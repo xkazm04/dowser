@@ -3,18 +3,20 @@
 import React, { useState } from 'react';
 import { call } from '../../api.js';
 import { Button, ErrorState, SectionMessage, SkeletonList, useAsync } from '../../components/ui.jsx';
-import { AppHeader } from '../../components/Brand.jsx';
+import { plural } from '../../components/labels.js';
 
-export default function Settings({ context }) {
+export default function Settings() {
   const data = useAsync(async () => {
     const [settings, jira] = await Promise.all([call('settings.get'), call('jira.projects')]);
     return { inboxes: settings.inboxes ?? [], projects: jira.projects ?? [] };
   }, []);
 
   return (
-    <main className="dw-root">
-      <AppHeader context={context} active="settings" title="Dowser settings" />
-      <p className="dw-subtle">
+    <main className="dwr-page dwr-page--narrow">
+      <header className="dwr-page__bar">
+        <h1 className="dwr-page__h1">Settings</h1>
+      </header>
+      <p className="dwr-page__intro">
         Each inbox receives the proposals of one repository. Accept creates the Jira issue in the project and issue type
         set here; the Accept dialog can override it for one proposal.
       </p>
@@ -26,8 +28,11 @@ export default function Settings({ context }) {
         </SectionMessage>
       )}
       {data.status === 'ready' && data.data.inboxes.length > 0 && (
+        <section className="dwr-secs" aria-labelledby="dw-set-h">
+        <div className="dwr-sec">
+        <h2 className="dwr-sec__h" id="dw-set-h">Accept target per inbox</h2>
         <div className="dw-scroll">
-        <table className="dw-table">
+        <table className="dw-table dwr-settings">
           <thead>
             <tr><th scope="col">Inbox</th><th scope="col">Jira project</th><th scope="col">Issue type</th><th scope="col"><span className="dw-visually-hidden">Save</span></th></tr>
           </thead>
@@ -38,6 +43,8 @@ export default function Settings({ context }) {
           </tbody>
         </table>
         </div>
+        </div>
+        </section>
       )}
     </main>
   );
@@ -69,7 +76,7 @@ function InboxRow({ inbox, projects }) {
       <td>
         <strong>{inbox.project_key}</strong>
         {saved.repo_url && <div className="dw-subtlest"><a href={saved.repo_url} target="_blank" rel="noreferrer noopener">{saved.repo_url}</a></div>}
-        <div className="dw-subtlest">{inbox.open} open</div>
+        <div className="dw-subtlest">{plural(inbox.open ?? 0, 'open proposal')}</div>
       </td>
       <td>
         <label className="dw-visually-hidden" htmlFor={`${id}-p`}>Jira project for {inbox.project_key}</label>

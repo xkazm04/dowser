@@ -32,28 +32,6 @@
 .dw-stop-a { stop-color: var(--dw-teal); }
 .dw-stop-b { stop-color: var(--dw-indigo); }
 
-/* ---- App bar ------------------------------------------------------------------------------------------------ */
-.dw-appbar { margin: 0 0 12px; }
-.dw-appbar__strip { height: 3px; border-radius: 3px; background: var(--dw-grad); }
-.dw-appbar__row { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; padding: 10px 0 0; }
-.dw-brand { display: inline-flex; align-items: center; gap: 8px; color: var(--dw-ink); }
-.dw-brand svg { display: block; flex: none; }
-.dw-brand__word { font-size: 18px; line-height: 24px; font-weight: 700; letter-spacing: -.01em; color: var(--dw-ink); }
-.dw-nav { display: flex; gap: 2px; flex-wrap: wrap; margin: 0; padding: 0; }
-.dw-nav__link {
-  font: inherit; font-weight: 500; color: var(--ds-text-subtle, #505258); background: none; border: 0; cursor: pointer;
-  padding: 6px 10px; border-radius: 3px; position: relative; text-decoration: none; display: inline-block;
-}
-.dw-nav__link:hover { background: var(--ds-background-neutral-subtle-hovered, #0515240F); color: var(--ds-text, #292A2E); text-decoration: none; }
-.dw-nav__link[aria-current="page"] { color: var(--dw-ink); font-weight: 653; }
-.dw-nav__link[aria-current="page"]::after {
-  content: ''; position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px; border-radius: 2px; background: var(--dw-grad);
-}
-.dw-nav__link:disabled { cursor: default; color: var(--ds-text-disabled, #080F214A); }
-.dw-appbar__summary { margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--ds-text-subtle, #505258); font-size: 12px; line-height: 16px; }
-.dw-appbar__summary strong { color: var(--ds-text, #292A2E); font-weight: 653; }
-.dw-appbar__select { display: inline-flex; align-items: center; gap: 6px; }
-
 /* ---- Buttons: the primary action's focus ring carries the signature ------------------------------------------ */
 .dw-btn--primary:focus-visible {
   outline: none;

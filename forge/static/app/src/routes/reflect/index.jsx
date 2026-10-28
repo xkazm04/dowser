@@ -40,9 +40,9 @@ export default function Reflect() {
   }, [inboxes.status, inboxes.data, projectKey]);
 
   return (
-    <main className="dwr-learn">
-      <header className="dwr-learn__bar">
-        <h1 className="dwr-learn__h1">What Dowser learned</h1>
+    <main className="dwr-page">
+      <header className="dwr-page__bar">
+        <h1 className="dwr-page__h1">What Dowser learned</h1>
         <span className="dwr-spacer" />
         {inboxes.status === 'ready' && inboxes.data.length > 0 && (
           <label className="dwr-field">
@@ -124,7 +124,7 @@ function Body({ projectKey }) {
 
       {r.status === 'ready' && <NeedsYou d={d} projectKey={projectKey} onChanged={r.refresh} />}
 
-      <h2 className="dwr-learn__sub">Supporting detail</h2>
+      <h2 className="dwr-page__sub">Supporting detail</h2>
       <div className="dwr-learn__grid">
         <Section id="yield" title="Lens yield" hint="Proposed vs accepted, per lens." r={r} empty={!d || (d.lens_yield ?? []).length === 0} emptyText="No proposals yet, so no lens has a yield.">
           {d && <YieldRows rows={d.lens_yield ?? []} />}
@@ -168,7 +168,7 @@ function NeedsYou({ d, projectKey, onChanged }) {
   const n = offers.length + cands.length;
   return (
     <section className="dwr-needs" aria-labelledby="dwr-needs-h">
-      <h2 className="dwr-learn__sub" id="dwr-needs-h">Needs you <span className="dwr-count">{n}</span></h2>
+      <h2 className="dwr-page__sub" id="dwr-needs-h">Needs you <span className="dwr-count">{n}</span></h2>
       {n === 0
         ? <p className="dwr-muted" role="status">Nothing to decide. Dowser drafts a rule when the same kind of proposal keeps getting the same answer, and lists an accepted item here once its Jira issue moves.</p>
         : (

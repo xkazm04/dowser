@@ -209,7 +209,7 @@ The inbox is a queue you scan on the left and a reading pane you decide in on th
 push, not a sortable table.
 
 - **Toolbar.** One row: the **Inbox** picker (one repository, or all of them), the status control (default
-  **Open**, with its count), the lens filter, the last push and `?` for the keyboard help. Jira's sidebar
+  **Open**; every status shows its count, and the counts move as you decide), the lens filter, the last push and `?` for the keyboard help. Jira's sidebar
   carries the navigation between Inbox, Opportunity map, Learning and Settings.
 - **Queue.** Each sticky heading names one push by date and time and counts its **New**, **Evidence grew**
   and **Reopened** items; the commit and run id are in its tooltip. Each row shows the title, lens, ref,
@@ -223,7 +223,8 @@ push, not a sortable table.
 - **Actions.**
   - **Accept** opens a dialog with the target Jira project and issue type, filled in from the inbox
     setting. It previews the issue summary and description. When the accept succeeds, the issue key shows
-    as a link.
+    as a link. In the issue, the card's Description section is headed **Details**, because Jira already
+    titles the field Description.
   - **Merge** picks another open or accepted proposal by ref or title, or takes a typed Jira key.
   - **Reject** takes one of six reasons: false positive, already known, not our direction, not worth it,
     wrong size, other. Other needs a note.
@@ -247,7 +248,8 @@ latest decision notes, and the scan retro with the trend over recent pushes.
 
 ### Settings (Apps > Dowser > Settings)
 
-Each inbox has one row: the repository's project key and URL, a Jira project and an issue type. **Save**
+The same page shell as Learning and the map: a bar with the page title, then the content. Each inbox has one
+row: the repository's project key and URL, its open count, a Jira project and an issue type. **Save**
 stores them. Accept files issues there unless the Accept dialog overrides them for one proposal.
 
 ### Evidence panel (on a Jira issue)
@@ -325,7 +327,8 @@ the server binds 127.0.0.1 only. Inbox links point at `http://127.0.0.1:5173/#in
 ### Opportunity map (Jira: Apps > Dowser > Opportunity map)
 
 The map shows where one repository's proposals concentrate, next to how often that code changes. Pick the
-inbox at the top right (it starts on the inbox with the most open proposals).
+inbox at the right of the title bar (it starts on the inbox with the most open proposals). Like the other
+pages, it has no tabs of its own: Jira's sidebar carries the navigation.
 
 - **Proposals by area and lens.** A table: one row per area (a directory the local skill measured with
   `dowser areas` and pushed with `dowser_areas_push`), one column per lens. The number in a cell is the open

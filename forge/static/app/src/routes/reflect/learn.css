@@ -1,19 +1,14 @@
-/* Variant 3 - Learning page: digest, then what needs you, then supporting detail. Scoped under :root.
-   Colours are ADS tokens; the lens accents are the --dwr-lens-* aliases defined in v3.css. */
+/* The Learning page: digest, then what needs you, then supporting detail. Scoped under :root.
+   The page shell (bar, h1, sections) is in components/reading.css; the lens accents are its --dwr-lens-* aliases. */
 
-:root .dwr-learn { max-width: 1120px; padding-bottom: 48px; }
-:root .dwr-learn__bar { display: flex; align-items: center; gap: 8px; min-height: var(--dwr-bar-h); padding: 8px 24px; box-sizing: border-box; border-bottom: 1px solid var(--ds-border, #0B120E24); }
-:root .dwr-learn__h1 { font-size: 16px; line-height: 20px; font-weight: 653; margin: 0; }
-:root .dwr-learn__sub { font-size: 16px; line-height: 20px; font-weight: 653; margin: 32px 24px 12px; }
-:root .dwr-needs .dwr-learn__sub { margin-top: 28px; }
-:root .dwr-learn > .dw-skel, :root .dwr-learn > .dw-msg, :root .dwr-learn > .dwr-empty { margin: 24px; }
+:root .dwr-needs .dwr-page__sub { margin-top: 28px; }
 :root .dwr-digest { padding: 24px 24px 0; }
 :root .dwr-digest__list { list-style: none; margin: 0; padding: 0; max-width: 72ch; }
 :root .dwr-digest__list li { font-size: 16px; line-height: 24px; margin: 0 0 8px; color: var(--ds-text, #292A2E); }
 :root .dwr-digest__list strong { font-weight: 653; }
 :root .dwr-skel-line { height: 16px; margin: 0 0 12px; }
 :root .dwr-needs { padding: 0 24px; }
-:root .dwr-needs .dwr-learn__sub { margin-left: 0; margin-right: 0; }
+:root .dwr-needs .dwr-page__sub { margin-left: 0; margin-right: 0; }
 :root .dwr-needs__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-width: 860px; }
 :root .dwr-need { padding: 12px 16px 14px; border-radius: 8px; background: var(--ds-background-neutral, #0515240F); }
 :root .dwr-need__meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; font-size: 12px; line-height: 16px; color: var(--ds-text-subtle, #505258); }
@@ -42,10 +37,6 @@
 :root .dwr-rate__opt:has(input:focus-visible) { outline: 2px solid var(--ds-border-focused, #4688EC); outline-offset: 2px; }
 
 :root .dwr-learn__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 32px 40px; padding: 0 24px; }
-:root .dwr-sec { min-width: 0; }
-:root .dwr-sec--wide { grid-column: 1 / -1; }
-:root .dwr-sec__h { font-size: 14px; line-height: 20px; font-weight: 653; margin: 0; }
-:root .dwr-sec__hint { margin: 0 0 12px; font-size: 12px; line-height: 16px; color: var(--ds-text-subtle, #505258); }
 :root .dwr-h4 { font-size: 12px; line-height: 16px; font-weight: 653; color: var(--ds-text-subtle, #505258); margin: 20px 0 8px; }
 :root .dwr-h4--first { margin-top: 0; }
 :root .dwr-yield { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
@@ -76,6 +67,4 @@
 :root .dw-trend__bar--accepted { fill: var(--ds-icon, #44546F); }
 :root .dw-stack__seg--accepted { background: var(--ds-icon, #44546F); color: var(--ds-text-inverse, #FFFFFF); }
 :root .dwr-sec .dw-table, :root .dwr-more .dw-table { margin-top: 4px; }
-:root .dw-table th, :root .dw-table td { border-bottom-color: transparent; padding: 4px 8px 4px 0; }
-:root .dw-table thead th { border-bottom: 1px solid var(--ds-border, #0B120E24); }
-:root .dwr-learn__bar .dwr-select { max-width: none; }
+

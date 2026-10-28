@@ -2,8 +2,6 @@
    (`var(--ds-*)`, light default as the fallback), so the Jira light and dark themes both apply. Plain CSS. */
 
 .dw-root--wide { max-width: 1120px; }
-.dw-section { margin: 24px 0 8px; }
-.dw-section__head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
 .dw-scroll { overflow-x: auto; }
 
 /* Heat grid: a real <table>. Magnitude is one hue (blue), light to dark, and the count is always printed. */

@@ -5,7 +5,6 @@ import React, { useEffect, useState } from 'react';
 import { router } from '@forge/bridge';
 import { call } from '../../api.js';
 import { ErrorState, SectionMessage, SkeletonList, useAsync } from '../../components/ui.jsx';
-import { AppHeader } from '../../components/Brand.jsx';
 import { CardDialog } from '../../components/CardDialog.jsx';
 import { plural } from '../../components/labels.js';
 import { HeatGrid } from './HeatGrid.jsx';
@@ -29,12 +28,20 @@ export default function MapView({ context }) {
 
 
   return (
-    <main className="dw-root dw-root--wide">
-      <AppHeader
-        context={context} active="map" title="Opportunity map" inboxes={inboxes.status === 'ready' ? inboxes.data : undefined}
-        projectKey={projectKey} onProjectChange={setProjectKey}
-      />
-      <p className="dw-subtle" style={{ margin: '0 0 8px' }}>
+    <main className="dwr-page">
+      <header className="dwr-page__bar">
+        <h1 className="dwr-page__h1">Opportunity map</h1>
+        <span className="dwr-spacer" />
+        {inboxes.status === 'ready' && inboxes.data.length > 0 && (
+          <label className="dwr-field">
+            <span className="dwr-visually-hidden">Inbox</span>
+            <select className="dwr-select" value={projectKey} onChange={(e) => setProjectKey(e.target.value)}>
+              {inboxes.data.map((i) => <option key={i.project_key} value={i.project_key}>{i.project_key.split('/').pop()} ({i.open} open)</option>)}
+            </select>
+          </label>
+        )}
+      </header>
+      <p className="dwr-page__intro">
         Where the proposals of one repository concentrate, next to how often that code changes and how many people
         change it.
       </p>
@@ -71,25 +78,21 @@ function MapBody({ projectKey, onOpen }) {
     return <SectionMessage role="status" title="Nothing to map yet."><p>{EMPTY}</p></SectionMessage>;
   }
   return (
-    <>
-      <section className="dw-section" aria-labelledby="dw-map-heat">
-        <div className="dw-section__head">
-          <h2 className="dw-h2" id="dw-map-heat">Proposals by area and lens</h2>
-          <span className="dw-subtlest">{plural(areas.length, 'area')}</span>
-        </div>
+    <div className="dwr-secs">
+      <section className="dwr-sec" aria-labelledby="dw-map-heat">
+        <h2 className="dwr-sec__h" id="dw-map-heat">Proposals by area and lens</h2>
+        <p className="dwr-sec__hint">{plural(areas.length, 'area')}</p>
         {areas.length === 0
           ? <SectionMessage role="status"><p>{EMPTY}</p></SectionMessage>
           : <HeatGrid areas={areas} />}
       </section>
-      <section className="dw-section" aria-labelledby="dw-map-ec">
-        <div className="dw-section__head">
-          <h2 className="dw-h2" id="dw-map-ec">Effort vs confidence</h2>
-          <span className="dw-subtlest">{plural(points.length, 'open proposal')}</span>
-        </div>
+      <section className="dwr-sec" aria-labelledby="dw-map-ec">
+        <h2 className="dwr-sec__h" id="dw-map-ec">Effort vs confidence</h2>
+        <p className="dwr-sec__hint">{plural(points.length, 'open proposal')}</p>
         {points.length === 0
           ? <SectionMessage role="status"><p>No open proposals in this inbox.</p></SectionMessage>
           : <EffortConfidence points={points} onOpen={onOpen} />}
       </section>
-    </>
+    </div>
   );
 }
