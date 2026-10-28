@@ -88,9 +88,8 @@ the first call that hits a missing table runs the migrations once and retries. L
    enables it per app under **Admin > Apps > Sites > (site) > Connected apps > Dowser**. The tools still
    serve the Rovo agent inside Jira without this step.
 2. **Server URL.** Use `https://mcp.atlassian.com/forge/<appId>`. `<appId>` is the UUID after
-   `ari:cloud:ecosystem::app/` in `manifest.yml`. If that URL does not answer, try
-   `https://mcp.atlassian.com/forge/v1/<appId>`. The first smoke test decides which one works; record the
-   result here.
+   `ari:cloud:ecosystem::app/` in `manifest.yml`. Checked on 2026-10-28: it answers 401 with OAuth
+   protected-resource metadata, so clients discover sign-in by themselves (`/forge/v1/<appId>` is 404).
 3. **Claude Code:**
 
    ```sh
