@@ -15,6 +15,12 @@ export const ERROR_CODES = /** @type {const} */ (['bad-input', 'bad-cursor', 'un
 export const VIAS = /** @type {const} */ (['inbox', 'panel', 'rovo']);
 /** Inbox ref format: `DW-<n>`, unique per installation. */
 export const REF_RE = /^DW-[1-9][0-9]*$/;
+/** Rule states as the skill keeps them (`offered` until a person decides). */
+export const RULE_STATES = /** @type {const} */ (['offered', 'accepted', 'declined']);
+/** How an accepted item turned out, as the person who owns the issue rates it. */
+export const OUTCOME_RATINGS = /** @type {const} */ (['right', 'partly', 'wrong']);
+export const RULES_MAX = 50;
+export const OUTCOMES_MAX = 200;
 export const PUSH_MAX = 50;
 export const AREAS_MAX = 200;
 /** Inbox page size (the Custom UI invoke payload cap is 500 KB). */
@@ -46,6 +52,16 @@ export const PAGE_SIZE = 50;
  * @typedef {{project_key: string, run_id: string, areas_json: string}} AreasInput
  * @typedef {{stored: number}} AreasOutput
  * @typedef {{error: ErrorCode, message: string}} ToolError
+ *
+ * Reflection (additive to forge-mcp-2; tool 7). `dowser_reflect_sync` is one idempotent round trip: the skill
+ * pushes its `offered` rules, Forge answers every rule a person decided in Forge and every outcome recorded.
+ * @typedef {typeof RULE_STATES[number]} RuleState
+ * @typedef {typeof OUTCOME_RATINGS[number]} OutcomeRating
+ * @typedef {{id: string, lens: string, text: string, titles?: string[], offered_at: string}} RuleOffer  `titles` at most 10
+ * @typedef {{project_key: string, rules_json?: string}} ReflectInput  rules_json = JSON array of RuleOffer, at most RULES_MAX
+ * @typedef {{id: string, lens: string, state: 'accepted' | 'declined', text: string, decided_by: string, decided_at: string}} RuleDecision
+ * @typedef {{ref: string, fp: string, rating: OutcomeRating, note?: string, issue_ref: string, decided_by: string, recorded_at: string}} Outcome
+ * @typedef {{rules: RuleDecision[], outcomes: Outcome[]}} ReflectOutput  outcomes: newest OUTCOMES_MAX
  */
 
 /**
@@ -64,6 +80,23 @@ export const PAGE_SIZE = 50;
  * @typedef {{run_id: string, at: string, head_sha?: string, items: Card[]}} InboxGroup
  * @typedef {{run_id: string, at: string, head_sha?: string, created: number, updated: number}} LastPush
  * @typedef {{project_key: string, repo_url?: string, jira_project_key?: string, issue_type_id?: string, open: number, last_push?: LastPush}} InboxSummary
+ */
+
+/**
+ * The Learning tab. All of it is derived from existing tables plus `rules` and `outcomes`. Absent = omitted.
+ * `dup_rate` = updated / (created + updated) of one push, omitted when the push had neither.
+ * `history` rows gain `decided_by_name` (a resolved display name; omitted when Jira will not say).
+ * @typedef {{lens: string, reason: string, count: number}} RejectCount
+ * @typedef {{ref: string, title: string, status: 'accepted' | 'rejected' | 'snoozed', note: string, decided_by_name?: string, decided_at: string}} DecisionNote
+ * @typedef {{run_id: string, at: string, head_sha?: string, created: number, updated: number, dup_rate?: number,
+ *   open: number, accepted: number, rejected: number, snoozed: number}} PushRetro  open..snoozed = today's status of that push's items
+ * @typedef {{lens: string, proposed: number, accepted: number, rejected: number, snoozed: number, open: number}} LensYield
+ * @typedef {{id: string, lens: string, text: string, titles?: string[], state: RuleState, offered_at: string,
+ *   decided_by_name?: string, decided_at?: string}} RuleRow
+ * @typedef {{ref: string, title: string, issue_ref: string, issue_url: string, issue_status: string, done: boolean}} OutcomeCandidate  accepted, no outcome yet; `done` = Jira status category done
+ * @typedef {{totals: Record<InboxStatus, number>, rejects: RejectCount[], notes: DecisionNote[], pushes: PushRetro[],
+ *   lens_yield: LensYield[], rules: RuleRow[], candidates: OutcomeCandidate[], outcomes: (Outcome & {title: string, decided_by_name?: string})[]}} ReflectData
+ *   pushes: newest 8. notes: newest 10 that carry a note. candidates: done ones first, at most 20.
  */
 
 /**
