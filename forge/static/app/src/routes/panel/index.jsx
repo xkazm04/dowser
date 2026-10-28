@@ -1,8 +1,8 @@
 // Evidence panel (jira:issuePanel, 360px): the reading-pane content in a single column, compact and read-only.
+// Jira titles the panel "Dowser evidence" with the app icon, so the panel itself starts at the card.
 import React from 'react';
 import { call } from '../../api.js';
 import { ErrorState, SectionMessage, SkeletonList, useAsync } from '../../components/ui.jsx';
-import { Mark } from '../../components/Brand.jsx';
 import { Detail } from '../inbox/Detail.jsx';
 
 export default function Panel({ context }) {
@@ -13,7 +13,6 @@ export default function Panel({ context }) {
   );
   return (
     <main className="dwr-panel">
-      <div className="dwr-panel__brand"><Mark size={16} /><span>Dowser evidence</span></div>
       {data.status === 'loading' && <SkeletonList count={1} label="Loading Dowser evidence" />}
       {data.status === 'error' && <ErrorState what="Dowser evidence" error={data.error} onRetry={data.reload} />}
       {data.status === 'ready' && !data.data.card && (
