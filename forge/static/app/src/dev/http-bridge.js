@@ -15,7 +15,7 @@ const surface = () => (location.hash.slice(1).match(/^[a-z-]+/) ?? ['inbox'])[0]
 export async function invoke(key, payload = {}) {
   let res;
   try {
-    res = await fetch(ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key, payload }) });
+    res = await fetch(ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key, payload, ...(surface() === 'panel' ? { module: 'dowser-evidence' } : {}) }) });
   } catch {
     return { error: 'unavailable', message: `The local Dowser server at ${ENDPOINT} did not answer. Is it running?` };
   }
