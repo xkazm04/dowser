@@ -2,3 +2,5 @@
 {"ts":"2026-10-27T21:30:00Z","bundle":"software-engineering","subjects":["triage-queues","mcp-tools"],"techniques":["verdict-writeback","queue-ordering-and-identity"],"deviations":0}
 {"ts":"2026-10-28T16:30:00Z","bundle":"software-engineering","subjects":["triage-queues"],"techniques":["verdict-writeback","focus-mode","bulk-triage"],"deviations":1}
 {"ts":"2026-10-28T19:05:00Z","bundle":"software-engineering","subjects":["design-tokens"],"techniques":["density-and-scale-axes","theme-architecture"],"deviations":0}
+{"ts":"2026-10-28T21:38:01Z","bundle":"software-engineering","subjects":["codebase-scanning"],"techniques":["rule-precision-discipline","verify-after-generate","evidence-scoping"],"deviations":0}
+{"ts":"2026-10-28T21:38:01Z","bundle":"technical-writing","subjects":["figures-and-tables"],"techniques":["one-message-per-figure","label-length-figure-text","designed-comparison-tables","captions-name-their-sources","text-alternative-for-figures"],"deviations":0}

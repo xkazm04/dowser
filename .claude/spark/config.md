@@ -30,6 +30,11 @@ context map is provisional until the first scaffold commit.
   model are the product contract; the local-scan deviation is recorded in `.spark/Spark/ideas/`.
 - Reuse before building: bp (`../bp`) and the registry skills `scan-sweep` / `lens-scan` already
   solve parts of scanning, proposals and triage. Name what you reused or why you did not.
+- Windows authoring: write and edit files with the Write/Edit tools. Bash heredocs with long or quoted content,
+  `python3 - <<EOF` fallbacks and line-filter rewrites of CSS have each corrupted or silently skipped edits
+  (2026-10-27, 2026-10-28 twice). Shell edits only for one-line, regex-free substitutions.
+- UI builder briefs: author repo files directly (no out-of-repo generators), and re-take and VIEW the
+  primary-viewport screenshot after the last CSS change, after `document.fonts.ready`.
 
 ## Question taste
 
