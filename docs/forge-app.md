@@ -84,9 +84,13 @@ the first call that hits a missing table runs the migrations once and retries. L
 
 ## Connect an external MCP client
 
-1. **Enable it on the site.** External MCP access to Forge apps is an early-access feature. A site admin
-   enables it per app under **Admin > Apps > Sites > (site) > Connected apps > Dowser**. The tools still
-   serve the Rovo agent inside Jira without this step.
+1. **Enable it on the site.** External MCP access is an early-access feature and is off by default. A
+   site admin turns it on for each install. In the admin console as of 2026-10-28 (Atlassian's guides
+   still describe an older layout): admin.atlassian.com > your organization > **Apps** > **Sites** >
+   your site (expand **Sites** to see it) > **Connected apps** > expand the **Dowser** row > **View app
+   details** on each **Dowser DEV** row (one per Jira and Confluence install) > **Details** tab > section
+   **TOOLS** > **Enable tools**, then confirm. It is one switch for all tools; there is no per-tool list.
+   The Rovo agent inside Jira can use the tools without this step.
 2. **Server URL.** Use `https://mcp.atlassian.com/forge/<appId>`. `<appId>` is the UUID after
    `ari:cloud:ecosystem::app/` in `manifest.yml`. Checked on 2026-10-28: it answers 401 with OAuth
    protected-resource metadata, so clients discover sign-in by themselves (`/forge/v1/<appId>` is 404).
