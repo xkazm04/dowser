@@ -187,3 +187,52 @@ export const AREAS = {
     { path: 'src/invoices', files: 11, churn_90d: 3, authors_90d: 2, proposals: [] },
   ],
 };
+
+// The Learning tab (`reflect.data`) per inbox. Shapes follow ReflectData in forge/src/core/types.mjs; pushes and
+// notes are newest first, candidates put the ones Jira calls done first. `dup_rate` is omitted for a push that
+// had neither created nor updated items.
+export const REFLECT = {
+  'github.com/acme/shop': {
+    totals: { open: 7, accepted: 6, rejected: 9, snoozed: 3, merged: 1 },
+    pushes: [
+      { run_id: PUSHES[0].run_id, at: PUSHES[0].at, head_sha: SHA1, created: 1, updated: 2, dup_rate: 2 / 3, open: 3, accepted: 0, rejected: 0, snoozed: 0 },
+      { run_id: PUSHES[1].run_id, at: PUSHES[1].at, head_sha: SHA2, created: 5, updated: 2, dup_rate: 2 / 7, open: 2, accepted: 2, rejected: 2, snoozed: 1 },
+      { run_id: PUSHES[2].run_id, at: PUSHES[2].at, head_sha: SHA3, created: 9, updated: 0, dup_rate: 0, open: 2, accepted: 3, rejected: 3, snoozed: 1 },
+      { run_id: '2026-10-06T07-55-00Z-e4', at: '2026-10-06T07:58:12.000Z', created: 0, updated: 0, open: 0, accepted: 0, rejected: 0, snoozed: 0 },
+      { run_id: '2026-09-29T15-01-09Z-d2', at: '2026-09-29T15:03:40.000Z', created: 6, updated: 1, dup_rate: 1 / 7, open: 0, accepted: 1, rejected: 4, snoozed: 1 },
+    ],
+    lens_yield: [
+      { lens: 'opportunity', proposed: 11, accepted: 4, rejected: 4, snoozed: 1, open: 2 },
+      { lens: 'ux-friction', proposed: 6, accepted: 1, rejected: 2, snoozed: 1, open: 2 },
+      { lens: 'doc-drift', proposed: 5, accepted: 1, rejected: 1, snoozed: 1, open: 2 },
+      { lens: 'security-cra', proposed: 4, accepted: 0, rejected: 2, snoozed: 0, open: 1 },
+    ],
+    rejects: [
+      { lens: 'opportunity', reason: 'not-our-direction', count: 3 },
+      { lens: 'opportunity', reason: 'wrong-size', count: 1 },
+      { lens: 'ux-friction', reason: 'already-known', count: 2 },
+      { lens: 'doc-drift', reason: 'false-positive', count: 1 },
+      { lens: 'security-cra', reason: 'false-positive', count: 1 },
+      { lens: 'security-cra', reason: 'other', count: 1 },
+    ],
+    notes: [
+      { ref: 'DW-5', title: 'Add a loyalty points ledger', status: 'rejected', note: 'Loyalty is owned by the CRM vendor; we integrate, we do not build it.', decided_by_name: 'Priya Natarajan', decided_at: '2026-10-21T10:02:00.000Z' },
+      { ref: 'DW-6', title: 'Upgrade the image library with a known decoder overflow', status: 'snoozed', note: 'Revisit after the Node 22 upgrade lands; the new sharp needs it.', decided_by_name: 'Tom Berger', decided_at: '2026-10-15T08:00:00.000Z' },
+      { ref: 'DW-1', title: 'Explain shipping costs before the payment step', status: 'accepted', note: 'Shipping surprise is the top reason in the exit survey.', decided_by_name: 'Priya Natarajan', decided_at: '2026-10-14T10:05:00.000Z' },
+    ],
+    rules: [
+      { id: 'r-opp-loyalty', lens: 'opportunity', text: 'Do not propose features that the CRM vendor owns (loyalty, referrals, customer segments).', titles: ['Add a loyalty points ledger', 'Referral codes at checkout', 'Segment customers by spend'], state: 'offered', offered_at: '2026-10-27T09:14:10.000Z' },
+      { id: 'r-ux-known', lens: 'ux-friction', text: 'Skip friction already tracked under the SHOP-UX epic; link to it instead.', titles: ['Remember the last used address', 'Bigger tap targets on the cart'], state: 'offered', offered_at: '2026-10-20T16:43:02.000Z' },
+      { id: 'r-sec-dev', lens: 'security-cra', text: 'Ignore findings in devDependencies that never ship in the bundle.', state: 'accepted', offered_at: '2026-10-06T07:58:12.000Z', decided_by_name: 'Tom Berger', decided_at: '2026-10-08T12:30:00.000Z' },
+      { id: 'r-doc-size', lens: 'doc-drift', text: 'Bundle typo-level doc fixes into one proposal per page.', state: 'declined', offered_at: '2026-10-06T07:58:12.000Z', decided_by_name: 'Priya Natarajan', decided_at: '2026-10-09T09:00:00.000Z' },
+    ],
+    candidates: [
+      { ref: 'DW-1', title: 'Explain shipping costs before the payment step', issue_ref: 'SHOP-101', issue_url: 'https://acme.atlassian.net/browse/SHOP-101', issue_status: 'Done', done: true },
+      { ref: 'DW-4', title: 'Show stock levels on the product page', issue_ref: 'SHOP-97', issue_url: 'https://acme.atlassian.net/browse/SHOP-97', issue_status: 'In Progress', done: false },
+    ],
+    outcomes: [
+      { ref: 'DW-8', fp: '41526a7b8c9d0e1f', rating: 'right', note: 'Checkout errors fell from 41 to 6 tickets in the next 90 days.', issue_ref: 'SHOP-88', decided_by: 'forge:712020:7d1c', decided_by_name: 'Priya Natarajan', recorded_at: '2026-10-18T14:00:00.000Z', title: 'Retry declined card payments once' },
+      { ref: 'DW-7', fp: '526a7b8c9d0e1f20', rating: 'partly', issue_ref: 'SHOP-90', decided_by: 'forge:712020:9a2b', decided_by_name: 'Tom Berger', recorded_at: '2026-10-12T09:30:00.000Z', title: 'Filter the order list by status' },
+    ],
+  },
+};

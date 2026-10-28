@@ -8,8 +8,10 @@
 //   #byline (Confluence page 90211, two proposals)   &page=<id> another page (48213: one; 1: none)
 //   &fail=<resolver key>  that key answers {error, message}     &empty  no proposals at all
 //   &slow                 every call takes 1.5 s (to see skeletons)
+//   #reflect              the Learning tab (`reflect.data`; github.com/acme/shop has data, billing is empty)
+//   &fail=reflect.data | rule.decide | outcome.record | verdict.snooze | verdict.reject   that call fails
 import { setGlobalTheme } from '@atlaskit/tokens/set-global-theme';
-import { AREAS, CARDS, GROUP_OF, HISTORY, INBOXES, PROJECTS, PUSHES } from './fixture.js';
+import { AREAS, CARDS, GROUP_OF, HISTORY, INBOXES, PROJECTS, PUSHES, REFLECT } from './fixture.js';
 
 const PAGE = 4; // small on purpose, so "Load more" and a group split across pages are exercised
 const params = () => new URLSearchParams(location.hash.slice(1).replace(/^[a-z-]+&?/, ''));
@@ -18,6 +20,8 @@ let nextIssue = 102;
 
 const cards = structuredClone(CARDS);
 const history = structuredClone(HISTORY);
+const reflect = structuredClone(REFLECT);
+const EMPTY_REFLECT = { totals: { open: 0, accepted: 0, rejected: 0, snoozed: 0, merged: 0 }, rejects: [], notes: [], pushes: [], lens_yield: [], rules: [], candidates: [], outcomes: [] };
 
 function err(error, message) { return { error, message }; }
 function decide(ref, status, extra = {}) {
@@ -27,7 +31,7 @@ function decide(ref, status, extra = {}) {
   Object.assign(c, { status }, extra);
   delete c.reopened;
   delete c.change;
-  (history[ref] ??= []).push({ fp: c.fp, status, decided_by: 'forge:dev-user', decided_at: new Date().toISOString(), external_ref: ref, ...extra });
+  (history[ref] ??= []).push({ fp: c.fp, status, decided_by: 'forge:dev-user', decided_by_name: 'Dev User', decided_at: new Date().toISOString(), external_ref: ref, ...extra });
   return c;
 }
 
@@ -62,20 +66,20 @@ const handlers = {
     if (!card) throw err('bad-input', `No proposal ${ref}.`);
     return { card, history: history[ref] ?? [] };
   },
-  'verdict.accept'({ ref, jira_project_key, issue_type_id }) {
+  'verdict.accept'({ ref, jira_project_key, issue_type_id, note }) {
     const c = cards.find((x) => x.ref === ref);
     const inbox = INBOXES.find((i) => i.project_key === c?.project_key);
     const project = jira_project_key ?? inbox?.jira_project_key;
     if (!project || !(issue_type_id ?? inbox?.issue_type_id)) throw err('bad-input', 'This inbox has no Jira target. Set one in Settings.');
     if (project === 'BILL') throw err('unavailable', 'Jira refused to create the issue: the Billing project is archived.');
     const key = `${project}-${nextIssue++}`;
-    return { card: decide(ref, 'accepted', { issue_ref: key, issue_url: `https://acme.atlassian.net/browse/${key}` }) };
+    return { card: decide(ref, 'accepted', { issue_ref: key, issue_url: `https://acme.atlassian.net/browse/${key}`, ...(note ? { note } : {}) }) };
   },
   'verdict.reject'({ refs, reason, note }) {
     if (reason === 'other' && !note) throw err('bad-input', 'A note is required when the reason is other.');
     return { cards: refs.map((r) => decide(r, 'rejected', note ? { reason, note } : { reason })) };
   },
-  'verdict.snooze'({ refs }) { return { cards: refs.map((r) => decide(r, 'snoozed')) }; },
+  'verdict.snooze'({ refs, note }) { return { cards: refs.map((r) => decide(r, 'snoozed', note ? { note } : {})) }; },
   'verdict.merge'({ ref, into }) {
     if (into === 'NOPE-1') throw err('bad-input', 'NOPE-1 does not exist or you cannot see it.');
     return { card: decide(ref, 'merged', { merged_into: into }) };
@@ -105,6 +109,30 @@ const handlers = {
         return p;
       });
     return { areas: AREAS[project_key] ?? [], points };
+  },
+  'reflect.data'({ project_key }) {
+    if (!project_key) throw err('bad-input', 'project_key is required.');
+    if (!INBOXES.some((i) => i.project_key === project_key)) throw err('unknown-project', `No inbox ${project_key}.`);
+    if (params().has('empty')) return EMPTY_REFLECT;
+    return reflect[project_key] ?? EMPTY_REFLECT;
+  },
+  'rule.decide'({ project_key, id, state, text }) {
+    const rule = reflect[project_key]?.rules.find((r) => r.id === id);
+    if (!rule) throw err('bad-input', `No rule ${id}.`);
+    if (rule.state !== 'offered') throw err('bad-input', `That rule is already ${rule.state}.`);
+    if (state !== 'accepted' && state !== 'declined') throw err('bad-input', 'state must be accepted or declined.');
+    Object.assign(rule, { state, decided_by_name: 'Dev User', decided_at: new Date().toISOString() }, text ? { text } : {});
+    return { rule };
+  },
+  'outcome.record'({ ref, rating, note }) {
+    if (!['right', 'partly', 'wrong'].includes(rating)) throw err('bad-input', 'rating must be right, partly or wrong.');
+    const data = Object.values(reflect).find((d) => d.candidates.some((c) => c.ref === ref));
+    if (!data) throw err('bad-input', `${ref} is not an accepted item waiting for an outcome.`);
+    const cand = data.candidates.find((c) => c.ref === ref);
+    data.candidates = data.candidates.filter((c) => c.ref !== ref);
+    const outcome = { ref, fp: '0000', rating, issue_ref: cand.issue_ref, decided_by: 'forge:dev-user', decided_by_name: 'Dev User', recorded_at: new Date().toISOString(), title: cand.title, ...(note ? { note } : {}) };
+    data.outcomes.unshift(outcome);
+    return { outcome, candidates: data.candidates };
   },
   'byline.forPage'({ page_id }) {
     if (!/^[0-9]+$/.test(String(page_id ?? ''))) throw err('bad-input', 'page_id must be a Confluence page id.');
@@ -147,7 +175,13 @@ export const view = {
 };
 
 export const router = {
-  navigate: async (to) => { console.info('[fixture] router.navigate', to); },
+  navigate: async (to) => {
+    // In-app navigation: the last path segment is the route, which the fixture carries in the hash.
+    const u = new URL(to);
+    const route = u.pathname.split('/').filter(Boolean).pop() ?? 'inbox';
+    const ref = u.searchParams.get('ref');
+    location.hash = ref ? `${route}&ref=${ref}` : route;
+  },
   open: async (to) => { console.info('[fixture] router.open', to); },
   reload: async () => location.reload(),
 };

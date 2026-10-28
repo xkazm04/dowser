@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:fixture": "vite --mode fixture",
+    "dev:local": "vite --mode local",
     "build": "vite build"
   },
   "dependencies": {
