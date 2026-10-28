@@ -274,6 +274,39 @@ In the fake, the Billing project refuses issue creation and the Jira key `NOPE-1
 see both error states. The production build (`npm run forge:build-ui`) never includes the fixture. Build
 with it before every `forge deploy`.
 
+### Run it locally (the real core, no Jira site)
+
+`tools/local-forge.mjs` runs the app's own core (`src/core`, every call through `app.mjs` `runTool` and
+`runResolver`) over the app's own migrations, on a node:sqlite file. Only the ports are local
+(`tools/local-forge/ports.mjs`): a Jira whose issues live in the same file (project `DOW`, issue type
+`10001`, keys `DOW-<n>`, a new issue is `To Do`), display names (`local-user` is "Local Operator") and scan
+sources from a seed. The mock (`tools/mock-forge-mcp.mjs`) reimplements the contract; this runs the real thing.
+
+```sh
+npm run local:forge     # terminal 1: HTTP on 127.0.0.1:4710, db in <os tmp>/dowser-local-forge/forge.db
+npm run local:ui        # terminal 2: the Custom UI (vite --mode local) at http://127.0.0.1:5173, POSTing to :4710
+curl -s -X POST http://127.0.0.1:4710/invoke -H 'content-type: application/json' -d '{"key":"inbox.list","payload":{}}'
+```
+
+To point the skill at the same data, register the MCP side as a stdio server, for example
+`claude mcp add dowser-local -- node tools/local-forge.mjs --stdio`. Both processes share the default db
+file (WAL and a busy timeout), so a push over MCP shows in the UI on reload.
+
+| Flag | Meaning |
+| --- | --- |
+| `--stdio` | MCP server (JSON-RPC 2.0, newline-delimited) with the seven forge-mcp-2 tools; logs go to stderr |
+| `--http <port>` | `POST /invoke {key, payload, module?}` -> the resolver result (`via` is `panel` for module `dowser-evidence`); `0` picks a free port |
+| `--db <file>` | the SQLite file; refused inside this repository |
+| `--seed <file>` | `{tickets?, pages?, goals?, projects?: [{key, name, issue_types}], users?: {<id>: <name>}}` |
+| `--account <id>` | the account every call runs as (default `local-user`); deciders are `forge:<id>` |
+| `--reset` | delete the db file first |
+
+Dev-only endpoints: `POST /dev/jira-status {key, category: new|indeterminate|done, name?}` simulates an
+issue moving (for the Learning tab's "done first" candidates), `GET /dev/state` gives row counts, and
+`GET /browse/<key>` shows a local issue with its comments. CORS allows any `localhost` or `127.0.0.1` origin;
+the server binds 127.0.0.1 only. Inbox links point at `http://127.0.0.1:5173/#inbox&ref=<ref>`.
+`skill/scripts/tests/local-forge-e2e.test.mjs` drives the whole loop through both doors.
+
 ### Opportunity map (Jira: Apps > Dowser > Opportunity map)
 
 The map shows where one repository's proposals concentrate, next to how often that code changes. Pick the

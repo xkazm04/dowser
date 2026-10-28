@@ -13,7 +13,9 @@
     "forge:typecheck": "npm --prefix forge run typecheck",
     "forge:test": "npm --prefix forge run test",
     "forge:check-shared": "npm --prefix forge run check-shared",
-    "forge:build-ui": "npm --prefix forge run build:ui"
+    "forge:build-ui": "npm --prefix forge run build:ui",
+    "local:forge": "node tools/local-forge.mjs --http 4710",
+    "local:ui": "npm --prefix forge/static/app run dev:local"
   },
   "devDependencies": {
     "@types/node": "~22.20.5",

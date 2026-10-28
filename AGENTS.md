@@ -18,6 +18,8 @@ Dowser Forge inbox in Jira when it is connected.
   - `install.mjs` installs the skill: `--harness claude|codex [--scope user|project] [--dev-link] [--dry-run]`.
 - `tools/` holds development tools: the mock Forge MCP server, and `forge-live-e2e.mjs`, which drives
   the live Forge app through a headless Claude Code run.
+  `local-forge.mjs` runs the real Forge core on node:sqlite on your machine: MCP on stdio for the skill,
+  `POST /invoke` over HTTP for the UI (`npm run local:forge`, then `npm run local:ui`).
 - `forge/` is the Forge app (Dowser for Jira): `manifest.yml`, backend in `src/` (pure logic in `src/core/`, Forge adapters in `src/adapters/`, copies of the skill's pure modules in `src/shared/`), Custom UI in `static/app/`, Rovo prompt and skill in `rovo/`.
 - `docs/` holds the product plan (`project-documentation.md`), `data-model.md`, `forge-app.md` and
   `contracts/forge-mcp-2.md`, the seam to the Forge app. **Start a new session with
