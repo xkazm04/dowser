@@ -132,32 +132,29 @@ and Jira's sidebar groups need a DOM click, not a coordinate click.
 Ordered by what protects the Dec 1 gate first (core loop + three demo lenses demo-ready), then the
 bonus tracks, then polish.
 
-1. **Housekeeping (operator, now).** Revoke and recreate the Atlassian API token (the old one was
-   pasted into a chat transcript), then update the `FORGE_API_TOKEN` User variable. Decide whether to
-   keep the `DOW` test project and `DW-*` items or clear them before demo data goes in.
-2. **Fix the six live-test gaps above.** Small, contained, each in `forge/`; redeploy with
+1. **Fix the six live-test gaps above.** Small, contained, each in `forge/`; redeploy with
    `forge deploy -e development --non-interactive` and recheck with the browser approach.
-3. **First real `/dowser` run on a real repository** (open follow-up of the local-scan spark):
+2. **First real `/dowser` run on a real repository** (open follow-up of the local-scan spark):
    install the skill into a project, run the four lenses against a mid-size repo, push to the live
    inbox, and measure the duplicate rate across three reruns (the fingerprint risk). This is the
    first test of scan QUALITY; everything so far tested plumbing.
-4. **Test the Rovo agent live**: ask it to list the inbox, explain `DW-3`, and accept or reject one
+3. **Test the Rovo agent live**: ask it to list the inbox, explain `DW-3`, and accept or reject one
    item; confirm the verdict reaches the skill on the next pull with `via:rovo`.
-5. **File the Teamwork Graph allowlist request** with Atlassian (app id above). Until it lands, the
+4. **File the Teamwork Graph allowlist request** with Atlassian (app id above). Until it lands, the
    goals source answers `unavailable` and the Opportunity lens runs without goals. Decide whether the
    TWG bonus track needs more than goal reads.
-6. **Test the two remaining source tools live** (`dowser_sources_tickets`, `dowser_sources_pages`)
+5. **Test the two remaining source tools live** (`dowser_sources_tickets`, `dowser_sources_pages`)
    with real tickets and pages on the site; seed the site with demo data that tells the demo story
    (user tickets that the code almost supports, a stale Confluence page).
-7. **Category decision by Nov 10** (Software Teams vs Business Teams).
-8. **Lenses 5-7** after the Dec 1 gate, or as stubs if the gate is at risk: Tech debt and
+6. **Category decision by Nov 10** (Software Teams vs Business Teams).
+7. **Lenses 5-7** after the Dec 1 gate, or as stubs if the gate is at risk: Tech debt and
    architecture, Decision consistency, and a lens (or a skill step) that fills `delivery_risk` per
    proposal from the areas data.
-9. **Production path for judges and the Marketplace (week 7, Dec 8-14):** `forge deploy -e
+8. **Production path for judges and the Marketplace (week 7, Dec 8-14):** `forge deploy -e
    production`, enable app sharing in the developer console ("Distribute your apps"), write the
    install link and judges' setup (they must enable tools themselves under Connected apps), Marketplace
    listing as "Dowser for Jira", trademark search before any commercial launch.
-10. **Demo and video (last week):** curated demo repository and site data, the arc from the plan
+9. **Demo and video (last week):** curated demo repository and site data, the arc from the plan
     (a scan surfaces an opportunity no PM had found, it ships, the docs update).
 
 ## Open follow-ups carried from the design sparks
