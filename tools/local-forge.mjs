@@ -72,6 +72,9 @@ export const TOOLS = [
   { name: 'dowser_reflect_sync', description: "Offer the skill's learned rules and read back the rules decided in Jira and the outcomes of accepted items. Idempotent.",
     inputSchema: { type: 'object', properties: { project_key: PK, rules_json: S('JSON array of at most 50 offered rules with id and lens and text and offered_at and optional titles. Send an empty array to only read.') },
       required: ['project_key'], additionalProperties: false } },
+  { name: 'dowser_direction_get', description: 'What the team set in Dowser Settings for each lens of this inbox - focus, exclude, notes and Confluence spaces.',
+    inputSchema: { type: 'object', properties: { project_key: PK, lens: S('One lens id or all (the default). Send all rather than omitting it.') },
+      required: ['project_key'], additionalProperties: false } },
 ];
 
 /**

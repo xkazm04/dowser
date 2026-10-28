@@ -1,9 +1,14 @@
 // Settings: one row per inbox (project_key from the skill's repo origin) with its default Accept target,
 // a Jira project + issue type. Accept uses it unless the person overrides it in the Accept dialog.
+// Below it, Lens direction: per inbox, one disclosure per lens with what the lens should focus on, leave out,
+// the team's notes and (Doc drift only) the Confluence spaces to search. The scan reads it when it starts
+// (`dowser_direction_get`); `direction.get` / `direction.set` here.
 import React, { useState } from 'react';
 import { call } from '../../api.js';
 import { Button, ErrorState, SectionMessage, SkeletonList, useAsync } from '../../components/ui.jsx';
-import { plural } from '../../components/labels.js';
+import { LENSES, LENS_LABELS, plural } from '../../components/labels.js';
+import { LensDot } from '../inbox/parts.jsx';
+import './settings.css';
 
 export default function Settings() {
   const data = useAsync(async () => {
@@ -44,9 +49,124 @@ export default function Settings() {
         </table>
         </div>
         </div>
+        <div className="dwr-sec">
+          <h2 className="dwr-sec__h" id="dw-dir-h">Lens direction</h2>
+          <p className="dwr-sec__hint">
+            Steer what each lens looks at. The next scan reads this when it starts; a runner&rsquo;s own focus applies on
+            top for that one run.
+          </p>
+          {data.data.inboxes.map((inbox) => <DirectionInbox key={inbox.project_key} inbox={inbox} />)}
+        </div>
         </section>
       )}
     </main>
+  );
+}
+
+/** Lines of a textarea as a list: trimmed, empty lines dropped. */
+const linesOf = (text) => text.split('\n').map((l) => l.trim()).filter(Boolean);
+const textOf = (list) => (list ?? []).join('\n');
+
+/** One line of what a lens has set, for the closed disclosure. */
+function summaryOf(d) {
+  if (!d) return 'Not set';
+  const parts = [];
+  if (d.focus) parts.push(`Focus: ${d.focus.join(', ')}`);
+  if (d.exclude) parts.push(`Leave out: ${d.exclude.join(', ')}`);
+  if (d.spaces) parts.push(`Spaces: ${d.spaces.join(', ')}`);
+  if (d.notes) parts.push('Notes');
+  return parts.join(' · ');
+}
+
+function DirectionInbox({ inbox }) {
+  const data = useAsync(() => call('direction.get', { project_key: inbox.project_key }), [inbox.project_key]);
+  const hid = `dw-dir-${inbox.project_key.replace(/[^A-Za-z0-9_-]/g, '_')}`;
+  return (
+    <section className="dw-dir" aria-labelledby={hid}>
+      <h3 className="dw-dir__inbox" id={hid}>{inbox.project_key}</h3>
+      {data.status === 'loading' && <div className="dw-skel" style={{ height: 160 }} role="status" aria-label={`Loading direction for ${inbox.project_key}`} />}
+      {data.status === 'error' && <ErrorState what="Lens direction" error={data.error} onRetry={data.reload} />}
+      {data.status === 'ready' && (
+        <div className="dw-dir__list">
+          {LENSES.map((lens) => <LensEditor key={lens} inbox={inbox.project_key} lens={lens} initial={data.data.lenses?.[lens]} idBase={`${hid}-${lens}`} />)}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function LensEditor({ inbox, lens, initial, idBase }) {
+  const [saved, setSaved] = useState(initial);
+  const [focus, setFocus] = useState(textOf(initial?.focus));
+  const [exclude, setExclude] = useState(textOf(initial?.exclude));
+  const [notes, setNotes] = useState(initial?.notes ?? '');
+  const [spaces, setSpaces] = useState(textOf(initial?.spaces));
+  const [state, setState] = useState(/** @type {'idle'|'saving'|'clearing'|'saved'|'cleared'|string} */ ('idle'));
+  const withSpaces = lens === 'doc-drift';
+  const draft = { focus: linesOf(focus), exclude: linesOf(exclude), notes: notes.trim(), spaces: withSpaces ? linesOf(spaces) : [] };
+  const dirty = textOf(draft.focus) !== textOf(saved?.focus) || textOf(draft.exclude) !== textOf(saved?.exclude)
+    || draft.notes !== (saved?.notes ?? '') || textOf(draft.spaces) !== textOf(saved?.spaces);
+  const edit = (set) => (e) => { set(e.target.value); if (state !== 'saving' && state !== 'clearing') setState('idle'); };
+
+  /** @param {boolean} clear */
+  async function send(clear) {
+    setState(clear ? 'clearing' : 'saving');
+    try {
+      const payload = clear ? {} : { focus: draft.focus, exclude: draft.exclude, notes: draft.notes, ...(withSpaces ? { spaces: draft.spaces } : {}) };
+      const res = await call('direction.set', { project_key: inbox, lens, ...payload });
+      const d = res.direction;
+      setSaved(d);
+      setFocus(textOf(d?.focus)); setExclude(textOf(d?.exclude)); setNotes(d?.notes ?? ''); setSpaces(textOf(d?.spaces));
+      setState(d ? 'saved' : 'cleared');
+    } catch (e) {
+      setState(String(e?.message ?? 'The direction could not be saved.'));
+    }
+  }
+
+  const busy = state === 'saving' || state === 'clearing';
+  const failed = !busy && !['idle', 'saved', 'cleared'].includes(state);
+  return (
+    <details className="dw-dir__lens">
+      <summary className="dw-dir__sum">
+        <LensDot lens={lens} />
+        <span className="dw-dir__name">{LENS_LABELS[lens]}</span>
+        <span className={`dw-dir__set${saved ? '' : ' dw-dir__set--none'}`}>{summaryOf(saved)}</span>
+      </summary>
+      <div className="dw-dir__body">
+        <div className="dw-dir__grid">
+          <div className="dw-field">
+            <label htmlFor={`${idBase}-f`}>Focus on</label>
+            <textarea id={`${idBase}-f`} className="dw-textarea" rows={3} value={focus} onChange={edit(setFocus)} aria-describedby={`${idBase}-lh`} />
+          </div>
+          <div className="dw-field">
+            <label htmlFor={`${idBase}-x`}>Leave out</label>
+            <textarea id={`${idBase}-x`} className="dw-textarea" rows={3} value={exclude} onChange={edit(setExclude)} aria-describedby={`${idBase}-lh`} />
+          </div>
+        </div>
+        <p className="dw-dir__hint" id={`${idBase}-lh`}>One topic per line, up to 10, each up to 120 characters.</p>
+        <div className="dw-field">
+          <label htmlFor={`${idBase}-n`}>Notes for the scan</label>
+          <textarea id={`${idBase}-n`} className="dw-textarea" rows={2} maxLength={2000} value={notes} onChange={edit(setNotes)}
+            placeholder="What the team is after with this lens, in a sentence or two" />
+        </div>
+        {withSpaces && (
+          <div className="dw-field">
+            <label htmlFor={`${idBase}-s`}>Confluence spaces to search</label>
+            <textarea id={`${idBase}-s`} className="dw-textarea dw-dir__spaces" rows={2} value={spaces} onChange={edit(setSpaces)} aria-describedby={`${idBase}-sh`} />
+            <span className="dw-dir__hint" id={`${idBase}-sh`}>One space key per line, up to 10. Leave empty to search every space.</span>
+          </div>
+        )}
+        <div className="dw-dir__act">
+          <Button appearance="primary" onClick={() => send(false)} disabled={!dirty || busy} busy={state === 'saving'}>Save</Button>
+          {saved && <Button appearance="subtle" onClick={() => send(true)} disabled={busy} busy={state === 'clearing'}>Clear</Button>}
+          <span aria-live="polite" className="dw-subtlest">
+            {state === 'saved' && 'Saved.'}
+            {state === 'cleared' && 'Cleared.'}
+            {failed && <span role="alert" style={{ color: 'var(--ds-text-danger, #AE2E24)' }}>{state}</span>}
+          </span>
+        </div>
+      </div>
+    </details>
   );
 }
 

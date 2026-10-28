@@ -20,7 +20,7 @@
 //   move <fp> --to <status> --by <kind:name> [--from s] [--reason code] [--note t] [--into fp] [--run id]
 //   status [--runs n]                      counts by status and lens, last runs, "top N of M" truncation
 //   context --run <id> --lens <l> [--focus f]  -> {lens, lens_version, kinds, budget, suppressed, near, rules,
-//                                          exemplars, outcomes?: {right, partly, wrong}, since_sha?, focus?}
+//                                          exemplars, outcomes?: {right, partly, wrong}, since_sha?, focus?, direction?}
 //   similar <fp>                           same-lens items sharing an anchor or 2+ topic tokens, with the overlap
 //   show <fp>                              ask-why: the card, every evidence row, every transition (no rescan)
 //   list [--lens l] [--status s] [--title substring]  -> {proposals: [{fp, lens, status, title, decided_at?}]}

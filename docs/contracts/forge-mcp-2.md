@@ -1,8 +1,8 @@
 # Forge MCP contract, version 2 (`forge-mcp-2`)
 
 This is the seam between the Dowser local skill and the Dowser Forge app (`forge/`). The Forge app
-implements these seven tools on its `rovo:mcp` server (the original six plus `dowser_reflect_sync`, added
-without a version change). `tools/mock-forge-mcp.mjs` implements the same tools locally, so the skill can be
+implements these eight tools on its `rovo:mcp` server (the original six plus `dowser_reflect_sync` and
+`dowser_direction_get`, added without a version change). `tools/mock-forge-mcp.mjs` implements the same tools locally, so the skill can be
 tested without a Jira site.
 
 **What changed from `forge-mcp-1`.** Version 1 was never deployed, so version 2 replaces it rather than
@@ -95,7 +95,7 @@ Input:
 | `since` | string | optional ISO timestamp. Only tickets created at or after it |
 | `limit` | integer | required, at least 1. Forge may cap it (50 recommended) |
 
-Output: `{items: [{ref, title, url, body, created_at, labels?}]}`
+Output: `{items: [{ref, title, url, body, created_at?, labels?, components?}]}`
 
 | field | type | rule |
 |---|---|---|
@@ -103,8 +103,13 @@ Output: `{items: [{ref, title, url, body, created_at, labels?}]}`
 | `title` | string | the summary |
 | `url` | string | link to the issue |
 | `body` | string | the description as plain text, trimmed by Forge to a sensible length |
-| `created_at` | string | ISO timestamp |
+| `created_at` | string | optional ISO timestamp. Omitted when Jira gives no valid creation date |
 | `labels` | string[] | optional. Omitted when the issue has none |
+| `components` | string[] | optional, the component names. Omitted when the issue has none |
+
+An absent list is an omitted key, never `[]`. The skill's `ingest-sources` returns `components`, `labels` and
+`created_at` in its `refs[]` rows so the agent can group tickets into a demand table; it caches only `ref`,
+`title`, `url` and `body`.
 
 ### `dowser_sources_pages`
 
@@ -119,6 +124,39 @@ Input: `{}`.
 
 Output: `{items: [{ref, title, url, body, status?}]}`. These are the team's goals (TWG). `status` is the goal's
 state as TWG names it (for example `on-track`, `at-risk`), and is omitted when the goal has none.
+
+### `dowser_direction_get`
+
+The eighth tool, additive to `forge-mcp-2`. A team steers each lens from Forge Settings, per inbox: what the
+lens should focus on, what it should leave out, notes on the team's intent and, for Doc drift, which
+Confluence spaces to search. The agent calls this once after `run start`, saves the response and runs
+`ingest-direction --run <run_id> --file <saved response>`. That caches each lens's direction on the run, and
+`context --run <run_id> --lens <lens>` then carries it as `direction`.
+
+Input: `{project_key, lens?}`.
+
+| field | type | rule |
+|---|---|---|
+| `project_key` | string | required. The inbox must exist (a push creates it), else `unknown-project` |
+| `lens` | string | optional. One lens id, or `all` (the default) for every lens. When a transport gives no tool name, a call with `lens` is routed here by its shape (a bare `project_key` is a pull), so send `"all"` rather than omitting it |
+
+Output:
+
+```json
+{"lenses": {"opportunity": {"focus": ["checkout", "exports"], "exclude": ["admin pages"], "notes": "Q4 is about retention."},
+  "doc-drift": {"spaces": ["DOCS", "ENG"]}}}
+```
+
+| field | type | rule |
+|---|---|---|
+| `lenses` | object | one entry per lens that has a direction. A lens with nothing set is omitted, and `{}` means no direction at all |
+| `lenses.<lens>.focus` | string[] | optional, at most 10 items, each one line of at most 120 characters. Topics the lens looks at first |
+| `lenses.<lens>.exclude` | string[] | optional, at most 10 items, each one line of at most 120 characters. Topics the lens does not propose |
+| `lenses.<lens>.notes` | string | optional, at most 2000 characters. The team's intent in their words |
+| `lenses.<lens>.spaces` | string[] | optional, `doc-drift` only, at most 10 Confluence space keys (`^[A-Za-z0-9_~-]+$`). The agent passes each as `space` to `dowser_sources_pages` |
+
+Each key is omitted when it is not set; an empty list is never sent. A direction is read-only over MCP: only
+a person changes it, in Settings. A local `--focus` still applies on top of it for one run.
 
 ## `dowser_proposals_push`
 
@@ -308,3 +346,9 @@ Additive amendments:
   `before-after`, `matrix`). Forge validates them with the shared `validateCandidate`, so a push carrying an
   artifact whose `refs` are not in the record's own evidence is refused as `invalid`. Forge stores them with
   the card and renders them in the inbox, the issue panel and the issue that Accept creates.
+- **Lens direction (2026-10-28).** An eighth tool, `dowser_direction_get {project_key, lens?}`, returns what a
+  team set in Settings for each lens of the inbox (`focus`, `exclude`, `notes`, and `spaces` for doc-drift).
+  A call carrying `lens` is routed to it by shape, so the skill sends `lens: "all"`.
+- **Ticket fields (2026-10-28).** `dowser_sources_tickets` items gain optional `components` (component names);
+  `created_at` is documented as optional, which the code already allowed. A skill that ignores the new key is
+  unaffected.

@@ -82,7 +82,8 @@ its environment halfway through.
    - All five are present: **connected**. Two more are optional: `dowser_areas_push` (when it
      is missing, skip only the areas step, section 8) and `dowser_reflect_sync` (when it is
      missing, skip only the reflect steps, sections 3 and 8; rules are then decided locally
-     and no outcomes arrive).
+     and no outcomes arrive). A third, `dowser_direction_get`, is optional too: when it is
+     missing, skip only the direction step (section 4).
    - Any is missing: **unconnected**. Tell the runner, before scanning, which lenses will be
      partial and why. Opportunity runs on code and docs only, at low confidence. Doc drift checks
      in-repo docs only. UX friction runs without user reports. Proposals stay local and are not
@@ -143,6 +144,15 @@ the push step too. A half-synced memory must not push.
 3. An incremental run scans what changed: `git diff --name-only <base_sha>..<head_sha>`, plus
    the files those import, plus any doc that names them. If that list is empty, every lens is
    `ran` with zero emitted, and the summary says no code changed since the last scan.
+4. **Direction** (connected only; skip silently when `dowser_direction_get` is missing). This
+   is what the team set in Forge Settings for each lens of this inbox. Call
+   `dowser_direction_get` with `{project_key, lens: "all"}`. Always send `lens`. Save the
+   response verbatim to `<work>/direction.json` and run
+   `ingest-direction --run <run_id> --file <work>/direction.json`. It prints
+   `{run_id, lenses, skipped?}`. Exit 1 means a lens's direction was malformed (listed under
+   `skipped`); the rest is cached. When the tool answers `unknown-project` (no push yet) or any
+   other error, go on without direction. Every pack works without one. Do not tell the runner
+   unless they asked.
 
 ## 5. Per lens
 
@@ -162,11 +172,25 @@ For each lens, print one progress line (`<lens>: gathering (tickets 42, code)`),
    when none was rated), `budget` and `since_sha`. Many `wrong` or `partly` outcomes mean the
    lens's accepted patterns did not deliver: propose fewer of that kind and say what makes this
    one different.
+   `direction` (absent when the team set none) is the team's steer for this lens. Judge against
+   it: `focus` narrows Gather and the hypotheses to those topics first; `exclude` removes any
+   candidate on those topics before `propose`; `notes` is the team's intent, read it the way you
+   read the pack's own guidance. A local `--focus` applies on top of it for this run only.
 3. **Sources (connected only).** Call the lens's source tools named in its pack, with queries
-   built from the pack's hypotheses. Save each response verbatim to
+   built from the pack's hypotheses. For `doc-drift`, when `direction.spaces` is set, call
+   `dowser_sources_pages` once per space key with `space` set to it. Save each response verbatim to
    `<work>/<lens>-<type>.json`, then run
    `ingest-sources --run <run_id> --type ticket|page|goal --file <that file>`. Cite only the
-   `ref` values it returns as `ticket`, `page` or `goal` evidence.
+   `ref` values it returns as `ticket`, `page` or `goal` evidence. For tickets it also returns
+   `components`, `labels` and `created_at` when Jira has them: use them to group tickets for a
+   demand table, and cite the ticket refs themselves.
+   **Dependencies (security-cra).** Run `deps --run <run_id>`. It runs the dependency auditors this
+   machine has (`npm audit` for a root `package-lock.json`, `osv-scanner` for a root lockfile it
+   reads, `pip-audit` for root `requirements*.txt` or `pyproject.toml`), read-only, 60 s each, and
+   caches every finding on the run. Its output lists each auditor as `ran` (with `found`) or
+   `skipped` (with `reason`). Cite only the `ref` values it returns as `dep` evidence. A skipped
+   auditor is a gap: record the lens as `partial: <auditor> skipped (<reason>)`. Never report "no
+   vulnerable dependencies" for an auditor that did not run.
 4. **Gather tolerantly.** Do the pack's gather steps. A missing file, an empty grep or a source
    that errors is recorded and the lens goes on. It never aborts the run. Record each gap in
    one of three states: `ran` (every source available), `partial: <which source was missing and
@@ -201,10 +225,13 @@ carry a reason.
 
 ## 6. Verify, then judge near-duplicates
 
-1. Run `verify --run <run_id>`. It re-reads every `code` and `doc` quote at its path. Found
-   quotes move the item to `verified`. A missing quote moves it to `dropped` with
-   `verify-failed:<ref>`. Other evidence types pass unchecked; the output says so. Print per
-   lens: `<lens>: emitted <n>, verified <v>, dropped <d>`.
+1. Run `verify --run <run_id>`. It re-reads every `code` and `doc` quote at its path, and checks
+   that every `ticket`, `page`, `goal` and `dep` ref was ingested by THIS run (`ingest-sources`
+   or `deps`). Found quotes and ingested refs move the item to `verified`. A missing quote drops
+   it with `verify-failed:<ref>`; a ref the run did not ingest drops it with
+   `ref-not-ingested:<type>:<ref>` (an unconnected run ingests no tickets, pages or goals, so such
+   a card never verifies). `git` and `sarif` evidence passes unchecked; the output says so. Print
+   per lens: `<lens>: emitted <n>, verified <v>, dropped <d>`.
 2. For each dropped item, look at why. If you mis-copied a line, fix the quote in a new
    candidate line, re-propose it and re-verify it once. Do not loop.
 3. For each verified item, run `similar <fp>`. For each hit, judge whether the two describe the

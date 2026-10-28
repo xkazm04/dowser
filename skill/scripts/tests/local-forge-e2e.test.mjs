@@ -133,14 +133,14 @@ const staleCandidate = (/** @type {Record<string, unknown>[]} */ evidence) => ca
 test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and outcomes round trip, idempotent', async () => {
   const filesBefore = listFiles(repo);
 
-  // --- MCP handshake: seven tools, scalar inputs
+  // --- MCP handshake: eight tools, scalar inputs
   const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } });
   assert.equal(init.result.serverInfo.name, 'dowser-forge-local');
   server.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
   assert.deepEqual(await rpc('ping').then((r) => r.result), {});
   const tools = (await rpc('tools/list')).result.tools;
   assert.deepEqual(tools.map((/** @type {any} */ t) => t.name), ['dowser_sources_tickets', 'dowser_sources_pages', 'dowser_sources_goals',
-    'dowser_proposals_push', 'dowser_verdicts_pull', 'dowser_areas_push', 'dowser_reflect_sync']);
+    'dowser_proposals_push', 'dowser_verdicts_pull', 'dowser_areas_push', 'dowser_reflect_sync', 'dowser_direction_get']);
   for (const t of tools) for (const [k, v] of Object.entries(t.inputSchema.properties)) assert.ok(['string', 'integer'].includes(/** @type {any} */ (v).type), `${t.name}.${k}`);
   assert.equal((await rpc('nope/method')).error.code, -32601);
   assert.deepEqual((await tool('dowser_sources_tickets', { query: 'csv OR export', limit: 10 })).items.map((/** @type {any} */ i) => i.ref), ['SUP-7'], 'seeded sources answer through the core');

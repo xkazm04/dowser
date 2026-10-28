@@ -8,6 +8,7 @@ import { pushProposals } from './push.mjs';
 import { observed } from './observe.mjs';
 import { outcomeRecord, reflectData, reflectSync, ruleDecide } from './reflect.mjs';
 import { sourcesGoals, sourcesPages, sourcesTickets } from './sources.mjs';
+import { directionGet, directionSet, directionTool } from './direction.mjs';
 import { findProposal, needInbox } from './store.mjs';
 import { accept, deciderOf, merge, pullVerdicts, record, reject, snooze } from './verdicts.mjs';
 import { AppError, ISSUE_KEY_RE, isObj, needStr, omitAbsent, optStr } from './util.mjs';
@@ -38,9 +39,9 @@ export function isNoTable(e) {
   return NO_TABLE_RE.test(`${String(err?.message ?? err)} ${String(debug?.message ?? '')}`);
 }
 
-/** The seven forge-mcp-2 tools (reflect_sync is additive to the original six). */
+/** The eight forge-mcp-2 tools (reflect_sync and direction_get are additive to the original six). */
 export const TOOL_NAMES = /** @type {const} */ (['dowser_sources_tickets', 'dowser_sources_pages', 'dowser_sources_goals',
-  'dowser_proposals_push', 'dowser_verdicts_pull', 'dowser_areas_push', 'dowser_reflect_sync']);
+  'dowser_proposals_push', 'dowser_verdicts_pull', 'dowser_areas_push', 'dowser_reflect_sync', 'dowser_direction_get']);
 /** The Rovo agent actions (dowser_sources_goals is shared with the MCP tools). */
 export const ROVO_ACTIONS = /** @type {const} */ (['dowser_inbox_list', 'dowser_proposal_explain', 'dowser_verdict_record']);
 
@@ -53,6 +54,7 @@ const TOOLS = {
   dowser_verdicts_pull: (d, a) => pullVerdicts(d, a),
   dowser_areas_push: (d, a) => pushAreas(d, a),
   dowser_reflect_sync: (d, a) => reflectSync(d, a),
+  dowser_direction_get: (d, a) => directionTool(d, a),
 };
 
 /** @param {string} accountId @param {Via} via */
@@ -131,6 +133,8 @@ export const RESOLVERS = {
   'reflect.data': (d, p) => reflectData(d, p),
   'rule.decide': (d, p, id) => ruleDecide(d, p, id),
   'outcome.record': (d, p, id) => outcomeRecord(d, p, id),
+  'direction.get': (d, p) => directionGet(d, p),
+  'direction.set': (d, p, id) => directionSet(d, p, id),
 };
 
 /**
@@ -243,9 +247,10 @@ const has = (v, k) => isObj(v) && v[k] !== undefined && v[k] !== null;
  * Which tool or action a call is for. The action key comes from the invocation (`getAppContext().moduleKey`,
  * else a `moduleKey` the platform put on the context or payload). When none of those is a known name (the
  * rovo:mcp docs do not say which key a tool call carries), it is inferred from the argument shape, which is
- * unambiguous across the seven tools: proposals_json -> push, areas_json -> areas, rules_json -> reflect,
- * query+limit -> tickets, query -> pages, project_key -> pull, nothing -> goals. A reflect call without
- * rules_json looks like a pull by shape alone, so callers send `rules_json: "[]"` (the skill's sync does). Rovo: ref+status -> record, ref -> explain, else list.
+ * unambiguous across the eight tools: proposals_json -> push, areas_json -> areas, rules_json -> reflect,
+ * lens -> direction, query+limit -> tickets, query -> pages, project_key -> pull, nothing -> goals. A reflect
+ * call without rules_json, or a direction call without lens, looks like a pull by shape alone, so callers send
+ * `rules_json: "[]"` and `lens: "all"` (the skill does). Rovo: ref+status -> record, ref -> explain, else list.
  * @param {'mcp' | 'rovo'} surface
  * @param {(string | undefined)[]} candidates  moduleKey values in order of trust
  * @param {unknown} payload
@@ -259,6 +264,7 @@ export function actionName(surface, candidates, payload) {
     if (has(payload, 'proposals_json')) return 'dowser_proposals_push';
     if (has(payload, 'areas_json')) return 'dowser_areas_push';
     if (has(payload, 'rules_json')) return 'dowser_reflect_sync';
+    if (has(payload, 'lens')) return 'dowser_direction_get';
     if (has(payload, 'query')) return has(payload, 'limit') ? 'dowser_sources_tickets' : 'dowser_sources_pages';
     if (has(payload, 'project_key')) return 'dowser_verdicts_pull';
     return 'dowser_sources_goals';

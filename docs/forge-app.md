@@ -268,6 +268,19 @@ The same page shell as Learning and the map: a bar with the page title, then the
 row: the repository's project key and URL, its open count, a Jira project and an issue type. **Save**
 stores them. Accept files issues there unless the Accept dialog overrides them for one proposal.
 
+Below the accept-target table, **Lens direction** lets a team steer each lens of each inbox. Every inbox lists
+the four lenses as one-line disclosures: the lens name and what is set (`Focus: ... · Leave out: ... · Spaces:
+... · Notes`), or "Not set". Opening one shows **Focus on** and **Leave out** (one topic per line, up to 10,
+each up to 120 characters), **Notes for the scan** (up to 2000 characters) and, for Doc drift only,
+**Confluence spaces to search** (one space key per line, up to 10; empty searches every space). **Save**
+replaces that lens's direction whole and shows "Saved." or the server's message inline; **Clear** (shown when
+something is set) deletes it. Resolvers: `direction.get {project_key}` -> `{lenses}` and
+`direction.set {project_key, lens, focus?, exclude?, notes?, spaces?}` -> `{lens, direction?}`; rows live in
+the `directions` table (one per inbox and lens, last writer wins, a clear deletes the row). The skill reads the
+same data at run start through the MCP tool `dowser_direction_get` and hands each lens its direction in
+`context`; a runner's local `--focus` still applies on top for that one run. A scan that is not connected runs
+without direction.
+
 ### Evidence panel (on a Jira issue)
 
 On an issue that Dowser created at Accept, the **Dowser evidence** panel shows the reading-pane content in one

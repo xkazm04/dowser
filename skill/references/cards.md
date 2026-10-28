@@ -108,10 +108,10 @@ decorate. A view with nothing to compare is noise, and noise counts against the 
 | `code` | `path:line`, repo-relative | **required**, one line copied verbatim | `verify` re-reads it. A wrong quote drops the card. |
 | `doc` | `path:line` of an in-repo doc | **required**, verbatim | Same as code. |
 | `git` | a commit id, or `path` with a short log summary | optional | For "changed in", "removed in" and ownership claims. |
-| `ticket` | the `ref` `ingest-sources` returned | optional, a short phrase | Add `url`. Cite only ingested refs. |
-| `page` | the `ref` `ingest-sources` returned | optional, the contradicted sentence | Add `url`. |
-| `goal` | the `ref` `ingest-sources` returned | optional | Add `url`. |
-| `dep` | `<manifest or lockfile>#<package>@<version>` | optional | Pair it with a `code` quote of the manifest or lockfile line so `verify` can check it. |
+| `ticket` | the `ref` `ingest-sources` returned | optional, a short phrase | Add `url`. Cite only refs this run ingested: `verify` drops any other (`ref-not-ingested:ticket:<ref>`). |
+| `page` | the `ref` `ingest-sources` returned | optional, the contradicted sentence | Add `url`. Same ingested-only rule. |
+| `goal` | the `ref` `ingest-sources` returned | optional | Add `url`. Same ingested-only rule. |
+| `dep` | the `ref` `deps` returned: `<manifest or lockfile>#<package>@<version>` | optional, the advisory id | Cite only refs `deps` returned this run; `verify` drops any other. Pair it with a `code` quote of the manifest or lockfile line. |
 | `sarif` | `<file>#<ruleId>@<location>` | optional | Only from a SARIF or CycloneDX file the runner supplied. |
 
 - Quote **one line**, verbatim: copy it, do not retype it. Trim leading indentation only. Never

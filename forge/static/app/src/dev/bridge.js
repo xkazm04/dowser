@@ -10,6 +10,7 @@
 //   &slow                 every call takes 1.5 s (to see skeletons)
 //   #reflect              the Learning tab (`reflect.data`; github.com/acme/shop has data, billing is empty)
 //   &fail=reflect.data | rule.decide | outcome.record | verdict.snooze | verdict.reject   that call fails
+//   #settings             accept targets and Lens direction (shop has Opportunity set)   &fail=direction.set
 //   &page=<n>             inbox page size (default 4)     &mode=dark|light   colour mode (default: the OS)
 import { setGlobalTheme } from '@atlaskit/tokens/set-global-theme';
 import { AREAS, CARDS, GROUP_OF, HISTORY, INBOXES, PROJECTS, PUSHES, REFLECT } from './fixture.js';
@@ -23,6 +24,13 @@ let nextIssue = 102;
 const cards = structuredClone(CARDS);
 const history = structuredClone(HISTORY);
 const reflect = structuredClone(REFLECT);
+// Lens direction per inbox (direction.get / direction.set); the first inbox has one lens set.
+const directions = {
+  [INBOXES[0].project_key]: {
+    opportunity: { focus: ['checkout', 'CSV and PDF exports'], exclude: ['admin console'], notes: 'This quarter is about retention: fewer drop-offs after the first order.' },
+  },
+};
+const LENS_IDS = ['opportunity', 'ux-friction', 'doc-drift', 'security-cra'];
 const EMPTY_REFLECT = { totals: { open: 0, accepted: 0, rejected: 0, snoozed: 0, merged: 0 }, rejects: [], notes: [], pushes: [], lens_yield: [], rules: [], candidates: [], outcomes: [] };
 
 /** An inbox summary as inbox.list / settings.* return it: the open count and the count per status. */
@@ -102,6 +110,28 @@ const handlers = {
     return { inbox: summary(i) };
   },
   'jira.projects'() { return { projects: PROJECTS }; },
+  'direction.get'({ project_key }) {
+    if (!INBOXES.some((i) => i.project_key === project_key)) throw err('unknown-project', `No inbox ${project_key}.`);
+    return { lenses: directions[project_key] ?? {} };
+  },
+  'direction.set'({ project_key, lens, focus, exclude, notes, spaces }) {
+    if (!INBOXES.some((i) => i.project_key === project_key)) throw err('unknown-project', `No inbox ${project_key}.`);
+    if (!LENS_IDS.includes(lens)) throw err('bad-input', `lens must be one of ${LENS_IDS.join(', ')}.`);
+    const list = (v) => (Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : []);
+    const d = {};
+    for (const [k, v] of [['focus', list(focus)], ['exclude', list(exclude)], ['spaces', list(spaces)]]) {
+      if (v.length > 10) throw err('bad-input', `${k} holds ${v.length} items; at most 10.`);
+      if (v.some((x) => x.length > 120)) throw err('bad-input', `Each ${k} item is at most 120 characters.`);
+      if (v.length) d[k] = v;
+    }
+    if (d.spaces && lens !== 'doc-drift') throw err('bad-input', 'spaces go only with the doc-drift lens.');
+    if (d.spaces?.some((s) => !/^[A-Za-z0-9_~-]+$/.test(s))) throw err('bad-input', 'A space key is letters, digits, _ ~ or -.');
+    if (typeof notes === 'string' && notes.trim()) d.notes = notes.trim();
+    const all = (directions[project_key] ??= {});
+    if (Object.keys(d).length === 0) { delete all[lens]; return { lens }; }
+    all[lens] = d;
+    return { lens, direction: d };
+  },
   'panel.forIssue'({ issue_key }) {
     const card = cards.find((c) => c.issue_ref === issue_key);
     return card ? { card, history: history[card.ref] ?? [] } : { history: [] };

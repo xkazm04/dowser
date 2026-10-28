@@ -27,6 +27,12 @@ export const NOTE_MAX = 2000;
 export const RULE_TEXT_MAX = 2000;
 export const RULE_TITLES_MAX = 10;
 export const AREAS_MAX = 200;
+/** Lens direction caps: focus and exclude items each, one line of at most DIRECTION_LINE_MAX characters. */
+export const DIRECTION_ITEMS_MAX = 10;
+export const DIRECTION_LINE_MAX = 120;
+/** Confluence space keys a doc-drift direction may name. */
+export const DIRECTION_SPACES_MAX = 10;
+export const SPACE_KEY_RE = /^[A-Za-z0-9_~-]+$/;
 /** Inbox page size (the Custom UI invoke payload cap is 500 KB). */
 export const PAGE_SIZE = 50;
 
@@ -43,7 +49,7 @@ export const PAGE_SIZE = 50;
  * forge-mcp-2 tool inputs and outputs.
  * @typedef {{query: string, since?: string, limit: number}} TicketsInput
  * @typedef {{query: string, space?: string}} PagesInput
- * @typedef {{ref: string, title: string, url: string, body: string, created_at?: string, updated_at?: string, labels?: string[], status?: string}} SourceItem
+ * @typedef {{ref: string, title: string, url: string, body: string, created_at?: string, updated_at?: string, labels?: string[], components?: string[], status?: string}} SourceItem
  * @typedef {{items: SourceItem[]}} SourcesOutput
  * @typedef {{project_key: string, run_id: string, proposals_json: string, repo_url?: string, head_sha?: string}} PushInput
  * @typedef {{fp: string, result: PushResult, external_ref?: string, external_url?: string, why?: string}} PushResultRow
@@ -67,6 +73,13 @@ export const PAGE_SIZE = 50;
  * @typedef {{id: string, lens: string, state: 'accepted' | 'declined', text: string, decided_by: string, decided_at: string}} RuleDecision
  * @typedef {{ref: string, fp: string, rating: OutcomeRating, note?: string, issue_ref: string, decided_by: string, recorded_at: string}} Outcome
  * @typedef {{rules: RuleDecision[], outcomes: Outcome[]}} ReflectOutput  outcomes: newest OUTCOMES_MAX
+ *
+ * Lens direction (additive to forge-mcp-2; tool 8). What a team set in Settings, per inbox and per lens: what the
+ * lens should focus on and leave out, the team's intent, and (doc-drift only) the Confluence spaces to search.
+ * Every key is optional; a lens with nothing set has no row and is omitted from `lenses`.
+ * @typedef {{focus?: string[], exclude?: string[], notes?: string, spaces?: string[]}} LensDirection
+ * @typedef {{project_key: string, lens?: string}} DirectionInput  lens = one lens id, or `all` (the default)
+ * @typedef {{lenses: Partial<Record<string, LensDirection>>}} DirectionOutput
  */
 
 /**
@@ -123,7 +136,10 @@ export const PAGE_SIZE = 50;
  *   'reflect.data': [{project_key: string}, ReflectData],
  *   'rule.decide': [{project_key: string, id: string, state: 'accepted' | 'declined', text?: string}, {rule: RuleRow}],
  *   'outcome.record': [{ref: string, rating: OutcomeRating, note?: string}, {outcome: Outcome & {title: string, decided_by_name?: string}, candidates: OutcomeCandidate[]}],
+ *   'direction.get': [{project_key: string}, DirectionOutput],
+ *   'direction.set': [{project_key: string, lens: string} & LensDirection, {lens: string, direction?: LensDirection}],
  * }} ResolverContract
+ *   `direction.set` replaces the lens's direction whole; all four fields absent or empty clears it (`direction` omitted).
  */
 
 export {};

@@ -1,0 +1,41 @@
+/* Settings: the Lens direction section. Same rules as theme.css: ADS tokens for every colour, plain CSS. The
+   lens rows read as one bordered list per inbox; a closed row is one line (lens, then what is set). */
+
+:root .dw-dir { margin-top: 16px; }
+:root .dw-dir + .dw-dir { margin-top: 24px; }
+:root .dw-dir__inbox { font-size: 12px; line-height: 16px; font-weight: 653; margin: 0 0 8px; color: var(--ds-text-subtle, #505258); }
+:root .dw-dir__list { border: 1px solid var(--ds-border, #0B120E24); border-radius: 6px; }
+:root .dw-dir__lens + .dw-dir__lens { border-top: 1px solid var(--ds-border, #0B120E24); }
+
+:root .dw-dir__sum {
+  display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 12px; box-sizing: border-box;
+  cursor: pointer; list-style: none;
+}
+:root .dw-dir__sum::-webkit-details-marker { display: none; }
+:root .dw-dir__sum::after {
+  content: ''; flex: none; width: 6px; height: 6px; margin-left: 4px; border-right: 1.5px solid var(--ds-icon-subtle, #6B6E76);
+  border-bottom: 1.5px solid var(--ds-icon-subtle, #6B6E76); transform: rotate(45deg) translateY(-2px);
+}
+:root .dw-dir__lens[open] > .dw-dir__sum::after { transform: rotate(-135deg) translateY(-1px); }
+:root .dw-dir__sum:hover { background: var(--ds-background-neutral-subtle-hovered, #0515240F); }
+:root .dw-dir__sum:focus-visible { outline: 2px solid var(--ds-border-focused, #4688EC); outline-offset: -2px; }
+:root .dw-dir__name { font-weight: 653; flex: none; }
+:root .dw-dir__set {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ds-text-subtle, #505258); font-size: 12px;
+}
+:root .dw-dir__set--none { color: var(--ds-text-subtlest, #6B6E76); }
+
+:root .dw-dir__body { padding: 4px 12px 16px 28px; }
+:root .dw-dir__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+:root .dw-dir__grid .dw-field { margin-bottom: 4px; }
+:root .dw-dir__body .dw-textarea { width: 100%; }
+:root .dw-dir__body .dw-dir__spaces { width: min(100%, 360px); font-family: var(--ds-font-family-code, ui-monospace, monospace); }
+:root .dw-dir__hint { display: block; margin: 0 0 12px; font-size: 12px; line-height: 16px; color: var(--ds-text-subtlest, #6B6E76); }
+:root .dw-field .dw-dir__hint { margin: 0; }
+:root .dw-dir__act { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+@media (max-width: 640px) {
+  :root .dw-dir__grid { grid-template-columns: minmax(0, 1fr); }
+  :root .dw-dir__body { padding-left: 12px; }
+}

@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { DECIDER_RE, DowserError, LENSES, STATUSES, isOneOf } from './model.mjs';
 import { dowserHome, isInside } from './paths.mjs';
 import { outcomeCounts, outcomesOf } from './reflect.mjs';
+import { directionFor } from './direction.mjs';
 import { clean, evidenceOf, getProposal, getRun, now, transitionsOf, tx } from './store.mjs';
 
 /**
@@ -120,7 +121,9 @@ const parsed = (r, k) => (r[k] === null || r[k] === undefined ? undefined : JSON
  * runner's accepted rules and the accepted exemplars, plus the pack's version, kinds and budget. `outcomes`
  * counts how the lens's accepted items fared once built ({right, partly, wrong}, latest rating per item); omitted
  * when none was recorded.
- * `since_sha` is the run's base_sha on an incremental run (omitted otherwise). Absent values are omitted.
+ * `since_sha` is the run's base_sha on an incremental run (omitted otherwise). `direction` is what the team set
+ * for this lens in Forge Settings, as `ingest-direction` cached it on the run (omitted when there is none); a
+ * local `focus` applies on top of it for this run. Absent values are omitted.
  * @param {Db} db
  * @param {{runId: string, lens: string, focus?: string, lensDir?: string}} o
  * @returns {Row}
@@ -155,6 +158,7 @@ export function contextPack(db, { runId, lens, focus, lensDir }) {
     outcomes: outcomeCounts(db, lens),
     since_sha: run.mode === 'incremental' ? run.base_sha : undefined,
     focus: focus ?? run.focus,
+    direction: directionFor(db, runId, lens),
   }));
 }
 

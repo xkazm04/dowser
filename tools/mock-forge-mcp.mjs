@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-check
 // mock-forge-mcp - a zero-dependency stdio MCP server that stands in for Dowser's Forge app (rovo:mcp), so the
-// skill and its scripts are testable end to end without a Jira site. It implements the seven tools of
+// skill and its scripts are testable end to end without a Jira site. It implements the eight tools of
 // docs/contracts/forge-mcp-2.md over an in-memory backend, plus four test-only tools: `mock_decide` simulates a
 // person's verdict in the inbox, `mock_inbox` reads an inbox item back (its status and whether it reopened),
 // `mock_decide_rule` simulates a person accepting or declining an offered rule in Forge, and `mock_outcome`
@@ -11,6 +11,10 @@
 // {id, lens, text, titles?(<=10), offered_at}) is upserted - a new id is stored `offered`, an `offered` one takes
 // the new text and titles, a decided one is never reverted - and the reply is {rules, outcomes}: every rule a
 // person decided (RuleDecision) and the newest 200 outcomes (oldest first). Idempotent both ways.
+//
+// Tool 8, `dowser_direction_get` {project_key, lens?}: the lens direction a team set in Settings, from the seed's
+// `directions` - {lenses: {[lens]: {focus?, exclude?, notes?, spaces?}}}; `lens` (one id, or `all`) narrows it.
+// A project with neither items nor a seeded direction is `unknown-project`, as in Forge.
 //
 // forge-mcp-2 semantics mirrored here: tool inputs are scalar (array inputs arrive as `*_json` strings, as a
 // rovo:mcp tool requires); a push files the proposal as an inbox item `DW-<n>` (`external_ref`) and creates no
@@ -25,7 +29,8 @@
 // `structuredContent` and as one text content item; a bad call is `isError: true` with `{error, message}`.
 //
 //   node tools/mock-forge-mcp.mjs [--seed <file>] [--state <file>]
-//     --seed   JSON {tickets?: [...], pages?: [...], goals?: [...], merge_existing?: {<fp>: <external_ref>}}
+//     --seed   JSON {tickets?: [...], pages?: [...], goals?: [...], merge_existing?: {<fp>: <external_ref>},
+//              directions?: {<project_key>: {lenses: {[lens]: LensDirection}}}}
 //              (source items in the contract's item shapes; `space` on a page and `status` on a goal are matched
 //              by the tools' filters). Read once at start when there is no state file yet.
 //     --state  JSON file the whole backend is loaded from (if it exists) and saved to after every tool call, so
@@ -38,11 +43,11 @@ import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { evidenceKey } from '../skill/scripts/lib/fingerprint.mjs';
-import { resurfaces } from '../skill/scripts/lib/model.mjs';
+import { LENSES, resurfaces } from '../skill/scripts/lib/model.mjs';
 
 /**
  * @typedef {Record<string, any>} Obj
- * @typedef {{ref: string, title: string, url: string, body: string, created_at?: string, updated_at?: string, labels?: string[], status?: string, space?: string}} SourceItem
+ * @typedef {{ref: string, title: string, url: string, body: string, created_at?: string, updated_at?: string, labels?: string[], components?: string[], status?: string, space?: string}} SourceItem
  * @typedef {{type: string, key: string}} EvidenceId
  * @typedef {{refs: number, types: string[]}} Snapshot
  * @typedef {{fp: string, external_ref: string, external_url: string, record: Obj, evidence: EvidenceId[], pushes: number,
@@ -58,7 +63,8 @@ import { resurfaces } from '../skill/scripts/lib/model.mjs';
  *   rules?: Record<string, RuleRecord>, outcomes?: OutcomeRecord[]}} Project
  * @typedef {{
  *   tickets: SourceItem[], pages: SourceItem[], goals: SourceItem[], merge_existing: Record<string, string>,
- *   projects: Record<string, Project>, next_item: number, next_issue: number, next_seq: number
+ *   projects: Record<string, Project>, next_item: number, next_issue: number, next_seq: number,
+ *   directions: Record<string, {lenses: Record<string, Obj>}>
  * }} Backend
  */
 
@@ -73,10 +79,12 @@ const RULES_MAX = 50;
 const TITLES_MAX = 10;
 const OUTCOMES_MAX = 200;
 const RATINGS = ['right', 'partly', 'wrong'];
+/** @type {readonly string[]} */
+const LENS_IDS = LENSES;
 const log = (/** @type {unknown[]} */ ...a) => console.error('[mock-forge]', ...a);
 
 /** @returns {Backend} */
-export const emptyBackend = () => ({ tickets: [], pages: [], goals: [], merge_existing: {}, projects: {}, next_item: 1, next_issue: 1, next_seq: 1 });
+export const emptyBackend = () => ({ tickets: [], pages: [], goals: [], merge_existing: {}, projects: {}, next_item: 1, next_issue: 1, next_seq: 1, directions: {} });
 
 /**
  * @param {Obj} seed
@@ -86,6 +94,7 @@ export function seeded(seed) {
   const b = emptyBackend();
   for (const k of /** @type {const} */ (['tickets', 'pages', 'goals'])) if (Array.isArray(seed[k])) b[k] = seed[k];
   if (seed.merge_existing && typeof seed.merge_existing === 'object') b.merge_existing = seed.merge_existing;
+  if (isObj(seed.directions)) b.directions = seed.directions;
   return b;
 }
 
@@ -108,6 +117,8 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { project_key: S, run_id: S, areas_json: S }, required: ['project_key', 'run_id', 'areas_json'], additionalProperties: false } },
   { name: 'dowser_reflect_sync', description: 'Offer rules (rules_json, a JSON array of at most 50 {id,lens,text,titles?,offered_at}) and read back every rule a person decided plus the newest 200 outcomes. Idempotent. Returns {rules:[{id,lens,state,text,decided_by,decided_at}], outcomes:[{ref,fp,rating,note?,issue_ref,decided_by,recorded_at}]}.',
     inputSchema: { type: 'object', properties: { project_key: S, rules_json: S }, required: ['project_key'], additionalProperties: false } },
+  { name: 'dowser_direction_get', description: 'What the team set in Settings for each lens of this inbox (lens = one lens id, or all). Returns {lenses:{[lens]:{focus?,exclude?,notes?,spaces?}}}.',
+    inputSchema: { type: 'object', properties: { project_key: S, lens: S }, required: ['project_key'], additionalProperties: false } },
   { name: 'mock_decide', description: 'TEST ONLY: simulate a person\'s verdict in the inbox on a pushed fp (status accepted|rejected|merged|snoozed).',
     inputSchema: { type: 'object', properties: { fp: S, status: S, reason: S, note: S, merged_into: S, decided_by: S, project_key: S }, required: ['fp', 'status'], additionalProperties: false } },
   { name: 'mock_decide_rule', description: 'TEST ONLY: simulate a person accepting or declining an offered rule in Forge (state accepted|declined, text = the edited wording).',
@@ -242,7 +253,7 @@ export function callTool(b, name, args) {
       const items = b.tickets
         .filter((t) => matches(t, ts) && (!str(args.since) || String(t.created_at ?? '') >= args.since))
         .slice(0, args.limit)
-        .map((t) => omitAbsent({ ref: t.ref, title: t.title, url: t.url, body: t.body, created_at: t.created_at, labels: t.labels }));
+        .map((t) => omitAbsent({ ref: t.ref, title: t.title, url: t.url, body: t.body, created_at: t.created_at, labels: t.labels, components: t.components }));
       return { items };
     }
     case 'dowser_sources_pages': {
@@ -343,6 +354,16 @@ export function callTool(b, name, args) {
         .map((r) => omitAbsent({ id: r.id, lens: r.lens, state: r.state, text: r.text, decided_by: r.decided_by, decided_at: r.decided_at }));
       const outcomes = /** @type {OutcomeRecord[]} */ (p.outcomes).slice(-OUTCOMES_MAX).map((o) => omitAbsent(o));
       return { rules: decided, outcomes };
+    }
+    case 'dowser_direction_get': {
+      if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
+      const lens = str(args.lens) ? String(args.lens) : 'all';
+      if (lens !== 'all' && !LENS_IDS.includes(lens)) throw new ToolError('bad-input', `lens is all or one of ${LENS_IDS.join(', ')}`);
+      const seededDir = (b.directions ?? {})[args.project_key];
+      if (!seededDir && !b.projects[args.project_key]) throw new ToolError('unknown-project', `no inbox for project ${args.project_key}; push proposals first`);
+      const all = isObj(seededDir?.lenses) ? seededDir.lenses : {};
+      const lenses = Object.fromEntries(Object.entries(all).filter(([l]) => lens === 'all' || l === lens));
+      return { lenses };
     }
     case 'mock_decide_rule': {
       if (!str(args.project_key) || !str(args.id)) throw new ToolError('bad-input', 'project_key and id are required');

@@ -29,6 +29,7 @@ modules:
         - dowser_verdicts_pull
         - dowser_areas_push
         - dowser_reflect_sync
+        - dowser_direction_get
 
   action:
     - key: dowser_sources_tickets
@@ -89,6 +90,14 @@ modules:
       inputs:
         project_key: { title: Project key, type: string, required: true, description: The key Dowser derives from the repo origin. }
         rules_json: { title: Rules, type: string, required: false, description: JSON array of at most 50 offered rules with id and lens and text and offered_at and optional titles. Send an empty array to only read. }
+    - key: dowser_direction_get
+      name: Get lens direction
+      function: mcp
+      actionVerb: GET
+      description: What the team set in Dowser Settings for each lens of this inbox - focus, exclude, notes and Confluence spaces.
+      inputs:
+        project_key: { title: Project key, type: string, required: true, description: The key Dowser derives from the repo origin. }
+        lens: { title: Lens, type: string, required: false, description: One lens id or all (the default). Send all rather than omitting it. }
     - key: dowser_inbox_list
       name: List proposals
       function: rovo

@@ -181,4 +181,17 @@ export const MIGRATIONS = Object.freeze([
 )`,
   },
   { name: 'v014_outcomes_project_ix', statement: 'CREATE INDEX ix_outcomes_project ON outcomes (project_key, recorded_at)' },
+  {
+    name: 'v015_directions',
+    // Lens direction set in Settings: one row per (inbox, lens). direction_json = a LensDirection with at least one
+    // key (no row = no direction; a clear deletes the row). Last writer wins; updated_by = forge:<accountId>.
+    statement: `CREATE TABLE IF NOT EXISTS directions (
+  project_key VARCHAR(191) NOT NULL,
+  lens VARCHAR(32) NOT NULL,
+  direction_json TEXT NOT NULL,
+  updated_by VARCHAR(128) NOT NULL,
+  updated_at VARCHAR(32) NOT NULL,
+  PRIMARY KEY (project_key, lens)
+)`,
+  },
 ]);
