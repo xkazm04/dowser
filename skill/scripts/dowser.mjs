@@ -43,6 +43,10 @@
 //                                          (directories at depth 1-2: files, churn_90d, authors_90d?, last_change?)
 //   ingest-sources --run <id> --type ticket|page|goal --file <json>   cache a dowser_sources_* response -> refs
 //                                          (contract: docs/contracts/forge-mcp-2.md; the agent calls the tools)
+//   ingest-direction --run <id> --file <json>   cache a dowser_direction_get response on the run; context
+//                                          --lens then carries that lens's direction
+//   deps --run <id>                        run the dependency auditors present (read-only), cache their findings
+//                                          as dep items -> {auditors: [{tool, state, reason?, found?}], refs}
 //
 // Exit codes: 0 ok; 1 partial (some propose lines invalid); 2 bad input or refused move (stdout carries
 // {"error":"refused","current":<status>,...}); 3 store or connection unavailable, or not implemented.
@@ -65,6 +69,8 @@ const verifyLib = await import('./lib/verify.mjs');
 const syncLib = await import('./lib/sync.mjs');
 const memory = await import('./lib/memory.mjs');
 const reflectLib = await import('./lib/reflect.mjs');
+const directionLib = await import('./lib/direction.mjs');
+const depsLib = await import('./lib/deps.mjs');
 
 /**
  * @typedef {{_: string[], [flag: string]: string | string[] | true | string[] | undefined}} Args
@@ -305,6 +311,14 @@ export const COMMANDS = {
     const type = /** @type {string} */ (opt(a, 'type', true));
     const doc = syncLib.readResponse(/** @type {string} */ (opt(a, 'file', true)));
     return syncLib.ingestSources(ctx.open(), { runId, type, doc });
+  },
+  'ingest-direction'(a, ctx) {
+    const runId = /** @type {string} */ (opt(a, 'run', true));
+    const doc = syncLib.readResponse(/** @type {string} */ (opt(a, 'file', true)));
+    return directionLib.ingestDirection(ctx.open(), { runId, doc });
+  },
+  deps(a, ctx) {
+    return depsLib.runDeps(ctx.open(), { root: ctx.root, runId: /** @type {string} */ (opt(a, 'run', true)) });
   },
 };
 
