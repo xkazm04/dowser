@@ -41,6 +41,7 @@ context map is provisional until the first scaffold commit.
 - Wants the scanned repo left clean: rejected committed project memory in favour of local + Forge-synced (2026-10-27). Default to nothing written into a scanned repo.
 - Accepts recommended options on architecture forks readily; spends attention on scope (picked all four gate lenses) - ask scope, decide plumbing.
 - On surface/scope multi-selects picks every surface offered (forge-ui-prototypes took all four; 2026-10-28). Offer full coverage as the recommendation when cost allows.
+- At the go-gate of a spark framed as "a plan for tomorrow", picked Build now over Park (2026-10-28). Offer Build as a real option, with its cost, even when the spark says plan.
 - On product-capability questions picks the richer option even against the recommendation (forge-app: Rovo records verdicts; area stats pushed from the skill; all four v1 surfaces). Do not default-recommend the lean option there; state the cost and let the operator pick (2026-10-27).
 
 ## Skill improvement log
@@ -58,3 +59,6 @@ context map is provisional until the first scaffold commit.
 - 2026-10-28 forge-ui-prototypes: UI builders listed screenshots they "took but did not view" and one shipped a wrapped toolbar at the PRIMARY viewport; UI briefs must require the primary-viewport shot re-taken and viewed after the last CSS change, after document.fonts.ready.
 - 2026-10-28 forge-ui-prototypes: two builders generated committed CSS from scratchpad-only sources; UI briefs must say "author repo files directly, no out-of-repo generators".
 - 2026-10-28 live verification: a CDP tab created with background:true throttles timers (~1/min) and hung a 2-min script for 2 h; drive live pages in a foreground tab with focus emulation and a hard timeout.
+- 2026-10-28 lens-quality-plan: liveness applies to writers too - trace a new record field to every store that persists it; the skill store's one-column-per-field layout would have dropped `artifacts` silently (caught at the Director's contract commit, not by the scout).
+- 2026-10-28 lens-quality-plan: check that a measuring instrument can fail before building on it; the first fixture seeded no more findings than the 4-card budget, so three baselines scored 1.0 and the run paid for a re-baseline.
+- 2026-10-28 lens-quality-plan: nine builders in one checkout with zero collisions - disjoint file scopes, Director-committed stubs for shared entry points, and a NEW test file per builder instead of a shared one.
