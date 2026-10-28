@@ -74,11 +74,12 @@ its environment halfway through.
 2. **Node 22 or newer.** `node --version` reports v22 or higher.
 3. **Memory reachable.** `dowser.mjs init --repo "<repo>"` exits 0. Keep `project_key` and `db`
    from its output. A code 3 means the memory folder cannot be written. Say so and stop.
-4. **Forge connection.** Look in your own tool list for tools whose names end in
-   `dowser_sources_tickets`, `dowser_sources_pages`, `dowser_sources_goals`,
-   `dowser_proposals_push` and `dowser_verdicts_pull`. Harnesses add a server prefix, so match on
-   the ending.
-   - All five are present: **connected**. A sixth tool ending in `dowser_areas_push` is optional:
+4. **Forge connection.** Look in your own tool list for tools named `dowser_sources_tickets`,
+   `dowser_sources_pages`, `dowser_sources_goals`, `dowser_proposals_push` and
+   `dowser_verdicts_pull`. Harnesses add a server prefix (`mcp__dowser__`), and a non-production
+   Forge install adds an environment suffix (`_development`, `_staging`), so match on the name
+   with either added. Use whatever full names you found for every call below.
+   - All five are present: **connected**. A sixth, `dowser_areas_push`, is optional:
      when it is missing, skip only the areas step (section 8).
    - Any is missing: **unconnected**. Tell the runner, before scanning, which lenses will be
      partial and why. Opportunity runs on code and docs only, at low confidence. Doc drift checks

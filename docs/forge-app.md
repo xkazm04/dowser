@@ -75,8 +75,18 @@ forge register                   # writes the real app.id into manifest.yml (rep
 forge lint
 forge deploy                     # development environment
 forge install --site <your-site>.atlassian.net --product jira
-forge install --site <your-site>.atlassian.net --product confluence --upgrade   # byline module
+forge install --site <your-site>.atlassian.net --product confluence   # connects Confluence to the same installation
+forge install list                                                     # one row: Jira (required) + Confluence
 ```
+
+The manifest declares `app.compatibility` (Jira required, Confluence optional), so Confluence joins the
+Jira installation instead of getting its own. That matters: Forge SQL is one database per installation,
+and the MCP endpoint binds to one installation. With two installations, a push over MCP landed in the
+Confluence database while the Jira inbox read the Jira one (seen on 2026-10-28). If `forge install list`
+shows two rows, uninstall the Confluence one (`forge uninstall -i <id>`) and install it again.
+
+A non-production environment adds a suffix to every MCP tool name (`dowser_verdicts_pull_development`).
+The skill matches the name with or without it.
 
 The install fires `avi:forge:installed:app`, and the `migrate` function creates the tables. Forge sends
 `avi:forge:upgraded:app` only for a major version. If a later deploy adds a migration in a minor version,

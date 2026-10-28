@@ -1,10 +1,17 @@
 # Dowser for Jira - Forge manifest. Tool and action keys are the forge-mcp-2 names verbatim
-# (docs/contracts/forge-mcp-2.md). `app.id` is a placeholder until `forge register` writes the real one.
-# Validate with `forge lint` after `forge login`.
+# (docs/contracts/forge-mcp-2.md). Validate with `forge lint` after `forge login`.
+# One installation for Jira and Confluence (app.compatibility, Preview): separate installs get separate
+# Forge SQL databases, and the MCP endpoint binds to one of them, so the inbox and the byline would
+# not see the same data.
 app:
   id: ari:cloud:ecosystem::app/68371a5c-644f-4311-b1c8-8d9582995796
   runtime:
     name: nodejs22.x
+  compatibility:
+    jira:
+      required: true
+    confluence:
+      required: false
 
 modules:
   sql:
