@@ -46,3 +46,5 @@ context map is provisional until the first scaffold commit.
 - 2026-10-27 forge-app: derive UI-facing resolver fields from each surface's state list (empty, grouped, changed) before fan-out - the UI builder found two missing fields.
 - 2026-10-27 forge-app: on Windows write files with the Write tool (or Python newline='
 '); Python text mode wrote CRLF into shared modules and Bash heredocs with long content failed twice.
+- 2026-10-28 forge-reflect-ui: verify a Director-committed contract by grepping every new key before fan-out; a str.replace on a JSDoc block missed on indentation and WP1 had to add the resolver keys.
+- 2026-10-28 forge-reflect-ui: a port-based core (forge/src/core + ports.mjs) let a local real-core server be built with zero core edits; prefer port-level fakes over contract mocks for e2e.
