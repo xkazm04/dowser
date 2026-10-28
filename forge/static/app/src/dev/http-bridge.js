@@ -41,7 +41,7 @@ export const view = {
     }
     return { ...base, localId: `${base.localId}dowser-inbox`, moduleKey: 'dowser-inbox', extension: { type: 'jira:globalPage', location: `http://127.0.0.1/jira/apps/local/dowser/${s}${params().has('ref') ? `?ref=${params().get('ref')}` : ''}` } };
   },
-  theme: { enable: async () => { await setGlobalTheme({ colorMode: 'auto' }); } },
+  theme: { enable: async () => { await setGlobalTheme({ colorMode: /** @type {any} */ (params().get('mode') ?? 'auto') }); } },
 };
 
 /** In-app navigation: the last path segment of the target is the route; the hash carries it here. */

@@ -10,6 +10,8 @@
 //   &slow                 every call takes 1.5 s (to see skeletons)
 //   #reflect              the Learning tab (`reflect.data`; github.com/acme/shop has data, billing is empty)
 //   &fail=reflect.data | rule.decide | outcome.record | verdict.snooze | verdict.reject   that call fails
+//   &page=<n>             inbox page size (default 4)     &mode=dark|light   colour mode (default: the OS)
+//   &v=1|2|3              a visual prototype (src/variants)
 import { setGlobalTheme } from '@atlaskit/tokens/set-global-theme';
 import { AREAS, CARDS, GROUP_OF, HISTORY, INBOXES, PROJECTS, PUSHES, REFLECT } from './fixture.js';
 
@@ -43,7 +45,8 @@ const handlers = {
       .flatMap((p) => pick.filter((c) => GROUP_OF[c.ref] === p.run_id).map((c) => [p, c]));
     const start = cursor ? Number(cursor) : 0;
     if (!Number.isInteger(start) || start < 0 || start > ordered.length) throw err('bad-cursor', 'The cursor is not valid.');
-    const page = ordered.slice(start, start + PAGE);
+    const size = Number(params().get('page')) || PAGE;
+    const page = ordered.slice(start, start + size);
     const groups = [];
     for (const [p, c] of page) {
       let g = groups[groups.length - 1];
@@ -58,7 +61,7 @@ const handlers = {
       inboxes: INBOXES.map((i) => ({ ...i, open: cards.filter((c) => c.project_key === i.project_key && c.status === 'open').length })),
       groups,
     };
-    if (start + PAGE < ordered.length) out.next = String(start + PAGE);
+    if (start + size < ordered.length) out.next = String(start + size);
     return out;
   },
   'proposal.get'({ ref }) {
@@ -171,7 +174,7 @@ export const view = {
     }
     return { ...base, localId: `${base.localId}dowser-inbox`, moduleKey: 'dowser-inbox', extension: { type: 'jira:globalPage', location: `https://acme.atlassian.net/jira/apps/dev/dowser/${s}${params().has('ref') ? `?ref=${params().get('ref')}` : ''}` } };
   },
-  theme: { enable: async () => { await setGlobalTheme({ colorMode: 'auto' }); } },
+  theme: { enable: async () => { await setGlobalTheme({ colorMode: /** @type {any} */ (params().get('mode') ?? 'auto') }); } },
 };
 
 export const router = {

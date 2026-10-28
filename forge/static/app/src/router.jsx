@@ -9,6 +9,7 @@ import Panel from './routes/panel/index.jsx';
 import MapView from './routes/map/index.jsx';
 import Byline from './routes/byline/index.jsx';
 import Reflect from './routes/reflect/index.jsx';
+import { loadVariant, variantId } from './variants/index.js';
 
 const MODULES = { 'dowser-evidence': Panel, 'dowser-doc-impact': Byline };
 const PAGES = { inbox: Inbox, map: MapView, reflect: Reflect, settings: Settings };
@@ -16,14 +17,17 @@ const PAGES = { inbox: Inbox, map: MapView, reflect: Reflect, settings: Settings
 export function Router() {
   const [ctx, setCtx] = useState(null);
   const [failed, setFailed] = useState(false);
+  // A visual prototype (dev server only, src/variants): undefined while it loads, null for the current UI.
+  const [variant, setVariant] = useState(/** @type {any} */ (variantId() ? undefined : null));
   useEffect(() => {
     view.getContext().then(setCtx, () => setFailed(true));
+    if (variantId()) loadVariant(variantId()).then(setVariant, () => setVariant(null));
   }, []);
   if (failed) return <p role="alert">Dowser could not read its Jira context. Reload the page.</p>;
-  if (!ctx) return null;
-  const ByModule = MODULES[ctx.moduleKey];
+  if (!ctx || variant === undefined) return null;
+  const ByModule = variant?.modules?.[ctx.moduleKey] ?? MODULES[ctx.moduleKey];
   if (ByModule) return <ByModule context={ctx} />;
   const route = String(ctx.extension?.location ?? '').split('/').pop();
-  const Page = PAGES[route] ?? Inbox;
+  const Page = variant?.pages?.[route] ?? PAGES[route] ?? variant?.pages?.inbox ?? Inbox;
   return <Page context={ctx} />;
 }
