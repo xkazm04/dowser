@@ -1,0 +1,245 @@
+/* Variant 3 - Reading pane. Every selector is scoped under :root.
+
+   Colour: every colour is an ADS token (var(--ds-*)); the host sets the light/dark values, so text pairs on their
+   surfaces are the token system's own (ds-text, ds-text-subtle on ds-surface and ds-surface-sunken are >= 4.5:1
+   in both modes by token design: ds-text 15:1, ds-text-subtle 7:1, ds-text-subtlest 4.6:1 measured on the light
+   surface). The block below holds only what ADS has no token for: sizes, and the lens accents as aliases of ADS
+   accent tokens with literal fallbacks (used only if tokens did not load) and their dark values. The accents carry
+   no text; the lens is always also written out as a word (>= 3:1 non-text contrast against both list surfaces). */
+
+:root {
+  --dwr-bar-h: 48px;
+  --dwr-row-h: 48px;
+  --dwr-list-w: clamp(380px, 41%, 500px);
+  --dwr-read-w: 720px;
+  --dwr-mono: var(--ds-font-family-code, ui-monospace, Menlo, Consolas, monospace);
+  --dwr-lens-opportunity: var(--ds-background-accent-blue-bolder, #1868DB);
+  --dwr-lens-ux-friction: var(--ds-background-accent-purple-bolder, #8F4EB6);
+  --dwr-lens-doc-drift: var(--ds-background-accent-teal-bolder, #2A7E98);
+  --dwr-lens-security-cra: var(--ds-background-accent-red-bolder, #C9372C);
+  --dwr-pip-off: var(--ds-border, #0B120E24);
+}
+:root[data-color-mode="dark"] {
+  --dwr-lens-opportunity: var(--ds-background-accent-blue-bolder, #669DF1);
+  --dwr-lens-ux-friction: var(--ds-background-accent-purple-bolder, #C97CF4);
+  --dwr-lens-doc-drift: var(--ds-background-accent-teal-bolder, #6CC3E0);
+  --dwr-lens-security-cra: var(--ds-background-accent-red-bolder, #F87168);
+}
+
+/* ---- Base ------------------------------------------------------------------------------------------------- */
+:root .dwr-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+:root .dwr-spacer { flex: 1; }
+:root .dwr-muted { color: var(--ds-text-subtle, #505258); }
+:root .dwr-ref { font-family: var(--dwr-mono); font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; }
+:root .dwr-kbd {
+  display: inline-block; font-family: var(--dwr-mono); font-size: 11px; line-height: 14px; padding: 0 4px; margin-left: 4px;
+  border: 1px solid currentColor; border-radius: 3px; opacity: .7; font-weight: 400;
+}
+:root .dwr-decide__hint .dwr-kbd { margin: 0 2px 0 0; opacity: 1; border-color: var(--ds-border-bold, #7D818A); }
+:root .dwr-decide__hint { color: var(--ds-text-subtle, #505258); font-size: 12px; display: inline-flex; gap: 4px; align-items: center; }
+:root .dwr-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; background: var(--ds-border-bold, #7D818A); }
+:root .dwr-dot--opportunity { background: var(--dwr-lens-opportunity); }
+:root .dwr-dot--ux-friction { background: var(--dwr-lens-ux-friction); }
+:root .dwr-dot--doc-drift { background: var(--dwr-lens-doc-drift); }
+:root .dwr-dot--security-cra { background: var(--dwr-lens-security-cra); }
+:root .dwr-pips { display: inline-flex; gap: 3px; vertical-align: 1px; }
+:root .dwr-pip { width: 6px; height: 6px; border-radius: 50%; background: var(--dwr-pip-off); }
+:root .dwr-pip--on { background: var(--ds-icon, #44546F); }
+:root .dwr-meter { display: inline-flex; gap: 2px; vertical-align: 1px; }
+:root .dwr-meter__seg { width: 8px; height: 6px; border-radius: 2px; background: var(--dwr-pip-off); }
+:root .dwr-meter__seg--on { background: var(--ds-icon, #44546F); }
+
+/* A button inside the shell: ADS-like 32px, flat */
+:root .dw-btn { border-radius: 4px; }
+
+/* ---- Toolbar (48px, replaces header + tabs + chips) -------------------------------------------------------- */
+:root .dwr-root { display: flex; flex-direction: column; min-width: 0; }
+:root .dwr-toolbar {
+  display: flex; align-items: center; gap: 8px; min-height: var(--dwr-bar-h); padding: 8px 16px; box-sizing: border-box; flex-wrap: wrap;
+  background: var(--ds-surface, #FFFFFF); border-bottom: 1px solid var(--ds-border, #0B120E24); flex: none;
+}
+:root .dwr-toolbar__mark { display: inline-flex; margin-right: 4px; }
+:root .dwr-field { display: inline-flex; }
+:root .dwr-select {
+  font: inherit; height: 32px; padding: 0 24px 0 8px; border: 0; border-radius: 4px; cursor: pointer; color: var(--ds-text, #292A2E);
+  background-color: var(--ds-background-neutral, #0515240F);
+}
+:root .dwr-select { max-width: 128px; text-overflow: ellipsis; }
+:root .dwr-select:hover { background-color: var(--ds-background-neutral-hovered, #0B120E24); }
+:root .dwr-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 6px; background: var(--ds-background-neutral, #0515240F); }
+:root .dwr-seg__btn {
+  font: inherit; font-weight: 500; height: 28px; padding: 0 10px; border: 0; border-radius: 4px; cursor: pointer; background: none;
+  color: var(--ds-text-subtle, #505258); display: inline-flex; align-items: center; gap: 6px;
+}
+:root .dwr-seg__btn:hover { color: var(--ds-text, #292A2E); }
+:root .dwr-seg__btn[aria-pressed="true"] {
+  background: var(--ds-surface-raised, #FFFFFF); color: var(--ds-text, #292A2E); font-weight: 653; box-shadow: var(--ds-shadow-raised, 0 1px 1px #1E1F2140, 0 0 1px #1E1F214F);
+}
+:root .dwr-seg__n { font-variant-numeric: tabular-nums; font-weight: 653; color: var(--ds-text-selected, #1868DB); }
+:root .dwr-runline { margin: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; font-size: 12px; line-height: 16px; color: var(--ds-text-subtle, #505258); font-variant-numeric: tabular-nums; }
+:root .dwr-iconbtn {
+  font: inherit; font-weight: 653; width: 32px; height: 32px; border: 0; border-radius: 4px; cursor: pointer; background: none; color: var(--ds-text-subtle, #505258);
+}
+:root .dwr-iconbtn:hover { background: var(--ds-background-neutral-subtle-hovered, #0515240F); }
+
+/* ---- Layout: list + pane ---------------------------------------------------------------------------------- */
+:root .dw-root, :root .dwr-root { max-width: none; padding: 0; }
+:root .dwr-state { padding: 24px 24px 40px; max-width: 640px; margin: 0 auto; }
+:root .dwr-body { display: block; flex: 1; min-height: 0; }
+:root .dwr-root--wide { height: max(600px, 100vh); }
+:root .dwr-root--wide .dwr-body { display: grid; grid-template-columns: var(--dwr-list-w) minmax(0, 1fr); }
+:root .dwr-list { background: var(--ds-surface-sunken, #F8F8F8); min-width: 0; padding-bottom: 24px; }
+:root .dwr-root--wide .dwr-list { overflow-y: auto; min-height: 0; }
+
+:root .dwr-group__head {
+  position: sticky; top: 0; z-index: 2; margin: 0; padding: 14px 16px 4px; font-size: 12px; line-height: 16px; font-weight: 653;
+  color: var(--ds-text-subtle, #505258); background: var(--ds-surface-sunken, #F8F8F8); display: flex; gap: 8px; align-items: baseline;
+}
+:root .dwr-group__counts { font-weight: 400; color: var(--ds-text-subtle, #505258); }
+:root .dwr-rows { list-style: none; margin: 0; padding: 0; }
+
+/* Bulk strip */
+:root .dwr-bulk {
+  position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 16px;
+  background: var(--ds-background-selected, #E9F2FE); color: var(--ds-text, #292A2E);
+}
+
+/* Rows */
+:root .dwr-item { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .2s ease, opacity .15s ease; }
+:root .dwr-item__inner { min-height: 0; }
+:root .dwr-item--leaving { grid-template-rows: 0fr; opacity: 0; pointer-events: none; }
+:root .dwr-item--leaving > .dwr-item__inner { overflow: hidden; }
+:root .dwr-row {
+  display: grid; grid-template-columns: 36px minmax(0, 1fr); align-items: stretch; min-height: var(--dwr-row-h); position: relative;
+  border-left: 2px solid transparent;
+}
+:root .dwr-row:hover { background: var(--ds-background-neutral-subtle-hovered, #0515240F); }
+:root .dwr-row--checked { background: var(--ds-background-neutral-subtle-hovered, #0515240F); }
+:root .dwr-row--current, :root .dwr-row--current:hover {
+  background: var(--ds-background-selected, #E9F2FE); border-left-color: var(--ds-border-selected, #1868DB);
+}
+:root .dwr-row__check { display: flex; align-items: center; justify-content: center; padding-left: 4px; }
+:root .dwr-checkbox { width: 16px; height: 16px; margin: 0; cursor: pointer; accent-color: var(--ds-background-brand-bold, #1868DB); }
+:root .dwr-row__main {
+  font: inherit; color: inherit; text-align: left; background: none; border: 0; cursor: pointer; min-width: 0; padding: 5px 16px 5px 0;
+  display: flex; flex-direction: column; justify-content: center; gap: 1px; scroll-margin-top: 36px; scroll-margin-bottom: 8px;
+}
+:root .dwr-row__main:focus-visible { outline: 2px solid var(--ds-border-focused, #4688EC); outline-offset: -2px; border-radius: 3px; }
+:root .dwr-row__title { font-weight: 500; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+:root .dwr-row--current .dwr-row__title { font-weight: 653; }
+:root .dwr-row__meta { display: flex; align-items: center; gap: 12px; min-width: 0; font-size: 12px; line-height: 16px; color: var(--ds-text-subtle, #505258); }
+:root .dwr-row__id { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; }
+:root .dwr-row__lens { overflow: hidden; text-overflow: ellipsis; }
+:root .dwr-mark { font-weight: 653; flex: none; }
+:root .dwr-mark--new { color: var(--ds-text-discovery, #803FA5); }
+:root .dwr-mark--grew { color: var(--ds-text-information, #1558BC); }
+:root .dwr-mark--reopened { color: var(--ds-text-warning, #9E4C00); }
+:root .dwr-row .dw-lozenge { font-size: 10px; line-height: 14px; }
+:root .dwr-sig { display: grid; grid-template-columns: 18px 30px 40px; gap: 8px; align-items: center; justify-items: start; flex: none; }
+:root .dwr-sig__effort { font-weight: 653; font-variant-numeric: tabular-nums; color: var(--ds-text, #292A2E); text-align: center; justify-self: center; }
+
+:root .dwr-more-rows { padding: 16px; }
+
+/* ---- Reading pane ------------------------------------------------------------------------------------------ */
+:root .dwr-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--ds-surface, #FFFFFF); border-left: 1px solid var(--ds-border, #0B120E24); }
+:root .dwr-pane__scroll { flex: 1; overflow-y: auto; min-height: 0; padding: 24px 32px 32px; }
+:root .dwr-pane__in { max-width: var(--dwr-read-w); margin: 0 auto; }
+:root .dwr-pane__none { margin: 40px auto; color: var(--ds-text-subtle, #505258); }
+
+:root .dwr-detail__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 12px; line-height: 16px; color: var(--ds-text-subtle, #505258); }
+:root .dwr-detail__title { font-size: 20px; line-height: 24px; font-weight: 653; margin: 8px 0 0; letter-spacing: -.005em; }
+:root .dwr-rationale { margin: 12px 0 0; line-height: 22px; color: var(--ds-text, #292A2E); max-width: 68ch; }
+:root .dwr-facts { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 8px 16px; margin: 20px 0 0; }
+:root .dwr-facts dt { font-size: 12px; line-height: 20px; font-weight: 653; color: var(--ds-text-subtle, #505258); }
+:root .dwr-facts dd { margin: 0; line-height: 20px; min-width: 0; }
+:root .dwr-why { font-size: 13px; line-height: 18px; color: var(--ds-text-subtle, #505258); margin-top: 2px; max-width: 60ch; }
+:root .dwr-section { margin-top: 24px; }
+:root .dwr-h3 { font-size: 14px; line-height: 20px; font-weight: 653; margin: 0 0 8px; }
+:root .dwr-count {
+  display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; text-align: center; font-size: 12px; font-weight: 653;
+  background: var(--ds-background-neutral, #0515240F); color: var(--ds-text-subtle, #505258);
+}
+:root .dwr-ev { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+:root .dwr-ev__item { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 0 12px; }
+:root .dwr-ev__type { font-size: 11px; line-height: 20px; font-weight: 653; text-transform: uppercase; letter-spacing: .02em; color: var(--ds-text-subtle, #505258); }
+:root .dwr-ev__ref { font-family: var(--dwr-mono); font-size: 12px; line-height: 20px; word-break: break-all; }
+:root pre.dwr-code {
+  font-family: var(--dwr-mono); font-size: 12px; line-height: 18px; margin: 4px 0 0; padding: 8px 12px; border-radius: 4px;
+  background: var(--ds-background-neutral, #0515240F); color: var(--ds-text, #292A2E); white-space: pre-wrap; word-break: break-word;
+}
+:root blockquote.dwr-quote { margin: 4px 0 0; padding: 0 0 0 12px; border-left: 2px solid var(--ds-border-bold, #7D818A); color: var(--ds-text, #292A2E); line-height: 20px; }
+:root .dwr-more { margin-top: 24px; }
+:root .dwr-more summary { cursor: pointer; font-weight: 653; color: var(--ds-text-subtle, #505258); }
+:root .dwr-more summary:hover { color: var(--ds-text, #292A2E); }
+:root .dwr-more[open] summary { margin-bottom: 8px; }
+:root .dwr-detail .dw-history { margin: 0; }
+
+/* Decision bar */
+:root .dwr-decide { flex: none; padding: 12px 32px; background: var(--ds-surface, #FFFFFF); border-top: 1px solid var(--ds-border, #0B120E24); }
+:root .dwr-decide > * { max-width: var(--dwr-read-w); margin-left: auto; margin-right: auto; }
+:root .dwr-decide__row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+:root .dwr-decide__done { margin: 0; color: var(--ds-text-subtle, #505258); }
+:root .dwr-decide .dw-msg { margin: 0 auto 8px; }
+:root .dwr-decide .dw-step { margin: 0 auto; background: none; padding: 0; }
+:root .dwr-decide--sticky { position: sticky; bottom: 0; z-index: 1; padding: 12px 16px; }
+
+/* Narrow: the selected row opens in place */
+:root .dwr-inline { padding: 8px 16px 0 20px; background: var(--ds-surface, #FFFFFF); border-left: 2px solid var(--ds-border-selected, #1868DB); }
+:root .dwr-inline .dwr-decide { margin: 8px -16px 0 -20px; padding-left: 20px; padding-right: 16px; }
+:root .dwr-root:not(.dwr-root--wide) .dwr-toolbar { position: sticky; top: 0; z-index: 5; }
+:root .dwr-root:not(.dwr-root--wide) .dwr-runline { display: none; }
+:root .dwr-root:not(.dwr-root--wide) .dwr-group__head { top: 0; }
+
+/* Loading skeleton */
+:root .dwr-skelrow { padding: 10px 16px; display: flex; flex-direction: column; gap: 6px; }
+:root .dwr-skel-a { height: 14px; width: 80%; }
+:root .dwr-skel-b { height: 10px; width: 45%; }
+
+/* Empty state */
+:root .dwr-empty { text-align: center; padding: 32px 16px; }
+:root .dwr-empty svg { display: block; margin: 0 auto 8px; }
+:root .dwr-empty__h { font-size: 20px; line-height: 24px; font-weight: 653; margin: 0 0 8px; }
+:root .dwr-empty p { margin: 4px auto; max-width: 52ch; }
+
+/* Shared pieces restyled to match */
+:root fieldset.dw-radio-list:has(input[name="dw-reason"]) { counter-reset: dw3r; }
+:root .dw-radio:has(input[name="dw-reason"]) { counter-increment: dw3r; }
+:root .dw-radio:has(input[name="dw-reason"]) > span::before {
+  content: counter(dw3r); display: inline-block; min-width: 14px; margin-right: 8px; padding: 0 3px; text-align: center; font-family: var(--dwr-mono);
+  font-size: 11px; line-height: 14px; border: 1px solid var(--ds-border-bold, #7D818A); border-radius: 3px; color: var(--ds-text-subtle, #505258);
+}
+:root .dw-step { padding: 0; background: none; display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; }
+:root .dw-step label { flex-basis: 100%; }
+:root .dw-step .dw-input { flex: 1 1 240px; }
+:root .dw-step .dw-row { display: contents; }
+:root .dw-toasts { left: 16px; bottom: 16px; }
+:root .dw-toast__timer { background: var(--ds-background-brand-bold, #1868DB); }
+:root .dw-toast { border-left-color: var(--ds-border-selected, #1868DB); }
+
+/* ---- Evidence panel (360px) ------------------------------------------------------------------------------- */
+:root .dwr-panel { padding: 8px 12px 16px; }
+:root .dwr-panel__brand { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 12px; line-height: 16px; font-weight: 653; color: var(--ds-text-subtle, #505258); }
+:root .dwr-detail--compact .dwr-detail__title { font-size: 16px; line-height: 20px; margin-top: 6px; }
+:root .dwr-detail--compact .dwr-rationale { margin-top: 8px; line-height: 20px; }
+:root .dwr-detail--compact .dwr-facts { grid-template-columns: minmax(0, 1fr); gap: 0; margin-top: 12px; }
+:root .dwr-detail--compact .dwr-facts dt { line-height: 16px; margin-top: 8px; }
+:root .dwr-detail--compact .dwr-section, :root .dwr-detail--compact .dwr-more { margin-top: 16px; }
+:root .dwr-detail--compact .dwr-ev__item { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+
+/* ---- Fallback pages (Opportunity map, Settings) keep their markup; only the chrome is calmed -------------- */
+:root .dw-appbar__strip, :root .dw-brand__word { display: none; }
+:root .dw-appbar__row { padding-top: 0; }
+:root .dw-root { padding: 16px 24px 40px; }
+:root .dw-nav__link[aria-current="page"]::after { background: var(--ds-border-selected, #1868DB); }
+:root .dw-nav__link[aria-current="page"] { color: var(--ds-text-selected, #1868DB); }
+
+@media (prefers-reduced-motion: reduce) {
+  :root .dwr-item { transition: none; }
+}
+
+/* The toolbar stays one 48px row down to 720px; the run line gives way (ellipsis) before "?" wraps. */
+@media (min-width: 720px) {
+  :root .dwr-toolbar { flex-wrap: nowrap; }
+  :root .dwr-runline { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  :root .dwr-toolbar > :not(.dwr-runline):not(.dwr-spacer) { flex: none; }
+}

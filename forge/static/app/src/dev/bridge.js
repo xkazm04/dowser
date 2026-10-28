@@ -11,7 +11,6 @@
 //   #reflect              the Learning tab (`reflect.data`; github.com/acme/shop has data, billing is empty)
 //   &fail=reflect.data | rule.decide | outcome.record | verdict.snooze | verdict.reject   that call fails
 //   &page=<n>             inbox page size (default 4)     &mode=dark|light   colour mode (default: the OS)
-//   &v=1|2|3              a visual prototype (src/variants)
 import { setGlobalTheme } from '@atlaskit/tokens/set-global-theme';
 import { AREAS, CARDS, GROUP_OF, HISTORY, INBOXES, PROJECTS, PUSHES, REFLECT } from './fixture.js';
 

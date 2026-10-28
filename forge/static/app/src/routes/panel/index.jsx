@@ -1,10 +1,9 @@
-// Evidence panel (jira:issuePanel): on an issue Dowser created at Accept, the card read-only with its
-// evidence trail, doc impact, delivery risk and triage history.
+// Evidence panel (jira:issuePanel, 360px): the reading-pane content in a single column, compact and read-only.
 import React from 'react';
 import { call } from '../../api.js';
 import { ErrorState, SectionMessage, SkeletonList, useAsync } from '../../components/ui.jsx';
-import { ProposalCard } from '../../components/ProposalCard.jsx';
 import { Mark } from '../../components/Brand.jsx';
+import { Detail } from '../inbox/Detail.jsx';
 
 export default function Panel({ context }) {
   const issueKey = context?.extension?.issue?.key;
@@ -13,15 +12,15 @@ export default function Panel({ context }) {
     [issueKey],
   );
   return (
-    <main className="dw-root dw-root--panel">
-      <div className="dw-brand" style={{ marginBottom: 6 }}><Mark size={16} /><span className="dw-subtlest" style={{ color: 'var(--dw-ink)', fontWeight: 653 }}>Dowser evidence</span></div>
+    <main className="dwr-panel">
+      <div className="dwr-panel__brand"><Mark size={16} /><span>Dowser evidence</span></div>
       {data.status === 'loading' && <SkeletonList count={1} label="Loading Dowser evidence" />}
       {data.status === 'error' && <ErrorState what="Dowser evidence" error={data.error} onRetry={data.reload} />}
       {data.status === 'ready' && !data.data.card && (
         <SectionMessage role="status"><p>This issue did not come from Dowser.</p></SectionMessage>
       )}
       {data.status === 'ready' && data.data.card && (
-        <ProposalCard card={data.data.card} history={data.data.history ?? []} showStatus flat titleId="dw-panel-title" />
+        <Detail card={data.data.card} history={data.data.history ?? []} compact titleId="dwr-panel-title" />
       )}
     </main>
   );
