@@ -216,15 +216,31 @@ push, not a sortable table.
   change marker, effort size, confidence and evidence strength. Rows keep the server's order inside a group.
 - **Reading pane.** The selected proposal: title, rationale, then a facts grid with effort (size, day range,
   basis), confidence with its reason, evidence strength, delivery risk and doc impact. A missing bus factor
-  reads "not measured", never 0, and a bus factor of 1 gets a "single owner" flag. The evidence is open: code
+  reads "not measured", never 0, and a bus factor of 1 gets a "single owner" flag. When the card carries
+  supporting views (`artifacts`, up to three), **Supporting views** comes next. Each view shows its message in
+  bold, then the view, then "From" and the evidence refs it was drawn from. A view with an unknown kind or
+  broken data shows its text alternative instead, and a card without views has no such section:
+  - A **table** has a set-apart header and light row dividers. Number columns are right-aligned, highlighted rows
+    are tinted and bold, and a wide table scrolls sideways in its own box.
+  - A **flow** is a numbered list of steps. A marked step shows a glyph in place of its number and names the mark:
+    Friction, Failure, Missing or New.
+  - A **before/after** puts the measure on top, then **Today** and **After** in two columns whose lines align.
+  - A **matrix** is a grid of shaded cells, and each cell prints its value.
+
+  The evidence is open: code
   and doc lines link to the scanned commit and show their quote as code; tickets, pages and goals link to their
   source. The full write-up and the triage history follow. The decision bar stays at the bottom of the pane.
   Below 900px there is no pane: the selected row opens in place.
 - **Actions.**
   - **Accept** opens a dialog with the target Jira project and issue type, filled in from the inbox
-    setting. It previews the issue summary and description. When the accept succeeds, the issue key shows
-    as a link. In the issue, the card's Description section is headed **Details**, because Jira already
-    titles the field Description.
+    setting. It previews the issue summary and description, in the issue's own order. When the accept succeeds,
+    the issue key shows as a link. In the issue, the card's Description section is headed **Details**, because Jira already
+    titles the field Description. **Accepted issue:** the description is the rationale, then the card body, then
+    **Supporting views** when the card has any, then **Evidence**, then "Proposed by Dowser (DW-n)". Each view is
+    its message in bold, the view, then "From <refs>" in italics. A table or matrix becomes a Jira table, and a
+    highlighted row is bold. A flow becomes a numbered list, and a marked step ends with "(friction)", "(failure)",
+    "(missing)" or "(new)". A before/after becomes a table with the measure on top and Today / After columns.
+    A view that cannot be drawn becomes its text alternative.
   - **Merge** picks another open or accepted proposal by ref or title, or takes a typed Jira key.
   - **Reject** takes one of six reasons: false positive, already known, not our direction, not worth it,
     wrong size, other. Other needs a note.
@@ -255,7 +271,7 @@ stores them. Accept files issues there unless the Accept dialog overrides them f
 ### Evidence panel (on a Jira issue)
 
 On an issue that Dowser created at Accept, the **Dowser evidence** panel shows the reading-pane content in one
-column, read-only: the facts, the evidence trail, doc impact, delivery risk and triage history. On any other issue, it says "This issue did
+column, read-only: the facts, the supporting views (stacked, one per row), the evidence trail, doc impact, delivery risk and triage history. On any other issue, it says "This issue did
 not come from Dowser."
 
 ### Theme and accessibility
@@ -272,7 +288,8 @@ npm --prefix forge/static/app run dev:fixture      # or VITE_DOWSER_FIXTURE=1 np
 ```
 
 The fixture swaps `@forge/bridge` for an in-memory fake (`src/dev/bridge.js`). The fake serves three
-pushes, every evidence type, one reopened card, and one card with no bus factor. The URL hash picks what
+pushes, every evidence type, one reopened card, one card with no bus factor, and every kind of supporting view
+(DW-14, DW-9, DW-6, DW-11, DW-1), with one malformed view on DW-10 that shows its text alternative. The URL hash picks what
 you see:
 
 | Hash | Shows |

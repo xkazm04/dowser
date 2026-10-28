@@ -64,12 +64,14 @@ export const CHANGE_LABELS = { new: 'New', grew: 'Evidence grew', reopened: 'Reo
 
 /**
  * The issue the accept will create, as a preview of what forge/src/core/adf.mjs `issueDescription` builds, in the
- * same order: the rationale, the card body (rendered by the markdown subset in markdown.js), an Evidence list, then
- * "Proposed by Dowser (DW-n)". The server builds the real issue (verdict.accept); this preview only mirrors it.
- * @param {{title: string, rationale?: string, body?: string, ref: string, evidence?: {type: string, ref: string, quote?: string}[]}} card
+ * same order: the rationale, the card body (rendered by the markdown subset in markdown.js), the supporting views
+ * when there are any, an Evidence list, then "Proposed by Dowser (DW-n)". The server builds the real issue
+ * (verdict.accept); this preview only mirrors it. `artifacts` is omitted when the card has none.
+ * @param {{title: string, rationale?: string, body?: string, ref: string, evidence?: {type: string, ref: string, quote?: string}[], artifacts?: any[]}} card
  */
 export function issuePreview(card) {
-  return { summary: card.title, rationale: String(card.rationale ?? ''), body: String(card.body ?? '').replace(/^(\s*#{1,6}\s+)Description\s*#*\s*$/m, '$1Details'), evidence: card.evidence ?? [] };
+  const preview = { summary: card.title, rationale: String(card.rationale ?? ''), body: String(card.body ?? '').replace(/^(\s*#{1,6}\s+)Description\s*#*\s*$/m, '$1Details'), evidence: card.evidence ?? [] };
+  return Array.isArray(card.artifacts) && card.artifacts.length > 0 ? { ...preview, artifacts: card.artifacts } : preview;
 }
 
 /**

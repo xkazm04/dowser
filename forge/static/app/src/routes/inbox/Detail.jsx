@@ -1,11 +1,12 @@
 // The reading content of one proposal: header, rationale, a facts grid (effort, confidence and its reason, evidence
-// strength, delivery risk, doc impact), the evidence EXPANDED (this is where people decide), the write-up behind a
+// strength, delivery risk, doc impact), the supporting views when the card has any, the evidence EXPANDED (this is where people decide), the write-up behind a
 // disclosure and the triage history. Used by the reading pane, the narrow accordion and the 360px issue panel.
 // Every fact is printed, "not measured" included: the pane is the expanded view.
 import React from 'react';
 import { Lozenge } from '../../components/ui.jsx';
 import { Markdown } from '../../components/Markdown.jsx';
 import { TriageHistory } from '../../components/ProposalCard.jsx';
+import { Artifacts } from '../../components/Artifact.jsx';
 import {
   CHANGE_LABELS, EVIDENCE_LABELS, LENS_LABELS, LEVEL_LABELS, STATUS_APPEARANCE, STATUS_LABELS, evidenceStrength, plural,
 } from '../../components/labels.js';
@@ -106,6 +107,8 @@ export function Detail({ card, change, history, compact = false, titleId }) {
             : <span className="dwr-muted">None named</span>}
         </dd>
       </dl>
+
+      <Artifacts artifacts={card.artifacts} compact={compact} />
 
       <section className="dwr-section" aria-label="Evidence">
         <h3 className="dwr-h3">Evidence <span className="dwr-count">{card.evidence?.length ?? 0}</span></h3>

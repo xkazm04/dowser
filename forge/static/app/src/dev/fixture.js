@@ -45,6 +45,93 @@ function card(over) {
 
 const code = (path, line, quote) => ({ type: 'code', ref: `${path}:${line}`, quote, link: `${REPO}/blob/${SHA1}/${path}#L${line}` });
 
+// Supporting views (artifacts[]): every kind across lenses, and on DW-10 one whose data is malformed, so the UI
+// shows its alt-text fallback. `refs` name evidence refs of the same card, as validateCandidate requires.
+const ART = {
+  demand: {
+    kind: 'table', message: 'A blank error after a decline is 62% of checkout payment tickets',
+    alt: 'Table of checkout payment ticket themes over 90 days with ticket counts and share. Blank error after a declined card: 41 tickets, 62%.',
+    refs: ['SUP-118', 'SUP-131'],
+    data: {
+      columns: ['Ticket theme', 'Tickets (90 d)', 'Share'],
+      rows: [['Blank error after decline', '41', '62%'], ['Card declined twice', '14', '21%'], ['No retry button', '11', '17%']],
+      highlight: [0],
+    },
+  },
+  installDrift: {
+    kind: 'table', message: 'Step 3 of the install guide passes a flag the CLI removed',
+    alt: 'Table comparing the four install guide steps with the CLI. Steps 1, 2 and 4 match; step 3 passes --legacy, which commit 7e1a2b9 removed.',
+    refs: ['docs/install.md:42', '7e1a2b9', '90211'],
+    data: {
+      columns: ['Step', 'Doc says', 'Code does'],
+      rows: [['1 Download', 'curl the installer', 'Unchanged'], ['2 Unpack', 'tar -xzf shop.tgz', 'Unchanged'],
+        ['3 Init', 'shopctl init --legacy', 'Flag removed in 7e1a2b9'], ['4 Start', 'shopctl start', 'Unchanged']],
+      highlight: [2],
+    },
+  },
+  advisory: {
+    kind: 'table', message: 'The pinned sharp is two patch releases behind the fix',
+    alt: 'Table of one dependency: sharp installed at 0.32.1, advisory GHSA-54xq-cgqr-rpm3, fixed in 0.32.6.',
+    refs: ['package-lock.json#sharp@0.32.1', 'package-lock.json:2210'],
+    data: { columns: ['Package', 'Installed', 'Advisory', 'Fixed in'], rows: [['sharp', '0.32.1', 'GHSA-54xq-cgqr-rpm3', '0.32.6']] },
+  },
+  craMatrix: {
+    kind: 'matrix', message: 'Vulnerability handling has a gap only where uploads are decoded',
+    alt: 'Matrix of three CRA obligations against three components. The image worker has a gap in vulnerability handling; the rest are met or partial.',
+    refs: ['audit.sarif#GHSA-54xq-cgqr-rpm3@package-lock.json', 'package-lock.json#sharp@0.32.1'],
+    data: {
+      rows: ['Vulnerability handling', 'Security updates', 'SBOM available'],
+      columns: ['Shop web', 'Admin', 'Image worker'],
+      cells: [
+        [{ v: 'Met', level: 0 }, { v: 'Met', level: 0 }, { v: 'Gap', level: 3 }],
+        [{ v: 'Met', level: 0 }, { v: 'Partial', level: 1 }, { v: 'Partial', level: 2 }],
+        [{ v: 'Partial', level: 1 }, { v: 'Partial', level: 1 }, { v: 'Unknown' }],
+      ],
+    },
+  },
+  timeoutFlow: {
+    kind: 'flow', message: 'The cart is lost with no warning while the user pays in another app',
+    alt: 'Flow of five steps: add items, switch to the banking app (friction), session times out, no warning before expiry (missing), cart is empty on return (failure).',
+    refs: ['src/session/expire.ts:17', 'SUP-140'],
+    data: {
+      steps: [{ label: 'Add items to the cart' }, { label: 'Switch to the banking app', mark: 'friction' }, { label: 'Session times out after 15 min' },
+        { label: 'Warning before expiry', mark: 'missing' }, { label: 'Return: the cart is empty', mark: 'failure' }],
+    },
+  },
+  timeoutSteps: {
+    kind: 'before-after', message: 'Finishing a payment after a timeout drops from five steps to two',
+    alt: 'Before and after of the steps to finish paying after a session timeout: five steps today, two after.',
+    refs: ['src/session/expire.ts:17', 'SUP-140'],
+    data: {
+      measure: 'Steps to pay after a timeout',
+      before: ['Log in again', 'Search for each product', 'Re-add every item', 'Re-enter the address', 'Pay'],
+      after: ['Log in again', 'Pay'],
+    },
+  },
+  shippingFlow: {
+    kind: 'flow', message: 'A shipping estimate on the cart moves the cost to the first step',
+    alt: 'Flow of five checkout steps: cart, a new shipping estimate on the cart, address, payment, shipping confirmed.',
+    refs: ['src/checkout/steps.ts:9'],
+    data: { steps: [{ label: 'Cart' }, { label: 'Shipping estimate on the cart', mark: 'new' }, { label: 'Address' }, { label: 'Payment' }, { label: 'Shipping confirmed' }] },
+  },
+  shippingSteps: {
+    kind: 'table', message: 'Only the last of four steps shows the shipping cost today',
+    alt: 'Table of the four checkout steps and whether each shows the shipping cost. Today only step 4 does; after, every step does.',
+    refs: ['src/checkout/steps.ts:9', 'SUP-99'],
+    data: {
+      columns: ['Step', 'Position', 'Shows shipping today', 'After'],
+      rows: [['Cart', '1', 'No', 'Yes'], ['Address', '2', 'No', 'Yes'], ['Payment', '3', 'No', 'Yes'], ['Shipping', '4', 'Yes', 'Yes']],
+      highlight: [3],
+    },
+  },
+  malformed: {
+    kind: 'matrix', message: 'Finance asks for order exports at every month-end',
+    alt: 'Matrix of export requests by month and team; finance asked in each of the last three months.',
+    refs: ['FIN-77'],
+    data: { rows: ['Finance', 'Ops'], columns: ['Aug', 'Sep', 'Oct'], cells: [[{ v: '1' }, { v: '1' }, { v: '2' }]] },
+  },
+};
+
 export const CARDS = [
   // Group 1 (latest push): new, evidence grew, reopened
   card({
@@ -52,6 +139,7 @@ export const CARDS = [
     rationale: 'A declined card leaves a blank error and no retry. Support sees it weekly, and it is the top checkout ticket theme.',
     confidence: 'high', confidence_why: 'Code quote shows the swallowed error and 41 tickets agree; a funnel metric would raise it.',
     delivery_risk: { blast: 'medium', bus_factor: 1 }, doc_impact: ['docs/checkout.md', '48213'],
+    artifacts: [ART.demand],
     evidence: [
       code('src/checkout/payment.ts', 88, "catch (e) { setError(''); }"),
       { type: 'ticket', ref: 'SUP-118', quote: 'blank red box after card declined', url: 'https://acme.atlassian.net/browse/SUP-118' },
@@ -64,6 +152,7 @@ export const CARDS = [
     rationale: 'The guide tells admins to pass a flag the CLI no longer accepts, so first installs fail at step 3.',
     effort: { size: 'XS', days_low: 0.25, days_high: 0.5, basis: ['docs/install.md'] },
     delivery_risk: { blast: 'low' }, doc_impact: ['docs/install.md'], first_seen: PUSHES[1].at,
+    artifacts: [ART.installDrift],
     evidence: [
       { type: 'doc', ref: 'docs/install.md:42', quote: 'shopctl init --legacy', link: `${REPO}/blob/${SHA1}/docs/install.md#L42` },
       { type: 'git', ref: '7e1a2b9', quote: 'remove --legacy from shopctl init' },
@@ -77,6 +166,7 @@ export const CARDS = [
     effort: { size: 'S', days_low: 0.5, days_high: 1.5, basis: ['package.json#sharp'] }, confidence: 'high',
     confidence_why: 'Lockfile pins the affected version and SARIF flags it; a reachability probe would raise it.',
     delivery_risk: { blast: 'high', bus_factor: 2 }, first_seen: PUSHES[2].at,
+    artifacts: [ART.craMatrix, ART.advisory],
     evidence: [
       { type: 'dep', ref: 'package-lock.json#sharp@0.32.1' },
       code('package-lock.json', 2210, '"version": "0.32.1",'),
@@ -90,6 +180,7 @@ export const CARDS = [
     first_seen: PUSHES[1].at, last_push_at: PUSHES[1].at,
     provenance: { lens_version: '1.0.3', model: 'claude-opus-5-5', harness: 'codex', run_id: PUSHES[1].run_id },
     effort: { size: 'L', days_low: 5, days_high: 9 },
+    artifacts: [ART.timeoutFlow, ART.timeoutSteps],
     evidence: [
       code('src/session/expire.ts', 17, 'store.clear(CART_KEY);'),
       { type: 'ticket', ref: 'SUP-140', quote: 'cart gone after paying in banking app', url: 'https://acme.atlassian.net/browse/SUP-140' },
@@ -101,6 +192,7 @@ export const CARDS = [
     confidence: 'low', confidence_why: 'Inferred from two tickets; no usage count. A count of export requests would raise it.',
     effort: { size: 'S', days_low: 1, days_high: 2, basis: ['src/reports/csv.ts#writeCsv'] },
     delivery_risk: { blast: 'low' }, first_seen: PUSHES[1].at, last_push_at: PUSHES[1].at,
+    artifacts: [ART.malformed],
     provenance: { lens_version: '1.2.0', run_id: PUSHES[1].run_id },
     evidence: [code('src/reports/csv.ts', 12, 'export function writeCsv(rows, columns) {'), { type: 'ticket', ref: 'FIN-77', url: 'https://acme.atlassian.net/browse/FIN-77' }],
   }),
@@ -130,6 +222,7 @@ export const CARDS = [
     ref: 'DW-1', fp: '293041526a7b8c9d', status: 'accepted', issue_ref: 'SHOP-101', issue_url: 'https://acme.atlassian.net/browse/SHOP-101',
     title: 'Explain shipping costs before the payment step', rationale: 'Shipping appears only on the last step; tickets call it a surprise.',
     first_seen: PUSHES[2].at, last_push_at: PUSHES[2].at, delivery_risk: { blast: 'low', bus_factor: 3 }, doc_impact: ['docs/checkout.md', '90211'],
+    artifacts: [ART.shippingSteps, ART.shippingFlow],
     provenance: { lens_version: '1.2.0', run_id: PUSHES[2].run_id },
     evidence: [code('src/checkout/steps.ts', 9, "const STEPS = ['cart', 'address', 'payment', 'shipping'];"), { type: 'ticket', ref: 'SUP-99', url: 'https://acme.atlassian.net/browse/SUP-99' }],
   }),

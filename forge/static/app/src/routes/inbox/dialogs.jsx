@@ -7,6 +7,7 @@ import { call } from '../../api.js';
 import { Button, Dialog, SectionMessage, Spinner } from '../../components/ui.jsx';
 import { DW_REF_RE, JIRA_KEY_RE, REASONS, issuePreview, plural } from '../../components/labels.js';
 import { Markdown } from '../../components/Markdown.jsx';
+import { Artifact } from '../../components/Artifact.jsx';
 
 /**
  * Accept: target Jira project + issue type, pre-filled with the inbox default; preview of the issue.
@@ -100,6 +101,12 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
           <div className="dw-preview__summary">{preview.summary}</div>
           <div className="dw-md"><p>{preview.rationale}</p></div>
           <Markdown source={preview.body} />
+          {preview.artifacts && (
+            <div className="dw-md dwr-arts--compact">
+              <h4>Supporting views</h4>
+              {preview.artifacts.map((a, i) => <Artifact key={i} artifact={a} />)}
+            </div>
+          )}
           <div className="dw-md">
             <h4>Evidence</h4>
             <ul>

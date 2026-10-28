@@ -258,3 +258,77 @@
   :root .dwr-runline { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   :root .dwr-toolbar > :not(.dwr-runline):not(.dwr-spacer) { flex: none; }
 }
+
+/* ---- Supporting views (artifacts: table, flow, before/after, matrix) ---------------------------------------
+   Between the facts grid and Evidence; the panel stacks them in one column. Every colour is an ADS token: matrix
+   levels 1-3 are the accent-blue subtlest / subtler / subtler-hovered steps, which keep ds-text >= 5.8:1 in light
+   and dark (measured on the atlassian-light/-dark token values). A level is never read from colour alone: the
+   cell value is always printed. Flow marks carry a glyph and a word; highlighted table rows are also set bold. */
+:root .dwr-arts__list { display: flex; flex-direction: column; gap: 20px; }
+:root .dwr-art { margin: 0; min-width: 0; }
+:root .dwr-art__msg { margin: 0 0 8px; font-weight: 653; line-height: 20px; overflow-wrap: anywhere; }
+:root .dwr-art__alt { margin: 0; line-height: 20px; color: var(--ds-text, #292A2E); max-width: 68ch; }
+:root .dwr-art__from { margin-top: 6px; font-size: 12px; line-height: 16px; color: var(--ds-text-subtle, #505258); }
+:root .dwr-art__scroll { overflow-x: auto; overflow-y: hidden; max-width: 100%; border-radius: 4px; }
+:root .dwr-art__scroll:focus-visible { outline: 2px solid var(--ds-border-focused, #4688EC); outline-offset: 2px; }
+
+/* Table: header set apart by weight, a rule under it and a sunken fill; hairline row dividers, no grid. */
+:root .dwr-art__table, :root .dwr-art__matrix, :root .dwr-art__ba { border-collapse: collapse; font-size: 13px; line-height: 18px; }
+:root .dwr-art__table { min-width: 100%; }
+:root .dwr-art__table th, :root .dwr-art__table td { padding: 6px 12px 6px 0; text-align: left; vertical-align: top; }
+:root .dwr-art__table th:first-child, :root .dwr-art__table td:first-child { padding-left: 8px; }
+:root .dwr-art__table thead th {
+  font-size: 12px; line-height: 16px; font-weight: 653; color: var(--ds-text-subtle, #505258); white-space: nowrap;
+  background: var(--ds-surface-sunken, #F8F8F8); border-bottom: 1px solid var(--ds-border-bold, #7D818A);
+}
+:root .dwr-art__table tbody th { font-weight: 500; }
+:root .dwr-art__table tbody tr + tr > * { border-top: 1px solid var(--ds-border, #0B120E24); }
+:root .dwr-art__table .dwr-art__num { text-align: right; font-variant-numeric: tabular-nums; }
+:root .dwr-art__hl { background: var(--ds-background-accent-yellow-subtlest, #FEF7C8); }
+:root .dwr-art__hl > :first-child { font-weight: 653; box-shadow: inset 3px 0 0 var(--ds-border-warning, #E06C00); }
+
+/* Flow: numbered steps on a rail. A marked step swaps its number for a glyph and names the mark in a lozenge. */
+:root .dwr-art__flow { list-style: none; margin: 0; padding: 0; }
+:root .dwr-art__step { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 0 10px; position: relative; padding-bottom: 10px; }
+:root .dwr-art__step:last-child { padding-bottom: 0; }
+:root .dwr-art__step:not(:last-child)::before {
+  content: ""; position: absolute; left: 11px; top: 24px; bottom: 0; width: 2px; background: var(--ds-border, #0B120E24);
+}
+:root .dwr-art__node {
+  width: 24px; height: 24px; box-sizing: border-box; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 653; font-variant-numeric: tabular-nums; color: var(--ds-text-subtle, #505258);
+  background: var(--ds-surface, #FFFFFF); border: 2px solid var(--ds-border-bold, #7D818A);
+}
+:root .dwr-art__label { line-height: 20px; padding-top: 2px; overflow-wrap: anywhere; }
+:root .dwr-art__label .dw-lozenge { margin-left: 2px; vertical-align: 1px; }
+:root .dwr-art__step--friction .dwr-art__node { border-color: var(--ds-border-warning, #E06C00); background: var(--ds-background-warning, #FFF5DB); color: var(--ds-text-warning, #9E4C00); }
+:root .dwr-art__step--failure .dwr-art__node { border-color: var(--ds-border-danger, #E2483D); background: var(--ds-background-danger, #FFECEB); color: var(--ds-text-danger, #AE2E24); }
+:root .dwr-art__step--missing .dwr-art__node { border-style: dashed; }
+:root .dwr-art__step--missing .dwr-art__label { color: var(--ds-text-subtle, #505258); font-style: italic; }
+:root .dwr-art__step--new .dwr-art__node { border-color: var(--ds-border-discovery, #AF59E1); background: var(--ds-background-discovery, #F8EEFE); color: var(--ds-text-discovery, #803FA5); }
+:root .dwr-art__step--friction .dwr-art__label, :root .dwr-art__step--failure .dwr-art__label { font-weight: 653; }
+
+/* Before / after: the measure, then two equal columns whose lines align row by row. */
+:root .dwr-art__ba { width: 100%; table-layout: fixed; }
+:root .dwr-art__measure { caption-side: top; text-align: left; font-size: 12px; line-height: 16px; font-weight: 653; color: var(--ds-text-subtle, #505258); padding-bottom: 6px; }
+:root .dwr-art__ba th { text-align: left; font-size: 12px; line-height: 16px; font-weight: 653; padding: 0 12px 6px 0; border-bottom: 1px solid var(--ds-border-bold, #7D818A); }
+:root .dwr-art__ba th + th, :root .dwr-art__ba td + td { padding-left: 12px; border-left: 1px solid var(--ds-border, #0B120E24); }
+:root .dwr-art__ba td { padding: 5px 12px 5px 0; vertical-align: top; overflow-wrap: anywhere; }
+:root .dwr-art__ba tbody tr + tr td { border-top: 1px solid var(--ds-border, #0B120E24); }
+:root .dwr-art__ba th .dwr-count { font-weight: 653; }
+
+/* Matrix: row labels left, column labels on top, one shaded cell per judgment with its value printed. */
+:root .dwr-art__matrix { border-collapse: separate; border-spacing: 2px; margin-left: -2px; }
+:root .dwr-art__matrix th { font-size: 12px; line-height: 16px; font-weight: 653; color: var(--ds-text-subtle, #505258); padding: 4px 8px; vertical-align: bottom; }
+:root .dwr-art__matrix thead th { text-align: center; }
+:root .dwr-art__matrix tbody th { text-align: left; color: var(--ds-text, #292A2E); font-weight: 500; font-size: 13px; line-height: 18px; vertical-align: middle; padding-left: 0; }
+:root .dwr-art__matrix td { min-width: 72px; padding: 6px 8px; text-align: center; border-radius: 3px; color: var(--ds-text, #292A2E); font-variant-numeric: tabular-nums; }
+:root .dwr-art__lv0 { background: transparent; box-shadow: inset 0 0 0 1px var(--ds-border, #0B120E24); }
+:root .dwr-art__lv1 { background: var(--ds-background-accent-blue-subtlest, #E9F2FE); }
+:root .dwr-art__lv2 { background: var(--ds-background-accent-blue-subtler, #CFE1FD); }
+:root .dwr-art__lv3 { background: var(--ds-background-accent-blue-subtler-hovered, #ADCBFB); font-weight: 653; }
+
+/* Panel (360px) and the Accept preview: one column, a little tighter. */
+:root .dwr-arts--compact .dwr-arts__list { gap: 16px; }
+:root .dwr-arts--compact .dwr-art__matrix td { min-width: 48px; padding: 4px 6px; }
+:root .dw-preview .dwr-art { margin: 8px 0 12px; }
