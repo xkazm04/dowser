@@ -205,17 +205,21 @@ The surfaces call the backend only through `call()` in `src/api.js`, which uses 
 
 ### Inbox (Apps > Dowser > Inbox)
 
-The inbox reads like a pull request for the backlog. It is a queue grouped by push, not a sortable table.
+The inbox is a queue you scan on the left and a reading pane you decide in on the right. It is grouped by
+push, not a sortable table.
 
-- **Groups.** Each heading names one push: its date, the short head commit, the run id, and how many cards
-  are **New**, **Evidence grew** or **Reopened**. Cards keep the server's order inside a group.
-- **Filters.** Status chips (default **Open**) and lens chips. When more than one repository pushes here,
-  an **Inbox** picker selects one repository, or all of them.
-- **Card.** Each card shows its ref (`DW-n`), lens, title and rationale. It also shows effort (size, day
-  range, and the basis behind a disclosure) and confidence with its reason. Delivery risk shows the blast
-  radius and the bus factor. A missing bus factor reads "not measured", never 0, and a bus factor of 1 gets
-  a "single owner" flag. Doc impact comes next. The evidence list links code and doc lines to the scanned
-  commit and shows their quote as code. Tickets, pages and goals link to their source.
+- **Toolbar.** One row: the **Inbox** picker (one repository, or all of them), the status control (default
+  **Open**, with its count), the lens filter, the last push and `?` for the keyboard help. Jira's sidebar
+  carries the navigation between Inbox, Opportunity map, Learning and Settings.
+- **Queue.** Each sticky heading names one push by date and time and counts its **New**, **Evidence grew**
+  and **Reopened** items; the commit and run id are in its tooltip. Each row shows the title, lens, ref,
+  change marker, effort size, confidence and evidence strength. Rows keep the server's order inside a group.
+- **Reading pane.** The selected proposal: title, rationale, then a facts grid with effort (size, day range,
+  basis), confidence with its reason, evidence strength, delivery risk and doc impact. A missing bus factor
+  reads "not measured", never 0, and a bus factor of 1 gets a "single owner" flag. The evidence is open: code
+  and doc lines link to the scanned commit and show their quote as code; tickets, pages and goals link to their
+  source. The full write-up and the triage history follow. The decision bar stays at the bottom of the pane.
+  Below 900px there is no pane: the selected row opens in place.
 - **Actions.**
   - **Accept** opens a dialog with the target Jira project and issue type, filled in from the inbox
     setting. It previews the issue summary and description. When the accept succeeds, the issue key shows
@@ -224,13 +228,22 @@ The inbox reads like a pull request for the backlog. It is a queue grouped by pu
   - **Reject** takes one of six reasons: false positive, already known, not our direction, not worth it,
     wrong size, other. Other needs a note.
   - **Snooze** holds the card until its evidence grows.
-- **Bulk.** Tick cards to reject them all with one reason, or to snooze them all.
-- **Keyboard.** `j`/`k` move, `x` selects, `a` accepts, `r` rejects, `s` snoozes, `m` merges, `?` shows
-  help. The keys work only when no dialog or text field has focus.
-- A decided card leaves the view. The other cards stay where they are. A failed action shows its message
-  on the card, and the card stays. **Load more** fetches the next page (50 cards).
+- **Bulk.** Tick rows to reject them all with one reason, or to snooze them all.
+- **Keyboard.** `j`/`k` move the selection, `x` ticks, `a` accepts, `r` rejects, `s` snoozes, `m` merges,
+  `u` undoes a reject or snooze while its notice shows, `?` shows help. In an open dialog, `Ctrl+Enter`
+  confirms and `1`-`6` pick a reject reason. The keys work only when no text field has focus.
+- A decided row leaves the queue and the selection moves to the next one. A failed action shows its message,
+  and the row stays. **Load more** fetches the next page (50 items).
 - An empty view names the last push and its lenses. To get new proposals, run `/dowser` in Claude Code or
   Codex, in the repository.
+
+### Learning (Apps > Dowser > Learning)
+
+A digest first: a few plain sentences written from the data (the last push and its repeat rate, how much was
+accepted, the most common reason to say no, what is waiting). Then **Needs you**: rule offers to accept (the text
+is editable) or decline, and accepted items to rate (**Right call**, **Partly**, **Wrong call**, with an optional
+note), the ones whose Jira issue is done first. Then the supporting detail: lens yield, reject reasons with the
+latest decision notes, and the scan retro with the trend over recent pushes.
 
 ### Settings (Apps > Dowser > Settings)
 
@@ -239,8 +252,8 @@ stores them. Accept files issues there unless the Accept dialog overrides them f
 
 ### Evidence panel (on a Jira issue)
 
-On an issue that Dowser created at Accept, the **Dowser evidence** panel shows the card read-only: its
-evidence trail, doc impact, delivery risk and triage history. On any other issue, it says "This issue did
+On an issue that Dowser created at Accept, the **Dowser evidence** panel shows the reading-pane content in one
+column, read-only: the facts, the evidence trail, doc impact, delivery risk and triage history. On any other issue, it says "This issue did
 not come from Dowser."
 
 ### Theme and accessibility
@@ -269,6 +282,8 @@ you see:
 | `&fail=<resolver key>` | that resolver fails |
 | `&empty` | no proposals |
 | `&slow` | every call takes 1.5 s, to show the loading state |
+| `&page=<n>` | inbox page size (default 4, small so **Load more** shows) |
+| `&mode=dark` / `&mode=light` | the colour mode (default: the OS setting) |
 
 In the fake, the Billing project refuses issue creation and the Jira key `NOPE-1` fails a merge, so you can
 see both error states. The production build (`npm run forge:build-ui`) never includes the fixture. Build
