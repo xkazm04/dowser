@@ -228,7 +228,8 @@ test('ingest-sources: caches the items for the run and returns citable refs', ()
   ] } });
   assert.equal(r.code, 1);
   assert.equal(r.out.cached, 2);
-  assert.deepEqual(r.out.refs[0], { type: 'ticket', ref: 'SUP-1', url: 'https://j/SUP-1', title: 'Export to CSV please' });
+  assert.deepEqual(r.out.refs[0], { type: 'ticket', ref: 'SUP-1', url: 'https://j/SUP-1', title: 'Export to CSV please', labels: ['ask'], created_at: '2026-10-01T00:00:00Z' });
+  assert.deepEqual(r.out.refs[1], { type: 'ticket', ref: 'SUP-2', url: 'https://j/SUP-2', title: 'Slow login', created_at: '2026-10-02T00:00:00Z' }, 'absent fields omitted');
   assert.equal(r.out.skipped.length, 1);
   assert.equal(ingestSources(db, { runId: run, type: 'ticket', doc: { items: [{ ref: 'SUP-1', title: 'Export (edited)', url: 'https://j/SUP-1', body: 'b' }] } }).code, 0);
   const n = Number(/** @type {any} */ (db.prepare("SELECT COUNT(*) AS n FROM sources_cache WHERE run_id = ? AND type = 'ticket'").get(run)).n);

@@ -19,8 +19,8 @@
 //   GET  /rest/api/3/user/bulk?accountId=&accountId=    -> display names (asApp, read:jira-user)
 //   GET  /wiki/rest/api/content/search?cql=&expand=body.storage,version
 import { NeedsAuthenticationError, asApp, asUser, getAppContext, route } from '@forge/api';
-import { adfToText, htmlToText, trimText } from '../core/adf.mjs';
-import { BODY_MAX } from '../core/sources.mjs';
+import { htmlToText, trimText } from '../core/adf.mjs';
+import { BODY_MAX, TICKET_FIELDS, ticketItem } from '../core/sources.mjs';
 import { AppError, ISSUE_KEY_RE, omitAbsent } from '../core/util.mjs';
 
 /**
@@ -195,16 +195,11 @@ export const sources = {
       const res = await asUser().requestJira(route`/rest/api/3/search/jql`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ jql, maxResults: limit, fields: ['summary', 'description', 'labels', 'created'] }),
+        body: JSON.stringify({ jql, maxResults: limit, fields: TICKET_FIELDS }),
       });
       const out = await json(res, 'Jira search');
       const site = await siteUrl();
-      return (out.issues ?? []).map((/** @type {any} */ i) => /** @type {SourceItem} */ (omitAbsent({
-        ref: String(i.key), title: String(i.fields?.summary ?? ''), url: `${site}/browse/${i.key}`,
-        body: trimText(adfToText(i.fields?.description ?? ''), BODY_MAX),
-        created_at: i.fields?.created ? new Date(i.fields.created).toISOString() : undefined,
-        labels: Array.isArray(i.fields?.labels) && i.fields.labels.length ? i.fields.labels.map(String) : undefined,
-      })));
+      return (out.issues ?? []).map((/** @type {any} */ i) => ticketItem(i, site));
     });
   },
   async pages({ cql, limit }) {

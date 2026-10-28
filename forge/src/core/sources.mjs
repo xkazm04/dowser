@@ -1,11 +1,13 @@
 // @ts-check
 // The three read tools (forge-mcp-2 "Read tools"): validate the scalar inputs, build JQL / CQL, call the
 // Sources port, and return `{items}`. The port does the HTTP and maps the payloads (adapters/atlassian.mjs).
-import { AppError, isIso, needStr, optStr } from './util.mjs';
+import { adfToText, trimText } from './adf.mjs';
+import { AppError, isIso, needStr, omitAbsent, optStr } from './util.mjs';
 
 /**
  * @typedef {import('./ports.mjs').Deps} Deps
  * @typedef {import('./types.mjs').SourcesOutput} SourcesOutput
+ * @typedef {import('./types.mjs').SourceItem} SourceItem
  */
 
 /** Forge's cap on `limit` for tickets (the contract recommends 50). */
@@ -40,6 +42,40 @@ export const textClause = (ts) => `(${ts.map((t) => `text ~ "${t}"`).join(' OR '
 export function jqlDate(iso) {
   const d = new Date(iso).toISOString();
   return `"${d.slice(0, 10)} ${d.slice(11, 16)}"`;
+}
+
+/** The issue fields the tickets search requests (ticketItem reads exactly these). */
+export const TICKET_FIELDS = ['summary', 'description', 'labels', 'components', 'created'];
+
+/**
+ * The non-empty strings of a Jira list field (`labels` are strings, `components` are `{name}` objects), or
+ * undefined when there are none - an absent list is an omitted key, never `[]`.
+ * @param {unknown} v
+ * @returns {string[] | undefined}
+ */
+function names(v) {
+  if (!Array.isArray(v)) return undefined;
+  const out = v.map((x) => String(x && typeof x === 'object' ? x.name ?? '' : x ?? '').trim()).filter(Boolean);
+  return out.length ? out : undefined;
+}
+
+/**
+ * One `/rest/api/3/search/jql` issue as a ticket source item. `labels`, `components` and `created_at` are omitted
+ * when Jira has none (forge-mcp-2 `dowser_sources_tickets`). Pure, so the mapping is tested without @forge/api.
+ * @param {any} issue
+ * @param {string} site the site base URL (no trailing slash)
+ * @returns {SourceItem}
+ */
+export function ticketItem(issue, site) {
+  const f = issue?.fields ?? {};
+  const created = f.created ? new Date(f.created) : undefined;
+  return /** @type {SourceItem} */ (omitAbsent({
+    ref: String(issue.key), title: String(f.summary ?? ''), url: `${site}/browse/${issue.key}`,
+    body: trimText(adfToText(f.description ?? ''), BODY_MAX),
+    created_at: created && !Number.isNaN(created.getTime()) ? created.toISOString() : undefined,
+    labels: names(f.labels),
+    components: names(f.components),
+  }));
 }
 
 /**

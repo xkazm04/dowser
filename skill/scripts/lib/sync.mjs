@@ -415,9 +415,22 @@ function recordIssue(db, fp, issue) {
 // ------------------------------------------------------------------------------------------------ ingest-sources
 
 /**
+ * The non-empty strings of a source item's list field, or undefined (an absent list is an omitted key).
+ * @param {unknown} v
+ * @returns {string[] | undefined}
+ */
+function strList(v) {
+  if (!Array.isArray(v)) return undefined;
+  const out = v.filter(str).map(String);
+  return out.length ? out : undefined;
+}
+
+/**
  * Caches a `dowser_sources_tickets|pages|goals` response `{items: [{ref, title, url, body, ...}]}` in
  * sources_cache for the run (a re-fetch of the same ref in the same run refreshes it) and returns the refs the
- * agent may cite as evidence `{type, ref, url}`.
+ * agent may cite as evidence `{type, ref, url?, title?, components?, labels?, created_at?}`. The ticket fields a
+ * demand table groups by (components, labels, created_at) are returned to the agent only; the cache keeps
+ * ref/title/url/body.
  * @param {Db} db
  * @param {{runId: string, type: string, doc: unknown}} o
  * @returns {{code: number, out: Row}}
@@ -440,7 +453,10 @@ export function ingestSources(db, { runId, type, doc }) {
       const title = str(raw.title) ? String(raw.title) : undefined;
       const url = str(raw.url) ? String(raw.url) : undefined;
       ins.run(runId, type, ref, title ?? null, url ?? null, typeof raw.body === 'string' ? raw.body : null, at);
-      refs.push(/** @type {Row} */ (store.clean({ type, ref, url, title })));
+      refs.push(/** @type {Row} */ (store.clean({
+        type, ref, url, title, components: strList(raw.components), labels: strList(raw.labels),
+        created_at: str(raw.created_at) ? String(raw.created_at) : undefined,
+      })));
     }
     return { code: skipped.length ? 1 : 0, out: store.clean({ run_id: runId, type, cached: refs.length, refs, skipped: skipped.length ? skipped : undefined }) ?? {} };
   });
