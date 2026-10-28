@@ -136,7 +136,7 @@ Input:
 |---|---|---|
 | `project_key` | string | required |
 | `run_id` | string | required. The Dowser run that pushed. Forge records it per push |
-| `proposals_json` | string | required. A JSON array; each element a full `dowser-proposal/1` record (`skill/schema/dowser-proposal-1.schema.json`): identity, card, every evidence item, sizing, risk, provenance and triage fields, with `status` `verified` (a first push) or `pushed` (a re-push after evidence grew). At most 50 records |
+| `proposals_json` | string | required. A JSON array; each element a full `dowser-proposal/1` record (`skill/schema/dowser-proposal-1.schema.json`): identity, card, every evidence item, sizing, risk, the optional `artifacts` (supporting views), provenance and triage fields, with `status` `verified` (a first push) or `pushed` (a re-push after evidence grew). At most 50 records |
 | `repo_url` | string | optional. The repo's web URL, credentials stripped (`https://github.com/Acme/Shop`). Omitted when the repo has no `origin` |
 | `head_sha` | string | optional. The commit the run scanned. Forge links `code`/`doc` evidence to `<repo_url>/blob/<head_sha>/<path>#L<line>` (GitHub) or `<repo_url>/src/<head_sha>/<path>#lines-<line>` (Bitbucket), and shows the plain ref for any other host |
 
@@ -301,3 +301,10 @@ verdict like a reject note. A note is at most 2000 characters on every decision.
 
 This is `forge-mcp-2`. An additive change (a new optional field, a new error code, a new tool) keeps the
 version. A removed or renamed field, a new required field, or a changed meaning makes `forge-mcp-3`.
+
+Additive amendments:
+
+- **Supporting views (2026-10-28).** A record may carry `artifacts` (at most 3; `table`, `flow`,
+  `before-after`, `matrix`). Forge validates them with the shared `validateCandidate`, so a push carrying an
+  artifact whose `refs` are not in the record's own evidence is refused as `invalid`. Forge stores them with
+  the card and renders them in the inbox, the issue panel and the issue that Accept creates.

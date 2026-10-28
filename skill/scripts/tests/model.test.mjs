@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  BLASTS, CONFIDENCES, EVIDENCE_TYPES, LENSES, REASONS, SIZES, STATUSES, TRANSITIONS,
+  ARTIFACT_KINDS, ARTIFACT_LIMITS, BLASTS, CONFIDENCES, FLOW_MARKS, EVIDENCE_TYPES, LENSES, REASONS, SIZES, STATUSES, TRANSITIONS,
   canMove, decisionProblem, validateCandidate,
 } from '../lib/model.mjs';
 import { candidate } from './_fixture.mjs';
@@ -50,6 +50,35 @@ test('the transition table is D4', () => {
   assert.deepEqual(Object.keys(TRANSITIONS).sort(), [...STATUSES].sort(), 'every status has a row');
 });
 
+test('artifacts: the four kinds validate, drawn from the card\'s own evidence', () => {
+  const ref = 'src/auth.js:2';
+  const base = { message: 'One message', alt: 'A short text alternative.', refs: [ref] };
+  const ok = [
+    { kind: 'table', ...base, data: { columns: ['Doc says', 'Code does'], rows: [['--legacy', '--force, --seed']], highlight: [0] } },
+    { kind: 'flow', ...base, data: { steps: [{ label: 'Pay' }, { label: 'Declined', mark: 'failure' }] } },
+    { kind: 'before-after', ...base, data: { measure: 'Steps to pay', before: ['5 steps'], after: ['3 steps'] } },
+    { kind: 'matrix', ...base, data: { rows: ['SBOM'], columns: ['Status'], cells: [[{ v: 'missing', level: 3 }]] } },
+  ];
+  for (const a of ok) assert.equal(why(candidate({ artifacts: [a] })), 'ok', a.kind);
+  assert.equal(why(candidate({ artifacts: ok.slice(0, 3) })), 'ok', 'three per card');
+});
+
+test('artifacts: refusals name the field', () => {
+  const ref = 'src/auth.js:2';
+  const t = (over = {}, data = {}) => ({ kind: 'table', message: 'm', alt: 'a', refs: [ref], data: { columns: ['A'], rows: [['1']], ...data }, ...over });
+  assert.match(why(candidate({ artifacts: [] })), /^artifacts:must be a non-empty array/);
+  assert.match(why(candidate({ artifacts: [t(), t(), t(), t()] })), /at most 3/);
+  assert.match(why(candidate({ artifacts: [t({ kind: 'chart' })] })), /\.kind:/);
+  assert.match(why(candidate({ artifacts: [t({ refs: ['OTHER-1'] })] })), /OTHER-1 is not in this card's evidence/);
+  assert.match(why(candidate({ artifacts: [t({ message: 'two\nlines' })] })), /\.message:/);
+  assert.match(why(candidate({ artifacts: [t({ alt: '' })] })), /\.alt:/);
+  assert.match(why(candidate({ artifacts: [t({}, { rows: [['1', '2']] })] })), /rows\[0\]:must have 1/);
+  assert.match(why(candidate({ artifacts: [t({}, { highlight: [5] })] })), /highlight/);
+  assert.match(why(candidate({ artifacts: [{ kind: 'flow', message: 'm', alt: 'a', refs: [ref], data: { steps: [{ label: 'only one' }] } }] })), /steps:2-8/);
+  assert.match(why(candidate({ artifacts: [{ kind: 'matrix', message: 'm', alt: 'a', refs: [ref], data: { rows: ['r'], columns: ['c'], cells: [[{ v: 'x', level: 4 }]] } }] })), /level:0-3/);
+  assert.match(why(candidate({ artifacts: [t({}, { highlight: null })] })), /^null-at:artifacts\[0\]\.data\.highlight/, 'never null');
+});
+
 test('the JSON Schema twin carries the same enums as model.mjs', () => {
   const schema = JSON.parse(readFileSync(new URL('../../schema/dowser-proposal-1.schema.json', import.meta.url), 'utf8'));
   const d = schema.$defs;
@@ -61,4 +90,8 @@ test('the JSON Schema twin carries the same enums as model.mjs', () => {
   assert.deepEqual(d.confidence.enum, [...CONFIDENCES]);
   assert.deepEqual(d.deliveryRisk.properties.blast.enum, [...BLASTS]);
   assert.equal(d.title.maxLength, 80);
+  assert.deepEqual(d.artifactList.items.properties.kind.enum, [...ARTIFACT_KINDS]);
+  assert.equal(d.artifactList.maxItems, ARTIFACT_LIMITS.perCard);
+  assert.deepEqual(d.flowData.properties.steps.items.properties.mark.enum, [...FLOW_MARKS]);
+  assert.ok(schema.properties.artifacts && d.candidate.properties.artifacts, 'record and candidate both carry artifacts');
 });

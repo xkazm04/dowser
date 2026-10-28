@@ -21,6 +21,7 @@
     "confidence_why": { "$ref": "#/$defs/text" },
     "doc_impact": { "$ref": "#/$defs/stringList" },
     "delivery_risk": { "$ref": "#/$defs/deliveryRisk" },
+    "artifacts": { "$ref": "#/$defs/artifactList" },
     "provenance": { "$ref": "#/$defs/provenance" },
     "status": { "enum": ["candidate", "verified", "dropped", "rejected", "snoozed", "merged", "pushed", "accepted"] },
     "reason": { "enum": ["false-positive", "already-known", "not-our-direction", "not-worth-it", "wrong-size", "other"] },
@@ -57,6 +58,7 @@
         "confidence_why": { "$ref": "#/$defs/text" },
         "doc_impact": { "$ref": "#/$defs/stringList" },
         "delivery_risk": { "$ref": "#/$defs/deliveryRisk" },
+        "artifacts": { "$ref": "#/$defs/artifactList" },
         "provenance": { "$ref": "#/$defs/provenance" }
       }
     },
@@ -95,6 +97,62 @@
       }
     },
     "confidence": { "enum": ["low", "medium", "high"] },
+    "artifactList": {
+      "description": "Supporting views (omit the key when none), max 3. Each: a one-line message stated first, a text alternative, the refs of this card's own evidence it was drawn from (membership checked by the validator), and kind-specific data. Table rows carry one cell per column and matrix cells one row per row label and one cell per column - checked by the validator.",
+      "type": "array", "minItems": 1, "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "message", "alt", "refs", "data"],
+        "properties": {
+          "kind": { "enum": ["table", "flow", "before-after", "matrix"] },
+          "message": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "^[^\\r\\n]+$" },
+          "alt": { "type": "string", "minLength": 1, "maxLength": 400 },
+          "refs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+          "data": { "oneOf": [
+            { "$ref": "#/$defs/tableData" }, { "$ref": "#/$defs/flowData" }, { "$ref": "#/$defs/beforeAfterData" }, { "$ref": "#/$defs/matrixData" }
+          ] }
+        }
+      }
+    },
+    "artifactLabel": { "type": "string", "minLength": 1, "maxLength": 40, "pattern": "^[^\\r\\n]+$" },
+    "artifactLine": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[^\\r\\n]+$" },
+    "tableData": {
+      "type": "object", "additionalProperties": false, "required": ["columns", "rows"],
+      "properties": {
+        "columns": { "type": "array", "minItems": 1, "maxItems": 6, "items": { "$ref": "#/$defs/artifactLabel" } },
+        "rows": { "type": "array", "minItems": 1, "maxItems": 12, "items": { "type": "array", "items": { "type": "string", "maxLength": 80, "pattern": "^[^\\r\\n]*$" } } },
+        "highlight": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 0 }, "description": "row indexes to emphasise; omit when none" }
+      }
+    },
+    "flowData": {
+      "type": "object", "additionalProperties": false, "required": ["steps"],
+      "properties": {
+        "steps": { "type": "array", "minItems": 2, "maxItems": 8, "items": {
+          "type": "object", "additionalProperties": false, "required": ["label"],
+          "properties": { "label": { "$ref": "#/$defs/artifactLabel" }, "mark": { "enum": ["friction", "failure", "missing", "new"] } }
+        } }
+      }
+    },
+    "beforeAfterData": {
+      "type": "object", "additionalProperties": false, "required": ["measure", "before", "after"],
+      "properties": {
+        "measure": { "$ref": "#/$defs/artifactLabel" },
+        "before": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/artifactLine" } },
+        "after": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/artifactLine" } }
+      }
+    },
+    "matrixData": {
+      "type": "object", "additionalProperties": false, "required": ["rows", "columns", "cells"],
+      "properties": {
+        "rows": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/artifactLabel" } },
+        "columns": { "type": "array", "minItems": 1, "maxItems": 6, "items": { "$ref": "#/$defs/artifactLabel" } },
+        "cells": { "type": "array", "items": { "type": "array", "items": {
+          "type": "object", "additionalProperties": false, "required": ["v"],
+          "properties": { "v": { "type": "string", "maxLength": 40 }, "level": { "enum": [0, 1, 2, 3], "description": "shade, 0 lowest; omit when none" } }
+        } } }
+      }
+    },
     "deliveryRisk": {
       "type": "object",
       "additionalProperties": false,

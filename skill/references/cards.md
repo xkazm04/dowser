@@ -72,6 +72,35 @@ Falsified if: <the observation that would show this proposal is wrong>
 Take the highest rung you reached. If the rung above was within reach, say why you stopped.
 Do not add extra sections; anything else goes under Description.
 
+## Artifacts - optional supporting views
+
+A card may carry up to three `artifacts`: small views that let the person triaging see the structure of
+the claim at a glance. Attach one only when it does a job the five sections cannot. The test: three or
+more lines of the body walk through a comparison, a sequence, a before/after or a grid of judgments.
+Omit the key when there is none, and never write an empty list.
+
+| kind | Use it for | `data` |
+| --- | --- | --- |
+| `table` | several items compared on the same attributes ("doc says / code does", package / advisory / fixed in) | `{columns[<=6], rows[<=12][one cell per column], highlight?[row indexes]}` |
+| `flow` | a sequence of user or system steps with the failing or missing one marked | `{steps[2-8]: {label, mark?: friction\|failure\|missing\|new}}` |
+| `before-after` | the same measure today and once shipped (steps, clicks, error path) | `{measure, before[<=8], after[<=8]}` |
+| `matrix` | a grid of judgments (obligation x status, theme x goal) | `{rows[<=8], columns[<=6], cells[row][column]: {v, level?: 0-3}}` |
+
+Every artifact also carries:
+
+- `message`: the one thing it shows, one line, at most 120 chars, stated as a finding ("Two of three
+  install steps name a flag the CLI removed"). It must describe the most visible feature of the view.
+- `alt`: a text alternative of at most 400 chars. Give the view type, its topic and the key fact in
+  neutral words, without your interpretation. It is all a screen reader, the Rovo agent or a broken
+  renderer shows.
+- `refs`: the refs of this card's own `evidence` that the view was drawn from, at least one.
+  `propose` refuses a ref that is not in the card's evidence. A view only re-arranges evidence and
+  never adds new claims.
+
+Text inside a view is labels: two to six words per cell or step, numbers with units. Sentences belong
+in the body. Do not attach a view that repeats the facts grid (effort, confidence, risk), and do not
+decorate. A view with nothing to compare is noise, and noise counts against the lens's precision.
+
 ## Evidence - rules per type
 
 | type | `ref` | `quote` | Notes |

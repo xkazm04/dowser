@@ -22,7 +22,7 @@ import {
 } from './model.mjs';
 import { evidenceKey, fingerprint, normalizeAnchor, normalizeTopic } from './fingerprint.mjs';
 
-export const USER_VERSION = 3;
+export const USER_VERSION = 4;
 /** The decider the store itself writes for machine moves (creation, resurfacing). */
 export const SYSTEM_DECIDER = 'skill:dowser';
 
@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS proposals (
   external_url        TEXT,
   issue_ref           TEXT, -- v2: the Jira issue an accepted verdict created (forge-mcp-2), else NULL
   issue_url           TEXT, -- v2: a link to that issue
+  artifacts_json      TEXT, -- v4: the card's supporting views (model.mjs ARTIFACT_KINDS), else NULL
   decided_by          TEXT,
   decided_at          TEXT,
   first_run_id        TEXT NOT NULL REFERENCES runs (id),
@@ -191,6 +192,11 @@ CREATE INDEX IF NOT EXISTS outcomes_fp ON outcomes (fp, id);
 CREATE TRIGGER IF NOT EXISTS outcomes_no_update BEFORE UPDATE ON outcomes BEGIN SELECT RAISE(ABORT, 'outcomes is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS outcomes_no_delete BEFORE DELETE ON outcomes BEGIN SELECT RAISE(ABORT, 'outcomes is append-only'); END;
 PRAGMA user_version = 3;
+`,
+  3: `
+-- v4: supporting views (tables, flows, before/after, matrices) a card may carry.
+ALTER TABLE proposals ADD COLUMN artifacts_json TEXT;
+PRAGMA user_version = 4;
 `,
 };
 
@@ -518,7 +524,7 @@ export function propose(db, runId, input, { kinds }) {
   const card = {
     title: c.title, rationale: c.rationale, body: c.body, effort_json: json(c.effort), confidence: c.confidence,
     confidence_why: c.confidence_why, doc_impact_json: json(c.doc_impact), delivery_risk_json: json(c.delivery_risk),
-    provenance_json: json(provenance),
+    provenance_json: json(provenance), artifacts_json: json(c.artifacts),
   };
 
   return tx(db, () => {
@@ -543,17 +549,17 @@ export function propose(db, runId, input, { kinds }) {
       return added;
     };
     const refreshCard = () => db.prepare(`UPDATE proposals SET title = ?, rationale = ?, body = ?, effort_json = ?, confidence = ?,
-        confidence_why = ?, doc_impact_json = ?, delivery_risk_json = ?, provenance_json = ?, updated_at = ? WHERE fp = ?`)
+        confidence_why = ?, doc_impact_json = ?, delivery_risk_json = ?, provenance_json = ?, artifacts_json = ?, updated_at = ? WHERE fp = ?`)
       .run(card.title, card.rationale, card.body, card.effort_json, card.confidence, card.confidence_why,
-        card.doc_impact_json, card.delivery_risk_json, card.provenance_json, at, fp);
+        card.doc_impact_json, card.delivery_risk_json, card.provenance_json, card.artifacts_json, at, fp);
 
     if (!existing) {
       db.prepare(`INSERT INTO proposals (fp, lens, kind, topic, anchors_json, title, rationale, body, effort_json, confidence,
-          confidence_why, doc_impact_json, delivery_risk_json, provenance_json, status, first_run_id, last_run_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'candidate', ?, ?, ?, ?)`)
+          confidence_why, doc_impact_json, delivery_risk_json, provenance_json, artifacts_json, status, first_run_id, last_run_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'candidate', ?, ?, ?, ?)`)
         .run(fp, c.lens, c.kind, normalizeTopic(c.topic), JSON.stringify(anchors), card.title, card.rationale, card.body,
           card.effort_json, card.confidence, card.confidence_why, card.doc_impact_json, card.delivery_risk_json,
-          card.provenance_json, runId, runId, at, at);
+          card.provenance_json, card.artifacts_json, runId, runId, at, at);
       const added = addEvidence();
       appendTransition(db, { fp, from: undefined, to: 'candidate', by: SYSTEM_DECIDER, at, runId });
       return /** @type {ProposeResult} */ (clean({ result: 'created', fp, added, status: 'candidate', note }));

@@ -81,6 +81,10 @@ M = `emitted + truncated`.
 - **Sizing:** `effort{size: XS|S|M|L|XL, days_low?, days_high?, basis?[]}`, plus `confidence`
   (`low|medium|high`) and `confidence_why`.
 - **Risk:** `doc_impact?[]` and `delivery_risk?{blast: low|medium|high, bus_factor?}`.
+- **Supporting views:** `artifacts?[]`, at most 3, each `{kind: table|flow|before-after|matrix, message, alt,
+  refs[], data}`. `refs` must name evidence refs on the same card. The kind-specific `data` shapes and
+  caps are in `skill/references/cards.md` and the schema. The store keeps them in `artifacts_json`
+  (store v4). A re-propose replaces them, the same as the other card fields.
 - **Provenance:** `provenance{lens_version, model?, harness?, run_id?, focus?}`. `propose` always stamps
   `run_id` from `--run`, so the agent may omit it. A line carrying a different `run_id` is overwritten, not
   refused, and that line's output gets a `note`. `model`, `harness` and `focus` default from the run.

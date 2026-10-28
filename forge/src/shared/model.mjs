@@ -26,6 +26,13 @@ export const RUN_MODES = /** @type {const} */ (['full', 'incremental', 'focused'
 export const RUN_STATUSES = /** @type {const} */ (['running', 'done', 'failed']);
 export const LENS_STATES = /** @type {const} */ (['ran', 'skipped', 'partial']);
 export const TITLE_MAX = 80;
+/** Supporting views a card may carry (`artifacts[]`): one message each, drawn from the card's own evidence. */
+export const ARTIFACT_KINDS = /** @type {const} */ (['table', 'flow', 'before-after', 'matrix']);
+export const FLOW_MARKS = /** @type {const} */ (['friction', 'failure', 'missing', 'new']);
+export const ARTIFACT_LIMITS = Object.freeze({
+  perCard: 3, message: 120, alt: 400, label: 40, cell: 80,
+  tableColumns: 6, tableRows: 12, flowSteps: 8, sideLines: 8, matrixRows: 8, matrixColumns: 6,
+});
 
 /**
  * Status transition table (D4): from -> the statuses it may move to. Every move is a compare-and-set
@@ -89,11 +96,17 @@ export function deciderAllowed(from, to, by) {
  * @typedef {{size: Size, days_low?: number, days_high?: number, basis?: string[]}} Effort
  * @typedef {{blast: typeof BLASTS[number], bus_factor?: number}} DeliveryRisk
  * @typedef {{lens_version: string, model?: string, harness?: string, run_id?: string, focus?: string}} Provenance
+ * @typedef {{columns: string[], rows: string[][], highlight?: number[]}} TableData
+ * @typedef {{steps: {label: string, mark?: typeof FLOW_MARKS[number]}[]}} FlowData
+ * @typedef {{measure: string, before: string[], after: string[]}} BeforeAfterData
+ * @typedef {{rows: string[], columns: string[], cells: {v: string, level?: 0|1|2|3}[][]}} MatrixData
+ * @typedef {{kind: typeof ARTIFACT_KINDS[number], message: string, alt: string, refs: string[],
+ *   data: TableData | FlowData | BeforeAfterData | MatrixData}} Artifact
  * @typedef {{
  *   fp?: string, lens: Lens, kind: string, topic: string, anchors: string[],
  *   title: string, rationale: string, body: string,
  *   evidence: Evidence[], effort: Effort, confidence: Confidence, confidence_why: string,
- *   doc_impact?: string[], delivery_risk?: DeliveryRisk, provenance: Provenance
+ *   doc_impact?: string[], delivery_risk?: DeliveryRisk, artifacts?: Artifact[], provenance: Provenance
  * }} Candidate
  * @typedef {Candidate & {
  *   fp: string, status: Status, reason?: Reason, note?: string, merged_into?: string,
@@ -150,7 +163,7 @@ export function canMove(from, to) {
 }
 
 const CANDIDATE_KEYS = ['fp', 'lens', 'kind', 'topic', 'anchors', 'title', 'rationale', 'body', 'evidence', 'effort',
-  'confidence', 'confidence_why', 'doc_impact', 'delivery_risk', 'provenance'];
+  'confidence', 'confidence_why', 'doc_impact', 'delivery_risk', 'artifacts', 'provenance'];
 /** Triage fields the store owns; a candidate line that carries one is refused. */
 export const STORE_OWNED = ['status', 'reason', 'note', 'merged_into', 'external_ref', 'external_url', 'decided_by', 'decided_at'];
 
@@ -191,6 +204,87 @@ const extraKey = (o, allowed) => Object.keys(o).find((k) => !allowed.includes(k)
  */
 export function bodySections(body) {
   return [...body.matchAll(/^##[ \t]+(.+?)[ \t]*#*[ \t]*$/gm)].map((m) => m[1].trim());
+}
+
+/** @param {unknown} v @param {number} max */
+const short = (v, max) => str(v) && /** @type {string} */ (v).length <= max && !/[\r\n]/.test(/** @type {string} */ (v));
+/** @param {unknown} v @param {number} maxItems @param {number} maxLen */
+const shortList = (v, maxItems, maxLen) => Array.isArray(v) && v.length > 0 && v.length <= maxItems && v.every((x) => short(x, maxLen));
+
+/**
+ * Why `artifacts` is invalid, or undefined. Each artifact is one supporting view: a one-line message, a text
+ * alternative, the refs of the card's own evidence it was drawn from, and kind-specific data within the caps.
+ * @param {unknown} list
+ * @param {string[]} evidenceRefs
+ * @returns {string | undefined}
+ */
+export function artifactsProblem(list, evidenceRefs) {
+  const L = ARTIFACT_LIMITS;
+  if (!Array.isArray(list) || list.length === 0) return 'artifacts:must be a non-empty array (omit when none)';
+  if (list.length > L.perCard) return `artifacts:at most ${L.perCard} per card`;
+  for (let i = 0; i < list.length; i++) {
+    const at = `artifacts[${i}]`;
+    const a = list[i];
+    if (!obj(a)) return `${at}:not an object`;
+    const x = extraKey(a, ['kind', 'message', 'alt', 'refs', 'data']);
+    if (x) return `${at}:unknown field ${x}`;
+    if (!isOneOf(ARTIFACT_KINDS, a.kind)) return `${at}.kind:must be one of ${ARTIFACT_KINDS.join('|')}`;
+    if (!short(a.message, L.message)) return `${at}.message:one line, at most ${L.message} chars`;
+    if (!str(a.alt) || /** @type {string} */ (a.alt).length > L.alt) return `${at}.alt:required, at most ${L.alt} chars`;
+    if (!strList(a.refs) || /** @type {string[]} */ (a.refs).length === 0) return `${at}.refs:at least one evidence ref`;
+    const stray = /** @type {string[]} */ (a.refs).find((r) => !evidenceRefs.includes(r));
+    if (stray) return `${at}.refs:${stray} is not in this card's evidence`;
+    if (!obj(a.data)) return `${at}.data:required`;
+    const d = /** @type {Record<string, unknown>} */ (a.data);
+    if (a.kind === 'table') {
+      const dx = extraKey(d, ['columns', 'rows', 'highlight']);
+      if (dx) return `${at}.data:unknown field ${dx}`;
+      if (!shortList(d.columns, L.tableColumns, L.label)) return `${at}.data.columns:1-${L.tableColumns} labels of at most ${L.label} chars`;
+      const n = /** @type {string[]} */ (d.columns).length;
+      if (!Array.isArray(d.rows) || d.rows.length === 0 || d.rows.length > L.tableRows) return `${at}.data.rows:1-${L.tableRows} rows`;
+      const bad = d.rows.findIndex((r) => !Array.isArray(r) || r.length !== n || !r.every((c) => typeof c === 'string' && c.length <= L.cell && !/[\r\n]/.test(c)));
+      if (bad >= 0) return `${at}.data.rows[${bad}]:must have ${n} one-line cells of at most ${L.cell} chars`;
+      if (d.highlight !== undefined && !(Array.isArray(d.highlight) && d.highlight.length > 0
+        && d.highlight.every((h) => Number.isInteger(h) && h >= 0 && h < /** @type {unknown[]} */ (d.rows).length))) {
+        return `${at}.data.highlight:row indexes (omit when none)`;
+      }
+    } else if (a.kind === 'flow') {
+      const dx = extraKey(d, ['steps']);
+      if (dx) return `${at}.data:unknown field ${dx}`;
+      if (!Array.isArray(d.steps) || d.steps.length < 2 || d.steps.length > L.flowSteps) return `${at}.data.steps:2-${L.flowSteps} steps`;
+      for (let s = 0; s < d.steps.length; s++) {
+        const st = d.steps[s];
+        if (!obj(st) || extraKey(st, ['label', 'mark'])) return `${at}.data.steps[${s}]:{label, mark?}`;
+        if (!short(st.label, L.label)) return `${at}.data.steps[${s}].label:at most ${L.label} chars`;
+        if (st.mark !== undefined && !isOneOf(FLOW_MARKS, st.mark)) return `${at}.data.steps[${s}].mark:must be one of ${FLOW_MARKS.join('|')}`;
+      }
+    } else if (a.kind === 'before-after') {
+      const dx = extraKey(d, ['measure', 'before', 'after']);
+      if (dx) return `${at}.data:unknown field ${dx}`;
+      if (!short(d.measure, L.label)) return `${at}.data.measure:at most ${L.label} chars`;
+      if (!shortList(d.before, L.sideLines, L.cell)) return `${at}.data.before:1-${L.sideLines} lines of at most ${L.cell} chars`;
+      if (!shortList(d.after, L.sideLines, L.cell)) return `${at}.data.after:1-${L.sideLines} lines of at most ${L.cell} chars`;
+    } else {
+      const dx = extraKey(d, ['rows', 'columns', 'cells']);
+      if (dx) return `${at}.data:unknown field ${dx}`;
+      if (!shortList(d.rows, L.matrixRows, L.label)) return `${at}.data.rows:1-${L.matrixRows} labels of at most ${L.label} chars`;
+      if (!shortList(d.columns, L.matrixColumns, L.label)) return `${at}.data.columns:1-${L.matrixColumns} labels of at most ${L.label} chars`;
+      const nr = /** @type {string[]} */ (d.rows).length;
+      const nc = /** @type {string[]} */ (d.columns).length;
+      if (!Array.isArray(d.cells) || d.cells.length !== nr) return `${at}.data.cells:one row of cells per row label`;
+      for (let r = 0; r < nr; r++) {
+        const row = d.cells[r];
+        if (!Array.isArray(row) || row.length !== nc) return `${at}.data.cells[${r}]:one cell per column`;
+        for (let c = 0; c < nc; c++) {
+          const cell = row[c];
+          if (!obj(cell) || extraKey(cell, ['v', 'level'])) return `${at}.data.cells[${r}][${c}]:{v, level?}`;
+          if (typeof cell.v !== 'string' || cell.v.length > L.label) return `${at}.data.cells[${r}][${c}].v:a string of at most ${L.label} chars`;
+          if (cell.level !== undefined && ![0, 1, 2, 3].includes(/** @type {number} */ (cell.level))) return `${at}.data.cells[${r}][${c}].level:0-3 (omit when none)`;
+        }
+      }
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -262,6 +356,11 @@ export function validateCandidate(input) {
     if (dr.bus_factor !== undefined && !(Number.isInteger(dr.bus_factor) && /** @type {number} */ (dr.bus_factor) >= 1)) {
       return no('delivery_risk.bus_factor:must be an integer >= 1 (omit when not computed)');
     }
+  }
+
+  if (o.artifacts !== undefined) {
+    const why = artifactsProblem(o.artifacts, /** @type {Record<string, unknown>[]} */ (o.evidence).map((e) => String(e.ref)));
+    if (why) return no(why);
   }
 
   if (!obj(o.provenance)) return no('provenance:required');
