@@ -80,6 +80,11 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
               <option value="">Choose a project</option>
               {meta.projects.map((p) => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
             </select>
+            <span className="dw-subtlest">
+              {inbox?.jira_project_key
+                ? `Filled in from this inbox's default (${inbox.jira_project_key}). Change it for this issue here; change the default in Settings.`
+                : 'This inbox has no default project yet. Set one in Settings so every accept starts there.'}
+            </span>
           </div>
           <div className="dw-field">
             <label htmlFor="dw-acc-type">Issue type</label>

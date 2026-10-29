@@ -14,7 +14,9 @@ import { wakeSnoozed } from './proposals.mjs';
  * base is no longer in the repository's history (`hasCommit` says so) starts as `full` instead, without a base,
  * and the returned row carries `fallback` saying why: a diff against a missing commit cannot be taken.
  * In the same transaction it wakes every snoozed item whose `snooze_until` is on or before `today` (the local
- * date; see wakeSnoozed); the returned row carries `woke: [fp, ...]` when any woke.
+ * date; see wakeSnoozed); the returned row carries `woke: [fp, ...]` when any woke. It also closes runs left
+ * `running` for more than ABANDONED_AFTER_MS (an interrupted scan never calls `run finish`) as `failed`, so their
+ * fetched ticket, page and goal text is dropped like a finished run's; the row lists them as `abandoned`.
  * @param {Db} db
  * @param {{mode: string, harness?: string, model?: string, focus?: string, headSha?: string, hasCommit?: (sha: string) => boolean, today?: string}} o
  * @returns {Row}
@@ -25,6 +27,7 @@ export function runStart(db, { mode, harness, model, focus, headSha, hasCommit, 
   if (focus !== undefined && !/^(goal|area):\S/.test(focus)) throw new DowserError('--focus is goal:<...> or area:<...>', 2);
   if (focus !== undefined && mode !== 'focused') throw new DowserError('--focus goes with --mode focused', 2);
   return tx(db, () => {
+    const abandoned = closeAbandoned(db);
     const base = lastDoneRun(db);
     const lost = mode === 'incremental' && base?.head_sha && hasCommit ? !hasCommit(base.head_sha) : false;
     const id = newRunId();
@@ -34,8 +37,35 @@ export function runStart(db, { mode, harness, model, focus, headSha, hasCommit, 
     const row = /** @type {Row} */ (getRun(db, id));
     const woke = wakeSnoozed(db, { today, runId: id });
     return /** @type {Row} */ (clean({ ...row, fallback: lost ? `base ${base?.head_sha} is not in this history; started a full run` : undefined,
-      woke: woke.length ? woke : undefined }));
+      woke: woke.length ? woke : undefined, abandoned: abandoned.length ? abandoned : undefined }));
   });
+}
+
+/** A run still `running` after this long was interrupted: a scan takes minutes, not a day. */
+export const ABANDONED_AFTER_MS = 24 * 3_600_000;
+
+/**
+ * Closes interrupted runs (`running`, started more than ABANDONED_AFTER_MS ago) as `failed` and drops the source
+ * text no run uses any more. A run started within the window is left alone: it may be a live scan elsewhere.
+ * @param {Db} db
+ * @returns {string[]} the run ids it closed
+ */
+function closeAbandoned(db) {
+  const cutoff = new Date(Date.now() - ABANDONED_AFTER_MS).toISOString();
+  const ids = /** @type {{id: string}[]} */ (db.prepare("UPDATE runs SET status = 'failed', finished_at = ? WHERE status = 'running' AND started_at < ? RETURNING id")
+    .all(now(), cutoff)).map((r) => String(r.id));
+  if (ids.length) dropSourceText(db);
+  return ids.sort();
+}
+
+/**
+ * Ticket, page and goal text is the team's, fetched for one run only: once no run is using it, keep the ref, title
+ * and url a card cites and drop the body (also for runs that ended before this rule existed).
+ * @param {Db} db
+ */
+function dropSourceText(db) {
+  db.prepare(`UPDATE sources_cache SET body = NULL WHERE body IS NOT NULL AND type IN ('ticket', 'page', 'goal')
+    AND run_id IN (SELECT id FROM runs WHERE status <> 'running')`).run();
 }
 
 /**
@@ -79,10 +109,7 @@ export function runFinish(db, { runId, lenses, status = 'done' }) {
       throw new DowserError(cur ? `run ${runId} is ${cur.status}, not running` : `run ${runId} does not exist`, 2,
         { error: 'refused', run: runId, current: cur ? cur.status : 'not-found' });
     }
-    // Ticket, page and goal text is the team's, fetched for this run only: once no run is using it, keep the ref,
-    // title and url a card cites and drop the body (also for runs that finished before this rule existed).
-    db.prepare(`UPDATE sources_cache SET body = NULL WHERE body IS NOT NULL AND type IN ('ticket', 'page', 'goal')
-      AND run_id IN (SELECT id FROM runs WHERE status <> 'running')`).run();
+    dropSourceText(db);
     return /** @type {Row} */ (getRun(db, runId));
   });
 }

@@ -45,7 +45,7 @@ each planned item to what exists.
 | Scan pipeline on Forge, BYOM, CI webtrigger, code access from Forge | Dropped by design | The scan runs locally through the skill (decision D1/D11 of the local-scan spark) |
 | Lenses 1-4 (Opportunity, UX friction, Doc drift, Security and CRA) | Done | `skill/lenses/` |
 | Lenses 5-6 (Tech debt, Decision consistency) | Not started | Planned as prompt packs on the same template engine; Dec 1 gate allows stubs |
-| Lens 7 Delivery risk | Partial | Map shows churn, authors and bus factor; the per-proposal `delivery_risk` attribute shows "Not measured" because no lens fills it yet |
+| Lens 7 Delivery risk | Partial | Map shows churn, authors and bus factor. Every lens fills the per-proposal `delivery_risk` (`blast` always, `bus_factor` when counted; `references/cards.md`); no lens of its own yet |
 | Proposal model (fingerprint, evidence, effort, confidence, provenance) | Done | `skill/scripts/lib/model.mjs`, shared with Forge as byte copies |
 | Reject reasons tune the lens | Done (local) | Rule offers after 3 matching rejections; exemplars from accepted items |
 | Marketplace listing by week 7 | Not started | Needs a production deploy, app sharing enabled, listing copy, review ticket |

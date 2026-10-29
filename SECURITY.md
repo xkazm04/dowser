@@ -25,7 +25,7 @@ released versions will be stated here when the first release is tagged.
   body, confidence note or views is replaced by "the line at <path:line>". A part of a line, or code the card
   paraphrases, is sent as written.
 - The Jira tickets, Confluence pages and goals a scan reads are cached on its run while it runs. When the
-  run finishes, their text is dropped from the store; their refs, titles and links stay, because cards cite
+  run finishes, or a day after an interrupted scan stopped, their text is dropped from the store; their refs, titles and links stay, because cards cite
   them. The agent's work files (candidate lists, saved tool responses) go in the OS temp folder.
 - Dependency auditing runs `npm audit`, `osv-scanner` or `pip-audit` only when they are already installed.
   Dowser never installs them. They send the project's package names and versions to their advisory

@@ -150,7 +150,8 @@ the push step too. A half-synced memory must not push.
    (a force-push or rebase): the run is `full`. Say so at once, before any lens starts, because
    a full scan takes longer (guided: "Dowser will read the whole project this time, because the
    version it read last time is no longer in the project's history."), and again in the summary.
-   When it prints `woke`, those snoozed items reached their date: name them before the lenses
+   When it prints `abandoned`, earlier scans of this project were interrupted and are now closed
+   as failed: say so in one line. When it prints `woke`, those snoozed items reached their date: name them before the lenses
    start (guided: "<n> proposals you set aside until today are back."), and show them in triage.
 3. An incremental run scans what changed: `git diff --name-only <base_sha>..<head_sha>`, plus
    the files those import, plus any doc that names them. If that list is empty, every lens is

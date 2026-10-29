@@ -275,3 +275,19 @@ test('readResponse unwraps an MCP tool result envelope and refuses a tool error'
   assert.throws(() => readResponse(join(dir, 'missing.json')), /not readable/);
   assert.equal(getState(db, 'nope'), undefined);
 });
+
+test('run start closes a run interrupted more than a day ago and drops its fetched text; a recent one is left alone', () => {
+  const old = runStart(db, { mode: 'full' }).id;
+  const recent = runStart(db, { mode: 'full' }).id;
+  for (const r of [old, recent]) ingestSources(db, { runId: r, type: 'ticket', doc: { items: [{ ref: `SUP-${r}`, title: 't', url: 'https://j/x', body: 'words' }] } });
+  db.prepare('UPDATE runs SET started_at = ? WHERE id = ?').run(new Date(Date.now() - 25 * 3_600_000).toISOString(), old);
+  const next = runStart(db, { mode: 'full' });
+  assert.deepEqual(next.abandoned, [old]);
+  const status = (/** @type {string} */ id) => /** @type {any} */ (db.prepare('SELECT status FROM runs WHERE id = ?').get(id)).status;
+  assert.equal(status(old), 'failed');
+  assert.equal(status(recent), 'running', 'a run within the window may be a live scan');
+  const body = (/** @type {string} */ id) => /** @type {any} */ (db.prepare("SELECT body FROM sources_cache WHERE run_id = ? AND type = 'ticket'").get(id)).body;
+  assert.equal(body(old), null);
+  assert.equal(body(recent), 'words');
+  assert.equal(runStart(db, { mode: 'full' }).abandoned, undefined, 'nothing to close: the key is omitted');
+});
