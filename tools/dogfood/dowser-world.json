@@ -697,6 +697,48 @@
       "components": [
         "Lens: Security"
       ]
+    },
+    {
+      "ref": "DOW-86",
+      "title": "The inbox now shows the demand tables",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-86",
+      "body": "After updating the skill our cards in the Jira inbox finally show the tables the lens builds. Before, they only showed in the terminal.",
+      "created_at": "2026-10-30T12:30:00Z",
+      "labels": [
+        "feedback",
+        "forge"
+      ],
+      "components": [
+        "Forge app"
+      ]
+    },
+    {
+      "ref": "DOW-87",
+      "title": "Snooze until a date in Jira too",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-87",
+      "body": "Same as DOW-55: the dated snooze works in the terminal, but our PMs snooze in Jira.",
+      "created_at": "2026-10-30T12:40:00Z",
+      "labels": [
+        "snooze",
+        "forge"
+      ],
+      "components": [
+        "Forge app",
+        "Triage"
+      ]
+    },
+    {
+      "ref": "DOW-88",
+      "title": "Store keeps growing",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-88",
+      "body": "Our ~/.dowser store is 40 MB after a month of daily scans. Is there a way to compact or prune old runs?",
+      "created_at": "2026-10-30T13:00:00Z",
+      "labels": [
+        "storage"
+      ],
+      "components": [
+        "Skill"
+      ]
     }
   ],
   "pages": [
@@ -705,8 +747,8 @@
       "title": "Dowser beta - getting started",
       "url": "https://dowser-beta.atlassian.net/wiki/spaces/DOW/pages/11",
       "space": "DOW",
-      "updated_at": "2026-10-29T21:30:00Z",
-      "body": "Requirements: Node.js 22.13 or newer and Claude Code or Codex CLI.\n\nInstall from a clone: `node skill/install.mjs --harness claude` (user scope, ~/.claude/skills/dowser) or `--scope project` for one repository. `--dev-link` keeps the installed skill linked to your clone.\n\nRun `/dowser` in the repository you want to scan. `/dowser area: src/checkout` scans one folder; `/dowser goal: <text>` steers the scan towards a goal.\n\nEach scan shows at most 16 proposals, at most 4 per lens, starting with an overview table. Keep, reject, snooze or merge each one. A snoozed proposal comes back when its evidence grows, for example when new tickets ask for it.\n\nDowser never writes into your repository. Its memory is in ~/.dowser/projects/<project key>/dowser.db; set DOWSER_HOME to move it."
+      "updated_at": "2026-10-30T12:00:00Z",
+      "body": "Requirements: Node.js 22.13 or newer and Claude Code or Codex CLI.\n\nInstall from a clone: `node skill/install.mjs --harness claude` (user scope, ~/.claude/skills/dowser) or `--scope project` for one repository. `--dev-link` keeps the installed skill linked to your clone.\n\nRun `/dowser` in the repository you want to scan. `/dowser area: src/checkout` scans one folder; `/dowser goal: <text>` steers the scan towards a goal.\n\nEach scan shows at most 16 proposals, at most 4 per lens, starting with an overview table. Keep, reject, snooze or merge each one. A snoozed proposal comes back when its evidence grows, for example when new tickets ask for it. You can also snooze until a date: it comes back at the first scan on or after that day.\n\nDowser never writes into your repository. Its memory is in ~/.dowser/projects/<project key>/dowser.db; set DOWSER_HOME to move it."
     },
     {
       "ref": "PAGE-12",
@@ -721,8 +763,8 @@
       "title": "Dowser data handling - security review draft",
       "url": "https://dowser-beta.atlassian.net/wiki/spaces/SEC/pages/13",
       "space": "SEC",
-      "updated_at": "2026-10-29T23:30:00Z",
-      "body": "Scope: the Dowser skill on developer laptops and the Dowser for Jira Forge app.\n\nLocal store: one SQLite file per project under ~/.dowser, not encrypted at rest; it holds proposal text and the quoted evidence lines.\n\nWhat leaves the machine: when the Forge app is connected, the skill pushes each proposal's text and its evidence, including the quoted source and doc lines (at most one line each), which the inbox and the Jira issue show.\n\nDependency auditing runs npm audit, osv-scanner or pip-audit only when they are already installed; Dowser never installs them. The auditors send package names and versions to their advisory services (npm registry, osv.dev, PyPI).\n\nVulnerability reports: send them to the security contact in the repository's SECURITY.md."
+      "updated_at": "2026-10-30T12:00:00Z",
+      "body": "Scope: the Dowser skill on developer laptops and the Dowser for Jira Forge app.\n\nLocal store: one SQLite file per project under ~/.dowser, not encrypted at rest; it holds proposal text and the quoted evidence lines.\n\nWhat leaves the machine: when the Forge app is connected, the skill pushes each proposal's text and its evidence, including the quoted source and doc lines (at most one line each), which the inbox and the Jira issue show. A team can set quotes=omit to push a hash of each line instead of its text; card titles and descriptions are still sent as written.\n\nDependency auditing runs npm audit, osv-scanner or pip-audit only when they are already installed; Dowser never installs them. The auditors send package names and versions to their advisory services (npm registry, osv.dev, PyPI).\n\nVulnerability reports: send them to the security contact in the repository's SECURITY.md."
     },
     {
       "ref": "PAGE-14",
