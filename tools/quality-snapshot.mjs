@@ -118,9 +118,9 @@ const cliCommands = (readFileSync(join(ROOT, 'skill/scripts/dowser.mjs'), 'utf8'
 /** @type {Record<string, unknown>} */
 const g = {};
 if (gates) {
-  const tc = spawnSync('npm', ['run', 'typecheck'], { cwd: ROOT, encoding: 'utf8', shell: process.platform === 'win32' });
+  const tc = spawnSync('npm run typecheck', { cwd: ROOT, encoding: 'utf8', shell: true });
   g.typecheck = tc.status === 0 ? 'pass' : 'fail';
-  const t = spawnSync('npm', ['test'], { cwd: ROOT, encoding: 'utf8', shell: process.platform === 'win32' });
+  const t = spawnSync('npm test', { cwd: ROOT, encoding: 'utf8', shell: true });
   const num = (/** @type {string} */ k) => Number((t.stdout.match(new RegExp(`ℹ ${k} (\\d+)`)) ?? [])[1] ?? NaN);
   g.tests = num('tests'); g.tests_fail = num('fail');
 }
