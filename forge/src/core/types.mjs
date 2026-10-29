@@ -108,10 +108,13 @@ export const PAGE_SIZE = 50;
  * @typedef {{lens: string, reason: string, count: number}} RejectCount
  * @typedef {{ref: string, title: string, status: 'accepted' | 'rejected' | 'snoozed', note: string, decided_by_name?: string, decided_at: string}} DecisionNote
  * @typedef {{run_id: string, at: string, head_sha?: string, created: number, updated: number, dup_rate?: number,
- *   open: number, accepted: number, rejected: number, snoozed: number, decided_at?: string, triage_minutes?: number}} PushRetro
- *   open..snoozed = today's status of that push's items. `decided_at` = the latest decision among them and
- *   `triage_minutes` = whole minutes (rounded up) from the run's earliest push to it; both only once none is open
- *   and at least one is accepted, rejected or snoozed (a push of merged items only has neither).
+ *   open: number, accepted: number, rejected: number, snoozed: number, first_decided_at?: string, decided_at?: string,
+ *   deciding_minutes?: number, triage_minutes?: number}} PushRetro
+ *   open..snoozed = today's status of that push's items. `first_decided_at` / `decided_at` = the earliest / latest
+ *   decision among them; `deciding_minutes` = whole minutes (rounded up) from the first decision to the last (the
+ *   time spent deciding, what goal G-1 reads) and `triage_minutes` = whole minutes (rounded up) from the run's
+ *   earliest push to the last decision (includes the time the inbox waited). All four only once none is open and
+ *   at least one is accepted, rejected or snoozed (a push of merged items only has none of them).
  * @typedef {{lens: string, proposed: number, accepted: number, rejected: number, snoozed: number, open: number}} LensYield
  * @typedef {{id: string, lens: string, text: string, titles?: string[], state: RuleState, offered_at: string,
  *   decided_by_name?: string, decided_at?: string}} RuleRow

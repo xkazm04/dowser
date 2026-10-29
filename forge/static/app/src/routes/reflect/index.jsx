@@ -298,8 +298,21 @@ const acceptedShare = (p) => {
   return total > 0 ? p.accepted / total : undefined;
 };
 
-/** Time to triage one push: minutes once every item is decided, "Still open" while any is open, else nothing. */
-const triageText = (p) => (p.triage_minutes !== undefined ? `Triaged in ${p.triage_minutes} min` : p.open > 0 ? 'Still open' : '');
+/**
+ * Time to triage one push once every item is decided: "Decided in N min" (first decision to last, what G-1
+ * reads), then a muted "(N min after the push)" when the push waited before the first decision. "Still open"
+ * while any item is open, else nothing. A push without `deciding_minutes` (an older backend) shows the old text.
+ */
+const triageText = (p) => {
+  if (p.triage_minutes === undefined) return p.open > 0 ? 'Still open' : '';
+  if (p.deciding_minutes === undefined) return `Triaged in ${p.triage_minutes} min`;
+  return (
+    <>
+      Decided in {p.deciding_minutes} min
+      {p.triage_minutes !== p.deciding_minutes && <span className="dwr-muted"> ({p.triage_minutes} min after the push)</span>}
+    </>
+  );
+};
 
 function Retro({ pushes }) {
   const [latest, ...older] = pushes;

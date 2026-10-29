@@ -140,7 +140,8 @@ function toRuleRow(r) {
  * "what did that scan yield, and what became of it" has one stable answer per item, while `last_run_id`
  * moves the item to a newer push every time its evidence grows. `created`/`updated` come from the push rows.
  * Merged items count in no status column, so `open + accepted + rejected + snoozed` may be below `created`.
- * `triage_minutes` (with `decided_at`) is time to triage: see `triageOf`.
+ * `deciding_minutes` (with `first_decided_at`) and `triage_minutes` (with `decided_at`) are time to triage:
+ * see `triageOf`.
  * @param {Db} db
  * @param {string} projectKey
  * @returns {Promise<PushRetro[]>}
@@ -164,7 +165,7 @@ async function pushRetros(db, projectKey) {
   if (newest.length === 0) return [];
   const marks = newest.map(() => '?').join(', ');
   const counts = await db.query(
-    `SELECT first_run_id, status, COUNT(*) AS n, MAX(decided_at) AS last_at FROM proposals
+    `SELECT first_run_id, status, COUNT(*) AS n, MIN(decided_at) AS first_at, MAX(decided_at) AS last_at FROM proposals
       WHERE project_key = ? AND first_run_id IN (${marks}) GROUP BY first_run_id, status`,
     [projectKey, ...newest.map((g) => g.run_id)],
   );
@@ -183,23 +184,32 @@ async function pushRetros(db, projectKey) {
 }
 
 /**
- * Time to triage one push whose items are all decided: the latest `decided_at` among its accepted, rejected and
- * snoozed items, and the whole minutes (rounded up) from the run's earliest push to it. Merged items are not a
- * triage answer of their own, so a push whose items are all merged has neither key; so does a clock that runs
- * backwards (a decision stamped before the push).
+ * Time to triage one push whose items are all decided, as two figures over its accepted, rejected and snoozed
+ * items. `deciding_minutes` runs from the first decision (`first_decided_at`) to the last one (`decided_at`):
+ * the time spent deciding, which goal G-1 reads. `triage_minutes` runs from the run's earliest push to the last
+ * decision, so it also counts the time the inbox waited (a Friday push decided on Monday). Both are whole
+ * minutes rounded up. Merged items are not a triage answer of their own, so a push whose items are all merged
+ * has none of the keys; so does a clock that runs backwards (a last decision stamped before the push).
  * @param {string} pushedAt
- * @param {Row[]} groups  this push's `(status, n, last_at)` rows, without open ones
- * @returns {{decided_at?: string, triage_minutes?: number}}
+ * @param {Row[]} groups  this push's `(status, n, first_at, last_at)` rows, without open ones
+ * @returns {{first_decided_at?: string, decided_at?: string, deciding_minutes?: number, triage_minutes?: number}}
  */
 function triageOf(pushedAt, groups) {
+  let first = '';
   let last = '';
   for (const c of groups) {
     const s = String(c.status);
-    if ((s === 'accepted' || s === 'rejected' || s === 'snoozed') && isIso(c.last_at) && String(c.last_at) > last) last = String(c.last_at);
+    if (s !== 'accepted' && s !== 'rejected' && s !== 'snoozed') continue;
+    if (isIso(c.last_at) && String(c.last_at) > last) last = String(c.last_at);
+    if (isIso(c.first_at) && (!first || String(c.first_at) < first)) first = String(c.first_at);
   }
   const ms = last ? Date.parse(last) - Date.parse(pushedAt) : NaN;
   if (!(ms >= 0)) return {};
-  return { decided_at: last, triage_minutes: Math.ceil(ms / 60000) };
+  if (!first) first = last;
+  return {
+    first_decided_at: first, decided_at: last,
+    deciding_minutes: Math.ceil((Date.parse(last) - Date.parse(first)) / 60000), triage_minutes: Math.ceil(ms / 60000),
+  };
 }
 
 /**

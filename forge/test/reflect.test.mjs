@@ -225,8 +225,10 @@ test('time to triage: minutes from the push to its last decision, only once noth
   const by = Object.fromEntries(data.pushes.map((/** @type {any} */ p) => [p.run_id, p]));
   assert.equal(by['r-1'].triage_minutes, 7);
   assert.equal(by['r-1'].decided_at, new Date(T + 7 * MIN).toISOString());
+  assert.equal(by['r-1'].first_decided_at, new Date(T + 3 * MIN).toISOString());
+  assert.equal(by['r-1'].deciding_minutes, 4);
   for (const k of ['r-2', 'r-3']) {
-    assert.ok(!('decided_at' in by[k]) && !('triage_minutes' in by[k]), `${k} has no triage time`);
+    for (const key of ['decided_at', 'triage_minutes', 'first_decided_at', 'deciding_minutes']) assert.ok(!(key in by[k]), `${k} has no ${key}`);
   }
   assert.equal(by['r-2'].open, 1);
 });
@@ -244,6 +246,38 @@ test('time to triage rounds up and counts from the run\'s earliest push when the
   const [p] = (await res(d, 'reflect.data', { project_key: PK })).pushes;
   assert.equal(p.decided_at, new Date(T + 121_000).toISOString());
   assert.equal(p.triage_minutes, 3);
+  assert.equal(p.first_decided_at, new Date(T + 120_000).toISOString());
+  assert.equal(p.deciding_minutes, 1);
+});
+
+test('deciding minutes: first decision to last, not the weekend the inbox waited; one decision is 0; open has neither', async () => {
+  const MIN = 60_000;
+  const DAYS3 = 3 * 24 * 60 * MIN;
+  const d = await seeded(); // r-1 pushed at T with DW-1..3
+  const T = Date.parse(d.now().toISOString());
+  d.clock.tick(DAYS3);
+  await res(d, 'verdict.reject', { refs: ['DW-1'], reason: 'not-worth-it' }); // T+3d
+  d.clock.tick(4 * MIN);
+  await res(d, 'verdict.snooze', { refs: ['DW-3'] }); // T+3d+4m
+  d.clock.tick(5 * MIN);
+  await res(d, 'verdict.accept', { ref: 'DW-2' }); // T+3d+9m
+  d.clock.tick(MIN);
+  await tool(d, 'dowser_proposals_push', pushArgs([record({ topic: 'delta' })], { run_id: 'r-2' })); // DW-4, decided once
+  d.clock.tick(2 * MIN);
+  await res(d, 'verdict.snooze', { refs: ['DW-4'] });
+  d.clock.tick(MIN);
+  await tool(d, 'dowser_proposals_push', pushArgs([record({ topic: 'epsilon' })], { run_id: 'r-3' })); // DW-5 stays open
+
+  const data = await res(d, 'reflect.data', { project_key: PK });
+  const by = Object.fromEntries(data.pushes.map((/** @type {any} */ p) => [p.run_id, p]));
+  assert.equal(by['r-1'].deciding_minutes, 9);
+  assert.equal(by['r-1'].triage_minutes, (DAYS3 + 9 * MIN) / MIN);
+  assert.equal(by['r-1'].first_decided_at, new Date(T + DAYS3).toISOString());
+  assert.equal(by['r-1'].decided_at, new Date(T + DAYS3 + 9 * MIN).toISOString());
+  assert.equal(by['r-2'].deciding_minutes, 0);
+  assert.equal(by['r-2'].triage_minutes, 2);
+  assert.equal(by['r-2'].first_decided_at, by['r-2'].decided_at);
+  for (const key of ['decided_at', 'triage_minutes', 'first_decided_at', 'deciding_minutes']) assert.ok(!(key in by['r-3']), `r-3 has no ${key}`);
 });
 
 test('names: a failing or missing Users port only drops the names', async () => {

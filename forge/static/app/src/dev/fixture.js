@@ -292,7 +292,7 @@ export const REFLECT = {
       { run_id: PUSHES[1].run_id, at: PUSHES[1].at, head_sha: SHA2, created: 5, updated: 2, dup_rate: 2 / 7, open: 2, accepted: 2, rejected: 2, snoozed: 1 },
       { run_id: PUSHES[2].run_id, at: PUSHES[2].at, head_sha: SHA3, created: 9, updated: 0, dup_rate: 0, open: 2, accepted: 3, rejected: 3, snoozed: 1 },
       { run_id: '2026-10-06T07-55-00Z-e4', at: '2026-10-06T07:58:12.000Z', created: 0, updated: 0, open: 0, accepted: 0, rejected: 0, snoozed: 0 },
-      { run_id: '2026-09-29T15-01-09Z-d2', at: '2026-09-29T15:03:40.000Z', created: 6, updated: 1, dup_rate: 1 / 7, open: 0, accepted: 1, rejected: 4, snoozed: 1, decided_at: '2026-09-29T15:10:31.000Z', triage_minutes: 7 },
+      { run_id: '2026-09-29T15-01-09Z-d2', at: '2026-09-29T15:03:40.000Z', created: 6, updated: 1, dup_rate: 1 / 7, open: 0, accepted: 1, rejected: 4, snoozed: 1, first_decided_at: '2026-09-29T15:06:12.000Z', decided_at: '2026-09-29T15:10:31.000Z', deciding_minutes: 5, triage_minutes: 7 },
     ],
     lens_yield: [
       { lens: 'opportunity', proposed: 11, accepted: 4, rejected: 4, snoozed: 1, open: 2 },
