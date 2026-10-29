@@ -23,8 +23,8 @@ invented beta world the way a team would. The point is long-run behaviour on bot
 The same rules every wave, so later waves are comparable:
 
 1. **Accept** a card that is real (checked against the code, not the card), inside the direction, and serves a
-   goal or a named user pain. **Build at most 3 per wave**, the highest-value first; an accepted card not built
-   this wave goes on the carry-over list in the wave note.
+   goal or a named user pain. **Build at most 3 S-or-larger items per wave**, the highest-value first (XS doc
+   and wording fixes are not capped); an accepted card not built this wave goes on the carry-over list.
 2. **Reject** with the honest reason code: `false-positive` (the evidence does not show it), `already-known`
    (built, or already accepted), `not-our-direction`, `not-worth-it`, `wrong-size`, or `other` with a note.
 3. **Snooze** real work that waits on something named (for example G-3 release work until the release is planned).

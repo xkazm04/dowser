@@ -547,6 +547,61 @@
       "components": [
         "Lens: Security"
       ]
+    },
+    {
+      "ref": "DOW-75",
+      "title": "Installer now refuses Node 22.11",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-75",
+      "body": "After updating Dowser the installer says it needs Node 22.13. We were on 22.11 and installs used to work. Is 22.13 really needed or can it be relaxed?",
+      "created_at": "2026-10-29T22:00:00Z",
+      "labels": [
+        "install",
+        "regression?"
+      ],
+      "components": [
+        "Install"
+      ]
+    },
+    {
+      "ref": "DOW-76",
+      "title": "Security lens found a UI dependency advisory",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-76",
+      "body": "Since the last update the scan audits forge/static/app too and found an advisory there. Good catch; can the card say which version fixes it?",
+      "created_at": "2026-10-29T22:10:00Z",
+      "labels": [
+        "feedback",
+        "monorepo"
+      ],
+      "components": [
+        "Lens: Security"
+      ]
+    },
+    {
+      "ref": "DOW-77",
+      "title": "Only scan what changed since last week",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-77",
+      "body": "Full scans take a while on our repo. Could Dowser look only at what changed since the last scan?",
+      "created_at": "2026-10-29T22:20:00Z",
+      "labels": [
+        "scan-speed"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-78",
+      "title": "Reject reasons are clear now",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-78",
+      "body": "Guided mode asked \"True, but not where we are going\" instead of not-our-direction. Our PM picked real reasons this time.",
+      "created_at": "2026-10-29T22:30:00Z",
+      "labels": [
+        "feedback",
+        "guided-mode"
+      ],
+      "components": [
+        "Triage"
+      ]
     }
   ],
   "pages": [
@@ -555,8 +610,8 @@
       "title": "Dowser beta - getting started",
       "url": "https://dowser-beta.atlassian.net/wiki/spaces/DOW/pages/11",
       "space": "DOW",
-      "updated_at": "2026-10-29T19:30:00Z",
-      "body": "Requirements: Node.js 22 or newer and Claude Code or Codex CLI.\n\nInstall from a clone: `node skill/install.mjs --harness claude` (user scope, ~/.claude/skills/dowser) or `--scope project` for one repository. `--dev-link` keeps the installed skill linked to your clone.\n\nRun `/dowser` in the repository you want to scan. `/dowser area: src/checkout` scans one folder; `/dowser goal: <text>` steers the scan towards a goal.\n\nEach scan shows at most 16 proposals, at most 4 per lens, starting with an overview table. Keep, reject, snooze or merge each one. A snoozed proposal comes back when its evidence grows, for example when new tickets ask for it.\n\nDowser never writes into your repository. Its memory is in ~/.dowser/projects/<project key>/dowser.db; set DOWSER_HOME to move it."
+      "updated_at": "2026-10-29T21:30:00Z",
+      "body": "Requirements: Node.js 22.13 or newer and Claude Code or Codex CLI.\n\nInstall from a clone: `node skill/install.mjs --harness claude` (user scope, ~/.claude/skills/dowser) or `--scope project` for one repository. `--dev-link` keeps the installed skill linked to your clone.\n\nRun `/dowser` in the repository you want to scan. `/dowser area: src/checkout` scans one folder; `/dowser goal: <text>` steers the scan towards a goal.\n\nEach scan shows at most 16 proposals, at most 4 per lens, starting with an overview table. Keep, reject, snooze or merge each one. A snoozed proposal comes back when its evidence grows, for example when new tickets ask for it.\n\nDowser never writes into your repository. Its memory is in ~/.dowser/projects/<project key>/dowser.db; set DOWSER_HOME to move it."
     },
     {
       "ref": "PAGE-12",
