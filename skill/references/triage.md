@@ -12,13 +12,14 @@ status it expects to move from. A move that is illegal, or that comes from a sta
 | `candidate` | `verified` | script | `verify`: every code and doc quote was found |
 | `candidate` | `dropped` | script | `verify`: a quote was missing; note `verify-failed:<ref>` |
 | `verified` | `rejected` | human | `move --to rejected --reason <code>` (pre-triage) |
-| `verified` | `snoozed` | human | `move --to snoozed` |
+| `verified` | `snoozed` | human | `move --to snoozed [--until YYYY-MM-DD]` |
 | `verified` | `merged` | human, or agent for a same-work duplicate | `move --to merged --into <fp>` |
 | `verified` | `pushed` | script | `ingest-push`, after `dowser_proposals_push` |
 | `verified` | `accepted` | human only (`--by human:<name>`) | `move --to accepted` (offline acceptance, see below) |
 | `pushed` | `accepted` / `rejected` / `merged` / `snoozed` | human in Jira (`forge:<jira-user>`) | `ingest-verdicts`, after `dowser_verdicts_pull` |
 | `snoozed` | `candidate` | script | `propose` with any new evidence key (resurfacing) |
 | `snoozed` | `verified` | human | `move --to verified` (the runner un-snoozes it) |
+| `snoozed` | `verified` | store (`skill:dowser`) | `run start`, once the `--until` date has passed |
 | `rejected` | `candidate` | script | `propose` that passes the rejected-resurfacing test |
 | `dropped` | `candidate` | script | `propose` with a new evidence key (a retry after a failed verify) |
 
@@ -56,7 +57,17 @@ until the runner gives one or picks another code. The move is refused without it
 
 "Not now, but tell me if it gets stronger." The item is held back from later scans until its
 evidence grows: **any new evidence key** at the same fingerprint resurfaces it as `candidate`.
-No date is attached. Snoozing is not a soft reject, and it teaches no rule.
+Snoozing is not a soft reject, and it teaches no rule.
+
+A date is optional: "not until after the release" is
+`move <fp> --to snoozed --by human:<name> --until YYYY-MM-DD`. The date must be a real calendar
+day after today, and `--until` is refused on any move that is not to `snoozed` (exit 2). On the
+first `run start` on or after that day (the runner's local date), the item wakes: it moves
+`snoozed -> verified` by `skill:dowser` with the note `snooze until <date> passed`, and
+`run start` lists it under `woke`. Tell the runner which items woke; a woken item is kept and is
+pushed on the next connected run like any other. New evidence still resurfaces a dated item
+early. Leaving `snoozed` by any route clears the date. Without a date, only new evidence brings
+the item back. `list --status snoozed` shows each item's `snooze_until` when it has one.
 
 ## Merge
 
@@ -73,7 +84,7 @@ changes are distinct.
 
 ## Resurfacing (who comes back, and when)
 
-- `snoozed`: comes back on any new evidence key.
+- `snoozed`: comes back on any new evidence key, or (as `verified`) once its `--until` date passes.
 - `rejected`: comes back only if **both** of these hold:
   - a new evidence **type** appears that the item did not have when it was rejected (for
     example a `ticket` where there was only `code`);

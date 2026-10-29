@@ -22,7 +22,7 @@ import {
 } from './model.mjs';
 import { evidenceKey, fingerprint, normalizeAnchor, normalizeTopic } from './fingerprint.mjs';
 
-export const USER_VERSION = 4;
+export const USER_VERSION = 5;
 /** The decider the store itself writes for machine moves (creation, resurfacing). */
 export const SYSTEM_DECIDER = 'skill:dowser';
 
@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS proposals (
   issue_ref           TEXT, -- v2: the Jira issue an accepted verdict created (forge-mcp-2), else NULL
   issue_url           TEXT, -- v2: a link to that issue
   artifacts_json      TEXT, -- v4: the card's supporting views (model.mjs ARTIFACT_KINDS), else NULL
+  snooze_until        TEXT, -- v5: YYYY-MM-DD a snoozed item wakes on (run start); NULL = no date, and NULL once it leaves snoozed
   decided_by          TEXT,
   decided_at          TEXT,
   first_run_id        TEXT NOT NULL REFERENCES runs (id),
@@ -198,6 +199,11 @@ PRAGMA user_version = 3;
 ALTER TABLE proposals ADD COLUMN artifacts_json TEXT;
 PRAGMA user_version = 4;
 `,
+  4: `
+-- v5: an optional date a snoozed item wakes on (move --to snoozed --until YYYY-MM-DD).
+ALTER TABLE proposals ADD COLUMN snooze_until TEXT;
+PRAGMA user_version = 5;
+`,
 };
 
 /**
@@ -213,6 +219,24 @@ PRAGMA user_version = 4;
 
 export const now = () => new Date().toISOString();
 const pad = (/** @type {number} */ n) => String(n).padStart(2, '0');
+/** The local calendar date `YYYY-MM-DD`: snooze dates are the runner's days, not UTC days. */
+export const localDate = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+/**
+ * Why `until` is not a usable snooze date (a real calendar date `YYYY-MM-DD` after `today`), else undefined.
+ * @param {string} until
+ * @param {string} today `YYYY-MM-DD`
+ * @returns {string | undefined}
+ */
+export function untilProblem(until, today) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(until);
+  const d = m ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))) : undefined;
+  if (!m || !d || d.getUTCFullYear() !== Number(m[1]) || d.getUTCMonth() !== Number(m[2]) - 1 || d.getUTCDate() !== Number(m[3])) {
+    return `--until is a calendar date YYYY-MM-DD (got ${JSON.stringify(until)})`;
+  }
+  if (until <= today) return `--until must be after today (${today}); got ${until}`;
+  return undefined;
+}
 /** A run id: `r-YYYYMMDDHHMMSS-xxxx` (UTC). */
 export const newRunId = (d = new Date()) =>
   `r-${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}-${randomBytes(2).toString('hex')}`;
@@ -334,11 +358,13 @@ export function lastDoneRun(db) {
  * Starts a run. `base_sha` is the last done run's `head_sha` (absent on a first run). An incremental run whose
  * base is no longer in the repository's history (`hasCommit` says so) starts as `full` instead, without a base,
  * and the returned row carries `fallback` saying why: a diff against a missing commit cannot be taken.
+ * In the same transaction it wakes every snoozed item whose `snooze_until` is on or before `today` (the local
+ * date; see wakeSnoozed); the returned row carries `woke: [fp, ...]` when any woke.
  * @param {Db} db
- * @param {{mode: string, harness?: string, model?: string, focus?: string, headSha?: string, hasCommit?: (sha: string) => boolean}} o
+ * @param {{mode: string, harness?: string, model?: string, focus?: string, headSha?: string, hasCommit?: (sha: string) => boolean, today?: string}} o
  * @returns {Row}
  */
-export function runStart(db, { mode, harness, model, focus, headSha, hasCommit }) {
+export function runStart(db, { mode, harness, model, focus, headSha, hasCommit, today = localDate() }) {
   if (!isOneOf(RUN_MODES, mode)) throw new DowserError(`--mode must be one of ${RUN_MODES.join('|')}`, 2);
   if (mode === 'focused' && !focus) throw new DowserError('a focused run needs --focus goal:<...> or area:<...>', 2);
   if (focus !== undefined && !/^(goal|area):\S/.test(focus)) throw new DowserError('--focus is goal:<...> or area:<...>', 2);
@@ -351,7 +377,43 @@ export function runStart(db, { mode, harness, model, focus, headSha, hasCommit }
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running')`)
       .run(id, now(), sql(headSha), lost ? null : sql(base?.head_sha), lost ? 'full' : mode, sql(focus), sql(harness), sql(model));
     const row = /** @type {Row} */ (getRun(db, id));
-    return lost ? { ...row, fallback: `base ${base?.head_sha} is not in this history; started a full run` } : row;
+    const woke = wakeSnoozed(db, { today, runId: id });
+    return /** @type {Row} */ (clean({ ...row, fallback: lost ? `base ${base?.head_sha} is not in this history; started a full run` : undefined,
+      woke: woke.length ? woke : undefined }));
+  });
+}
+
+/**
+ * Wakes snoozed items whose date has passed (`snooze_until <= today`): each is a compare-and-set move
+ * `snoozed -> verified` by SYSTEM_DECIDER with the note `snooze until <date> passed`, recorded in `transitions`.
+ * An item with no date stays snoozed (it comes back only on new evidence).
+ * @param {Db} db
+ * @param {{today: string, runId?: string}} o
+ * @returns {string[]} the fingerprints that woke, in fp order
+ */
+export function wakeSnoozed(db, { today, runId }) {
+  return tx(db, () => {
+    const due = /** @type {Row[]} */ (db.prepare(`SELECT fp, snooze_until FROM proposals
+      WHERE status = 'snoozed' AND snooze_until IS NOT NULL AND snooze_until <= ? ORDER BY fp`).all(today));
+    for (const r of due) {
+      move(db, String(r.fp), 'verified', { from: 'snoozed', by: SYSTEM_DECIDER, note: `snooze until ${r.snooze_until} passed`, runId });
+    }
+    return due.map((r) => String(r.fp));
+  });
+}
+
+/**
+ * The rows with `snooze_until` added to each snoozed one that has a date (`list` rows; absent stays omitted).
+ * @param {Db} db
+ * @param {Row[]} rows
+ * @returns {Row[]}
+ */
+export function withSnoozeUntil(db, rows) {
+  const get = db.prepare('SELECT snooze_until FROM proposals WHERE fp = ?');
+  return rows.map((r) => {
+    if (r.status !== 'snoozed') return r;
+    const until = /** @type {Row | undefined} */ (get.get(r.fp))?.snooze_until;
+    return until ? { ...r, snooze_until: until } : r;
   });
 }
 
@@ -616,14 +678,15 @@ function appendTransition(db, { fp, from, to, by, at, reason, note, runId }) {
  * Moves a proposal's status: a compare-and-set against model.TRANSITIONS. `from` (when given) is the status
  * the caller expects; a different current status is a stale refusal. An illegal or stale move throws
  * MoveRefused (exit 2) carrying the current status. Every move appends one `transitions` row and sets
- * reason / note / merged_into / decided_by / decided_at on the card.
+ * reason / note / merged_into / decided_by / decided_at on the card. `until` (a date after `today`, only with
+ * `to` = snoozed) sets `snooze_until`; every other move, and a snooze without a date, clears it.
  * @param {Db} db
  * @param {string} fp
  * @param {string} to
- * @param {{from?: string, by: string, reason?: string, note?: string, into?: string, runId?: string}} opts
+ * @param {{from?: string, by: string, reason?: string, note?: string, into?: string, runId?: string, until?: string, today?: string}} opts
  * @returns {Row} the updated proposal row (absent columns omitted)
  */
-export function move(db, fp, to, { from, by, reason, note, into, runId }) {
+export function move(db, fp, to, { from, by, reason, note, into, runId, until, today }) {
   if (!isOneOf(STATUSES, to)) throw new DowserError(`--to must be one of ${STATUSES.join('|')}`, 2);
   if (from !== undefined && !isOneOf(STATUSES, from)) throw new DowserError(`--from must be one of ${STATUSES.join('|')}`, 2);
   if (!by || !DECIDER_RE.test(by)) throw new DowserError(`--by names the decider as <kind>:<name>, e.g. operator:jane (got ${JSON.stringify(by)})`, 2);
@@ -632,6 +695,9 @@ export function move(db, fp, to, { from, by, reason, note, into, runId }) {
   if (to === 'merged' && !into) throw new DowserError('a merge needs --into <fp>', 2);
   if (to !== 'merged' && into !== undefined) throw new DowserError('--into goes only with --to merged', 2);
   if (into !== undefined && into === fp) throw new DowserError('a proposal cannot merge into itself', 2);
+  if (until !== undefined && to !== 'snoozed') throw new DowserError('--until goes only with --to snoozed', 2);
+  const badUntil = until === undefined ? undefined : untilProblem(until, today ?? localDate());
+  if (badUntil) throw new DowserError(badUntil, 2);
 
   return tx(db, () => {
     const cur = /** @type {Row | undefined} */ (db.prepare('SELECT status FROM proposals WHERE fp = ?').get(fp));
@@ -649,8 +715,8 @@ export function move(db, fp, to, { from, by, reason, note, into, runId }) {
     }
     const at = now();
     const row = /** @type {Row | undefined} */ (db.prepare(`UPDATE proposals SET status = ?, reason = ?, note = ?, merged_into = ?,
-        decided_by = ?, decided_at = ?, updated_at = ? WHERE fp = ? AND status = ? RETURNING *`)
-      .get(to, sql(reason), sql(note), sql(into), by, at, at, fp, current));
+        snooze_until = ?, decided_by = ?, decided_at = ?, updated_at = ? WHERE fp = ? AND status = ? RETURNING *`)
+      .get(to, sql(reason), sql(note), sql(into), sql(until), by, at, at, fp, current));
     if (!row) {
       const again = /** @type {Row | undefined} */ (db.prepare('SELECT status FROM proposals WHERE fp = ?').get(fp));
       throw new MoveRefused(`stale move: ${fp} changed under us`, { fp, current: again ? String(again.status) : 'not-found', to, from: current });

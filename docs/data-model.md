@@ -14,7 +14,7 @@ with no origin gets `local-` plus the first 12 hex of sha256(realpath(repo root)
 Nothing is ever written inside the scanned repo. Paths are compared by real path, and a store path inside
 the repo is refused with exit 3.
 
-The store is SQLite through `node:sqlite` (Node >= 22.13) with WAL and `PRAGMA user_version = 4` (v4 added `proposals.artifacts_json`, a card's supporting views). The DDL
+The store is SQLite through `node:sqlite` (Node >= 22.13) with WAL and `PRAGMA user_version = 5` (v4 added `proposals.artifacts_json`, a card's supporting views; v5 added `proposals.snooze_until`, the date a snoozed item wakes on). The DDL
 runs in one `BEGIN IMMEDIATE` transaction that re-reads the version. A file with another version is
 refused.
 
@@ -23,15 +23,17 @@ upgrades a version 1 file in place, inside the same `BEGIN IMMEDIATE` transactio
 version: `ALTER TABLE proposals ADD COLUMN issue_ref TEXT`, the same for `issue_url`, then
 `PRAGMA user_version = 2`. No row is rewritten, and both columns start NULL (absent). A new file is created
 at the current version. Version 3 adds the `outcomes` table (below): `CREATE TABLE IF NOT EXISTS` plus its index and
-triggers, then `PRAGMA user_version = 3`. An existing file is upgraded one step at a time (1 -> 2 -> 3) and no row is
-rewritten. Any version other than 0 (new), 1, 2 or 3 is refused with exit 3.
+triggers, then `PRAGMA user_version = 3`. Version 4 adds `proposals.artifacts_json`. Version 5 adds
+`proposals.snooze_until` (`ALTER TABLE proposals ADD COLUMN snooze_until TEXT`, then `PRAGMA user_version = 5`); it
+starts NULL (absent) on every existing row. An existing file is upgraded one step at a time (1 -> 2 -> 3 -> 4 -> 5) and
+no row is rewritten. Any version other than 0 (new), 1, 2, 3, 4 or 5 is refused with exit 3.
 
 ## Tables
 
 | table | role | keys |
 |---|---|---|
 | `runs` | one scan: `id`, `started_at`, `finished_at`, `head_sha`, `base_sha`, `mode` (`full\|incremental\|focused`), `focus`, `harness`, `model`, `status` (`running\|done\|failed`), `lenses_json` | PK `id` (`r-YYYYMMDDHHMMSS-xxxx`) |
-| `proposals` | the current card: identity (`lens`, `kind`, normalized `topic`, `anchors_json`), card text, `effort_json`, `confidence`, `confidence_why`, `doc_impact_json`, `delivery_risk_json`, `provenance_json`, `asserted_json` (the evidence keys the newest propose line carried; internal, not part of the record), triage fields (`status`, `reason`, `note`, `merged_into`, `external_ref`, `external_url`, `decided_by`, `decided_at`), `issue_ref`, `issue_url` (v2: the Jira issue an `accepted` verdict carried; not part of the record), `first_run_id`, `last_run_id` | PK `fp`; `external_ref` UNIQUE where not null |
+| `proposals` | the current card: identity (`lens`, `kind`, normalized `topic`, `anchors_json`), card text, `effort_json`, `confidence`, `confidence_why`, `doc_impact_json`, `delivery_risk_json`, `provenance_json`, `asserted_json` (the evidence keys the newest propose line carried; internal, not part of the record), triage fields (`status`, `reason`, `note`, `merged_into`, `external_ref`, `external_url`, `decided_by`, `decided_at`), `issue_ref`, `issue_url` (v2: the Jira issue an `accepted` verdict carried; not part of the record), `artifacts_json` (v4), `snooze_until` (v5: `YYYY-MM-DD`, set only by `move --to snoozed --until`, cleared by any move out of `snoozed`), `first_run_id`, `last_run_id` | PK `fp`; `external_ref` UNIQUE where not null |
 | `evidence` | **append-only**: `fp`, `run_id`, `type`, `ref`, `key`, `path`, `line` (hint), `quote`, `url`, `added_at`; one row per key, written when the key is first seen | UNIQUE (`fp`, `type`, `key`) |
 | `transitions` | **append-only**: `fp`, `from_status` (NULL on creation), `to_status`, `by`, `at`, `reason`, `note`, `run_id`, `evidence_seq` | `evidence_seq` = max evidence id of the fp at the move |
 | `rules` | offered and accepted prompt rules (`offered\|accepted\|declined`). `cluster_json` keeps the source fingerprints, who decided (`decided_by`: a human at the prompt, or `forge:<account>`) and, when the wording was edited, the original as `draft_text` | PK `id` |
@@ -110,7 +112,7 @@ unmeasured. A missing `bus_factor` means it was not computed. A count of 0 is a 
 (new) --propose--> candidate --verify--> verified --triage--> rejected(reason) | snoozed | merged(into) | pushed
                        \--verify--> dropped (note verify-failed:<ref>)          pushed --Forge--> accepted | rejected | merged | snoozed
 verified --> accepted (offline acceptance; decider kind human only)
-snoozed  --> verified (unsnooze) | candidate (resurfaced)
+snoozed  --> verified (unsnooze; or run start once snooze_until <= today, by skill:dowser) | candidate (resurfaced)
 rejected --> candidate (resurfaced)
 dropped  --> candidate (retry: propose added a new evidence key)
 merged, accepted: terminal

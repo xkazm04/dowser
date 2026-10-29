@@ -88,7 +88,7 @@ function rows(sql) {
 test('setup: three same-reason rejections offer a rule; `reflect export` is read-only and shapes the tool arguments', () => {
   const init = cli('init');
   assert.equal(init.code, 0, init.stderr);
-  assert.equal(init.out.user_version, 4);
+  assert.equal(init.out.user_version, 5);
   projectKey = init.out.project_key;
   runId = cli('run', 'start', '--mode', 'full').out.run_id;
   const lines = [
