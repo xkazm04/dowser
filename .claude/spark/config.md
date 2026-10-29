@@ -20,11 +20,24 @@ context map is provisional until the first scaffold commit.
 - `npm test`: `node --test "skill/scripts/tests/*.test.mjs"`. Tests use mkdtemp dirs and `DOWSER_HOME`, and clean up.
 - when `forge/` changes: `npm run forge:typecheck`, `npm run forge:test`, `npm run forge:check-shared` (the shared copies of `skill/scripts/lib/{model,fingerprint}.mjs` must match; after editing either, run `npm --prefix forge run sync-shared`).
 - when `forge/static/app/` changes: `npm run forge:build-ui`.
+  `forge:typecheck` does NOT cover `static/app` and the build does not catch a ReferenceError: also render the
+  changed screen in the fixture UI (`npm --prefix forge/static/app run dev:fixture` on a port of your own) and
+  exercise the changed path, headless (Playwright) or by eye. (A dialog shipped crashing on open in hardening
+  wave 8; the build was green.)
 - when `forge/manifest.yml` changes and `forge whoami` succeeds: `forge lint` in `forge/`.
 
 ## Rituals
 
 ## Repo law
+
+- Every runner-facing output (a summary line, a triage step, a shared document, a dialog) names its guided-mode
+  form in the same change (`skill/references/guided-mode.md`). Missed four times in the hardening campaign.
+- Doc sync greps for the OLD claim about the changed behaviour (the sentence the docs used to say), not for the
+  new function's name, across docs/, SKILL.md, references, lens packs, README.md and SECURITY.md. Missed three times.
+- A change that crosses the skill/Forge seam changes both sides AND every test double of either side
+  (`tools/mock-forge-mcp.mjs`, `forge/static/app/src/dev/`), and asserts the seam in
+  `skill/scripts/tests/local-forge-e2e.test.mjs`. (Supporting views never reached the inbox for days: each side's
+  tests passed alone.)
 
 - Read README.md and docs/project-documentation.md first. The plan's lens table and proposal
   model are the product contract; the local-scan deviation is recorded in `.spark/Spark/ideas/`.
