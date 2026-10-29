@@ -1,6 +1,6 @@
 # Dowser - project status and next steps
 
-As of 2026-10-28 (week 1 of the 8-week plan in `docs/project-documentation.md`; Codegeist deadline
+As of 2026-10-29 (week 1 of the 8-week plan in `docs/project-documentation.md`; Codegeist deadline
 Dec 22, 2026, 12:00 PST). Written for a fresh session that picks the work up with no other context.
 Read this first, then `AGENTS.md`, then the documents it points to.
 
@@ -15,11 +15,16 @@ Dowser runs as two halves joined by one contract:
   server, shows them in a Jira triage inbox, creates the Jira issue on Accept, and returns every
   verdict to the skill. Built, deployed to the development environment, and verified end to end on
   a live site.
-- **The seam**: `docs/contracts/forge-mcp-2.md` (six tools, scalar inputs). `tools/mock-forge-mcp.mjs`
+- **The seam**: `docs/contracts/forge-mcp-2.md` (eight tools: the original six plus
+  `dowser_reflect_sync` and `dowser_direction_get`; scalar inputs). `tools/mock-forge-mcp.mjs`
   is its executable spec for tests; `tools/forge-live-e2e.mjs` drives the live app.
 
-Gates on `master`: root `npm run typecheck` clean and `npm test` 60/60; `npm run forge:typecheck`
-clean, `npm run forge:test` 26/26, `npm run forge:check-shared` clean, `npm run forge:build-ui` green.
+Gates on `master`: root `npm run typecheck` clean and `npm test` green; `npm run forge:typecheck`
+clean, `npm run forge:test` green, `npm run forge:check-shared` clean, `npm run forge:build-ui` green
+(test counts change every wave; `node tools/quality-snapshot.mjs` prints the current ones).
+
+A ten-wave hardening campaign, in which Dowser scans itself and the agent plays the team, is under way:
+`docs/evals/campaign/README.md` (protocol) and the newest `wave-NN.md` (where it stands).
 
 ## Reconciliation against the original plan
 

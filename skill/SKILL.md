@@ -144,7 +144,9 @@ the push step too. A half-synced memory must not push.
 2. Run `run start --mode <mode> --harness <claude-code|codex|other> --model <your model id>`,
    adding the same `--focus` value for a focused run. Keep `run_id`, `mode`, `base_sha` and
    `head_sha`. When it prints `fallback`, the last scanned version is gone from the history
-   (a force-push or rebase): the run is `full`, and the summary says why.
+   (a force-push or rebase): the run is `full`. Say so at once, before any lens starts, because
+   a full scan takes longer (guided: "Dowser will read the whole project this time, because the
+   version it read last time is no longer in the project's history."), and again in the summary.
 3. An incremental run scans what changed: `git diff --name-only <base_sha>..<head_sha>`, plus
    the files those import, plus any doc that names them. If that list is empty, every lens is
    `ran` with zero emitted, and the summary says no code changed since the last scan.
@@ -334,8 +336,10 @@ Jira issue appears only when a person accepts the item there.
    UX friction and Security ran in full, Doc drift was partial (no Confluence)." Never write
    "all clear", "no issues" or "everything looks good".
 4. **Share.** When the runner asks to share or export the results ("as markdown", "for a doc"),
-   run `share --run <run_id>` and print its `markdown` as is. It lists evidence by ref, without
-   quoted lines. Do not save it into the project.
+   run `share --run <run_id>` and print its `markdown`. It lists evidence by ref, without
+   quoted lines. Dev: as is. Guided: reword it with the vocabulary of `references/guided-mode.md`
+   (lens names in words, no version ids, file paths or fingerprints). Do not save it into the
+   project.
 
 ## 10. Ask-why
 
