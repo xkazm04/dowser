@@ -220,6 +220,31 @@ test('the real System finds and runs an auditor stub on PATH, in the repo root',
   assert.deepEqual(snapshot(repo), before);
 });
 
+test('deps audits workspace manifests below the root, reports fixtures as not audited, and a missing tool once', () => {
+  const repo = repoWith({
+    'package.json': '{"name":"mono"}', 'package-lock.json': JSON.stringify({ name: 'mono', lockfileVersion: 3, packages: { '': {} } }),
+    'apps/web/package-lock.json': LOCK, 'services/py/requirements.txt': 'flask==0.12\n', 'services/py/Cargo.lock': '# lock\n',
+    'test/fixtures/shop/package-lock.json': LOCK, 'node_modules/x/package-lock.json': LOCK, 'a/b/c/d/package-lock.json': LOCK,
+  });
+  const run = runStart(db, { mode: 'full' }).id;
+  const { sys, calls } = fakeSys({
+    npm: (_a, cwd) => answer(cwd.endsWith('web') ? NPM_REPORT : { auditReportVersion: 2, vulnerabilities: {} }, cwd.endsWith('web') ? 1 : 0),
+    'pip-audit': () => answer({ dependencies: [{ name: 'flask', version: '0.12', vulns: [{ id: 'PYSEC-2019-179' }] }] }),
+  });
+  const out = runDeps(db, { root: repo, runId: run }, sys).out;
+  assert.deepEqual(out.auditors, [
+    { tool: 'npm-audit', state: 'ran', found: 0 },
+    { tool: 'osv-scanner', state: 'skipped', reason: 'not installed' },
+    { tool: 'pip-audit', state: 'skipped', reason: 'no requirements*.txt or pyproject.toml' },
+    { tool: 'npm-audit', dir: 'apps/web', state: 'ran', found: 2 },
+    { tool: 'pip-audit', dir: 'services/py', state: 'ran', found: 1 },
+  ]);
+  assert.deepEqual(out.refs.map((r) => r.ref), ['apps/web/package-lock.json#lodash@4.17.20', 'apps/web/package-lock.json#minimist@1.2.5',
+    'services/py/requirements.txt#flask@0.12']);
+  assert.deepEqual(out.not_audited, [{ dir: 'test/fixtures/shop', reason: 'test or fixture path' }]);
+  assert.ok(!calls.some((c) => c.cwd.includes('node_modules') || c.cwd.includes(join('a', 'b', 'c', 'd'))), 'node_modules and depth 4 never audited');
+});
+
 test('deps refuses a run that is not running', () => {
   assert.throws(() => runDeps(db, { root: home, runId: 'nope' }, fakeSys({}).sys), /does not exist/);
 });
