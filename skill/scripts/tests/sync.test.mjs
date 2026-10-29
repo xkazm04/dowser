@@ -8,6 +8,7 @@ import { getProposal, move, openStore, propose, runStart, transitionsOf } from '
 import {
   RECORD_KEYS, getState, ingestPush, ingestSources, ingestVerdicts, outbox, readResponse, verdictsCursor,
 } from '../lib/sync.mjs';
+import { STORE_OWNED, validateCandidate } from '../lib/model.mjs';
 import { KINDS, candidate, removeDir, tempDir } from './_fixture.mjs';
 
 /** @type {string} */ let dir;
@@ -40,6 +41,16 @@ const statusOf = (fp) => getProposal(db, fp)?.status;
 const inOutbox = (fp) => records(outbox(db, { projectKey: PK, runId: run })).some((p) => p.fp === fp);
 /** @param {{proposals_json: string}} ob @returns {Record<string, any>[]} */
 const records = (ob) => JSON.parse(ob.proposals_json);
+
+test('outbox: a card\'s supporting views travel with its record (they were dropped before wave 5 of the campaign)', () => {
+  const artifacts = [{ kind: 'table', message: 'Two rows of one view', alt: 'A table with two rows.', refs: ['src/auth.js:2'],
+    data: { columns: ['Place', 'Count'], rows: [['login', '1'], ['All', '1']] } }];
+  const fp = verified('outbox views', { evidence: [{ type: 'code', ref: 'src/auth.js:2', quote: 'return check(user.password);' }], artifacts });
+  const rec = records(outbox(db, { projectKey: PK, runId: run })).find((p) => p.fp === fp);
+  assert.deepEqual(rec?.artifacts, artifacts);
+  const v = validateCandidate(Object.fromEntries(Object.entries(rec ?? {}).filter(([k]) => !(/** @type {readonly string[]} */ (STORE_OWNED)).includes(k))), { wire: true });
+  assert.ok(v.ok, v.ok ? '' : v.why);
+});
 
 test('outbox: the forge-mcp-2 push arguments - full dowser-proposal/1 records as proposals_json, nothing store-internal', () => {
   const fp = verified('outbox shape', { evidence: [{ type: 'code', ref: 'src/auth.js:2', quote: 'return check(user.password);' }, { type: 'ticket', ref: 'SEC-9', url: 'https://j/SEC-9' }] });

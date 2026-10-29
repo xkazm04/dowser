@@ -151,7 +151,8 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
   const projectKey = di.out.project_key;
   const run1 = cli('run', 'start', '--mode', 'full', '--harness', 'claude-code', '--model', 'm').out.run_id;
   const proposed = proposeFile(run1, 'run1.jsonl', [
-    candidate({ lens: 'opportunity', kind: 'gap', topic: 'csv export', anchors: ['src/export.js#exportReport'], title: 'Add CSV export', evidence: [EXPORT] }),
+    candidate({ lens: 'opportunity', kind: 'gap', topic: 'csv export', anchors: ['src/export.js#exportReport'], title: 'Add CSV export', evidence: [EXPORT],
+      artifacts: [{ kind: 'table', message: 'One writer, no route', alt: 'A table of the CSV writer and its callers.', refs: [EXPORT.ref], data: { columns: ['Code', 'Callers'], rows: [['exportReport', '0']] } }] }),
     onbCandidate(0), onbCandidate(1), onbCandidate(2),
     staleCandidate([SETUP]),
   ]);
@@ -178,6 +179,8 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
   assert.equal(inbox.groups[0].run_id, run1);
   assert.equal(inbox.groups[0].items.length, 5);
   assert.deepEqual((await invoke('jira.projects')).projects.map((/** @type {any} */ p) => p.key), ['DOW']);
+  // the seam: a card's supporting view reaches the inbox card through outbox and the real core
+  assert.equal((await invoke('proposal.get', { ref: ref[fpA] })).card.artifacts?.[0]?.kind, 'table');
   await invoke('settings.set', { project_key: projectKey, jira_project_key: 'DOW', issue_type_id: '10001' });
   const acc = await invoke('verdict.accept', { ref: ref[fpA], note: 'Ship it this sprint' });
   assert.equal(acc.card.status, 'accepted');

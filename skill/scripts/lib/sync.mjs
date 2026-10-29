@@ -31,7 +31,7 @@ import { commitDate, commitsSince, lastChange, treeFiles } from './git.mjs';
 export const SYNC_DECIDER = 'skill:dowser-sync';
 /** The fields of a `dowser-proposal/1` record, in order (skill/schema/dowser-proposal-1.schema.json). */
 export const RECORD_KEYS = /** @type {const} */ (['fp', 'lens', 'kind', 'topic', 'anchors', 'title', 'rationale', 'body',
-  'evidence', 'effort', 'confidence', 'confidence_why', 'doc_impact', 'delivery_risk', 'provenance', 'status', 'reason',
+  'evidence', 'effort', 'confidence', 'confidence_why', 'doc_impact', 'delivery_risk', 'artifacts', 'provenance', 'status', 'reason',
   'note', 'merged_into', 'external_ref', 'external_url', 'decided_by', 'decided_at']);
 export const PUSH_RESULTS = /** @type {const} */ (['created', 'updated', 'merged-existing', 'refused']);
 export const VERDICT_STATUSES = /** @type {const} */ (['accepted', 'rejected', 'merged', 'snoozed']);
