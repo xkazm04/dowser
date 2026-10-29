@@ -64,6 +64,6 @@ proposal: Dowser answers from the evidence it stored and does not rescan.
 
 ## Develop
 
-Gates: `npm run typecheck` and `npm test`. Layout and rules for agents are in
+Security problems: see [SECURITY.md](SECURITY.md). Gates: `npm run typecheck` and `npm test`. Layout and rules for agents are in
 [AGENTS.md](AGENTS.md). Design runs live in `.spark/` (gitignored); the overlay is
 `.claude/spark/config.md`.
