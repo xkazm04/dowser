@@ -656,6 +656,47 @@
       "components": [
         "Lens: Security"
       ]
+    },
+    {
+      "ref": "DOW-83",
+      "title": "Triage time shows on the Learning tab",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-83",
+      "body": "The Learning tab now says \"Triaged in 42 min\" for our last scan. Our goal is 10, so now we know where we stand.",
+      "created_at": "2026-10-30T10:20:00Z",
+      "labels": [
+        "feedback",
+        "metrics"
+      ],
+      "components": [
+        "Forge app"
+      ]
+    },
+    {
+      "ref": "DOW-84",
+      "title": "Learning tab: triage time counts the weekend",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-84",
+      "body": "Our scan was pushed on Friday and decided on Monday, so it says \"Triaged in 3840 min\". Working time, or the time from first to last decision, would be fairer.",
+      "created_at": "2026-10-30T10:40:00Z",
+      "labels": [
+        "metrics"
+      ],
+      "components": [
+        "Forge app"
+      ]
+    },
+    {
+      "ref": "DOW-85",
+      "title": "Dependency audit card found a real XSS in our UI bundle",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-85",
+      "body": "Contoso: the security lens flagged a transitive editor package in our UI with a paste XSS advisory; an npm override fixed it in ten minutes.",
+      "created_at": "2026-10-30T11:00:00Z",
+      "labels": [
+        "feedback",
+        "monorepo"
+      ],
+      "components": [
+        "Lens: Security"
+      ]
     }
   ],
   "pages": [
@@ -672,8 +713,8 @@
       "title": "Triage guide for product managers",
       "url": "https://dowser-beta.atlassian.net/wiki/spaces/DOW/pages/12",
       "space": "DOW",
-      "updated_at": "2026-10-29T19:30:00Z",
-      "body": "Switch to guided mode by saying 'switch to guided'. Triage opens with an overview table of every proposal. Say 'full cards' to see each card's summary and description, or 'compact' to go back to the short form.\n\nWhen you reject a proposal, pick a reason: false-positive (the evidence is wrong), already-known (we have it on the backlog), not-our-direction, not-worth-it, wrong-size, or other with a note. If a card repeats another one, merge it instead of rejecting it. The reason teaches Dowser what to skip next time.\n\nAsk 'why this one?' about any card to see its evidence. Dowser answers from what it stored and does not scan again."
+      "updated_at": "2026-10-30T10:00:00Z",
+      "body": "Switch to guided mode by saying 'switch to guided'. Triage opens with an overview table of every proposal. Say 'full cards' to see each card's summary and description, or 'compact' to go back to the short form.\n\nWhen you reject a proposal, guided mode asks why in plain words: the evidence does not show this; we already track it or decided it; true, but not where we are going; true, but not worth the effort; right idea, but too big or too small; or something else, in your own words. If a card repeats another one, merge it instead of rejecting it. The reason teaches Dowser what to skip next time.\n\nAsk 'why this one?' about any card to see its evidence. Dowser answers from what it stored and does not scan again."
     },
     {
       "ref": "PAGE-13",

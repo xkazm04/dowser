@@ -109,7 +109,8 @@ for (const start of lib) {
 }
 const libEdges = [...graph.values()].reduce((n, e) => n + e.length, 0);
 
-const prose = files.filter((p) => p === 'skill/SKILL.md' || p.startsWith('skill/references/') || p.startsWith('skill/lenses/'));
+// what the scanning agent reads: SKILL.md, references, and the lens packs (not the packs' changelog)
+const prose = files.filter((p) => p === 'skill/SKILL.md' || p.startsWith('skill/references/') || (p.startsWith('skill/lenses/') && p !== 'skill/lenses/CHANGELOG.md'));
 const agentWords = Object.fromEntries([['SKILL.md', words('skill/SKILL.md')],
   ['references', prose.filter((p) => p.startsWith('skill/references/')).reduce((n, p) => n + words(p), 0)],
   ['lenses', prose.filter((p) => p.startsWith('skill/lenses/')).reduce((n, p) => n + words(p), 0)]]);

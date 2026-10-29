@@ -47,6 +47,10 @@ direction moves only when the team would move it. Every claim stays checkable ag
 - `agent_words` (SKILL.md, references, lens packs) grows at most 3% per wave unless something is removed for it.
   Every word is read by the agent on every scan.
 - Tests grow with behaviour: no new branch in `skill/scripts/lib` without a test.
+- Every new runner-facing output names its guided form in the same change (added after wave 4: three surfaces
+  shipped without one).
+- Doc sync before every commit: grep the docs, SKILL.md and the lens packs for the behaviour that changed (added
+  after wave 3: two changes shipped with a stale doc).
 - Waves 3, 6 and 9 include a stewardship pass: the team pays down the worst item of the quality row, whether or
   not Dowser proposed it. Whether Dowser ever proposes such work is itself a finding.
 
