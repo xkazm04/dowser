@@ -101,8 +101,9 @@ function copyTree(src, dst) {
 }
 
 function main() {
-  const major = Number(process.versions.node.split('.')[0]);
-  if (major < 22) fail(`Node ${process.versions.node} found; Dowser needs Node 22 or newer`, 3);
+  // node:sqlite (the store) is unflagged from 22.13; an earlier 22 installs fine and fails on the first scan.
+  const [major, minor] = process.versions.node.split('.').map(Number);
+  if (major < 22 || (major === 22 && minor < 13)) fail(`Node ${process.versions.node} found; Dowser needs Node 22.13 or newer`, 3);
 
   const opts = parseArgs(process.argv.slice(2));
   const source = path.dirname(fileURLToPath(import.meta.url));

@@ -13,7 +13,7 @@ connect to the core architecture.
 
 ### Install
 
-You need Node.js 22 or newer and either Claude Code or Codex CLI. From a clone of this
+You need Node.js 22.13 or newer and either Claude Code or Codex CLI. From a clone of this
 repository:
 
 ```sh

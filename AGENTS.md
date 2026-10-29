@@ -36,7 +36,7 @@ Run both before you hand back work:
 
 ## Rules
 
-- Plain ESM `.mjs` with `// @ts-check` and JSDoc. Zero runtime dependencies. Node 22 or newer.
+- Plain ESM `.mjs` with `// @ts-check` and JSDoc. Zero runtime dependencies. Node 22.13 or newer (`node:sqlite`).
 - **Never write into a scanned repository.** Memory lives in `~/.dowser/` (`DOWSER_HOME` in
   tests). Work files go in the OS temp folder.
 - Store writes go through `skill/scripts/dowser.mjs` only. Every status move is

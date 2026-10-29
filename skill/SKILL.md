@@ -74,7 +74,7 @@ its environment halfway through.
 
 1. **Inside a git repo.** `git rev-parse --show-toplevel` exits 0. If `git --version` fails
    too, git itself is missing: say that, not "not a project folder".
-2. **Node 22 or newer.** `node --version` reports v22 or higher.
+2. **Node 22.13 or newer.** `node --version` reports v22.13 or higher (the store needs `node:sqlite`).
 3. **Memory reachable.** `dowser.mjs init --repo "<repo>"` exits 0. Keep `project_key` and `db`
    from its output. A code 3 means the memory folder cannot be written. Say so and stop.
 4. **Forge connection.** Look in your own tool list for tools named `dowser_sources_tickets`,

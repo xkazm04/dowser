@@ -13,8 +13,8 @@ top.
 | --- | --- |
 | Not inside a project folder under version control | "Dowser needs to be started from inside your project's folder. Open the folder you downloaded the project into, start the assistant there, and type /dowser again." |
 | Project was downloaded as a zip (no version history) | "This copy of the project has no history attached, so Dowser cannot tell what changed. Ask a developer for a 'clone' of the repository, or for access to it, and start from that folder." |
-| Node missing | "Dowser needs a free helper program called Node.js (version 22 or newer). Install the LTS version from nodejs.org, close and reopen this window, then type /dowser again." |
-| Node too old | "Your Node.js is version <v>. Dowser needs 22 or newer. Install the LTS version from nodejs.org, reopen this window, and try again." |
+| Node missing | "Dowser needs a free helper program called Node.js (version 22.13 or newer). Install the LTS version from nodejs.org, close and reopen this window, then type /dowser again." |
+| Node too old | "Your Node.js is version <v>. Dowser needs 22.13 or newer. Install the LTS version from nodejs.org, reopen this window, and try again." |
 | Memory folder not writable | "Dowser keeps its notes in a folder called .dowser in your home folder, and it cannot write there. Check that your user can create folders in <home>, or ask IT, then try again." |
 | Git missing (`git --version` fails) | "Dowser needs a free program called Git to read your project's history, and this computer does not have it. Install it from git-scm.com, reopen this window, then type /dowser again." |
 | Store busy (exit 3 on a lock) | "Another Dowser scan is running on this project. Wait for it to finish, then try again." |
