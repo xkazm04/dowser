@@ -103,6 +103,8 @@
   position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 16px;
   background: var(--ds-background-selected, #E9F2FE); color: var(--ds-text, #292A2E);
 }
+:root .dwr-bulk { flex-wrap: wrap; }
+:root .dwr-bulk > .dw-step { flex-basis: 100%; }
 
 /* Rows */
 :root .dwr-item { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .2s ease, opacity .15s ease; }

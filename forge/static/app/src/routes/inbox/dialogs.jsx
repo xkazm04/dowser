@@ -251,7 +251,7 @@ const KEYS = [
   ['x', 'Select or unselect the proposal'],
   ['a', 'Accept'],
   ['r', 'Reject (all selected, when some are selected)'],
-  ['s', 'Snooze, with an optional note (all selected, when some are selected: no note)'],
+  ['s', 'Snooze, with an optional note and Until date (all selected, when some are selected: one date, no note)'],
   ['m', 'Merge'],
   ['u', 'Undo the last snooze or reject while its notice is showing'],
   ['?', 'Show this help'],
@@ -281,11 +281,12 @@ function localDay(days = 0) {
 }
 
 /**
- * The inline step before a single snooze: an optional "revisit when / why not now" note and an optional
- * "Until" date (after today). Enter or the Snooze button snoozes; Escape or Cancel closes it.
- * @param {{cardRef: string, onSubmit: (note: string, until: string) => void, onCancel: () => void}} props
+ * The inline step before a snooze: an optional "revisit when / why not now" note and an optional "Until" date
+ * (after today). Enter or the Snooze button snoozes; Escape or Cancel closes it. The bulk bar uses it with
+ * `withNote={false}` (one date for every checked item, no note) and `label` naming the count.
+ * @param {{cardRef: string, label?: string, withNote?: boolean, onSubmit: (note: string, until: string) => void, onCancel: () => void}} props
  */
-export function SnoozeStep({ cardRef, onSubmit, onCancel }) {
+export function SnoozeStep({ cardRef, label = cardRef, withNote = true, onSubmit, onCancel }) {
   const [note, setNote] = useState('');
   const [until, setUntil] = useState('');
   const [error, setError] = useState('');
@@ -300,15 +301,15 @@ export function SnoozeStep({ cardRef, onSubmit, onCancel }) {
   }
   return (
     <form
-      className="dw-step" aria-label={`Snooze ${cardRef}`}
+      className="dw-step" aria-label={`Snooze ${label}`}
       onSubmit={(e) => { e.preventDefault(); submit(); }}
       onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onCancel(); } }}
     >
-      <label htmlFor={id}>Revisit when / why not now? (optional)</label>
-      <input id={id} className="dw-input" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} autoComplete="off" autoFocus placeholder="e.g. after the checkout rewrite" />
+      {withNote && <label htmlFor={id}>Revisit when / why not now? (optional)</label>}
+      {withNote && <input id={id} className="dw-input" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} autoComplete="off" autoFocus placeholder="e.g. after the checkout rewrite" />}
       <label htmlFor={`${id}-until`}>Until (optional)</label>
       <input
-        id={`${id}-until`} className="dw-input" type="date" value={until} min={tomorrow}
+        id={`${id}-until`} className="dw-input" type="date" value={until} min={tomorrow} autoFocus={!withNote}
         onChange={(e) => { setUntil(e.target.value); setError(''); }}
         aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-err` : undefined}
       />
@@ -316,7 +317,7 @@ export function SnoozeStep({ cardRef, onSubmit, onCancel }) {
       <div className="dw-row">
         <Button type="submit" appearance="primary" compact>Snooze</Button>
         <Button appearance="subtle" compact onClick={onCancel}>Cancel</Button>
-        <span className="dw-subtlest">{until ? 'It comes back on that day, or earlier when its evidence grows.' : 'It comes back when its evidence grows.'}</span>
+        <span className="dw-subtlest">{until ? 'It comes back at the first scan on or after that day, or earlier when its evidence grows.' : 'It comes back when its evidence grows.'}</span>
       </div>
     </form>
   );

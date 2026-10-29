@@ -8,7 +8,7 @@ import { Markdown } from '../../components/Markdown.jsx';
 import { TriageHistory } from '../../components/ProposalCard.jsx';
 import { Artifacts } from '../../components/Artifact.jsx';
 import {
-  CHANGE_LABELS, EVIDENCE_LABELS, LENS_LABELS, LEVEL_LABELS, STATUS_APPEARANCE, STATUS_LABELS, evidenceStrength, plural,
+  CHANGE_LABELS, EVIDENCE_LABELS, LENS_LABELS, LEVEL_LABELS, STATUS_APPEARANCE, STATUS_LABELS, comesBack, evidenceStrength, plural,
 } from '../../components/labels.js';
 import { LensDot, Meter, Pips, effortDays } from './parts.jsx';
 
@@ -76,6 +76,7 @@ export function Detail({ card, change, history, compact = false, titleId }) {
             : <span>{card.issue_ref}</span>)}
         </span>
         <h2 className="dwr-detail__title" id={titleId}>{card.title}</h2>
+        {card.status === 'snoozed' && card.snooze_until && <p className="dwr-muted">{comesBack(card.snooze_until)}.</p>}
       </header>
 
       <p className="dwr-rationale">{card.rationale}</p>

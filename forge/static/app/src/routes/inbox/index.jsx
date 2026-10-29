@@ -11,7 +11,7 @@ import { useCommitWindow } from '../../components/useCommitWindow.js';
 import { CardDialog } from '../../components/CardDialog.jsx';
 import { deepLinkRef } from '../../components/deeplink.js';
 import {
-  CHANGE_LABELS, LENSES, LENS_LABELS, REASON_LABELS, STATUSES, STATUS_APPEARANCE, STATUS_LABELS, changeOf, formatDate, plural,
+  CHANGE_LABELS, LENSES, LENS_LABELS, REASON_LABELS, STATUSES, STATUS_APPEARANCE, STATUS_LABELS, changeOf, comesBack, formatDate, plural,
 } from '../../components/labels.js';
 import { AcceptDialog, MergeDialog, RejectDialog, SnoozeStep } from './dialogs.jsx';
 import { Detail } from './Detail.jsx';
@@ -91,7 +91,7 @@ export default function Inbox({ context }) {
   const [errors, setErrors] = useState(/** @type {Record<string, string>} */ ({}));
   const [focusRef, setFocusRef] = useState('');
   const [focusReq, setFocusReq] = useState('');
-  const [snoozeFor, setSnoozeFor] = useState('');
+  const [snoozeFor, setSnoozeFor] = useState(''); // a card ref, or BULK for the bulk bar's step
   const [expanded, setExpanded] = useState(true);
   const [dialog, setDialog] = useState(/** @type {{kind: string, refs: string[]} | null} */ (null));
   const seq = useRef(0);
@@ -256,7 +256,7 @@ export default function Inbox({ context }) {
     setSnoozeFor('');
     leave(cards, 'snoozed');
     cw.schedule({
-      message: `${refs.length === 1 ? `Snoozed ${refs[0]}` : `Snoozed ${plural(refs.length, 'proposal')}`}${until ? ` until ${until}` : ''}`,
+      message: `${refs.length === 1 ? `Snoozed ${refs[0]}` : `Snoozed ${plural(refs.length, 'proposal')}`}${until ? `. ${comesBack(until)}` : ''}`,
       run: () => call('verdict.snooze', { refs, ...(note ? { note } : {}), ...(until ? { until } : {}) }),
       onUndo: () => restore(refs),
       onError: (e) => failDeferred(refs, 'snooze', e),
@@ -309,7 +309,7 @@ export default function Inbox({ context }) {
           if (many.length > 0) open('reject', many); else if (actionable) open('reject', [focused.ref]); else return;
           break;
         case 's':
-          if (many.length > 0) deferSnooze(many.map((r) => byRef.get(r)));
+          if (many.length > 0) setSnoozeFor(BULK);
           else if (actionable) { setExpanded(true); setSnoozeFor(focused.ref); } else return;
           break;
         case 'u': if (!cw.undoLatest()) return; break;
@@ -401,9 +401,15 @@ export default function Inbox({ context }) {
               <div className="dwr-bulk" role="region" aria-label="Bulk actions">
                 <strong>{selectedVisible.length} checked</strong>
                 <Button appearance="danger" compact onClick={() => open('reject', selectedVisible)}>Reject <Kbd>r</Kbd></Button>
-                <Button compact onClick={() => deferSnooze(selectedVisible.map((r) => byRef.get(r)))}>Snooze <Kbd>s</Kbd></Button>
+                <Button compact onClick={() => setSnoozeFor(BULK)}>Snooze <Kbd>s</Kbd></Button>
                 <span className="dwr-spacer" />
-                <Button appearance="subtle" compact onClick={() => setSelected(new Set())}>Clear</Button>
+                <Button appearance="subtle" compact onClick={() => { setSelected(new Set()); setSnoozeFor(''); }}>Clear</Button>
+                {snoozeFor === BULK && (
+                  <SnoozeStep
+                    cardRef="bulk" label={plural(selectedVisible.length, 'proposal')} withNote={false}
+                    onSubmit={(_, until) => deferSnooze(selectedVisible.map((r) => byRef.get(r)), '', until)} onCancel={() => setSnoozeFor('')}
+                  />
+                )}
               </div>
             )}
             {visible.map((g) => (
@@ -685,12 +691,15 @@ function EmptyState({ status, lens, lastPush, tally }) {
   );
 }
 
+/** The `snoozeFor` value while the bulk bar's snooze step is open (no card ref looks like it). */
+const BULK = ' bulk';
+
 const KEYS = [
   ['j / k', 'Move to the next / previous proposal; the pane follows'],
   ['x', 'Check or uncheck the proposal for a bulk action'],
   ['a', 'Accept; then Ctrl+Enter creates the issue'],
   ['r', 'Reject (all checked, when some are checked); 1 to 6 picks the reason, Ctrl+Enter confirms'],
-  ['s', 'Snooze, with an optional note, Enter to confirm (all checked, when some are checked: no note)'],
+  ['s', 'Snooze, with an optional note and Until date, Enter to confirm (all checked, when some are checked: one date, no note)'],
   ['m', 'Merge'],
   ['u', 'Undo the last snooze or reject while its notice is showing'],
   ['?', 'Show this help'],

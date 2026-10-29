@@ -5,7 +5,7 @@ import React from 'react';
 import { Lozenge, useAsync } from './ui.jsx';
 import { call } from '../api.js';
 import {
-  CHANGE_LABELS, EVIDENCE_LABELS, LENS_LABELS, LEVEL_LABELS, REASON_LABELS, STATUS_APPEARANCE, STATUS_LABELS, deciderName, evidenceStrength, formatDate, plural,
+  CHANGE_LABELS, EVIDENCE_LABELS, LENS_LABELS, LEVEL_LABELS, REASON_LABELS, STATUS_APPEARANCE, STATUS_LABELS, comesBack, deciderName, evidenceStrength, formatDate, plural,
 } from './labels.js';
 
 /** @param {{lens: string}} props */
@@ -100,6 +100,7 @@ export function TriageHistory({ history }) {
           {v.merged_into && <>into {v.merged_into} </>}
           {v.issue_ref && (v.issue_url ? <a href={v.issue_url} target="_blank" rel="noreferrer noopener">{v.issue_ref}</a> : v.issue_ref)}
           <span className="dw-subtlest"> · {deciderName(v.decided_by, v.decided_by_name)} · {formatDate(v.decided_at)}</span>
+          {v.status === 'snoozed' && v.snooze_until && <div className="dw-subtle">{comesBack(v.snooze_until)}.</div>}
           {v.note && <div className="dw-note"><span className="dw-note__k">Note</span>{v.note}</div>}
         </li>
       ))}
@@ -153,6 +154,7 @@ export function ProposalCard({ card, change, history, showStatus, select, action
             : <span>{card.issue_ref}</span>)}
         </div>
         <h3 className="dw-card__title" id={titleId}>{card.title}</h3>
+        {card.status === 'snoozed' && card.snooze_until && <p className="dw-subtle" style={{ margin: '2px 0 6px' }}>{comesBack(card.snooze_until)}.</p>}
         <p className="dw-card__rationale">{card.rationale}</p>
         <Signals card={card} />
         {card.confidence_why && <p className="dw-card__why">{card.confidence_why}</p>}

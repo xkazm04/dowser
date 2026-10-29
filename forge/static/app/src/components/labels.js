@@ -115,3 +115,10 @@ export function formatDay(iso) {
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
+
+/**
+ * When a dated snooze returns (DW-55, DW-57): the skill wakes it at the first scan on or after that day. `until` is
+ * a calendar day `YYYY-MM-DD`, read as the person's local day (a bare date would parse as UTC midnight).
+ * @param {string} until
+ */
+export const comesBack = (until) => `Comes back at the first scan on or after ${formatDay(`${until}T00:00`)}`;
