@@ -834,6 +834,48 @@
       "components": [
         "Lens: Opportunity"
       ]
+    },
+    {
+      "ref": "DOW-96",
+      "title": "Accept dialog explains the project now",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-96",
+      "body": "The accept dialog says the project comes from our inbox default and where to change it. That answers DOW-65.",
+      "created_at": "2026-10-30T20:10:00Z",
+      "labels": [
+        "feedback",
+        "forge"
+      ],
+      "components": [
+        "Forge app"
+      ]
+    },
+    {
+      "ref": "DOW-97",
+      "title": "Security lens on our monorepo is quick again",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-97",
+      "body": "The dependency audits finish in about a minute now on our 12-package repo.",
+      "created_at": "2026-10-30T20:20:00Z",
+      "labels": [
+        "feedback",
+        "scan-speed"
+      ],
+      "components": [
+        "Lens: Security"
+      ]
+    },
+    {
+      "ref": "DOW-98",
+      "title": "How do we know Dowser itself is healthy?",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-98",
+      "body": "We trust the cards, but nothing tells us if the Dowser code we install is getting worse. A short health note in the release notes would help us decide when to upgrade.",
+      "created_at": "2026-10-30T20:40:00Z",
+      "labels": [
+        "question",
+        "release"
+      ],
+      "components": [
+        "Install"
+      ]
     }
   ],
   "pages": [
