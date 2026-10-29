@@ -8,14 +8,14 @@
 // manifest an auditor reads (workspaces, apps/*, services/*); node_modules, dot folders and build output are never
 // entered, and test or fixture paths are reported as not audited instead of audited. Each auditor runs with
 // cwd = its directory and flags that read the lockfile without installing (`npm audit --package-lock-only`, `pip-audit -r` resolves in its own temp
-// venv), with a 60 s timeout. Nothing installs, nothing rewrites a lockfile. The auditors still reach their
+// venv), with a 60 s timeout; up to four directories are audited at once, their reports kept in directory order. Nothing installs, nothing rewrites a lockfile. The auditors still reach their
 // advisory databases over the network; no offline flag is passed, because an offline run without a local
 // database would answer "no findings" - skipped spelled as clean.
 //
 // One cached row per `<manifest>#<package>@<version>` (cards.md's dep ref): when several advisories (or several
 // tools) hit the same package version, the most severe names the title and `advisories` lists every id.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { delimiter, isAbsolute, join, relative, sep } from 'node:path';
 import * as store from './store.mjs';
 
@@ -31,7 +31,8 @@ export const OSV_LOCKFILES = /** @type {const} */ (['package-lock.json', 'yarn.l
 const REQUIREMENTS_RE = /^requirements[\w.-]*\.txt$/;
 /** How deep below the root manifest directories are looked for (forge/static/app is 3). */
 export const MAX_DEPTH = 3;
-/** At most this many directories below the root are audited (each auditor has 60 s per directory); the rest are
+/** At most this many directories below the root are audited (each auditor has 60 s per directory, four
+ * directories run at once); the rest are
  * reported as not audited. */
 export const MAX_DIRS = 25;
 const NEVER_ENTER = new Set(['node_modules', 'vendor', 'dist', 'build', 'target', 'out', 'coverage']);
@@ -42,7 +43,7 @@ const TEST_PATH_RE = /(^|\/)(test|tests|__tests__|spec|fixtures?|__fixtures__|ex
  * @typedef {{manifest: string, package: string, version: string, advisory: string, severity: typeof SEVERITIES[number],
  *   url?: string, fixed_in?: string, tool: string}} Finding
  * @typedef {{status: number | null, stdout: string, stderr: string, error?: Error}} SpawnResult
- * @typedef {{which: (cmd: string) => string | undefined, spawn: (path: string, args: string[], cwd: string) => SpawnResult}} System
+ * @typedef {{which: (cmd: string) => string | undefined, spawn: (path: string, args: string[], cwd: string) => Promise<SpawnResult>}} System
  */
 
 /**
@@ -62,19 +63,56 @@ export function which(cmd) {
   return undefined;
 }
 
+/** Per-stream output cap (spawnSync's maxBuffer, kept for the async spawn). */
+const MAX_OUTPUT = 64 * 1024 * 1024;
+
+/**
+ * Runs `path args` in `cwd` and resolves with its exit status and output. It never rejects: a child that cannot
+ * start, outlives AUDIT_TIMEOUT_MS (error code ETIMEDOUT, as spawnSync reports it) or writes more than MAX_OUTPUT
+ * on a stream (ENOBUFS) is killed and resolves with `error` set.
+ * @param {string} path @param {string[]} args @param {string} cwd
+ * @returns {Promise<SpawnResult>}
+ */
+function spawnAsync(path, args, cwd) {
+  // a .cmd/.bat shim (npm on Windows) only runs under a shell; the args are fixed flags and root file names
+  // matched by name patterns without spaces or shell characters, so one command line is safe to build
+  const shell = /\.(cmd|bat)$/i.test(path);
+  /** @type {import('node:child_process').SpawnOptions} */
+  const opts = { cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] };
+  return new Promise((resolve) => {
+    /** @type {import('node:child_process').ChildProcess} */
+    let child;
+    try { child = shell ? spawn(`"${path}" ${args.join(' ')}`, { ...opts, shell: true }) : spawn(path, args, opts); } catch (e) {
+      resolve({ status: null, stdout: '', stderr: '', error: /** @type {Error} */ (e) });
+      return;
+    }
+    const out = { stdout: '', stderr: '' };
+    let done = false;
+    /** @param {number | null} status @param {Error} [error] */
+    const settle = (status, error) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      if (error) { child.kill(); child.stdout?.destroy(); child.stderr?.destroy(); }
+      resolve({ status: error ? null : status, ...out, ...(error ? { error } : {}) });
+    };
+    /** @param {string} message @param {string} code */
+    const fail = (message, code) => settle(null, Object.assign(new Error(message), { code }));
+    const timer = setTimeout(() => fail(`spawn ${path} ETIMEDOUT`, 'ETIMEDOUT'), AUDIT_TIMEOUT_MS);
+    for (const name of /** @type {const} */ (['stdout', 'stderr'])) {
+      child[name]?.setEncoding('utf8');
+      child[name]?.on('data', (/** @type {string} */ chunk) => {
+        out[name] += chunk;
+        if (out[name].length > MAX_OUTPUT) fail(`${name} maxBuffer length exceeded`, 'ENOBUFS');
+      });
+    }
+    child.on('error', (e) => settle(null, e));
+    child.on('close', (status) => settle(status));
+  });
+}
+
 /** @type {System} */
-export const SYSTEM = {
-  which,
-  spawn(path, args, cwd) {
-    // a .cmd/.bat shim (npm on Windows) only runs under a shell; the args are fixed flags and root file names
-    // matched by name patterns without spaces or shell characters, so one command line is safe to build
-    const shell = /\.(cmd|bat)$/i.test(path);
-    /** @type {import('node:child_process').SpawnSyncOptionsWithStringEncoding} */
-    const opts = { cwd, encoding: 'utf8', timeout: AUDIT_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] };
-    const r = shell ? spawnSync(`"${path}" ${args.join(' ')}`, { ...opts, shell: true }) : spawnSync(path, args, opts);
-    return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '', error: r.error };
-  },
-};
+export const SYSTEM = { which, spawn: spawnAsync };
 
 /** @param {unknown} v @returns {string} */
 const firstLine = (v) => String(v ?? '').split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? '';
@@ -171,9 +209,9 @@ export function npmFindings(report, lock, manifest = 'package-lock.json') {
  * @param {string} root the repo root
  * @param {string} dir the manifest directory, repo-relative ('' = the root)
  * @param {System} sys
- * @returns {{report: AuditorReport, findings: Finding[]}}
+ * @returns {Promise<{report: AuditorReport, findings: Finding[]}>}
  */
-function npmAudit(root, dir, sys) {
+async function npmAudit(root, dir, sys) {
   const tool = 'npm-audit';
   const cwd = join(root, dir);
   const hasLock = existsSync(join(cwd, 'package-lock.json'));
@@ -184,7 +222,7 @@ function npmAudit(root, dir, sys) {
   const exe = sys.which('npm');
   if (!exe) return { report: { tool, state: 'skipped', reason: 'not installed' }, findings: [] };
   // exit 1 means "vulnerabilities found"; an npm error is a JSON {error: {code, summary}}
-  const r = sys.spawn(exe, ['audit', '--json', '--package-lock-only'], cwd);
+  const r = await sys.spawn(exe, ['audit', '--json', '--package-lock-only'], cwd);
   const why = failure(r, [0, 1]);
   const report = parseJson(r.stdout);
   if (why && !report?.error) return { report: { tool, state: 'skipped', reason: why }, findings: [] };
@@ -274,16 +312,16 @@ export function osvFindings(report, root, dir = '') {
  * @param {string} dir
  * @param {string[]} files the directory's file names
  * @param {System} sys
- * @returns {{report: AuditorReport, findings: Finding[]}}
+ * @returns {Promise<{report: AuditorReport, findings: Finding[]}>}
  */
-function osvScanner(root, dir, files, sys) {
+async function osvScanner(root, dir, files, sys) {
   const tool = 'osv-scanner';
   const locks = OSV_LOCKFILES.filter((f) => files.includes(f));
   if (!locks.length) return { report: { tool, state: 'skipped', reason: 'no lockfile osv-scanner reads' }, findings: [] };
   const exe = sys.which('osv-scanner');
   if (!exe) return { report: { tool, state: 'skipped', reason: 'not installed' }, findings: [] };
   // 0 = no vulnerabilities, 1 = vulnerabilities found; 128 = no packages found; anything else is an error
-  const r = sys.spawn(exe, ['--format', 'json', ...locks.map((f) => `--lockfile=${f}`)], join(root, dir));
+  const r = await sys.spawn(exe, ['--format', 'json', ...locks.map((f) => `--lockfile=${f}`)], join(root, dir));
   if (r.status === 128) return finish(tool, []);
   const why = failure(r, [0, 1]);
   if (why) return { report: { tool, state: 'skipped', reason: why }, findings: [] };
@@ -325,9 +363,9 @@ export function pipFindings(report, manifest) {
  * @param {string} dir
  * @param {string[]} files
  * @param {System} sys
- * @returns {{report: AuditorReport, findings: Finding[]}}
+ * @returns {Promise<{report: AuditorReport, findings: Finding[]}>}
  */
-function pipAudit(root, dir, files, sys) {
+async function pipAudit(root, dir, files, sys) {
   const tool = 'pip-audit';
   const reqs = files.filter((f) => REQUIREMENTS_RE.test(f)).sort();
   const targets = [...reqs.map((f) => ({ manifest: inDir(dir, f), args: ['-r', f] })),
@@ -339,7 +377,7 @@ function pipAudit(root, dir, files, sys) {
   const findings = [];
   for (const t of targets) {
     // exit 1 means "vulnerabilities found"; pip-audit resolves -r in a temp venv and installs nothing here
-    const r = sys.spawn(exe, ['-f', 'json', '--progress-spinner', 'off', ...t.args], join(root, dir));
+    const r = await sys.spawn(exe, ['-f', 'json', '--progress-spinner', 'off', ...t.args], join(root, dir));
     const why = failure(r, [0, 1]);
     const report = why ? undefined : parseJson(r.stdout);
     if (!report) return { report: { tool, state: 'skipped', reason: `${t.manifest}: ${why ?? (firstLine(r.stderr) || 'output was not JSON')}` }, findings: [] };
@@ -390,17 +428,40 @@ export function manifestDirs(root) {
  * The auditors for one directory. The root runs all three, so each reports why it ran or not; a directory below
  * it runs only those that read one of its manifests, and its reports carry `dir`.
  * @param {string} root @param {string} dir @param {System} sys
- * @returns {{report: AuditorReport, findings: Finding[]}[]}
+ * @returns {Promise<{report: AuditorReport, findings: Finding[]}[]>}
  */
-function auditDir(root, dir, sys) {
+async function auditDir(root, dir, sys) {
   const files = filesIn(join(root, dir));
-  if (!dir) return [npmAudit(root, dir, sys), osvScanner(root, dir, files, sys), pipAudit(root, dir, files, sys)];
+  if (!dir) return [await npmAudit(root, dir, sys), await osvScanner(root, dir, files, sys), await pipAudit(root, dir, files, sys)];
   const runs = [
-    ...(files.includes('package-lock.json') ? [npmAudit(root, dir, sys)] : []),
-    ...(OSV_LOCKFILES.some((f) => files.includes(f)) ? [osvScanner(root, dir, files, sys)] : []),
-    ...(files.includes('pyproject.toml') || files.some((f) => REQUIREMENTS_RE.test(f)) ? [pipAudit(root, dir, files, sys)] : []),
+    ...(files.includes('package-lock.json') ? [await npmAudit(root, dir, sys)] : []),
+    ...(OSV_LOCKFILES.some((f) => files.includes(f)) ? [await osvScanner(root, dir, files, sys)] : []),
+    ...(files.includes('pyproject.toml') || files.some((f) => REQUIREMENTS_RE.test(f)) ? [await pipAudit(root, dir, files, sys)] : []),
   ];
   return runs.map(({ report: { tool, ...rest }, findings }) => ({ report: { tool, dir, ...rest }, findings }));
+}
+
+/** At most this many directories are audited at once (the auditors mostly wait on the network). */
+export const MAX_IN_FLIGHT = 4;
+
+/**
+ * `fn` over `items` with at most `limit` calls in flight; the results keep the order of `items`.
+ * @template T, R
+ * @param {T[]} items @param {number} limit @param {(item: T) => Promise<R>} fn
+ * @returns {Promise<R[]>}
+ */
+async function mapPool(items, limit, fn) {
+  /** @type {R[]} */
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
 }
 
 /** A tool that is not installed is reported once, without a directory. @param {AuditorReport[]} reports */
@@ -427,17 +488,18 @@ const finish = (tool, findings) => ({ report: { tool, state: 'ran', found: new S
 export const depRef = (f) => `${f.manifest}#${f.package}@${f.version}`;
 
 /**
- * Runs the auditors and caches one `dep` row per finding ref on the run (a re-run of the same run upserts).
+ * Runs the auditors, MAX_IN_FLIGHT directories at a time (reports keep the root-first `manifestDirs` order), and
+ * caches one `dep` row per finding ref on the run in one transaction (a re-run of the same run upserts).
  * @param {import('./store.mjs').Db} db
  * @param {{root: string, runId: string}} o
  * @param {System} [sys] the PATH lookup and spawner (tests inject a fake)
- * @returns {{out: {auditors: AuditorReport[], refs: {type: 'dep', ref: string, title: string, url?: string, fixed_in?: string}[],
- *   not_audited?: {dir: string, reason: string}[]}}}
+ * @returns {Promise<{out: {auditors: AuditorReport[], refs: {type: 'dep', ref: string, title: string, url?: string, fixed_in?: string}[],
+ *   not_audited?: {dir: string, reason: string}[]}}>}
  */
-export function runDeps(db, { root, runId }, sys = SYSTEM) {
+export async function runDeps(db, { root, runId }, sys = SYSTEM) {
   store.requireRunning(db, runId);
   const { audit, notAudited } = manifestDirs(root);
-  const runs = audit.flatMap((dir) => auditDir(root, dir, sys));
+  const runs = (await mapPool(audit, MAX_IN_FLIGHT, (dir) => auditDir(root, dir, sys))).flat();
   /** @type {Map<string, Finding[]>} */
   const byRef = new Map();
   for (const f of runs.flatMap((r) => r.findings)) byRef.set(depRef(f), [...(byRef.get(depRef(f)) ?? []), f]);

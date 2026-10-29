@@ -85,7 +85,7 @@ const shareLib = await import('./lib/share.mjs');
  * @typedef {{_: string[], [flag: string]: string | string[] | true | string[] | undefined}} Args
  * @typedef {{code?: number, out?: unknown, lines?: unknown[]}} Result
  * @typedef {{root: string, open: () => import('./lib/store.mjs').Db, dbFile: () => string}} Ctx
- * @typedef {(a: Args, ctx: Ctx) => Result} Handler
+ * @typedef {(a: Args, ctx: Ctx) => Result | Promise<Result>} Handler
  */
 
 /** Flags that may repeat (collected into an array). */
@@ -342,9 +342,9 @@ export const COMMANDS = {
 /**
  * Runs one command. Never exits the process; returns the exit code and what to print.
  * @param {string[]} argv
- * @returns {{code: number, stdout: string, stderr: string}}
+ * @returns {Promise<{code: number, stdout: string, stderr: string}>}
  */
-export function main(argv) {
+export async function main(argv) {
   const a = parseArgs(argv);
   const cmd = a._[0];
   if (!cmd || a.help === true) return { code: cmd ? 0 : 2, stdout: HELP, stderr: '' };
@@ -359,7 +359,8 @@ export function main(argv) {
     let file;
     const dbFile = () => (file ??= dbPath(root));
     const ctx = { root, dbFile, open: () => (db ??= store.openStore(dbFile())) };
-    const r = handler(a, ctx);
+    // a handler may be async (deps); awaiting inside the try keeps its rejection on the same error path
+    const r = await handler(a, ctx);
     const stdout = r.lines ? r.lines.map((l) => JSON.stringify(l)).join('\n') + '\n' : `${JSON.stringify(r.out, null, 2)}\n`;
     return { code: r.code ?? 0, stdout, stderr: '' };
   } catch (e) {
@@ -380,7 +381,7 @@ const HELP = readFileSync(fileURLToPath(import.meta.url), 'utf8')
 
 // run as a script: compare real paths, so a skill dir reached through a junction or symlink still runs
 if (process.argv[1] && isEntry(process.argv[1], import.meta.url)) {
-  const r = main(process.argv.slice(2));
+  const r = await main(process.argv.slice(2));
   if (r.stdout) process.stdout.write(r.stdout);
   if (r.stderr) process.stderr.write(r.stderr);
   process.exitCode = r.code;

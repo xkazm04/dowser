@@ -81,7 +81,7 @@ function fakeSys(tools) {
     spawn: (path, args, cwd) => {
       const cmd = String(path.split('/').pop());
       calls.push({ cmd, args, cwd });
-      return tools[cmd](args, cwd);
+      return Promise.resolve(tools[cmd](args, cwd));
     },
   };
   return { sys, calls };
@@ -114,7 +114,7 @@ test('parsers: npm audit v2 (version from the lockfile, string via skipped), osv
     url: 'https://osv.dev/vulnerability/PYSEC-2019-179', fixed_in: '1.0', tool: 'pip-audit' }]);
 });
 
-test('deps caches dep rows, reports ran/skipped honestly, leaves the repo byte-identical, and re-runs upsert', () => {
+test('deps caches dep rows, reports ran/skipped honestly, leaves the repo byte-identical, and re-runs upsert', async () => {
   const repo = repoWith({ 'package.json': '{"name":"shop"}', 'package-lock.json': LOCK, 'requirements.txt': 'flask==0.12\n', 'src/a.js': 'x\n' });
   const before = snapshot(repo);
   const run = runStart(db, { mode: 'full' }).id;
@@ -124,7 +124,7 @@ test('deps caches dep rows, reports ran/skipped honestly, leaves the repo byte-i
     // pip-audit is installed but fails: skipped with the first line of its error, not "clean"
     'pip-audit': () => ({ status: 2, stdout: '', stderr: '\nERROR: could not resolve flask==0.12\nmore detail' }),
   });
-  const out = runDeps(db, { root: repo, runId: run }, sys).out;
+  const out = (await runDeps(db, { root: repo, runId: run }, sys)).out;
   assert.deepEqual(out.auditors, [
     { tool: 'npm-audit', state: 'ran', found: 2 },
     { tool: 'osv-scanner', state: 'ran', found: 1 },
@@ -149,17 +149,17 @@ test('deps caches dep rows, reports ran/skipped honestly, leaves the repo byte-i
   const minimist = JSON.parse(String(rows.find((r) => r.ref.endsWith('minimist@1.2.5'))?.body));
   assert.equal('fixed_in' in minimist, false, 'no fixed version known: the key is omitted');
 
-  runDeps(db, { root: repo, runId: run }, sys);
+  await runDeps(db, { root: repo, runId: run }, sys);
   assert.equal(sourcesOf(db, run, 'dep').length, 2, 'a re-run upserts, no duplicates');
   assert.deepEqual(snapshot(repo), before, 'the repo is byte-identical after deps');
 });
 
-test('a repo with no manifests reports every auditor skipped with a reason and caches nothing', () => {
+test('a repo with no manifests reports every auditor skipped with a reason and caches nothing', async () => {
   const repo = repoWith({ 'README.md': '# hi\n' });
   const before = snapshot(repo);
   const run = runStart(db, { mode: 'full' }).id;
   const { sys, calls } = fakeSys({ npm: () => answer({}), 'osv-scanner': () => answer({}), 'pip-audit': () => answer({}) });
-  const out = runDeps(db, { root: repo, runId: run }, sys).out;
+  const out = (await runDeps(db, { root: repo, runId: run }, sys)).out;
   assert.deepEqual(out.auditors, [
     { tool: 'npm-audit', state: 'skipped', reason: 'no package.json or package-lock.json' },
     { tool: 'osv-scanner', state: 'skipped', reason: 'no lockfile osv-scanner reads' },
@@ -171,31 +171,31 @@ test('a repo with no manifests reports every auditor skipped with a reason and c
   assert.deepEqual(snapshot(repo), before);
 });
 
-test('absent tools are "not installed"; an npm error report and a timeout are skipped, never clean', () => {
+test('absent tools are "not installed"; an npm error report and a timeout are skipped, never clean', async () => {
   const repo = repoWith({ 'package-lock.json': LOCK, 'pyproject.toml': '[project]\nname = "x"\n' });
   const run = runStart(db, { mode: 'full' }).id;
-  const none = runDeps(db, { root: repo, runId: run }, fakeSys({}).sys).out;
+  const none = (await runDeps(db, { root: repo, runId: run }, fakeSys({}).sys)).out;
   assert.deepEqual(none.auditors.map((a) => `${a.tool}:${a.state}:${a.reason}`), [
     'npm-audit:skipped:not installed', 'osv-scanner:skipped:not installed', 'pip-audit:skipped:not installed',
   ]);
-  const broken = runDeps(db, { root: repo, runId: run }, fakeSys({
+  const broken = (await runDeps(db, { root: repo, runId: run }, fakeSys({
     npm: () => answer({ error: { code: 'ENOAUDIT', summary: 'Your configured registry does not support audit requests.\nsecond' } }),
     'osv-scanner': () => ({ status: null, stdout: '', stderr: '', error: Object.assign(new Error('spawnSync osv-scanner ETIMEDOUT'), { code: 'ETIMEDOUT' }) }),
     'pip-audit': (args) => answer({ dependencies: [] }, args.includes('.') ? 0 : 9),
-  }).sys).out;
+  }).sys)).out;
   assert.deepEqual(broken.auditors, [
     { tool: 'npm-audit', state: 'skipped', reason: 'Your configured registry does not support audit requests.' },
     { tool: 'osv-scanner', state: 'skipped', reason: 'timed out after 60 s' },
     { tool: 'pip-audit', state: 'ran', found: 0 },
   ]);
-  assert.deepEqual(runDeps(db, { root: repo, runId: run }, fakeSys({ npm: () => answer({}, 0) }).sys).out.auditors[0], { tool: 'npm-audit', state: 'ran', found: 0 },
+  assert.deepEqual((await runDeps(db, { root: repo, runId: run }, fakeSys({ npm: () => answer({}, 0) }).sys)).out.auditors[0], { tool: 'npm-audit', state: 'ran', found: 0 },
     'a measured zero is reported as found: 0');
   const lockless = repoWith({ 'package.json': '{}' });
-  assert.equal(runDeps(db, { root: lockless, runId: run }, fakeSys({ npm: () => answer({}) }).sys).out.auditors[0].reason,
+  assert.equal((await runDeps(db, { root: lockless, runId: run }, fakeSys({ npm: () => answer({}) }).sys)).out.auditors[0].reason,
     'package.json without package-lock.json; npm audit needs a lockfile');
 });
 
-test('the real System finds and runs an auditor stub on PATH, in the repo root', () => {
+test('the real System finds and runs an auditor stub on PATH, in the repo root', async () => {
   const bin = tempDir('deps-bin');
   dirs.push(bin);
   const repo = repoWith({ 'Cargo.lock': '# lock\n' });
@@ -211,7 +211,7 @@ test('the real System finds and runs an auditor stub on PATH, in the repo root',
   process.env.PATH = `${bin}${process.platform === 'win32' ? ';' : ':'}${path}`;
   try {
     const run = runStart(db, { mode: 'full' }).id;
-    const out = runDeps(db, { root: repo, runId: run }, SYSTEM).out;
+    const out = (await runDeps(db, { root: repo, runId: run }, SYSTEM)).out;
     assert.deepEqual(out.auditors.find((a) => a.tool === 'osv-scanner'), { tool: 'osv-scanner', state: 'ran', found: 1 });
     assert.deepEqual(out.refs, [{ type: 'dep', ref: 'Cargo.lock#time@0.1.43', title: 'RUSTSEC-2020-0071 moderate', url: 'https://osv.dev/vulnerability/RUSTSEC-2020-0071' }]);
   } finally {
@@ -220,7 +220,7 @@ test('the real System finds and runs an auditor stub on PATH, in the repo root',
   assert.deepEqual(snapshot(repo), before);
 });
 
-test('deps audits workspace manifests below the root, reports fixtures as not audited, and a missing tool once', () => {
+test('deps audits workspace manifests below the root, reports fixtures as not audited, and a missing tool once', async () => {
   const repo = repoWith({
     'package.json': '{"name":"mono"}', 'package-lock.json': JSON.stringify({ name: 'mono', lockfileVersion: 3, packages: { '': {} } }),
     'apps/web/package-lock.json': LOCK, 'services/py/requirements.txt': 'flask==0.12\n', 'services/py/Cargo.lock': '# lock\n',
@@ -231,7 +231,7 @@ test('deps audits workspace manifests below the root, reports fixtures as not au
     npm: (_a, cwd) => answer(cwd.endsWith('web') ? NPM_REPORT : { auditReportVersion: 2, vulnerabilities: {} }, cwd.endsWith('web') ? 1 : 0),
     'pip-audit': () => answer({ dependencies: [{ name: 'flask', version: '0.12', vulns: [{ id: 'PYSEC-2019-179' }] }] }),
   });
-  const out = runDeps(db, { root: repo, runId: run }, sys).out;
+  const out = (await runDeps(db, { root: repo, runId: run }, sys)).out;
   assert.deepEqual(out.auditors, [
     { tool: 'npm-audit', state: 'ran', found: 0 },
     { tool: 'osv-scanner', state: 'skipped', reason: 'not installed' },
@@ -245,6 +245,29 @@ test('deps audits workspace manifests below the root, reports fixtures as not au
   assert.ok(!calls.some((c) => c.cwd.includes('node_modules') || c.cwd.includes(join('a', 'b', 'c', 'd'))), 'node_modules and depth 4 never audited');
 });
 
-test('deps refuses a run that is not running', () => {
-  assert.throws(() => runDeps(db, { root: home, runId: 'nope' }, fakeSys({}).sys), /does not exist/);
+test('deps audits at most four directories at once and keeps the reports in directory order', async () => {
+  const names = ['a1', 'a2', 'b1', 'b2', 'c1', 'c2'];
+  const repo = repoWith(Object.fromEntries(names.map((n) => [`pkgs/${n}/package-lock.json`, LOCK])));
+  const run = runStart(db, { mode: 'full' }).id;
+  let inFlight = 0;
+  let peak = 0;
+  /** @type {import('../lib/deps.mjs').System} */
+  const sys = {
+    which: (cmd) => (cmd === 'npm' ? '/fake/bin/npm' : undefined),
+    spawn: async (_path, _args, cwd) => {
+      peak = Math.max(peak, ++inFlight);
+      // the later directories answer first, so an order kept by completion would show
+      await new Promise((r) => setTimeout(r, 40 - 5 * names.indexOf(String(cwd.split(/[\\/]/).pop()))));
+      inFlight--;
+      return answer({ auditReportVersion: 2, vulnerabilities: {} }, 0);
+    },
+  };
+  const out = (await runDeps(db, { root: repo, runId: run }, sys)).out;
+  assert.equal(peak, 4, 'four directories in flight at most, and the pool fills');
+  assert.deepEqual(out.auditors.filter((a) => a.dir).map((a) => a.dir), names.map((n) => `pkgs/${n}`));
+  assert.deepEqual(out.auditors[0], { tool: 'npm-audit', state: 'skipped', reason: 'no package.json or package-lock.json' }, 'the root stays first');
+});
+
+test('deps refuses a run that is not running', async () => {
+  await assert.rejects(() => runDeps(db, { root: home, runId: 'nope' }, fakeSys({}).sys), /does not exist/);
 });
