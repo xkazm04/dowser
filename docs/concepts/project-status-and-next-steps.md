@@ -118,7 +118,12 @@ from `playwright-core` scripts over CDP. Two traps: the app iframe is an out-of-
 not attached after a reconnect, so do a whole flow (open dialog, click, confirm) in ONE connection;
 and Jira's sidebar groups need a DOM click, not a coordinate click.
 
-## Gaps found in the live test (not fixed)
+## Gaps found in the live test
+
+Fixed since (2026-10-29 check against the code): 1 (snooze and reject wait in an undo window,
+`useCommitWindow`), 2 (account ids resolved through `/rest/api/3/user/bulk`), 4 (the accept preview renders
+markdown), 6 (one structured log line per tool and resolver call, `forge/src/core/observe.mjs`). Still open: 3
+and 5.
 
 1. **Snooze has no confirmation and no undo**: one click moves the item. Add an undo toast (a
    verdict reversal needs a server path; today there is none) or a confirm step.
@@ -137,7 +142,7 @@ and Jira's sidebar groups need a DOM click, not a coordinate click.
 Ordered by what protects the Dec 1 gate first (core loop + three demo lenses demo-ready), then the
 bonus tracks, then polish.
 
-1. **Fix the six live-test gaps above.** Small, contained, each in `forge/`; redeploy with
+1. **Fix the two live-test gaps still open above (3 and 5).** Small, contained, each in `forge/`; redeploy with
    `forge deploy -e development --non-interactive` and recheck with the browser approach.
 2. **First real `/dowser` run on a real repository** (open follow-up of the local-scan spark):
    install the skill into a project, run the four lenses against a mid-size repo, push to the live

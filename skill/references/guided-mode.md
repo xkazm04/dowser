@@ -93,6 +93,10 @@ Checking security and EU Cyber Resilience Act duties: done, no proposals.
 | "Right idea, but too big or too small" | `wrong-size` |
 | "Something else (tell me why)" | `other`, with their words as the note |
 
+- Snooze: ask "Until when? Give me a date, or say no date and it comes back when there is new evidence."
+  Turn "after the release" or "next month" into a date only after the runner confirms it. A refused date
+  is said plainly: "That date has already passed; give me a day after today." 
+
 ## Ask-why patterns
 
 Answer from `show <fp>` only, in this order, in plain words:

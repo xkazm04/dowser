@@ -4,7 +4,7 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { getProposal, move, openStore, propose, runStart, transitionsOf } from '../lib/store.mjs';
+import { getProposal, move, openStore, propose, runFinish, runStart, transitionsOf } from '../lib/store.mjs';
 import {
   RECORD_KEYS, getState, ingestPush, ingestSources, ingestVerdicts, outbox, readResponse, verdictsCursor,
 } from '../lib/sync.mjs';
@@ -247,6 +247,19 @@ test('ingest-sources: caches the items for the run and returns citable refs', ()
   assert.equal(n, 2, 'a re-fetch refreshes, never duplicates');
   assert.throws(() => ingestSources(db, { runId: run, type: 'jira', doc: { items: [] } }), /--type/);
   assert.throws(() => ingestSources(db, { runId: 'r-nope', type: 'page', doc: { items: [] } }), /does not exist/);
+});
+
+test('run finish drops the cached ticket, page and goal text, and keeps what a card cites', () => {
+  const r2 = runStart(db, { mode: 'full' }).id;
+  ingestSources(db, { runId: r2, type: 'ticket', doc: { items: [{ ref: 'SUP-90', title: 'Customer text', url: 'https://j/SUP-90', body: 'private words' }] } });
+  ingestSources(db, { runId: r2, type: 'page', doc: { items: [{ ref: 'PAGE-9', title: 'Runbook', url: 'https://w/9', body: 'page words' }] } });
+  db.prepare("INSERT INTO sources_cache (run_id, type, ref, title, body, fetched_at) VALUES (?, 'dep', 'package-lock.json#x@1', 'GHSA-1 high', '{}', ?)").run(r2, new Date().toISOString());
+  const body = (/** @type {string} */ type) => /** @type {any} */ (db.prepare('SELECT body, title, url FROM sources_cache WHERE run_id = ? AND type = ?').get(r2, type));
+  assert.equal(body('ticket').body, 'private words', 'the running run still reads it');
+  runFinish(db, { runId: r2, lenses: { opportunity: { state: 'ran' } } });
+  assert.deepEqual({ ...body('ticket') }, { body: null, title: 'Customer text', url: 'https://j/SUP-90' });
+  assert.equal(body('page').body, null);
+  assert.equal(body('dep').body, '{}', 'auditor output is not the team\'s text and stays');
 });
 
 test('readResponse unwraps an MCP tool result envelope and refuses a tool error', () => {

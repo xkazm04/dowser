@@ -441,7 +441,8 @@ export function checkLenses(lenses) {
 }
 
 /**
- * Finishes a running run (CAS running -> done|failed) with its per-lens record.
+ * Finishes a running run (CAS running -> done|failed) with its per-lens record, and drops the cached ticket,
+ * page and goal bodies of every run that is no longer running (refs, titles and urls stay).
  * @param {Db} db
  * @param {{runId: string, lenses: unknown, status?: string}} o
  * @returns {Row}
@@ -457,6 +458,10 @@ export function runFinish(db, { runId, lenses, status = 'done' }) {
       throw new DowserError(cur ? `run ${runId} is ${cur.status}, not running` : `run ${runId} does not exist`, 2,
         { error: 'refused', run: runId, current: cur ? cur.status : 'not-found' });
     }
+    // Ticket, page and goal text is the team's, fetched for this run only: once no run is using it, keep the ref,
+    // title and url a card cites and drop the body (also for runs that finished before this rule existed).
+    db.prepare(`UPDATE sources_cache SET body = NULL WHERE body IS NOT NULL AND type IN ('ticket', 'page', 'goal')
+      AND run_id IN (SELECT id FROM runs WHERE status <> 'running')`).run();
     return /** @type {Row} */ (getRun(db, runId));
   });
 }

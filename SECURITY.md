@@ -21,7 +21,11 @@ released versions will be stated here when the first release is tagged.
 - When the Forge app is connected, the skill pushes each proposal with its evidence, including the quoted
   source and doc lines, to the Dowser inbox in Jira. To keep the lines on the machine, set
   `prefs set quotes=omit`: the push then carries each line's path, line number and a short hash
-  (`quote_sha`) instead of its text.
+  (`quote_sha`) instead of its text. The setting covers evidence only: a card's title, rationale and body
+  are sent as written and can name code.
+- The Jira tickets, Confluence pages and goals a scan reads are cached on its run while it runs. When the
+  run finishes, their text is dropped from the store; their refs, titles and links stay, because cards cite
+  them. The agent's work files (candidate lists, saved tool responses) go in the OS temp folder.
 - Dependency auditing runs `npm audit`, `osv-scanner` or `pip-audit` only when they are already installed.
   Dowser never installs them. They send the project's package names and versions to their advisory
   services (the npm registry, osv.dev, PyPI); `pip-audit` resolves a requirements file in a temporary

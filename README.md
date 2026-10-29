@@ -68,7 +68,8 @@ Dowser never changes the project it scans. Its memory lives in `~/.dowser/`, out
 Switch at any time by saying "switch to guided" (or "developer"). Cards are short by default; say
 "full cards" to add each card's summary and description, or "compact" to go back. Say "share as markdown"
 to get the kept proposals of the last scan as markdown for a doc or a slide (evidence by reference, no
-quoted code). Ask "why this one?" about any
+quoted code). Teams that must not send source lines to Jira set `prefs set quotes=omit`: pushed cards
+then carry a hash of each quoted line instead of its text (SECURITY.md). Ask "why this one?" about any
 proposal: Dowser answers from the evidence it stored and does not rescan.
 
 ## Develop

@@ -60,6 +60,7 @@ Run `prefs get mode verbosity`. If `mode` is absent, ask the runner once:
 Ask the runner with your harness's multiple-choice question tool if it has one, else with a
 numbered list. Store the answer with `prefs set mode=dev` or `prefs set mode=guided`. Do not
 ask again on later runs. The runner can say "switch to guided" at any time; store it the same way.
+`quotes` (default `send`; `omit` pushes each quoted line as a hash, see SECURITY.md).
 `verbosity` (default `short`) sets how much of each card triage shows (`references/cards.md`
 "Rendering"); "compact" or "full cards" stores `prefs set verbosity=short|full`.
 
@@ -147,6 +148,8 @@ the push step too. A half-synced memory must not push.
    (a force-push or rebase): the run is `full`. Say so at once, before any lens starts, because
    a full scan takes longer (guided: "Dowser will read the whole project this time, because the
    version it read last time is no longer in the project's history."), and again in the summary.
+   When it prints `woke`, those snoozed items reached their date: name them before the lenses
+   start (guided: "<n> proposals you set aside until today are back."), and show them in triage.
 3. An incremental run scans what changed: `git diff --name-only <base_sha>..<head_sha>`, plus
    the files those import, plus any doc that names them. If that list is empty, every lens is
    `ran` with zero emitted, and the summary says no code changed since the last scan.
