@@ -15,6 +15,8 @@ export const STATUSES = /** @type {const} */ (['candidate', 'verified', 'dropped
 /** Closed reject reason codes (D5); `other` requires a note. */
 export const REASONS = /** @type {const} */ (['false-positive', 'already-known', 'not-our-direction', 'not-worth-it', 'wrong-size', 'other']);
 export const EVIDENCE_TYPES = /** @type {const} */ (['code', 'doc', 'git', 'ticket', 'page', 'goal', 'dep', 'sarif']);
+/** A pushed record's `quote_sha` (wire mode): the first 16 hex of sha256 of the whitespace-normalised quote. */
+export const QUOTE_SHA_RE = /^[0-9a-f]{16}$/;
 /** Evidence types whose `quote` is mandatory and mechanically re-checked by `verify` (D8). */
 export const QUOTED_TYPES = /** @type {const} */ (['code', 'doc']);
 export const SIZES = /** @type {const} */ (['XS', 'S', 'M', 'L', 'XL']);
@@ -92,7 +94,7 @@ export function deciderAllowed(from, to, by) {
  * @typedef {typeof EVIDENCE_TYPES[number]} EvidenceType
  * @typedef {typeof SIZES[number]} Size
  * @typedef {typeof CONFIDENCES[number]} Confidence
- * @typedef {{type: EvidenceType, ref: string, quote?: string, url?: string}} Evidence
+ * @typedef {{type: EvidenceType, ref: string, quote?: string, quote_sha?: string, url?: string}} Evidence
  * @typedef {{size: Size, days_low?: number, days_high?: number, basis?: string[]}} Effort
  * @typedef {{blast: typeof BLASTS[number], bus_factor?: number}} DeliveryRisk
  * @typedef {{lens_version: string, model?: string, harness?: string, run_id?: string, focus?: string}} Provenance
@@ -291,10 +293,15 @@ export function artifactsProblem(list, evidenceRefs) {
  * Validates one candidate line (a `dowser-proposal/1` record without the store-owned triage fields).
  * Checks shape and enums, title <= 80, the five body sections, a quote on every code/doc evidence, no `null`
  * anywhere, no 0 for unmeasured numbers. It does not check `kind` against the lens's kinds (fingerprint does).
+ * `opts.wire` checks a pushed record instead (forge-mcp-2): code/doc evidence carries `quote` OR `quote_sha`
+ * (16 lowercase hex, `quoteSha` in fingerprint.mjs), for a team that withholds source lines (`quotes=omit`).
+ * `quote_sha` is an evidence key only in wire mode; every other rule is the same.
  * @param {unknown} input
+ * @param {{wire?: boolean}} [opts]
  * @returns {Validation}
  */
-export function validateCandidate(input) {
+export function validateCandidate(input, opts = {}) {
+  const wire = opts.wire === true;
   /** @param {string} why @returns {{ok: false, why: string}} */
   const no = (why) => ({ ok: false, why });
   if (!obj(input)) return no('not-an-object');
@@ -324,11 +331,17 @@ export function validateCandidate(input) {
   for (let i = 0; i < o.evidence.length; i++) {
     const e = o.evidence[i];
     if (!obj(e)) return no(`evidence[${i}]:not an object`);
-    const ex = extraKey(e, ['type', 'ref', 'quote', 'url']);
+    const ex = extraKey(e, wire ? ['type', 'ref', 'quote', 'quote_sha', 'url'] : ['type', 'ref', 'quote', 'url']);
     if (ex) return no(`evidence[${i}]:unknown field ${ex}`);
     if (!isOneOf(EVIDENCE_TYPES, e.type)) return no(`evidence[${i}].type:must be one of ${EVIDENCE_TYPES.join('|')}`);
     if (!str(e.ref)) return no(`evidence[${i}].ref:required`);
-    if (isOneOf(QUOTED_TYPES, e.type) && !str(e.quote)) return no(`evidence[${i}].quote:required for ${e.type} evidence`);
+    if (e.quote_sha !== undefined) {
+      if (typeof e.quote_sha !== 'string' || !QUOTE_SHA_RE.test(e.quote_sha)) return no(`evidence[${i}].quote_sha:must be 16 lowercase hex chars`);
+      if (!isOneOf(QUOTED_TYPES, e.type)) return no(`evidence[${i}].quote_sha:only on ${QUOTED_TYPES.join('|')} evidence`);
+    }
+    if (isOneOf(QUOTED_TYPES, e.type) && !str(e.quote) && !(wire && e.quote_sha !== undefined)) {
+      return no(`evidence[${i}].quote:required for ${e.type} evidence${wire ? ' (or quote_sha)' : ''}`);
+    }
     if (e.quote !== undefined && typeof e.quote !== 'string') return no(`evidence[${i}].quote:must be a string`);
     if (e.url !== undefined && !str(e.url)) return no(`evidence[${i}].url:must be a non-empty string`);
   }

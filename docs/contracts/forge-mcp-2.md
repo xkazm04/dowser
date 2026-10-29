@@ -191,6 +191,17 @@ Output: `{results: [{fp, result, external_ref?, external_url?, why?}]}`, one per
 updates the card of the existing one, unites its evidence and returns `updated`. Evidence on the Forge side
 is a union by evidence key (the same key rule as `docs/data-model.md`), never a replacement that loses rows.
 
+**Quoted lines (`quotes=omit`).** The skill quotes every `code`/`doc` line it proposes, and `verify` re-checks
+each quote against the file. By default the quote travels with the record, and the inbox and the Jira issue
+show it. A team that must not send source lines to Jira sets `prefs set quotes=omit`: `outbox` then sends each
+`code`/`doc` evidence item with `quote_sha` (the first 16 hex of sha256 of the whitespace-normalised quote) in
+place of `quote`; `type`, `ref` and `url` stay. The local store keeps the quote, so `verify` and ask-why are
+unchanged. Forge accepts a `code`/`doc` item with `quote` or `quote_sha` (never neither) and shows the ref and
+its link. Its evidence key is the path plus `#sha:<quote_sha>`, so it stays stable across line shifts and two
+withheld quotes in one file stay two items. A quoted and a withheld copy of the same line have different keys:
+switching a team between modes gives its already-pushed items new evidence keys once, which reads as one
+evidence-grew push (an `updated`, and a snoozed item reopens). That one-time growth is expected.
+
 **Reopening.** When an `updated` push grew the evidence of an item a person snoozed, the item returns to the
 inbox as reopened. A rejected item returns only under the store's resurfacing rule (a new evidence type and
 at least twice the evidence it had when rejected). An accepted or merged item only gains evidence. A reopen

@@ -73,6 +73,14 @@ export function fingerprint({ lens, kind, topic, anchors }, kinds) {
 export const squash = (s) => s.replace(/\s+/g, ' ').trim();
 
 /**
+ * A withheld quote's stand-in on the wire (`quotes=omit`): the first 16 hex of sha256 of the `squash`ed quote,
+ * so the same line yields the same evidence key wherever it moves, without the line itself leaving the machine.
+ * @param {string} quote
+ * @returns {string}
+ */
+export const quoteSha = (quote) => createHash('sha256').update(squash(quote)).digest('hex').slice(0, 16);
+
+/**
  * Splits an evidence ref into its repo-relative path and an optional line hint.
  * `src/a.js:12`, `src/a.js:12:5`, `src/a.js#L12`, `src/a.js#symbol`, `src/a.js#symbol:12`.
  * @param {string} ref
@@ -99,14 +107,17 @@ export function parseRef(ref) {
 /**
  * The identity of one evidence item within a proposal (WP1b): for `code`/`doc`, the path plus the
  * whitespace-normalized quote - the line is only a hint, so a line shift is not new evidence; for every other
- * type, the trimmed ref.
- * @param {{type: string, ref: string, quote?: string}} e
+ * type, the trimmed ref. A pushed code/doc item without a quote but with `quote_sha` (`quotes=omit`) keys on the
+ * path plus `#sha:<quote_sha>` instead.
+ * @param {{type: string, ref: string, quote?: string, quote_sha?: string}} e
  * @returns {{key: string, path?: string, line?: number}}
  */
 export function evidenceKey(e) {
   if (e.type === 'code' || e.type === 'doc') {
     const { path, line } = parseRef(e.ref);
-    const key = `${path}\n${squash(e.quote ?? '')}`;
+    const key = e.quote === undefined && e.quote_sha !== undefined
+      ? `${path}\n#sha:${e.quote_sha}`
+      : `${path}\n${squash(e.quote ?? '')}`;
     return line !== undefined ? { key, path, line } : { key, path };
   }
   return { key: e.ref.trim() };

@@ -55,7 +55,7 @@ export function checkRecord(raw) {
   const cand = {};
   for (const [k, v] of Object.entries(raw)) if (!DROP.includes(k)) cand[k] = v;
   if (typeof cand.fp !== 'string' || !cand.fp) return { ok: false, fp: fpIn, why: 'fp is required' };
-  const v = validateCandidate(cand);
+  const v = validateCandidate(cand, { wire: true });
   if (!v.ok) return { ok: false, fp: fpIn, why: `invalid record: ${v.why}` };
   // The lens's closed kind list lives in the skill's lens packs, not here; recompute with the record's own kind.
   // That checks the identity hash (lens|kind|topic|anchors) without re-checking kind membership.

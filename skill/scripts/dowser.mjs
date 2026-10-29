@@ -8,8 +8,9 @@
 //   node dowser.mjs <command> [--repo <path>] [flags]          (--repo defaults to the cwd)
 //   init                                   create the store -> {db, project_key, repo, user_version}
 //   run start --mode full|incremental|focused [--harness h] [--model m] [--focus goal:..|area:..]
-//                                          -> {run_id, mode, base_sha?, head_sha?, fallback?, db}  (base_sha = last
-//                                          done run's head; incremental with that head gone from history -> full)
+//                                          -> {run_id, mode, base_sha?, head_sha?, fallback?, woke?, db}  (base_sha = last
+//                                          done run's head; incremental with that head gone from history -> full;
+//                                          woke = snoozed fps whose --until date passed, now verified)
 //   run finish --run <id> --lenses <json | @file> [--status done|failed]
 //                                          lenses: {<lens>: {state: ran|skipped|partial, reason?, emitted?,
 //                                          verified?, dropped?, truncated?}}
@@ -19,12 +20,14 @@
 //                                          invalid:<why>; then one {summary} line
 //   verify --run <id>                      re-check code/doc quotes -> verified | dropped (verify-failed:<ref>)
 //   move <fp> --to <status> --by <kind:name> [--from s] [--reason code] [--note t] [--into fp] [--run id]
+//                                          [--until YYYY-MM-DD]  (only with --to snoozed; a date after today)
 //   status [--runs n]                      counts by status and lens, last runs, "top N of M" truncation
 //   context --run <id> --lens <l> [--focus f]  -> {lens, lens_version, kinds, budget, suppressed, near, rules,
 //                                          exemplars, outcomes?: {right, partly, wrong}, since_sha?, focus?, direction?}
 //   similar <fp>                           same-lens items sharing an anchor or 2+ topic tokens, with the overlap
 //   show <fp>                              ask-why: the card, every evidence row, every transition (no rescan)
-//   list [--lens l] [--status s] [--title substring]  -> {proposals: [{fp, lens, status, title, decided_at?}]}
+//   list [--lens l] [--status s] [--title substring]  -> {proposals: [{fp, lens, status, title, decided_at?,
+//                                          snooze_until?}]}
 //   rules offer | rules list [--lens l] | rules accept|decline <id> --by human:<name> [--text t]
 //   reflect export                         -> {project_key, rules_json?, more?}: the dowser_reflect_sync arguments
 //                                          (rules in state `offered`, oldest first, at most 50; read-only;
@@ -182,7 +185,7 @@ export const COMMANDS = {
       const db = ctx.open();
       const r = store.runStart(db, { mode: /** @type {string} */ (opt(a, 'mode', true)), harness: opt(a, 'harness'), model: opt(a, 'model'), focus: opt(a, 'focus'), headSha: headSha(ctx.root),
         hasCommit: (sha) => hasCommit(ctx.root, sha) });
-      return { out: store.clean({ run_id: r.id, mode: r.mode, focus: r.focus, base_sha: r.base_sha, head_sha: r.head_sha, fallback: r.fallback, db: ctx.dbFile() }) };
+      return { out: store.clean({ run_id: r.id, mode: r.mode, focus: r.focus, base_sha: r.base_sha, head_sha: r.head_sha, fallback: r.fallback, woke: r.woke, db: ctx.dbFile() }) };
     }
     if (sub === 'finish') {
       const db = ctx.open();
@@ -234,9 +237,9 @@ export const COMMANDS = {
     const db = ctx.open();
     const row = store.move(db, fp, /** @type {string} */ (opt(a, 'to', true)), {
       from: opt(a, 'from'), by: /** @type {string} */ (opt(a, 'by', true)), reason: opt(a, 'reason'),
-      note: opt(a, 'note'), into: opt(a, 'into'), runId: opt(a, 'run'),
+      note: opt(a, 'note'), into: opt(a, 'into'), runId: opt(a, 'run'), until: opt(a, 'until'),
     });
-    return { out: { fp: row.fp, status: row.status, ...store.clean({ reason: row.reason, note: row.note, merged_into: row.merged_into }), decided_by: row.decided_by, decided_at: row.decided_at } };
+    return { out: { fp: row.fp, status: row.status, ...store.clean({ reason: row.reason, note: row.note, merged_into: row.merged_into, snooze_until: row.snooze_until }), decided_by: row.decided_by, decided_at: row.decided_at } };
   },
 
   status(a, ctx) {
@@ -266,7 +269,9 @@ export const COMMANDS = {
   },
 
   list(a, ctx) {
-    return { out: memory.list(ctx.open(), { lens: opt(a, 'lens'), status: opt(a, 'status'), title: opt(a, 'title') }) };
+    const db = ctx.open();
+    const out = memory.list(db, { lens: opt(a, 'lens'), status: opt(a, 'status'), title: opt(a, 'title') });
+    return { out: { ...out, proposals: store.withSnoozeUntil(db, out.proposals) } };
   },
 
   rules(a, ctx) {
@@ -297,7 +302,8 @@ export const COMMANDS = {
   // WP4 - the Forge seam
   outbox(a, ctx) {
     const origin = originUrl(ctx.root);
-    return { out: syncLib.outbox(ctx.open(), { projectKey: projectKey(ctx.root), runId: /** @type {string} */ (opt(a, 'run', true)), repoUrl: origin ? webUrl(origin) : undefined }) };
+    const quotes = memory.readPrefs(ctx.root).quotes === 'omit' ? 'omit' : 'send';
+    return { out: syncLib.outbox(ctx.open(), { projectKey: projectKey(ctx.root), runId: /** @type {string} */ (opt(a, 'run', true)), repoUrl: origin ? webUrl(origin) : undefined, quotes }) };
   },
   'ingest-push'(a, ctx) {
     const doc = syncLib.readResponse(/** @type {string} */ (opt(a, 'file', true)));

@@ -150,6 +150,11 @@ test('mock Forge over stdio: push to the inbox, accept with a Jira issue, idempo
   assert.equal(ob.out.head_sha, headSha);
   const sent = JSON.parse(ob.out.proposals_json);
   assert.deepEqual(sent.map((/** @type {any} */ p) => p.fp).sort(), [fp, fp2].sort());
+  // the CLI passes the runner's quotes preference to outbox: omit sends quote_sha instead of the line
+  assert.equal(cli('prefs', 'set', 'quotes=omit').code, 0);
+  const withheld = JSON.parse(cli('outbox', '--run', runId).out.proposals_json).flatMap((/** @type {any} */ p) => p.evidence);
+  assert.ok(withheld.every((/** @type {any} */ e) => e.type !== 'code' || (!('quote' in e) && /^[0-9a-f]{16}$/.test(e.quote_sha))));
+  assert.equal(cli('prefs', 'set', 'quotes=send').code, 0);
   const pushed = await tool('dowser_proposals_push', ob.out);
   assert.deepEqual(pushed.results.map((/** @type {any} */ r) => r.result), ['created', 'created']);
   const refOf = (/** @type {string} */ f) => pushed.results.find((/** @type {any} */ r) => r.fp === f).external_ref;

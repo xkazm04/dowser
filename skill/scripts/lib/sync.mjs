@@ -22,7 +22,8 @@
 //                              so ingest-push records what was actually sent, not what grew in between
 //   verdict:<fp>@<decided_at>  {status, outcome, at} - a verdict already ingested (the idempotency key)
 import { readFileSync } from 'node:fs';
-import { DowserError, MoveRefused, REASONS, isOneOf } from './model.mjs';
+import { DowserError, MoveRefused, QUOTED_TYPES, REASONS, isOneOf } from './model.mjs';
+import { quoteSha } from './fingerprint.mjs';
 import * as store from './store.mjs';
 import { commitDate, commitsSince, lastChange, treeFiles } from './git.mjs';
 
@@ -115,13 +116,17 @@ export function proposalRecord(db, fp) {
  * `dowser-proposal/1` records. At most `limit` (PUSH_MAX) records; when more are pending, `more: true` is added
  * (push, ingest, then run outbox again). `head_sha` is the run's; `repo_url` is the caller's web URL of origin.
  * Records the evidence seq of each record sent in sync_state `outbox:last`.
+ * `quotes` is the runner's `quotes` preference, which the CLI reads and passes (default `send`): `omit` sends each
+ * code/doc quote as `quote_sha` (its `quoteSha`) instead of the line.
+ * The store is untouched either way; `verify` and ask-why keep the stored quotes.
  * @param {Db} db
- * @param {{projectKey: string, runId: string, repoUrl?: string, limit?: number}} o
+ * @param {{projectKey: string, runId: string, repoUrl?: string, limit?: number, quotes?: 'send' | 'omit'}} o
  * @returns {OutboxArgs}
  */
-export function outbox(db, { projectKey, runId, repoUrl, limit = PUSH_MAX }) {
+export function outbox(db, { projectKey, runId, repoUrl, limit = PUSH_MAX, quotes }) {
   const run = store.getRun(db, runId);
   if (!run) throw new DowserError(`run ${runId} does not exist`, 2);
+  const omit = quotes === 'omit';
   return store.tx(db, () => {
     /** @type {Row[]} */
     const proposals = [];
@@ -137,7 +142,7 @@ export function outbox(db, { projectKey, runId, repoUrl, limit = PUSH_MAX }) {
         if (last !== undefined && seq <= last) continue;
       }
       if (proposals.length >= limit) { more = true; break; }
-      proposals.push(proposalRecord(db, fp));
+      proposals.push(omit ? withheldQuotes(proposalRecord(db, fp)) : proposalRecord(db, fp));
       seqs[fp] = seq;
     }
     setState(db, 'outbox:last', JSON.stringify({ run_id: runId, at: store.now(), seqs }));
@@ -146,6 +151,25 @@ export function outbox(db, { projectKey, runId, repoUrl, limit = PUSH_MAX }) {
       repo_url: repoUrl, head_sha: typeof run.head_sha === 'string' ? run.head_sha : undefined, more: more || undefined,
     }));
   });
+}
+
+/**
+ * The record with each code/doc evidence quote replaced by its `quote_sha` (`quotes=omit`); type, ref and url
+ * stay. A new record and new evidence objects: the stored row is not touched.
+ * @param {Row} record
+ * @returns {Row}
+ */
+export function withheldQuotes(record) {
+  if (!Array.isArray(record.evidence)) return record;
+  const evidence = record.evidence.map((/** @type {Row} */ e) => {
+    if (!isOneOf(QUOTED_TYPES, e.type) || typeof e.quote !== 'string') return e;
+    const { quote, ...rest } = e;
+    /** @type {Row} */
+    const out = { type: rest.type, ref: rest.ref, quote_sha: quoteSha(quote) };
+    if (rest.url !== undefined) out.url = rest.url;
+    return out;
+  });
+  return { ...record, evidence };
 }
 
 // ------------------------------------------------------------------------------------------------ helpers

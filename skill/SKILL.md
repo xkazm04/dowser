@@ -269,8 +269,9 @@ Load `references/triage.md` (statuses, moves, reason codes) and `references/card
      `not-our-direction`, `not-worth-it`, `wrong-size`, `other`). `other` needs a short note:
      ask for it, and do not record the move without it. Record with
      `move <fp> --to rejected --by human:<name> --reason <code> [--note "<text>"]`.
-   - **Snooze**: `move <fp> --to snoozed --by human:<name>`. It comes back only when its
-     evidence grows.
+   - **Snooze**: `move <fp> --to snoozed --by human:<name> [--until YYYY-MM-DD]`. It comes
+     back when its evidence grows, or at the first run on or after the date (ask "until when?",
+     and accept no date). "What is snoozed?" is `list --status snoozed`, with each date.
    - **Merge**: ask into which item (a card in this batch or a known item), then
      `move <fp> --to merged --into <fp> --by human:<name>`.
 3. Offer **"keep the rest"** at every batch. It ends the dialog with every remaining card

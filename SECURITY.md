@@ -19,7 +19,9 @@ released versions will be stated here when the first release is tagged.
 - The skill stores proposals and their quoted evidence lines in a local SQLite file under `~/.dowser/`
   (not encrypted at rest).
 - When the Forge app is connected, the skill pushes each proposal with its evidence, including the quoted
-  source and doc lines, to the Dowser inbox in Jira.
+  source and doc lines, to the Dowser inbox in Jira. To keep the lines on the machine, set
+  `prefs set quotes=omit`: the push then carries each line's path, line number and a short hash
+  (`quote_sha`) instead of its text.
 - Dependency auditing runs `npm audit`, `osv-scanner` or `pip-audit` only when they are already installed.
   Dowser never installs them. They send the project's package names and versions to their advisory
   services (the npm registry, osv.dev, PyPI); `pip-audit` resolves a requirements file in a temporary

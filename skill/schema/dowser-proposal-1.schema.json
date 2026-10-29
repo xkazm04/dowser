@@ -80,10 +80,12 @@
         "type": { "enum": ["code", "doc", "git", "ticket", "page", "goal", "dep", "sarif"] },
         "ref": { "type": "string", "minLength": 1, "description": "code/doc: repo-relative path, optionally :line[:col]" },
         "quote": { "type": "string", "minLength": 1 },
+        "quote_sha": { "type": "string", "pattern": "^[0-9a-f]{16}$", "description": "code/doc on the wire only: first 16 hex of sha256 of the whitespace-normalised quote, sent in place of quote when the team set quotes=omit" },
         "url": { "type": "string", "minLength": 1 }
       },
       "if": { "properties": { "type": { "enum": ["code", "doc"] } } },
-      "then": { "required": ["quote"] }
+      "then": { "anyOf": [{ "required": ["quote"] }, { "required": ["quote_sha"] }] },
+      "else": { "not": { "required": ["quote_sha"] } }
     },
     "effort": {
       "type": "object",

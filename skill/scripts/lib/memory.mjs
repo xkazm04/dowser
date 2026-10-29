@@ -359,8 +359,11 @@ export function listRules(db, { lens } = {}) {
 
 // ------------------------------------------------------------------------------------------- prefs
 
-/** The preferences Dowser knows, with their allowed values. */
-export const PREFS = Object.freeze({ mode: ['dev', 'guided'], verbosity: ['short', 'full'] });
+/**
+ * The preferences Dowser knows, with their allowed values. `quotes=omit` keeps quoted source lines on the
+ * machine: `outbox` sends each code/doc quote as its `quote_sha` instead (forge-mcp-2); the store keeps the quote.
+ */
+export const PREFS = Object.freeze({ mode: ['dev', 'guided'], verbosity: ['short', 'full'], quotes: ['send', 'omit'] });
 
 /** `~/.dowser/user.json` (`DOWSER_HOME` overrides the home). */
 export const prefsPath = () => join(dowserHome(), 'user.json');
