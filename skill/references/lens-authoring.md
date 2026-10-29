@@ -70,10 +70,11 @@ pack names.
 - **Minor** (`0.1.x` -> `0.2.0`): a new `kind` added, a new source. Old fingerprints stay
   valid, and new kinds create new ones.
 - **Major** (`0.x` -> `1.0.0`): a `kind` renamed or removed, or the topic rule changed. Old
-  items no longer match. Say so in the pack's changelog line, and expect a burst of "new"
+  items no longer match. Say so in the pack's changelog entry (`lenses/CHANGELOG.md`), and expect a burst of "new"
   proposals on the next scan.
 
-Add a one-line changelog at the bottom of the body for every version.
+Add a one-line entry under the pack's section of `lenses/CHANGELOG.md` for every version. Keep the
+history out of the pack itself: the agent reads the pack on every scan, and the history does not help it.
 
 ## Forking a lens for a team
 
@@ -96,7 +97,7 @@ Rules are not edited into the pack file. When the runner accepts a rule offer, t
 it with its provenance (cluster, who accepted it, when). `context --lens <id>` returns it in
 `rules`, and the agent applies it as binding on top of the pack. To make a rule permanent for
 everyone who uses the pack, copy its text into the pack's hypotheses or evidence rules, bump
-`version` (patch), and note the rule id in the changelog line.
+`version` (patch), and note the rule id in the changelog entry.
 
 ## Measuring a lens
 
@@ -148,9 +149,9 @@ number and not an impression.
 - **What the fixture does not prove.** The fixture tests the pack's mechanics on findings its
   author planted. Precision that matters is measured on a real repository: hand-verify a
   sample of 10 cards (or all, if fewer) and count the true ones.
-- **Record it.** The pack's changelog line for the new version states both: the fixture
+- **Record it.** The pack's changelog entry for the new version states both: the fixture
   score and the hand-verified precision, each with its `n` and date, for example
   `0.2.0 - direction, artifacts; fixture v2 recall@4 4/4, priority-1 3/3, 0 decoys, 0 direction
   violations (2026-11-02); precision 8/10 on acme-shop (2026-11-03)`. If `recall_at_budget` or
   `priority1_found` falls, or a decoy or excluded item is hit, explain why in that changelog
-  line before the pack ships.
+  entry before the pack ships.

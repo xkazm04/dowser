@@ -188,6 +188,3 @@ Checked: H1 <n empty states read in ...>; H2 <n error strings read, all with a n
 H3 <cancel flow: n steps vs signup n|no exit flows>; H4 <...>; H5 <...>; H6 <...>.
 Tickets: <n ingested, window <from>..<to>, by component|not connected>. Excluded by direction: <titles|none set>.
 ```
-
-Changelog: 0.1.0 - first pack.
-0.2.0 - direction (focus orders Gather, exclude reported, notes rank); tickets grouped by component/label with a stated window and tagged blocked or annoyed; choosing under the budget by tier, reach and evidence; recovery checked one level up; flow view on every flow defect, before-after for step counts, WCAG table for multi-site H4; four examples, one without a view. Measured 2026-10-28 (tools/lens-eval.mjs, fixture v2, default model, n = 1 run of 4 cards): recall at budget 1.0, precision 1.0, priority-1 3/3, decoy hits 0, direction violations 0, views valid 4/4 (0.1.0 on the same fixture: views 3/3).

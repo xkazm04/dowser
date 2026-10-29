@@ -181,9 +181,3 @@ Checked: <n> docs, <m> concrete claims checked against code (H1/H2); <k> changes
 checked for docs (H3); <j> examples compared (H4); H5 <...>. Pages: <key>: <p> pages, ...
 Cleared by step 7: <c> leads (<check>: <doc>). Excluded by direction: <topics or none>.
 ```
-
-Changelog: 0.1.0 - first pack.
-0.2.0 - direction (focus, exclude, notes, spaces per Confluence space), ingested-only page refs
-with `updated_at`, step 7 disconfirm checks (still-supported path, scoped, historical, override),
-ranking by reader harm then certainty, "doc says / code does" table on H1/H4 and multi-place H2.
-Measured 2026-10-28 (tools/lens-eval.mjs, fixture v2, default model, n = 1 run of 4 cards): recall at budget 1.0, precision 1.0, priority-1 2/2, decoy hits 0, direction violations 0, views valid 4/4 (0.1.0 on the same fixture: same recall and precision, views 0/0).
