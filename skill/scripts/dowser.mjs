@@ -47,7 +47,10 @@
 //   ingest-direction --run <id> --file <json>   cache a dowser_direction_get response on the run; context
 //                                          --lens then carries that lens's direction
 //   deps --run <id>                        run the dependency auditors present (read-only), cache their findings
-//                                          as dep items -> {auditors: [{tool, state, reason?, found?}], refs}
+//                                          as dep items -> {auditors: [{tool, dir?, state, reason?, found?}], refs,
+//                                          not_audited?}
+//   share --run <id>                       the run's kept proposals as markdown, evidence by ref only (read-only)
+//                                          -> {run_id, cards, markdown}
 //
 // Exit codes: 0 ok; 1 partial (some propose lines invalid); 2 bad input or refused move (stdout carries
 // {"error":"refused","current":<status>,...}); 3 store or connection unavailable, or not implemented.
@@ -72,6 +75,7 @@ const memory = await import('./lib/memory.mjs');
 const reflectLib = await import('./lib/reflect.mjs');
 const directionLib = await import('./lib/direction.mjs');
 const depsLib = await import('./lib/deps.mjs');
+const shareLib = await import('./lib/share.mjs');
 
 /**
  * @typedef {{_: string[], [flag: string]: string | string[] | true | string[] | undefined}} Args
@@ -321,6 +325,10 @@ export const COMMANDS = {
   },
   deps(a, ctx) {
     return depsLib.runDeps(ctx.open(), { root: ctx.root, runId: /** @type {string} */ (opt(a, 'run', true)) });
+  },
+
+  share(a, ctx) {
+    return { out: shareLib.shareRun(ctx.open(), /** @type {string} */ (opt(a, 'run', true))) };
   },
 };
 

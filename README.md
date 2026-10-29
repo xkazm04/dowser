@@ -66,7 +66,9 @@ Dowser never changes the project it scans. Its memory lives in `~/.dowser/`, out
 | Words | git and code terms | no "commit", "diff" or "SHA" |
 
 Switch at any time by saying "switch to guided" (or "developer"). Cards are short by default; say
-"full cards" to add each card's summary and description, or "compact" to go back. Ask "why this one?" about any
+"full cards" to add each card's summary and description, or "compact" to go back. Say "share as markdown"
+to get the kept proposals of the last scan as markdown for a doc or a slide (evidence by reference, no
+quoted code). Ask "why this one?" about any
 proposal: Dowser answers from the evidence it stored and does not rescan.
 
 ## Develop

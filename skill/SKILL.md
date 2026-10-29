@@ -333,6 +333,9 @@ Jira issue appears only when a person accepts the item there.
    partial, for example: "No proposals. Opportunity ran on code and docs only (not connected),
    UX friction and Security ran in full, Doc drift was partial (no Confluence)." Never write
    "all clear", "no issues" or "everything looks good".
+4. **Share.** When the runner asks to share or export the results ("as markdown", "for a doc"),
+   run `share --run <run_id>` and print its `markdown` as is. It lists evidence by ref, without
+   quoted lines. Do not save it into the project.
 
 ## 10. Ask-why
 
