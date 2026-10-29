@@ -130,9 +130,22 @@ test('withheldQuotes masks a quoted line the card text repeats, and leaves short
   };
   const out = withheldQuotes(rec);
   assert.equal(out.title, rec.title);
-  assert.equal(out.rationale, 'It calls `[line withheld: src/auth.js:2]` directly.');
+  assert.equal(out.rationale, 'It calls the line at src/auth.js:2 directly.', 'backticks go with the line, so the sentence reads');
   assert.ok(!out.body.includes(LINE));
-  assert.equal(out.body.split('[line withheld: src/auth.js:2]').length - 1, 2);
+  assert.equal(out.body.split('the line at src/auth.js:2').length - 1, 2);
   assert.ok(out.body.includes('Hash first.'));
   assert.equal(rec.body.includes(LINE), true, 'the input record is not changed');
+});
+
+test('withheldQuotes masks the line in confidence notes and inside supporting views too', () => {
+  const rec = {
+    fp: 'f', title: 't', confidence_why: `Seen at ${LINE}.`,
+    artifacts: [{ kind: 'flow', message: `Input reaches ${LINE}`, alt: 'a', refs: ['src/auth.js:2'],
+      data: { steps: [{ label: LINE, ref: 'src/auth.js:2', state: 'failure' }] } }],
+    evidence: [{ type: 'code', ref: 'src/auth.js:2', quote: LINE }],
+  };
+  const out = withheldQuotes(rec);
+  assert.ok(!JSON.stringify(out).includes(LINE), JSON.stringify(out));
+  assert.equal(out.artifacts[0].data.steps[0].label, 'the line at src/auth.js:2');
+  assert.equal(out.artifacts[0].data.steps[0].ref, 'src/auth.js:2', 'a ref is not a quote and stays');
 });

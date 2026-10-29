@@ -153,21 +153,36 @@ export function outbox(db, { projectKey, runId, repoUrl, limit = PUSH_MAX, quote
   });
 }
 
+/** The card fields a withheld quote is masked in: every text field a person reads, views included. */
+const MASKED_FIELDS = /** @type {const} */ (['title', 'rationale', 'body', 'confidence_why', 'artifacts']);
+
+/**
+ * `value` with every string in it (deeply, so a view's message, alt, cells and step labels too) passed through `f`.
+ * @param {unknown} value @param {(s: string) => string} f @returns {unknown}
+ */
+const mapStrings = (value, f) => typeof value === 'string' ? f(value)
+  : Array.isArray(value) ? value.map((v) => mapStrings(v, f))
+    : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, mapStrings(v, f)]))
+      : value;
+
 /**
  * The record with each code/doc evidence quote replaced by its `quote_sha` (`quotes=omit`); type, ref and url
- * stay. The same lines repeated verbatim in the title, rationale or body (a card often cites its quote in
- * backticks) are masked as `[line withheld: <ref>]`, so withholding covers the text too. A new record and new
- * evidence objects: the stored row is not touched.
+ * stay. A quoted line the card repeats verbatim in any text a person reads (MASKED_FIELDS) becomes "the line at
+ * <ref>" (backticks around it included), so the sentence still reads and the line does not leave. The procedure
+ * asks the agent to describe such lines in words under `omit`; this is the backstop. Fragments of a line are not
+ * matched. A new record and new evidence objects: the stored row is not touched.
  * @param {Row} record
  * @returns {Row}
  */
 export function withheldQuotes(record) {
   if (!Array.isArray(record.evidence)) return record;
   const quoted = record.evidence.filter((/** @type {Row} */ e) => isOneOf(QUOTED_TYPES, e.type) && typeof e.quote === 'string' && e.quote.trim().length >= 8);
-  /** @param {unknown} text */
-  const mask = (text) => typeof text !== 'string' ? text
-    : quoted.reduce((t, /** @type {Row} */ e) => t.split(String(e.quote).trim()).join(`[line withheld: ${e.ref}]`), text);
-  const text = Object.fromEntries(['title', 'rationale', 'body'].filter((k) => record[k] !== undefined).map((k) => [k, mask(record[k])]));
+  /** @param {string} t */
+  const mask = (t) => quoted.reduce((acc, /** @type {Row} */ e) => {
+    const q = String(e.quote).trim();
+    return acc.split(`\`${q}\``).join(`the line at ${e.ref}`).split(q).join(`the line at ${e.ref}`);
+  }, t);
+  const text = Object.fromEntries(MASKED_FIELDS.filter((k) => record[k] !== undefined).map((k) => [k, mapStrings(record[k], mask)]));
   const evidence = record.evidence.map((/** @type {Row} */ e) => {
     if (!isOneOf(QUOTED_TYPES, e.type) || typeof e.quote !== 'string') return e;
     const { quote, ...rest } = e;

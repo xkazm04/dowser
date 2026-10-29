@@ -60,7 +60,9 @@ Run `prefs get mode verbosity`. If `mode` is absent, ask the runner once:
 Ask the runner with your harness's multiple-choice question tool if it has one, else with a
 numbered list. Store the answer with `prefs set mode=dev` or `prefs set mode=guided`. Do not
 ask again on later runs. The runner can say "switch to guided" at any time; store it the same way.
-`quotes` (default `send`; `omit` pushes each quoted line as a hash, see SECURITY.md).
+`quotes` (default `send`; `omit` pushes each quoted line as a hash, see SECURITY.md). Under `omit`,
+describe a quoted line in the card's text ("the call that compares the raw password") instead of
+repeating it; `outbox` replaces any word-for-word repeat with "the line at <path:line>".
 `verbosity` (default `short`) sets how much of each card triage shows (`references/cards.md`
 "Rendering"); "compact" or "full cards" stores `prefs set verbosity=short|full`.
 

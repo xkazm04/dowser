@@ -21,8 +21,9 @@ released versions will be stated here when the first release is tagged.
 - When the Forge app is connected, the skill pushes each proposal with its evidence, including the quoted
   source and doc lines, to the Dowser inbox in Jira. To keep the lines on the machine, set
   `prefs set quotes=omit`: the push then carries each line's path, line number and a short hash
-  (`quote_sha`) instead of its text. The setting covers evidence only: a card's title, rationale and body
-  are sent as written and can name code.
+  (`quote_sha`) instead of its text. A quoted line the card repeats word for word in its title, rationale,
+  body, confidence note or views is replaced by "the line at <path:line>". A part of a line, or code the card
+  paraphrases, is sent as written.
 - The Jira tickets, Confluence pages and goals a scan reads are cached on its run while it runs. When the
   run finishes, their text is dropped from the store; their refs, titles and links stay, because cards cite
   them. The agent's work files (candidate lists, saved tool responses) go in the OS temp folder.
