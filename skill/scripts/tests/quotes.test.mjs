@@ -8,7 +8,7 @@ import { STORE_OWNED, validateCandidate } from '../lib/model.mjs';
 import { evidenceKey, quoteSha, squash } from '../lib/fingerprint.mjs';
 import { PREFS, getPrefs, setPrefs } from '../lib/memory.mjs';
 import { evidenceOf, move, openStore, propose, runStart } from '../lib/store.mjs';
-import { outbox } from '../lib/sync.mjs';
+import { outbox, withheldQuotes } from '../lib/sync.mjs';
 import { KINDS, candidate, removeDir, tempDir } from './_fixture.mjs';
 
 /** @type {string} */ let dir;
@@ -120,4 +120,19 @@ test('outbox: quotes=omit sends quote_sha and no quote; send (and the default) i
   setPrefs(['quotes=omit']);
   assert.equal(rec().evidence[0].quote, LINE);
   setPrefs(['quotes=send']);
+});
+
+test('withheldQuotes masks a quoted line the card text repeats, and leaves short or unrelated text alone', () => {
+  const rec = {
+    fp: 'f', title: 'Login compares the raw password', rationale: `It calls \`${LINE}\` directly.`,
+    body: `## Summary\nHash first.\n\n## Description\nAt src/auth.js:2: \`${LINE}\`. Twice: ${LINE}`,
+    evidence: [{ type: 'code', ref: 'src/auth.js:2', quote: LINE }, { type: 'code', ref: 'src/x.js:1', quote: 'a = 1' }],
+  };
+  const out = withheldQuotes(rec);
+  assert.equal(out.title, rec.title);
+  assert.equal(out.rationale, 'It calls `[line withheld: src/auth.js:2]` directly.');
+  assert.ok(!out.body.includes(LINE));
+  assert.equal(out.body.split('[line withheld: src/auth.js:2]').length - 1, 2);
+  assert.ok(out.body.includes('Hash first.'));
+  assert.equal(rec.body.includes(LINE), true, 'the input record is not changed');
 });

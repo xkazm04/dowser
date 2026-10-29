@@ -68,6 +68,7 @@ export function toCard(p, evidence, repoUrl) {
     reopened: p.reopened || undefined,
     issue_ref: p.issue_ref, issue_url: p.issue_url,
     reason: p.reason, note: p.note, merged_into: p.merged_into, decided_by: p.decided_by, decided_at: p.decided_at,
+    snooze_until: p.status === 'snoozed' ? p.snooze_until : undefined,
     first_seen: p.first_seen, last_push_at: p.last_push_at,
   }));
 }
@@ -86,7 +87,7 @@ export async function cardOf(db, p) {
 export const toVerdict = (r) => /** @type {Verdict} */ (omitAbsent({
   fp: String(r.fp), status: r.status, reason: r.reason, note: r.note, merged_into: r.merged_into,
   decided_by: String(r.decided_by), decided_at: String(r.decided_at), external_ref: String(r.external_ref),
-  issue_ref: r.issue_ref, issue_url: r.issue_url,
+  issue_ref: r.issue_ref, issue_url: r.issue_url, snooze_until: r.snooze_until,
 }));
 
 /**

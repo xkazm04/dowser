@@ -256,6 +256,7 @@ Output:
 | `verdicts[].external_ref` | string | required: the inbox item (`DW-12`) |
 | `verdicts[].issue_ref` | string | required for `accepted`: the Jira issue the accept created or updated. Omitted otherwise |
 | `verdicts[].issue_url` | string | required for `accepted`: a link to that issue. Omitted otherwise |
+| `verdicts[].snooze_until` | string | optional, only on `snoozed`: the day (`YYYY-MM-DD`) the person chose for the item to come back. Omitted when the snooze has no date |
 | `cursor` | string | required. Opaque. Pass it back on the next pull. Returned even when `verdicts` is empty |
 
 A verdict is recorded only after it has landed: an accept that could not create its Jira issue writes no
@@ -363,3 +364,7 @@ Additive amendments:
 - **Ticket fields (2026-10-28).** `dowser_sources_tickets` items gain optional `components` (component names);
   `created_at` is documented as optional, which the code already allowed. A skill that ignores the new key is
   unaffected.
+- **Dated snooze (2026-10-29).** A snooze in the inbox may carry a date (`verdict.snooze {refs, note?, until?}`;
+  `until` is `YYYY-MM-DD` after today, else `bad-input`). The verdict then carries `snooze_until`. The skill
+  records it as the card's snooze date, even when the day has passed by the time it pulls, and the next `run start`
+  wakes the item. A skill that ignores the new key keeps an undated snooze.

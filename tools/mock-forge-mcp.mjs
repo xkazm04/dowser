@@ -52,9 +52,9 @@ import { LENSES, resurfaces } from '../skill/scripts/lib/model.mjs';
  * @typedef {{refs: number, types: string[]}} Snapshot
  * @typedef {{fp: string, external_ref: string, external_url: string, record: Obj, evidence: EvidenceId[], pushes: number,
  *   run_ids: string[], status: string, reopened?: boolean, decided_snapshot?: Snapshot, issue_ref?: string, issue_url?: string,
- *   repo_url?: string, head_sha?: string}} Item
+ *   repo_url?: string, head_sha?: string, snooze_until?: string}} Item
  * @typedef {{seq: number, fp: string, status: string, reason?: string, note?: string, merged_into?: string, decided_by: string,
- *   decided_at: string, external_ref: string, issue_ref?: string, issue_url?: string}} Verdict
+ *   decided_at: string, external_ref: string, issue_ref?: string, issue_url?: string, snooze_until?: string}} Verdict
  * @typedef {{path: string, files: number, churn_90d: number, authors_90d?: number, last_change?: string}} Area
  * @typedef {{id: string, lens: string, text: string, titles?: string[], offered_at: string, state: 'offered' | 'accepted' | 'declined',
  * decided_by?: string, decided_at?: string}} RuleRecord
@@ -119,8 +119,8 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { project_key: S, rules_json: S }, required: ['project_key'], additionalProperties: false } },
   { name: 'dowser_direction_get', description: 'What the team set in Settings for each lens of this inbox (lens = one lens id, or all). Returns {lenses:{[lens]:{focus?,exclude?,notes?,spaces?}}}.',
     inputSchema: { type: 'object', properties: { project_key: S, lens: S }, required: ['project_key'], additionalProperties: false } },
-  { name: 'mock_decide', description: 'TEST ONLY: simulate a person\'s verdict in the inbox on a pushed fp (status accepted|rejected|merged|snoozed).',
-    inputSchema: { type: 'object', properties: { fp: S, status: S, reason: S, note: S, merged_into: S, decided_by: S, project_key: S }, required: ['fp', 'status'], additionalProperties: false } },
+  { name: 'mock_decide', description: 'TEST ONLY: simulate a person\'s verdict in the inbox on a pushed fp (status accepted|rejected|merged|snoozed; snooze_until = YYYY-MM-DD with snoozed, a past date allowed so tests reach the skill\'s wake path).',
+    inputSchema: { type: 'object', properties: { fp: S, status: S, reason: S, note: S, merged_into: S, decided_by: S, project_key: S, snooze_until: S }, required: ['fp', 'status'], additionalProperties: false } },
   { name: 'mock_decide_rule', description: 'TEST ONLY: simulate a person accepting or declining an offered rule in Forge (state accepted|declined, text = the edited wording).',
     inputSchema: { type: 'object', properties: { project_key: S, id: S, state: S, text: S, decided_by: S }, required: ['project_key', 'id', 'state'], additionalProperties: false } },
   { name: 'mock_outcome', description: 'TEST ONLY: simulate a person rating the built result of an accepted item (ref = its inbox ref DW-n; rating right|partly|wrong).',
@@ -286,7 +286,10 @@ function dowserProposalsPush(b, args) {
       const before = snapshot(existing.evidence);
       const grew = uniteEvidence(existing, r) > 0;
       // reopen on growth: snoozed on any new key; rejected only under the store's resurfacing rule
-      if (grew && existing.status === 'snoozed') { existing.status = 'open'; existing.reopened = true; }
+      // a dated snooze whose day has come reopens on the skill's re-push, as Forge does (push.mjs updateOne, DW-42)
+      const due = existing.status === 'snoozed' && existing.snooze_until !== undefined
+        && existing.snooze_until <= new Date(Date.now() + 14 * 3_600_000).toISOString().slice(0, 10);
+      if ((grew || due) && existing.status === 'snoozed') { existing.status = 'open'; existing.reopened = true; delete existing.snooze_until; }
       if (grew && existing.status === 'rejected' && resurfaces('rejected', existing.decided_snapshot ?? before, snapshot(existing.evidence)).resurface) {
         existing.status = 'open';
         existing.reopened = true;
@@ -411,6 +414,9 @@ function mockOutcome(b, args) {
 function mockDecide(b, args) {
   if (!str(args.fp)) throw new ToolError('bad-input', 'fp is required');
   if (!['accepted', 'rejected', 'merged', 'snoozed'].includes(args.status)) throw new ToolError('bad-input', 'status is accepted|rejected|merged|snoozed');
+  if (args.snooze_until !== undefined && (args.status !== 'snoozed' || !/^\d{4}-\d{2}-\d{2}$/.test(String(args.snooze_until)))) {
+    throw new ToolError('bad-input', 'snooze_until is YYYY-MM-DD and goes only with status snoozed');
+  }
   const keys = str(args.project_key) ? [String(args.project_key)] : Object.keys(b.projects);
   const key = keys.find((k) => b.projects[k]?.items?.[args.fp]);
   if (!key) throw new ToolError('bad-input', `no inbox item for fp ${args.fp}`);
@@ -418,6 +424,7 @@ function mockDecide(b, args) {
   const item = p.items[args.fp];
   item.status = args.status;
   delete item.reopened;
+  if (args.status === 'snoozed' && str(args.snooze_until)) item.snooze_until = args.snooze_until; else delete item.snooze_until;
   if (args.status === 'rejected') item.decided_snapshot = snapshot(item.evidence);
   if (args.status === 'accepted') {
     // an accept creates the Jira issue first; the verdict carries it
@@ -430,7 +437,7 @@ function mockDecide(b, args) {
   const v = /** @type {Verdict} */ (omitAbsent({
     seq: b.next_seq++, fp: args.fp, status: args.status, reason: args.reason, note: args.note, merged_into: args.merged_into,
     decided_by: str(args.decided_by) ? args.decided_by : 'forge:mock-user', decided_at: decidedAt, external_ref: item.external_ref,
-    issue_ref: args.status === 'accepted' ? item.issue_ref : undefined, issue_url: args.status === 'accepted' ? item.issue_url : undefined,
+    issue_ref: args.status === 'accepted' ? item.issue_ref : undefined, issue_url: args.status === 'accepted' ? item.issue_url : undefined, snooze_until: args.snooze_until,
   }));
   p.verdicts.push(v);
   const { seq, ...out } = v;

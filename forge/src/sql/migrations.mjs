@@ -194,4 +194,8 @@ export const MIGRATIONS = Object.freeze([
   PRIMARY KEY (project_key, lens)
 )`,
   },
+  // A dated snooze (DW-42): the day (YYYY-MM-DD) the item comes back, set only with status = snoozed. On the
+  // proposal as part of the decision stamp (so repairVerdicts can rebuild it) and on the verdict the pull returns.
+  { name: 'v016_proposals_snooze_until', statement: 'ALTER TABLE proposals ADD COLUMN snooze_until VARCHAR(10)' },
+  { name: 'v017_verdicts_snooze_until', statement: 'ALTER TABLE verdicts ADD COLUMN snooze_until VARCHAR(10)' },
 ]);

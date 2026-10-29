@@ -251,7 +251,12 @@ push, not a sortable table.
   - **Merge** picks another open or accepted proposal by ref or title, or takes a typed Jira key.
   - **Reject** takes one of six reasons: false positive, already known, not our direction, not worth it,
     wrong size, other. Other needs a note.
-  - **Snooze** holds the card until its evidence grows.
+  - **Snooze** holds the card until its evidence grows. An optional **Until** date (a day after today) also
+    brings it back on that day: the verdict carries it as `snooze_until`, and the skill wakes the item on its
+    first run start on or after that day and pushes it again. That push reopens the inbox item even with no
+    new evidence (Forge does not reopen it on the date by itself). The core checks "after today" against the
+    earliest time zone (UTC-12), so a person west of UTC can still pick tomorrow in the evening, and "the day
+    has come" against the latest (UTC+14), matching a runner whose local date is ahead of UTC.
 - **Bulk.** Tick rows to reject them all with one reason, or to snooze them all.
 - **Keyboard.** `j`/`k` move the selection, `x` ticks, `a` accepts, `r` rejects, `s` snoozes, `m` merges,
   `u` undoes a reject or snooze while its notice shows, `?` shows help. In an open dialog, `Ctrl+Enter`

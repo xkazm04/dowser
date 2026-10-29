@@ -69,6 +69,12 @@ pushed on the next connected run like any other. New evidence still resurfaces a
 early. Leaving `snoozed` by any route clears the date. Without a date, only new evidence brings
 the item back. `list --status snoozed` shows each item's `snooze_until` when it has one.
 
+A dated snooze can also come from Jira: a person who snoozes in the inbox may pick an **Until** day,
+and the pulled verdict carries it as `snooze_until`. `ingest-verdicts` records it as the card's date.
+If that day has already passed by the time the skill pulls it, the snooze is still recorded with its
+date, and the next `run start` wakes it as above. Only a sync can record a past date; a person's
+`move --until` keeps refusing one.
+
 ## Merge
 
 "This is the same work as that one." Merging moves the item to `merged`, records `merged_into`,

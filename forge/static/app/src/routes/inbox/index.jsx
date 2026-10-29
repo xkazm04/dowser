@@ -251,13 +251,13 @@ export default function Inbox({ context }) {
     cw.notify(`Could not ${what} ${refs.length === 1 ? refs[0] : plural(refs.length, 'proposal')}: ${message} It is back in the list.`, 'error');
   }
 
-  function deferSnooze(cards, note = '') {
+  function deferSnooze(cards, note = '', until = '') {
     const refs = cards.map((c) => c.ref);
     setSnoozeFor('');
     leave(cards, 'snoozed');
     cw.schedule({
-      message: refs.length === 1 ? `Snoozed ${refs[0]}` : `Snoozed ${plural(refs.length, 'proposal')}`,
-      run: () => call('verdict.snooze', note ? { refs, note } : { refs }),
+      message: `${refs.length === 1 ? `Snoozed ${refs[0]}` : `Snoozed ${plural(refs.length, 'proposal')}`}${until ? ` until ${until}` : ''}`,
+      run: () => call('verdict.snooze', { refs, ...(note ? { note } : {}), ...(until ? { until } : {}) }),
       onUndo: () => restore(refs),
       onError: (e) => failDeferred(refs, 'snooze', e),
     });
@@ -376,7 +376,7 @@ export default function Inbox({ context }) {
     merge: (c) => open('merge', [c.ref]),
     reject: (c) => open('reject', [c.ref]),
     snooze: (c) => { setFocusRef(c.ref); setSnoozeFor(c.ref); },
-    snoozeSubmit: (c, note) => deferSnooze([c], note),
+    snoozeSubmit: (c, note, until) => deferSnooze([c], note, until),
     snoozeCancel: cancelSnooze,
   };
 
@@ -610,7 +610,7 @@ function Decide({ card, snoozing, error, actions, sticky = false }) {
         </div>
       )}
       {isOpen && snoozing && (
-        <SnoozeStep cardRef={card.ref} onSubmit={(note) => actions.snoozeSubmit(card, note)} onCancel={actions.snoozeCancel} />
+        <SnoozeStep cardRef={card.ref} onSubmit={(note, until) => actions.snoozeSubmit(card, note, until)} onCancel={actions.snoozeCancel} />
       )}
       {!isOpen && <p className="dwr-decide__done">Already decided.</p>}
     </div>

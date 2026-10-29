@@ -268,14 +268,17 @@ function appendTransition(db, { fp, from, to, by, at, reason, note, runId }) {
  * the caller expects; a different current status is a stale refusal. An illegal or stale move throws
  * MoveRefused (exit 2) carrying the current status. Every move appends one `transitions` row and sets
  * reason / note / merged_into / decided_by / decided_at on the card. `until` (a date after `today`, only with
- * `to` = snoozed) sets `snooze_until`; every other move, and a snooze without a date, clears it.
+ * `to` = snoozed) sets `snooze_until`; every other move, and a snooze without a date, clears it. `untilMayBePast`
+ * is for sync only: a snooze decided in the Jira inbox with a date that has passed by the time the skill pulls it
+ * is still that person's decision, so it is recorded with its date and the next run start wakes it
+ * (wakeSnoozed). A person's `move --until` never sets it and keeps refusing past dates.
  * @param {Db} db
  * @param {string} fp
  * @param {string} to
- * @param {{from?: string, by: string, reason?: string, note?: string, into?: string, runId?: string, until?: string, today?: string}} opts
+ * @param {{from?: string, by: string, reason?: string, note?: string, into?: string, runId?: string, until?: string, today?: string, untilMayBePast?: boolean}} opts
  * @returns {Row} the updated proposal row (absent columns omitted)
  */
-export function move(db, fp, to, { from, by, reason, note, into, runId, until, today }) {
+export function move(db, fp, to, { from, by, reason, note, into, runId, until, today, untilMayBePast }) {
   if (!isOneOf(STATUSES, to)) throw new DowserError(`--to must be one of ${STATUSES.join('|')}`, 2);
   if (from !== undefined && !isOneOf(STATUSES, from)) throw new DowserError(`--from must be one of ${STATUSES.join('|')}`, 2);
   if (!by || !DECIDER_RE.test(by)) throw new DowserError(`--by names the decider as <kind>:<name>, e.g. operator:jane (got ${JSON.stringify(by)})`, 2);
@@ -285,7 +288,8 @@ export function move(db, fp, to, { from, by, reason, note, into, runId, until, t
   if (to !== 'merged' && into !== undefined) throw new DowserError('--into goes only with --to merged', 2);
   if (into !== undefined && into === fp) throw new DowserError('a proposal cannot merge into itself', 2);
   if (until !== undefined && to !== 'snoozed') throw new DowserError('--until goes only with --to snoozed', 2);
-  const badUntil = until === undefined ? undefined : untilProblem(until, today ?? localDate());
+  // '' sorts before every date, so a past date passes while the calendar-date check still applies
+  const badUntil = until === undefined ? undefined : untilProblem(until, untilMayBePast ? '' : today ?? localDate());
   if (badUntil) throw new DowserError(badUntil, 2);
 
   return tx(db, () => {

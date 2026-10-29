@@ -56,7 +56,8 @@ export const PAGE_SIZE = 50;
  * @typedef {{results: PushResultRow[]}} PushOutput
  * @typedef {{project_key: string, cursor?: string}} PullInput
  * @typedef {{fp: string, status: VerdictStatus, reason?: string, note?: string, merged_into?: string, decided_by: string,
- *   decided_at: string, external_ref: string, issue_ref?: string, issue_url?: string}} Verdict
+ *   decided_at: string, external_ref: string, issue_ref?: string, issue_url?: string, snooze_until?: string}} Verdict
+ *   `snooze_until` (YYYY-MM-DD) only on a snoozed verdict decided with a date: the day it comes back.
  * @typedef {Verdict & {decided_by_name?: string}} HistoryRow  a Verdict as the Custom UI reads it (never sent to the skill)
  * @typedef {{verdicts: Verdict[], cursor: string}} PullOutput
  * @typedef {{path: string, files: number, churn_90d: number, authors_90d?: number, last_change?: string}} Area
@@ -93,7 +94,7 @@ export const PAGE_SIZE = 50;
  * The card the Custom UI renders: the proposal record plus inbox state.
  * @typedef {{type: string, ref: string, url?: string, quote?: string, link?: string}} CardEvidence
  * @typedef {ProposalRecord & {ref: string, status: InboxStatus, project_key: string, evidence: CardEvidence[],
- *   reopened?: boolean, change?: 'new' | 'grew' | 'reopened', issue_ref?: string, issue_url?: string, first_seen: string, last_push_at: string}} Card
+ *   reopened?: boolean, change?: 'new' | 'grew' | 'reopened', issue_ref?: string, issue_url?: string, snooze_until?: string, first_seen: string, last_push_at: string}} Card
  *   `change` is set on open cards inside an InboxGroup: what that push did to the item.
  * @typedef {{run_id: string, at: string, head_sha?: string, items: Card[]}} InboxGroup
  * @typedef {{run_id: string, at: string, head_sha?: string, created: number, updated: number}} LastPush
@@ -131,7 +132,7 @@ export const PAGE_SIZE = 50;
  *   'proposal.get': [{ref: string}, {card: Card, history: HistoryRow[]}],
  *   'verdict.accept': [{ref: string, jira_project_key?: string, issue_type_id?: string, note?: string}, {card: Card}],
  *   'verdict.reject': [{refs: string[], reason: string, note?: string}, {cards: Card[]}],
- *   'verdict.snooze': [{refs: string[], note?: string}, {cards: Card[]}],
+ *   'verdict.snooze': [{refs: string[], note?: string, until?: string}, {cards: Card[]}],
  *   'verdict.merge': [{ref: string, into: string}, {card: Card}],
  *   'settings.get': [{}, {inboxes: InboxSummary[]}],
  *   'settings.set': [{project_key: string, jira_project_key: string, issue_type_id: string}, {inbox: InboxSummary}],

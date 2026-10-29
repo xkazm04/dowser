@@ -15,7 +15,7 @@ import { REF_RE } from './types.mjs';
  *   refs_at_status?: number, types_at_status?: string[], first_run_id: string, last_run_id: string,
  *   first_seen: string, last_push_at: string, reopened: boolean, issue_ref?: string, issue_url?: string,
  *   reason?: string, note?: string, merged_into?: string, decided_by?: string, decided_at?: string, via?: string,
- *   accept_claim?: string, change_kind: 'new' | 'grew' | 'reopened'
+ *   accept_claim?: string, change_kind: 'new' | 'grew' | 'reopened', snooze_until?: string
  * }} ProposalRow
  * @typedef {{type: string, ref: string, quote?: string, url?: string, head_sha?: string, added_run_id: string, added_at: string}} EvidenceRow
  * @typedef {{project_key: string, repo_url?: string, jira_project_key?: string, issue_type_id?: string, created_at: string}} InboxRow
@@ -142,6 +142,7 @@ export function toProposal(r) {
     last_push_at: String(r.last_push_at), reopened: Number(r.reopened) === 1, issue_ref: r.issue_ref,
     issue_url: r.issue_url, reason: r.reason, note: r.note, merged_into: r.merged_into, decided_by: r.decided_by,
     decided_at: r.decided_at, via: r.via, accept_claim: r.accept_claim, change_kind: r.change_kind,
+    snooze_until: r.snooze_until,
   }));
 }
 

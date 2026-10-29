@@ -271,25 +271,52 @@ export function HelpDialog({ onClose }) {
 }
 
 /**
- * The inline step before a single snooze: an optional "revisit when / why not now" note. Enter or the Snooze
- * button snoozes (with or without a note); Escape or Cancel closes it.
- * @param {{cardRef: string, onSubmit: (note: string) => void, onCancel: () => void}} props
+ * A local calendar day as `YYYY-MM-DD`, `days` after today (the person's own date, as a date input shows it).
+ * @param {number} [days]
+ */
+function localDay(days = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * The inline step before a single snooze: an optional "revisit when / why not now" note and an optional
+ * "Until" date (after today). Enter or the Snooze button snoozes; Escape or Cancel closes it.
+ * @param {{cardRef: string, onSubmit: (note: string, until: string) => void, onCancel: () => void}} props
  */
 export function SnoozeStep({ cardRef, onSubmit, onCancel }) {
   const [note, setNote] = useState('');
+  const [until, setUntil] = useState('');
+  const [error, setError] = useState('');
   const id = `dw-snz-${cardRef}`;
+  const tomorrow = localDay(1);
+  function submit() {
+    if (until && !(/^\d{4}-\d{2}-\d{2}$/.test(until) && until >= tomorrow)) {
+      setError('Choose a date after today, or clear it.');
+      return;
+    }
+    onSubmit(note.trim(), until);
+  }
   return (
     <form
       className="dw-step" aria-label={`Snooze ${cardRef}`}
-      onSubmit={(e) => { e.preventDefault(); onSubmit(note.trim()); }}
+      onSubmit={(e) => { e.preventDefault(); submit(); }}
       onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onCancel(); } }}
     >
       <label htmlFor={id}>Revisit when / why not now? (optional)</label>
       <input id={id} className="dw-input" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} autoComplete="off" autoFocus placeholder="e.g. after the checkout rewrite" />
+      <label htmlFor={`${id}-until`}>Until (optional)</label>
+      <input
+        id={`${id}-until`} className="dw-input" type="date" value={until} min={tomorrow}
+        onChange={(e) => { setUntil(e.target.value); setError(''); }}
+        aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-err` : undefined}
+      />
+      {error && <span id={`${id}-err`} role="alert" style={{ color: 'var(--ds-text-danger, #AE2E24)' }}>{error}</span>}
       <div className="dw-row">
         <Button type="submit" appearance="primary" compact>Snooze</Button>
         <Button appearance="subtle" compact onClick={onCancel}>Cancel</Button>
-        <span className="dw-subtlest">It comes back when its evidence grows.</span>
+        <span className="dw-subtlest">{until ? 'It comes back on that day, or earlier when its evidence grows.' : 'It comes back when its evidence grows.'}</span>
       </div>
     </form>
   );

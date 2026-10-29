@@ -155,12 +155,19 @@ export function outbox(db, { projectKey, runId, repoUrl, limit = PUSH_MAX, quote
 
 /**
  * The record with each code/doc evidence quote replaced by its `quote_sha` (`quotes=omit`); type, ref and url
- * stay. A new record and new evidence objects: the stored row is not touched.
+ * stay. The same lines repeated verbatim in the title, rationale or body (a card often cites its quote in
+ * backticks) are masked as `[line withheld: <ref>]`, so withholding covers the text too. A new record and new
+ * evidence objects: the stored row is not touched.
  * @param {Row} record
  * @returns {Row}
  */
 export function withheldQuotes(record) {
   if (!Array.isArray(record.evidence)) return record;
+  const quoted = record.evidence.filter((/** @type {Row} */ e) => isOneOf(QUOTED_TYPES, e.type) && typeof e.quote === 'string' && e.quote.trim().length >= 8);
+  /** @param {unknown} text */
+  const mask = (text) => typeof text !== 'string' ? text
+    : quoted.reduce((t, /** @type {Row} */ e) => t.split(String(e.quote).trim()).join(`[line withheld: ${e.ref}]`), text);
+  const text = Object.fromEntries(['title', 'rationale', 'body'].filter((k) => record[k] !== undefined).map((k) => [k, mask(record[k])]));
   const evidence = record.evidence.map((/** @type {Row} */ e) => {
     if (!isOneOf(QUOTED_TYPES, e.type) || typeof e.quote !== 'string') return e;
     const { quote, ...rest } = e;
@@ -169,7 +176,7 @@ export function withheldQuotes(record) {
     if (rest.url !== undefined) out.url = rest.url;
     return out;
   });
-  return { ...record, evidence };
+  return { ...record, ...text, evidence };
 }
 
 // ------------------------------------------------------------------------------------------------ helpers
@@ -342,7 +349,8 @@ function pushOne(db, raw, i, sent) {
  * (CAS) with `by` = its `decided_by`; `decided_at` on the card becomes the verdict's. Idempotent per
  * (fp, decided_at): an ingested verdict is recorded in sync_state and skipped next time (`already-applied`).
  * A verdict that matches the local status already is `in-sync`. An `accepted` verdict needs `issue_ref` and
- * `issue_url` (else `invalid`) and records both on the proposal. An unknown fp, a malformed verdict or an
+ * `issue_url` (else `invalid`) and records both on the proposal. A `snoozed` verdict's `snooze_until` becomes the
+ * card's snooze date, even one already past (the next run start wakes it). An unknown fp, a malformed verdict or an
  * illegal transition is reported (`unknown`, `invalid`, `conflict`), never forced. The cursor is stored as `verdicts_cursor`.
  * @param {Db} db
  * @param {unknown} doc
@@ -412,6 +420,8 @@ function verdictOne(db, raw, i) {
       by, into,
       reason: str(raw.reason) ? String(raw.reason) : undefined,
       note: str(raw.note) ? String(raw.note) : undefined,
+      // a dated snooze from the inbox (DW-42); a date already past is kept and woken by the next run start
+      ...(to === 'snoozed' && str(raw.snooze_until) ? { until: String(raw.snooze_until), untilMayBePast: true } : {}),
     });
   } catch (e) {
     if (e instanceof MoveRefused) return { ...base, outcome: 'conflict', current: e.current, why: e.message };
@@ -423,7 +433,8 @@ function verdictOne(db, raw, i) {
   const ref = String(raw.external_ref);
   const clash = link(db, fp, ref, undefined);
   setState(db, key, JSON.stringify({ status: to, outcome: 'applied', at: store.now() }));
-  return /** @type {Row} */ (store.clean({ ...base, outcome: 'applied', from: current, merged_into: into, link_conflict: clash }));
+  return /** @type {Row} */ (store.clean({ ...base, outcome: 'applied', from: current, merged_into: into, link_conflict: clash,
+    snooze_until: to === 'snoozed' && str(raw.snooze_until) ? String(raw.snooze_until) : undefined }));
 }
 
 /**

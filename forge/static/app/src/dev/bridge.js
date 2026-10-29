@@ -95,7 +95,7 @@ const handlers = {
     if (reason === 'other' && !note) throw err('bad-input', 'A note is required when the reason is other.');
     return { cards: refs.map((r) => decide(r, 'rejected', note ? { reason, note } : { reason })) };
   },
-  'verdict.snooze'({ refs, note }) { return { cards: refs.map((r) => decide(r, 'snoozed', note ? { note } : {})) }; },
+  'verdict.snooze'({ refs, note, until }) { return { cards: refs.map((r) => decide(r, 'snoozed', { ...(note ? { note } : {}), ...(until ? { snooze_until: until } : {}) })) }; },
   'verdict.merge'({ ref, into }) {
     if (into === 'NOPE-1') throw err('bad-input', 'NOPE-1 does not exist or you cannot see it.');
     return { card: decide(ref, 'merged', { merged_into: into }) };

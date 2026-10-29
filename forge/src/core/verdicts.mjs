@@ -64,10 +64,11 @@ async function appendVerdict(db, p) {
   const seq = await nextCounter(db, seqName(p.project_key));
   try {
     await db.exec(
-      `INSERT INTO verdicts (seq, project_key, fp, status, reason, note, merged_into, decided_by, decided_at, external_ref, issue_ref, issue_url, via)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO verdicts (seq, project_key, fp, status, reason, note, merged_into, decided_by, decided_at, external_ref, issue_ref, issue_url, via, snooze_until)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [seq, p.project_key, p.fp, p.status, sqlv(p.reason), sqlv(p.note), sqlv(p.merged_into), p.decided_by, p.decided_at, p.ref,
-        p.status === 'accepted' ? sqlv(p.issue_ref) : null, p.status === 'accepted' ? sqlv(p.issue_url) : null, p.via ?? 'inbox'],
+        p.status === 'accepted' ? sqlv(p.issue_ref) : null, p.status === 'accepted' ? sqlv(p.issue_url) : null, p.via ?? 'inbox',
+        p.status === 'snoozed' ? sqlv(p.snooze_until) : null],
     );
   } catch (e) {
     if (!(e instanceof DuplicateKey)) throw e; // logged concurrently; this seq stays a gap the pull steps over
@@ -100,7 +101,7 @@ export async function repairVerdicts(db, projectKey, now) {
  * is no longer open (someone else decided first).
  * @param {Deps} deps
  * @param {ProposalRow} p
- * @param {{to: VerdictStatus, reason?: string, note?: string, merged_into?: string, issue_ref?: string, issue_url?: string, claim?: string}} d
+ * @param {{to: VerdictStatus, reason?: string, note?: string, merged_into?: string, issue_ref?: string, issue_url?: string, claim?: string, snooze_until?: string}} d
  * @param {Decider} who
  * @returns {Promise<ProposalRow>}
  */
@@ -111,10 +112,10 @@ async function decide(deps, p, d, who) {
   return db.tx(async () => {
     const r = await db.exec(
       `UPDATE proposals SET status = ?, reason = ?, note = ?, merged_into = ?, decided_by = ?, decided_at = ?, via = ?,
-        issue_ref = ?, issue_url = ?, reopened = 0, refs_at_status = ?, types_at_status = ?, accept_claim = NULL
+        issue_ref = ?, issue_url = ?, reopened = 0, refs_at_status = ?, types_at_status = ?, accept_claim = NULL, snooze_until = ?
         WHERE id = ? AND status = 'open'${d.claim ? ' AND accept_claim = ?' : ''}`,
       [d.to, sqlv(d.reason), sqlv(d.note), sqlv(d.merged_into), who.by, at, who.via,
-        sqlv(d.issue_ref ?? p.issue_ref), sqlv(d.issue_url ?? p.issue_url), p.evidence_count, p.evidence_types.join(','),
+        sqlv(d.issue_ref ?? p.issue_ref), sqlv(d.issue_url ?? p.issue_url), p.evidence_count, p.evidence_types.join(','), sqlv(d.snooze_until),
         p.id, ...(d.claim ? [d.claim] : [])],
     );
     if (r.affectedRows !== 1) {
@@ -246,15 +247,35 @@ export async function reject(deps, args, who) {
 }
 
 /**
- * Snooze one or more items; any new evidence key reopens them (F3).
+ * An optional snooze date: a real calendar day `YYYY-MM-DD` after today, else `bad-input`. "Today" is the date
+ * where it is earliest on Earth (UTC-12): the browser checks the person's own today, and a person west of UTC
+ * late in the evening is already on the next UTC day, so a plain UTC check would refuse their "tomorrow".
+ * @param {unknown} v
+ * @param {Date} now
+ * @returns {string | undefined}
+ */
+export function untilOf(v, now) {
+  if (v === undefined || v === null || v === '') return undefined;
+  const m = typeof v === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(v) : null;
+  const d = m ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))) : undefined;
+  if (!m || !d || d.toISOString().slice(0, 10) !== v) throw new AppError('bad-input', `until is a calendar date YYYY-MM-DD (got ${JSON.stringify(v)})`);
+  const today = new Date(now.getTime() - 12 * 3_600_000).toISOString().slice(0, 10);
+  if (m[0] <= today) throw new AppError('bad-input', `until must be after today (${today}); got ${m[0]}`);
+  return m[0];
+}
+
+/**
+ * Snooze one or more items; any new evidence key reopens them (F3). `until` (optional) is the day it comes back:
+ * stored with the decision and sent to the skill as the verdict's `snooze_until`, which wakes it on that day.
  * @param {Deps} deps
- * @param {{refs: unknown, note?: unknown}} args
+ * @param {{refs: unknown, note?: unknown, until?: unknown}} args
  * @param {Decider} who
  * @returns {Promise<{cards: Card[]}>}
  */
 export async function snooze(deps, args, who) {
   const note = noteOf(args.note);
-  return decideAll(deps, await openItems(deps.db, args.refs), { to: 'snoozed', note }, who);
+  const snoozeUntil = untilOf(args.until, deps.now());
+  return decideAll(deps, await openItems(deps.db, args.refs), { to: 'snoozed', note, snooze_until: snoozeUntil }, who);
 }
 
 /**

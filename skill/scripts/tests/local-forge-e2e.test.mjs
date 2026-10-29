@@ -190,7 +190,7 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
   assert.equal(issue.status.category, 'new');
   const rej = await invoke('verdict.reject', { refs: [ref[fpR1], ref[fpR2], ref[fpR3]], reason: 'not-our-direction' });
   assert.deepEqual(rej.cards.map((/** @type {any} */ c) => c.status), ['rejected', 'rejected', 'rejected']);
-  await invoke('verdict.snooze', { refs: [ref[fpS]], note: 'After the redesign' });
+  await invoke('verdict.snooze', { refs: [ref[fpS]], note: 'After the redesign', until: '2099-01-01' }); // a dated snooze (DW-42)
   assert.equal((await invoke('inbox.list', { project_key: projectKey })).groups.length, 0, 'nothing open');
 
   // --- 3. pull the verdicts into the skill
@@ -207,6 +207,7 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
   const showS = cli('show', fpS).out;
   assert.equal(showS.card.status, 'snoozed');
   assert.equal(showS.transitions.at(-1).note, 'After the redesign');
+  assert.equal(showS.card.snooze_until, '2099-01-01', 'the inbox date reaches the store');
   for (const fp of [fpR1, fpR2, fpR3]) assert.equal(cli('show', fp).out.card.status, 'rejected');
 
   // --- 4. rescan: a rejected item stays suppressed; the snoozed one with new evidence reopens on push

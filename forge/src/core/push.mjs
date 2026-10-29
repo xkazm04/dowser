@@ -172,9 +172,14 @@ async function updateOne(deps, p, o) {
     }
   }
 
-  if (grew && (p.status === 'snoozed' || p.status === 'rejected')) {
+  // A dated snooze whose day has come (DW-42): the skill woke it on that day and pushes it again, so it reopens
+  // even without new evidence. "That day" is checked in the latest time zone (UTC+14): the skill wakes on the
+  // runner's local date, which may already be ahead of UTC.
+  const due = p.status === 'snoozed' && p.snooze_until !== undefined
+    && p.snooze_until <= new Date(Date.parse(o.at) + 14 * 3_600_000).toISOString().slice(0, 10);
+  if (due || (grew && (p.status === 'snoozed' || p.status === 'rejected'))) {
     const then = { refs: p.refs_at_status ?? p.evidence_count, types: p.types_at_status ?? p.evidence_types };
-    if (resurfaces(p.status, then, { refs: u.count, types: u.types }).resurface) {
+    if (due || resurfaces(p.status, then, { refs: u.count, types: u.types }).resurface) {
       // A reopen writes no verdict; the item is simply open again (CAS on the status it had).
       await db.exec("UPDATE proposals SET status = 'open', reopened = 1, change_kind = 'reopened', last_run_id = ?, last_push_at = ? WHERE id = ? AND status = ?",
         [o.runId, o.at, p.id, p.status]);
