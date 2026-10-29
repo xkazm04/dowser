@@ -602,6 +602,60 @@
       "components": [
         "Triage"
       ]
+    },
+    {
+      "ref": "DOW-79",
+      "title": "Markdown share is handy, but our devs want the quotes",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-79",
+      "body": "We pasted a scan into Notion with \"share as markdown\". Our developers asked for the quoted lines too; can that be an option for internal docs?",
+      "created_at": "2026-10-30T08:10:00Z",
+      "labels": [
+        "share"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-80",
+      "title": "Scan ran full after our rebase",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-80",
+      "body": "We rebased main and the next scan said the last scanned version was gone and ran a full scan. Correct, but it took 20 minutes; a warning before it starts would help.",
+      "created_at": "2026-10-30T08:40:00Z",
+      "labels": [
+        "scan-speed"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-81",
+      "title": "Pick the Jira project when accepting",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-81",
+      "body": "Same as DOW-65 for Fabrikam: accepted proposals land in one project and we move them by hand every time. Let us choose the project in the accept dialog.",
+      "created_at": "2026-10-30T09:00:00Z",
+      "labels": [
+        "forge",
+        "triage-speed"
+      ],
+      "components": [
+        "Forge app"
+      ]
+    },
+    {
+      "ref": "DOW-82",
+      "title": "Pebble Shop fixture shows up in our grep",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-82",
+      "body": "Not a bug in our repo - in Dowser's own repo the lens fixture has a committed live-looking key. Fine since it is fake, but a note in the fixture saying so would stop people reporting it.",
+      "created_at": "2026-10-30T09:20:00Z",
+      "labels": [
+        "security",
+        "question"
+      ],
+      "components": [
+        "Lens: Security"
+      ]
     }
   ],
   "pages": [
@@ -626,8 +680,8 @@
       "title": "Dowser data handling - security review draft",
       "url": "https://dowser-beta.atlassian.net/wiki/spaces/SEC/pages/13",
       "space": "SEC",
-      "updated_at": "2026-10-29T19:30:00Z",
-      "body": "Scope: the Dowser skill on developer laptops and the Dowser for Jira Forge app.\n\nLocal store: one SQLite file per project under ~/.dowser, not encrypted at rest; it holds proposal text and the quoted evidence lines.\n\nWhat leaves the machine: when the Forge app is connected, the skill pushes each proposal's text and its evidence, including the quoted source and doc lines (at most one line each), which the inbox and the Jira issue show.\n\nDependency auditing runs npm audit, osv-scanner or pip-audit only when they are already installed; Dowser never installs them.\n\nVulnerability reports: send them to the security contact in the repository's SECURITY.md."
+      "updated_at": "2026-10-29T23:30:00Z",
+      "body": "Scope: the Dowser skill on developer laptops and the Dowser for Jira Forge app.\n\nLocal store: one SQLite file per project under ~/.dowser, not encrypted at rest; it holds proposal text and the quoted evidence lines.\n\nWhat leaves the machine: when the Forge app is connected, the skill pushes each proposal's text and its evidence, including the quoted source and doc lines (at most one line each), which the inbox and the Jira issue show.\n\nDependency auditing runs npm audit, osv-scanner or pip-audit only when they are already installed; Dowser never installs them. The auditors send package names and versions to their advisory services (npm registry, osv.dev, PyPI).\n\nVulnerability reports: send them to the security contact in the repository's SECURITY.md."
     },
     {
       "ref": "PAGE-14",
