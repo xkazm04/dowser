@@ -793,6 +793,47 @@
       "components": [
         "Skill"
       ]
+    },
+    {
+      "ref": "DOW-93",
+      "title": "Withheld lines read fine now",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-93",
+      "body": "With quotes=omit the cards say \"the line at src/pay.js:40\" instead of a bracket. Good enough.",
+      "created_at": "2026-10-30T18:20:00Z",
+      "labels": [
+        "feedback",
+        "quotes"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-94",
+      "title": "Scan takes 9 minutes on our monorepo",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-94",
+      "body": "Since dependency audits go into every package the security lens adds about four minutes. Could it skip packages that did not change since the last scan?",
+      "created_at": "2026-10-30T18:40:00Z",
+      "labels": [
+        "scan-speed",
+        "monorepo"
+      ],
+      "components": [
+        "Lens: Security"
+      ]
+    },
+    {
+      "ref": "DOW-95",
+      "title": "Opportunity found nothing new for two scans",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-95",
+      "body": "The last two scans had no opportunity cards that were not follow-ups. Is that expected once the obvious things are done?",
+      "created_at": "2026-10-30T19:00:00Z",
+      "labels": [
+        "question"
+      ],
+      "components": [
+        "Lens: Opportunity"
+      ]
     }
   ],
   "pages": [
@@ -809,16 +850,16 @@
       "title": "Triage guide for product managers",
       "url": "https://dowser-beta.atlassian.net/wiki/spaces/DOW/pages/12",
       "space": "DOW",
-      "updated_at": "2026-10-30T15:00:00Z",
-      "body": "Switch to guided mode by saying 'switch to guided'. Triage opens with an overview table of every proposal. Say 'full cards' to see each card's summary and description, or 'compact' to go back to the short form.\n\nWhen you reject a proposal, guided mode asks why in plain words: the evidence does not show this; we already track it or decided it; true, but not where we are going; true, but not worth the effort; right idea, but too big or too small; or something else, in your own words. If a card repeats another one, merge it instead of rejecting it. The reason teaches Dowser what to skip next time.\n\nAsk 'why this one?' about any card to see its evidence. Dowser answers from what it stored and does not scan again.\n\nSnoozing in the Jira inbox can carry a date: the proposal comes back on that day, or earlier when its evidence grows."
+      "updated_at": "2026-10-30T18:00:00Z",
+      "body": "Switch to guided mode by saying 'switch to guided'. Triage opens with an overview table of every proposal. Say 'full cards' to see each card's summary and description, or 'compact' to go back to the short form.\n\nWhen you reject a proposal, guided mode asks why in plain words: the evidence does not show this; we already track it or decided it; true, but not where we are going; true, but not worth the effort; right idea, but too big or too small; or something else, in your own words. If a card repeats another one, merge it instead of rejecting it. The reason teaches Dowser what to skip next time.\n\nAsk 'why this one?' about any card to see its evidence. Dowser answers from what it stored and does not scan again.\n\nSnoozing in the Jira inbox can carry a date: the proposal comes back at the first scan on or after that day, or earlier when its evidence grows."
     },
     {
       "ref": "PAGE-13",
       "title": "Dowser data handling - security review draft",
       "url": "https://dowser-beta.atlassian.net/wiki/spaces/SEC/pages/13",
       "space": "SEC",
-      "updated_at": "2026-10-30T12:00:00Z",
-      "body": "Scope: the Dowser skill on developer laptops and the Dowser for Jira Forge app.\n\nLocal store: one SQLite file per project under ~/.dowser, not encrypted at rest; it holds proposal text and the quoted evidence lines.\n\nWhat leaves the machine: when the Forge app is connected, the skill pushes each proposal's text and its evidence, including the quoted source and doc lines (at most one line each), which the inbox and the Jira issue show. A team can set quotes=omit to push a hash of each line instead of its text; card titles and descriptions are still sent as written.\n\nDependency auditing runs npm audit, osv-scanner or pip-audit only when they are already installed; Dowser never installs them. The auditors send package names and versions to their advisory services (npm registry, osv.dev, PyPI).\n\nVulnerability reports: send them to the security contact in the repository's SECURITY.md."
+      "updated_at": "2026-10-30T18:00:00Z",
+      "body": "Scope: the Dowser skill on developer laptops and the Dowser for Jira Forge app.\n\nLocal store: one SQLite file per project under ~/.dowser, not encrypted at rest; it holds proposal text and the quoted evidence lines.\n\nWhat leaves the machine: when the Forge app is connected, the skill pushes each proposal's text and its evidence, including the quoted source and doc lines (at most one line each), which the inbox and the Jira issue show. A team can set quotes=omit to push a hash of each line instead of its text; a quoted line repeated in a card's text is replaced by a reference to its file and line.\n\nDependency auditing runs npm audit, osv-scanner or pip-audit only when they are already installed; Dowser never installs them. The auditors send package names and versions to their advisory services (npm registry, osv.dev, PyPI).\n\nVulnerability reports: send them to the security contact in the repository's SECURITY.md."
     },
     {
       "ref": "PAGE-14",

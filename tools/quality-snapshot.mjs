@@ -63,7 +63,7 @@ for (const p of code) {
   if (p.startsWith('forge/src/shared/')) continue; // synced copies of skill modules: counted once, at the source
   const ls = lines(p);
   for (let i = 0; i < ls.length; i++) {
-    const m = ls[i].match(/^(?:export\s+)?(?:async\s+)?function\s*\*?\s*(\w+)|^(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>\s*\{\s*$/);
+    const m = ls[i].match(/^(?:export\s+(?:default\s+)?)?(?:async\s+)?function\s*\*?\s*(\w+)|^(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>\s*\{\s*$/);
     if (!m || ls[i].trimEnd().endsWith('}') || ls[i].trimEnd().endsWith('};')) continue;
     let j = i + 1;
     while (j < ls.length && !/^\}[;)]*\s*$/.test(ls[j])) j++;
