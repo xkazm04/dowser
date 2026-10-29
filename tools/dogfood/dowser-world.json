@@ -1,74 +1,651 @@
 {
   "about": "Mock Forge seed for scanning Dowser itself (tools/dogfood.mjs): the Jira tickets, Confluence pages, goals and lens direction of an invented closed beta of Dowser, in the item shapes of docs/contracts/forge-mcp-2.md. Invented, but every claim a ticket or page makes about the product was written against the code at the commit this file landed in, so a card can be checked by hand. Planted on purpose: page claims that the code contradicts (Node version, proposal cap, snooze expiry, a 'compact' command, a reject reason, what leaves the machine); demand themes with partial mechanisms (card length vs the unread `verbosity` pref, monorepo audits vs root-only `deps`, timed snooze with no expiry); one theme the direction excludes (Codex parity); noise (thanks, one-offs, a duplicate customer). `directions` is keyed by the placeholder DOWSER_PROJECT; tools/dogfood.mjs re-keys it to the scanned copy's project key. No expected-findings file: the cards are judged by hand.",
   "tickets": [
-    { "ref": "DOW-12", "title": "Scan dependencies in every workspace package", "url": "https://dowser-beta.atlassian.net/browse/DOW-12", "body": "Design-partner interview (Northwind): our repo is a pnpm monorepo, the root package.json has almost nothing in it. Would Dowser look at packages/* too?", "created_at": "2026-07-02T09:10:00Z", "labels": ["monorepo", "interview"], "components": ["Lens: Security"] },
-    { "ref": "DOW-15", "title": "Monorepo support for the security lens", "url": "https://dowser-beta.atlassian.net/browse/DOW-15", "body": "Design-partner interview (Fabrikam): 14 services in one repo, each with its own lockfile. A security scan that only reads the root would miss all of them.", "created_at": "2026-07-21T14:00:00Z", "labels": ["monorepo", "interview"], "components": ["Lens: Security"] },
-    { "ref": "DOW-41", "title": "Security lens says 'no dependency findings' on our monorepo", "url": "https://dowser-beta.atlassian.net/browse/DOW-41", "body": "We know apps/billing has an old axios with an advisory. Dowser reported zero dep findings and a note that nested manifests were unchecked. Can it just audit them?", "created_at": "2026-10-06T08:45:00Z", "labels": ["monorepo", "beta"], "components": ["Lens: Security"] },
-    { "ref": "DOW-47", "title": "deps only audits the root lockfile", "url": "https://dowser-beta.atlassian.net/browse/DOW-47", "body": "Ran the scan on our turborepo. 'deps audits the root only' - every app has its own package-lock.json. Please walk the workspace.", "created_at": "2026-10-11T11:30:00Z", "labels": ["monorepo", "beta"], "components": ["Lens: Security"] },
-    { "ref": "DOW-58", "title": "Nested requirements.txt ignored", "url": "https://dowser-beta.atlassian.net/browse/DOW-58", "body": "Python services live in services/<name>/requirements.txt. The Security lens marked H1 unchecked for all of them.", "created_at": "2026-10-17T16:05:00Z", "labels": ["monorepo", "beta"], "components": ["Lens: Security"] },
-    { "ref": "DOW-66", "title": "Same as DOW-47 - workspace packages not audited", "url": "https://dowser-beta.atlassian.net/browse/DOW-66", "body": "Following up on DOW-47 for Contoso: still seeing the root-only behaviour on 0.2.", "created_at": "2026-10-24T09:20:00Z", "labels": ["monorepo", "beta"], "components": ["Lens: Security"] },
-
-    { "ref": "DOW-33", "title": "Cards are too long to triage in a meeting", "url": "https://dowser-beta.atlassian.net/browse/DOW-33", "body": "We triage together on a shared screen. Each card is a full page of Description, Flow, Expected impact and Evaluation. We only need title, why and size to decide keep or reject.", "created_at": "2026-09-30T13:00:00Z", "labels": ["card-length", "beta"], "components": ["Skill"] },
-    { "ref": "DOW-38", "title": "Shorter proposals please", "url": "https://dowser-beta.atlassian.net/browse/DOW-38", "body": "16 cards at this length is 20 minutes of scrolling in the terminal. A one-line-per-card overview first would help.", "created_at": "2026-10-03T10:15:00Z", "labels": ["card-length", "beta"], "components": ["Skill"] },
-    { "ref": "DOW-44", "title": "Is there a compact mode?", "url": "https://dowser-beta.atlassian.net/browse/DOW-44", "body": "The triage guide says to say 'compact' but nothing changes. Guided mode is shorter but hides the file names our devs want.", "created_at": "2026-10-09T15:40:00Z", "labels": ["card-length", "beta"], "components": ["Skill"] },
-    { "ref": "DOW-49", "title": "Summary table before the cards", "url": "https://dowser-beta.atlassian.net/browse/DOW-49", "body": "Before the per-card dialog, show a table: lens, title, size, confidence. Then let me open the ones I care about.", "created_at": "2026-10-13T09:00:00Z", "labels": ["card-length", "triage-speed"], "components": ["Skill"] },
-    { "ref": "DOW-53", "title": "PM feedback: too much text per proposal", "url": "https://dowser-beta.atlassian.net/browse/DOW-53", "body": "Our PM stopped using the pre-triage dialog after the first scan because of the reading load.", "created_at": "2026-10-15T12:10:00Z", "labels": ["card-length", "triage-speed"], "components": ["Skill"] },
-    { "ref": "DOW-61", "title": "Verbose output in Codex is worse", "url": "https://dowser-beta.atlassian.net/browse/DOW-61", "body": "Same card length complaint, but in Codex the markdown is not rendered so it is even harder to read.", "created_at": "2026-10-20T08:30:00Z", "labels": ["card-length", "codex"], "components": ["Skill"] },
-    { "ref": "DOW-64", "title": "Option to hide Evaluation section during triage", "url": "https://dowser-beta.atlassian.net/browse/DOW-64", "body": "Evaluation matters when we build it, not when we decide. Could triage show it only on request?", "created_at": "2026-10-22T14:50:00Z", "labels": ["card-length", "triage-speed"], "components": ["Skill"] },
-    { "ref": "DOW-70", "title": "Re: shorter proposals (Contoso)", "url": "https://dowser-beta.atlassian.net/browse/DOW-70", "body": "Contoso again (see DOW-38): the summary table idea from DOW-49 would solve it for us.", "created_at": "2026-10-26T10:00:00Z", "labels": ["card-length"], "components": ["Skill"] },
-
-    { "ref": "DOW-36", "title": "Snooze for two weeks", "url": "https://dowser-beta.atlassian.net/browse/DOW-36", "body": "Snoozed proposals never come back unless the code changes. We want 'snooze until after the release' and have it reappear.", "created_at": "2026-10-01T11:00:00Z", "labels": ["snooze", "triage-speed"], "components": ["Triage"] },
-    { "ref": "DOW-45", "title": "Snoozed items disappear forever", "url": "https://dowser-beta.atlassian.net/browse/DOW-45", "body": "The getting-started page says snoozed proposals return after 30 days. Ours have been snoozed since the first beta scan and have not come back.", "created_at": "2026-10-10T09:45:00Z", "labels": ["snooze", "beta"], "components": ["Triage"] },
-    { "ref": "DOW-55", "title": "Snooze with a date", "url": "https://dowser-beta.atlassian.net/browse/DOW-55", "body": "Jira-style 'remind me on' for a snoozed proposal, in the skill and in the Forge inbox.", "created_at": "2026-10-16T13:20:00Z", "labels": ["snooze"], "components": ["Triage", "Forge app"] },
-    { "ref": "DOW-62", "title": "List of what we snoozed", "url": "https://dowser-beta.atlassian.net/browse/DOW-62", "body": "Where do I see everything we snoozed so I can unsnooze one?", "created_at": "2026-10-21T10:30:00Z", "labels": ["snooze"], "components": ["Triage"] },
-
-    { "ref": "DOW-39", "title": "What is a fingerprint?", "url": "https://dowser-beta.atlassian.net/browse/DOW-39", "body": "Guided mode, our PM: the summary says '3 dropped by verify' and 'fp a1b2...'. We do not know what either means or whether something broke.", "created_at": "2026-10-04T09:05:00Z", "labels": ["guided-mode", "wording"], "components": ["Skill"] },
-    { "ref": "DOW-46", "title": "'partial' lens result looks like an error", "url": "https://dowser-beta.atlassian.net/browse/DOW-46", "body": "Guided mode said 'opportunity: partial (tickets and goals unavailable)'. Our PM thought the scan failed and re-ran it three times. Nothing told her to connect Forge.", "created_at": "2026-10-10T14:00:00Z", "labels": ["guided-mode", "wording"], "components": ["Skill"] },
-    { "ref": "DOW-52", "title": "Exit code 3 in guided mode", "url": "https://dowser-beta.atlassian.net/browse/DOW-52", "body": "First run on a laptop without git in PATH: guided mode showed 'store or connection unavailable (exit 3)'. Not plain language.", "created_at": "2026-10-15T08:40:00Z", "labels": ["guided-mode", "setup"], "components": ["Skill"] },
-    { "ref": "DOW-59", "title": "Reject reasons are developer words", "url": "https://dowser-beta.atlassian.net/browse/DOW-59", "body": "'false-positive', 'wrong-size' - our product managers pick 'other' every time because the options do not read naturally.", "created_at": "2026-10-18T11:50:00Z", "labels": ["guided-mode", "wording"], "components": ["Triage"] },
-
-    { "ref": "DOW-42", "title": "Install fails on Node 20", "url": "https://dowser-beta.atlassian.net/browse/DOW-42", "body": "Getting-started says Node 20 or newer. install.mjs exits 3 with 'Dowser needs Node 22 or newer'. Which is it?", "created_at": "2026-10-07T07:55:00Z", "labels": ["install", "docs"], "components": ["Install"] },
-    { "ref": "DOW-57", "title": "Expected 20 proposals, got 16", "url": "https://dowser-beta.atlassian.net/browse/DOW-57", "body": "The beta page says up to 20 proposals per scan; the run said 'top 16 of 23'. Is something capped wrongly?", "created_at": "2026-10-17T09:30:00Z", "labels": ["docs", "budget"], "components": ["Skill"] },
-    { "ref": "DOW-60", "title": "Only 4 security findings when we know of more", "url": "https://dowser-beta.atlassian.net/browse/DOW-60", "body": "Security and CRA stops at 4 cards. For a security review we would rather see all of them, ranked.", "created_at": "2026-10-19T15:15:00Z", "labels": ["budget"], "components": ["Lens: Security"] },
-    { "ref": "DOW-67", "title": "Let us raise the per-lens limit", "url": "https://dowser-beta.atlassian.net/browse/DOW-67", "body": "A per-project setting for how many cards each lens may propose.", "created_at": "2026-10-24T13:00:00Z", "labels": ["budget"], "components": ["Skill", "Forge app"] },
-
-    { "ref": "DOW-43", "title": "Share a scan summary without Jira", "url": "https://dowser-beta.atlassian.net/browse/DOW-43", "body": "Two of our teams do not use Jira yet. We would like the run summary and kept cards as a markdown file to paste into Notion.", "created_at": "2026-10-08T12:00:00Z", "labels": ["share"], "components": ["Skill"] },
-    { "ref": "DOW-54", "title": "Export kept proposals", "url": "https://dowser-beta.atlassian.net/browse/DOW-54", "body": "An export of the verified cards of the last run, for a slide.", "created_at": "2026-10-16T10:40:00Z", "labels": ["share"], "components": ["Skill"] },
-    { "ref": "DOW-68", "title": "Copy one card as markdown", "url": "https://dowser-beta.atlassian.net/browse/DOW-68", "body": "When I ask 'why this one?' I get the evidence, but I cannot copy the whole card to a doc in one go.", "created_at": "2026-10-25T09:10:00Z", "labels": ["share"], "components": ["Skill"] },
-
-    { "ref": "DOW-48", "title": "Codex: /dowser is not offered", "url": "https://dowser-beta.atlassian.net/browse/DOW-48", "body": "In Codex we have to say 'use the dowser skill'. Claude gets the slash command.", "created_at": "2026-10-12T10:00:00Z", "labels": ["codex"], "components": ["Install"] },
-    { "ref": "DOW-56", "title": "Codex sandbox blocks the store write", "url": "https://dowser-beta.atlassian.net/browse/DOW-56", "body": "Codex in read-only sandbox cannot write ~/.dowser. Can the store live somewhere Codex allows?", "created_at": "2026-10-16T15:30:00Z", "labels": ["codex"], "components": ["Skill"] },
-    { "ref": "DOW-63", "title": "Codex parity checklist", "url": "https://dowser-beta.atlassian.net/browse/DOW-63", "body": "Tracking ticket: slash command, MCP connection, sandbox, markdown rendering.", "created_at": "2026-10-21T16:00:00Z", "labels": ["codex"], "components": ["Install"] },
-
-    { "ref": "DOW-50", "title": "Learning tab is empty and does not say why", "url": "https://dowser-beta.atlassian.net/browse/DOW-50", "body": "Apps > Dowser > Learning shows nothing on our site. Is that because we have not rejected anything yet?", "created_at": "2026-10-14T11:20:00Z", "labels": ["forge", "empty-state"], "components": ["Forge app"] },
-    { "ref": "DOW-65", "title": "Which Jira project does Accept create the issue in?", "url": "https://dowser-beta.atlassian.net/browse/DOW-65", "body": "Accepting a proposal created the issue in a project we did not expect. Where is that configured?", "created_at": "2026-10-23T14:10:00Z", "labels": ["forge"], "components": ["Forge app"] },
-
-    { "ref": "DOW-51", "title": "Thanks - the doc drift lens found our stale runbook", "url": "https://dowser-beta.atlassian.net/browse/DOW-51", "body": "No ask, just feedback: the doc drift card about our deploy runbook was spot on.", "created_at": "2026-10-14T17:00:00Z", "labels": ["feedback"], "components": ["Lens: Doc drift"] },
-    { "ref": "DOW-69", "title": "Dark mode in the Forge inbox", "url": "https://dowser-beta.atlassian.net/browse/DOW-69", "body": "The inbox looks fine in dark mode now, closing my earlier request.", "created_at": "2026-10-25T18:20:00Z", "labels": ["forge", "feedback"], "components": ["Forge app"] },
-    { "ref": "DOW-71", "title": "Windows: paths with spaces in the repo folder", "url": "https://dowser-beta.atlassian.net/browse/DOW-71", "body": "Our repo lives in 'C:\\Users\\Ana Lopez\\work\\shop'. The scan ran fine. Just checking this is supported.", "created_at": "2026-10-27T08:00:00Z", "labels": ["question"], "components": ["Install"] }
+    {
+      "ref": "DOW-12",
+      "title": "Scan dependencies in every workspace package",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-12",
+      "body": "Design-partner interview (Northwind): our repo is a pnpm monorepo, the root package.json has almost nothing in it. Would Dowser look at packages/* too?",
+      "created_at": "2026-07-02T09:10:00Z",
+      "labels": [
+        "monorepo",
+        "interview"
+      ],
+      "components": [
+        "Lens: Security"
+      ]
+    },
+    {
+      "ref": "DOW-15",
+      "title": "Monorepo support for the security lens",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-15",
+      "body": "Design-partner interview (Fabrikam): 14 services in one repo, each with its own lockfile. A security scan that only reads the root would miss all of them.",
+      "created_at": "2026-07-21T14:00:00Z",
+      "labels": [
+        "monorepo",
+        "interview"
+      ],
+      "components": [
+        "Lens: Security"
+      ]
+    },
+    {
+      "ref": "DOW-41",
+      "title": "Security lens says 'no dependency findings' on our monorepo",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-41",
+      "body": "We know apps/billing has an old axios with an advisory. Dowser reported zero dep findings and a note that nested manifests were unchecked. Can it just audit them?",
+      "created_at": "2026-10-06T08:45:00Z",
+      "labels": [
+        "monorepo",
+        "beta"
+      ],
+      "components": [
+        "Lens: Security"
+      ]
+    },
+    {
+      "ref": "DOW-47",
+      "title": "deps only audits the root lockfile",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-47",
+      "body": "Ran the scan on our turborepo. 'deps audits the root only' - every app has its own package-lock.json. Please walk the workspace.",
+      "created_at": "2026-10-11T11:30:00Z",
+      "labels": [
+        "monorepo",
+        "beta"
+      ],
+      "components": [
+        "Lens: Security"
+      ]
+    },
+    {
+      "ref": "DOW-58",
+      "title": "Nested requirements.txt ignored",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-58",
+      "body": "Python services live in services/<name>/requirements.txt. The Security lens marked H1 unchecked for all of them.",
+      "created_at": "2026-10-17T16:05:00Z",
+      "labels": [
+        "monorepo",
+        "beta"
+      ],
+      "components": [
+        "Lens: Security"
+      ]
+    },
+    {
+      "ref": "DOW-66",
+      "title": "Same as DOW-47 - workspace packages not audited",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-66",
+      "body": "Following up on DOW-47 for Contoso: still seeing the root-only behaviour on 0.2.",
+      "created_at": "2026-10-24T09:20:00Z",
+      "labels": [
+        "monorepo",
+        "beta"
+      ],
+      "components": [
+        "Lens: Security"
+      ]
+    },
+    {
+      "ref": "DOW-33",
+      "title": "Cards are too long to triage in a meeting",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-33",
+      "body": "We triage together on a shared screen. Each card is a full page of Description, Flow, Expected impact and Evaluation. We only need title, why and size to decide keep or reject.",
+      "created_at": "2026-09-30T13:00:00Z",
+      "labels": [
+        "card-length",
+        "beta"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-38",
+      "title": "Shorter proposals please",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-38",
+      "body": "16 cards at this length is 20 minutes of scrolling in the terminal. A one-line-per-card overview first would help.",
+      "created_at": "2026-10-03T10:15:00Z",
+      "labels": [
+        "card-length",
+        "beta"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-44",
+      "title": "Is there a compact mode?",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-44",
+      "body": "The triage guide says to say 'compact' but nothing changes. Guided mode is shorter but hides the file names our devs want.",
+      "created_at": "2026-10-09T15:40:00Z",
+      "labels": [
+        "card-length",
+        "beta"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-49",
+      "title": "Summary table before the cards",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-49",
+      "body": "Before the per-card dialog, show a table: lens, title, size, confidence. Then let me open the ones I care about.",
+      "created_at": "2026-10-13T09:00:00Z",
+      "labels": [
+        "card-length",
+        "triage-speed"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-53",
+      "title": "PM feedback: too much text per proposal",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-53",
+      "body": "Our PM stopped using the pre-triage dialog after the first scan because of the reading load.",
+      "created_at": "2026-10-15T12:10:00Z",
+      "labels": [
+        "card-length",
+        "triage-speed"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-61",
+      "title": "Verbose output in Codex is worse",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-61",
+      "body": "Same card length complaint, but in Codex the markdown is not rendered so it is even harder to read.",
+      "created_at": "2026-10-20T08:30:00Z",
+      "labels": [
+        "card-length",
+        "codex"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-64",
+      "title": "Option to hide Evaluation section during triage",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-64",
+      "body": "Evaluation matters when we build it, not when we decide. Could triage show it only on request?",
+      "created_at": "2026-10-22T14:50:00Z",
+      "labels": [
+        "card-length",
+        "triage-speed"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-70",
+      "title": "Re: shorter proposals (Contoso)",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-70",
+      "body": "Contoso again (see DOW-38): the summary table idea from DOW-49 would solve it for us.",
+      "created_at": "2026-10-26T10:00:00Z",
+      "labels": [
+        "card-length"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-36",
+      "title": "Snooze for two weeks",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-36",
+      "body": "Snoozed proposals never come back unless the code changes. We want 'snooze until after the release' and have it reappear.",
+      "created_at": "2026-10-01T11:00:00Z",
+      "labels": [
+        "snooze",
+        "triage-speed"
+      ],
+      "components": [
+        "Triage"
+      ]
+    },
+    {
+      "ref": "DOW-45",
+      "title": "Snoozed items disappear forever",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-45",
+      "body": "The getting-started page says snoozed proposals return after 30 days. Ours have been snoozed since the first beta scan and have not come back.",
+      "created_at": "2026-10-10T09:45:00Z",
+      "labels": [
+        "snooze",
+        "beta"
+      ],
+      "components": [
+        "Triage"
+      ]
+    },
+    {
+      "ref": "DOW-55",
+      "title": "Snooze with a date",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-55",
+      "body": "Jira-style 'remind me on' for a snoozed proposal, in the skill and in the Forge inbox.",
+      "created_at": "2026-10-16T13:20:00Z",
+      "labels": [
+        "snooze"
+      ],
+      "components": [
+        "Triage",
+        "Forge app"
+      ]
+    },
+    {
+      "ref": "DOW-62",
+      "title": "List of what we snoozed",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-62",
+      "body": "Where do I see everything we snoozed so I can unsnooze one?",
+      "created_at": "2026-10-21T10:30:00Z",
+      "labels": [
+        "snooze"
+      ],
+      "components": [
+        "Triage"
+      ]
+    },
+    {
+      "ref": "DOW-39",
+      "title": "What is a fingerprint?",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-39",
+      "body": "Guided mode, our PM: the summary says '3 dropped by verify' and 'fp a1b2...'. We do not know what either means or whether something broke.",
+      "created_at": "2026-10-04T09:05:00Z",
+      "labels": [
+        "guided-mode",
+        "wording"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-46",
+      "title": "'partial' lens result looks like an error",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-46",
+      "body": "Guided mode said 'opportunity: partial (tickets and goals unavailable)'. Our PM thought the scan failed and re-ran it three times. Nothing told her to connect Forge.",
+      "created_at": "2026-10-10T14:00:00Z",
+      "labels": [
+        "guided-mode",
+        "wording"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-52",
+      "title": "Exit code 3 in guided mode",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-52",
+      "body": "First run on a laptop without git in PATH: guided mode showed 'store or connection unavailable (exit 3)'. Not plain language.",
+      "created_at": "2026-10-15T08:40:00Z",
+      "labels": [
+        "guided-mode",
+        "setup"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-59",
+      "title": "Reject reasons are developer words",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-59",
+      "body": "'false-positive', 'wrong-size' - our product managers pick 'other' every time because the options do not read naturally.",
+      "created_at": "2026-10-18T11:50:00Z",
+      "labels": [
+        "guided-mode",
+        "wording"
+      ],
+      "components": [
+        "Triage"
+      ]
+    },
+    {
+      "ref": "DOW-42",
+      "title": "Install fails on Node 20",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-42",
+      "body": "Getting-started says Node 20 or newer. install.mjs exits 3 with 'Dowser needs Node 22 or newer'. Which is it?",
+      "created_at": "2026-10-07T07:55:00Z",
+      "labels": [
+        "install",
+        "docs"
+      ],
+      "components": [
+        "Install"
+      ]
+    },
+    {
+      "ref": "DOW-57",
+      "title": "Expected 20 proposals, got 16",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-57",
+      "body": "The beta page says up to 20 proposals per scan; the run said 'top 16 of 23'. Is something capped wrongly?",
+      "created_at": "2026-10-17T09:30:00Z",
+      "labels": [
+        "docs",
+        "budget"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-60",
+      "title": "Only 4 security findings when we know of more",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-60",
+      "body": "Security and CRA stops at 4 cards. For a security review we would rather see all of them, ranked.",
+      "created_at": "2026-10-19T15:15:00Z",
+      "labels": [
+        "budget"
+      ],
+      "components": [
+        "Lens: Security"
+      ]
+    },
+    {
+      "ref": "DOW-67",
+      "title": "Let us raise the per-lens limit",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-67",
+      "body": "A per-project setting for how many cards each lens may propose.",
+      "created_at": "2026-10-24T13:00:00Z",
+      "labels": [
+        "budget"
+      ],
+      "components": [
+        "Skill",
+        "Forge app"
+      ]
+    },
+    {
+      "ref": "DOW-43",
+      "title": "Share a scan summary without Jira",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-43",
+      "body": "Two of our teams do not use Jira yet. We would like the run summary and kept cards as a markdown file to paste into Notion.",
+      "created_at": "2026-10-08T12:00:00Z",
+      "labels": [
+        "share"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-54",
+      "title": "Export kept proposals",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-54",
+      "body": "An export of the verified cards of the last run, for a slide.",
+      "created_at": "2026-10-16T10:40:00Z",
+      "labels": [
+        "share"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-68",
+      "title": "Copy one card as markdown",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-68",
+      "body": "When I ask 'why this one?' I get the evidence, but I cannot copy the whole card to a doc in one go.",
+      "created_at": "2026-10-25T09:10:00Z",
+      "labels": [
+        "share"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-48",
+      "title": "Codex: /dowser is not offered",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-48",
+      "body": "In Codex we have to say 'use the dowser skill'. Claude gets the slash command.",
+      "created_at": "2026-10-12T10:00:00Z",
+      "labels": [
+        "codex"
+      ],
+      "components": [
+        "Install"
+      ]
+    },
+    {
+      "ref": "DOW-56",
+      "title": "Codex sandbox blocks the store write",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-56",
+      "body": "Codex in read-only sandbox cannot write ~/.dowser. Can the store live somewhere Codex allows?",
+      "created_at": "2026-10-16T15:30:00Z",
+      "labels": [
+        "codex"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-63",
+      "title": "Codex parity checklist",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-63",
+      "body": "Tracking ticket: slash command, MCP connection, sandbox, markdown rendering.",
+      "created_at": "2026-10-21T16:00:00Z",
+      "labels": [
+        "codex"
+      ],
+      "components": [
+        "Install"
+      ]
+    },
+    {
+      "ref": "DOW-50",
+      "title": "Learning tab is empty and does not say why",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-50",
+      "body": "Apps > Dowser > Learning shows nothing on our site. Is that because we have not rejected anything yet?",
+      "created_at": "2026-10-14T11:20:00Z",
+      "labels": [
+        "forge",
+        "empty-state"
+      ],
+      "components": [
+        "Forge app"
+      ]
+    },
+    {
+      "ref": "DOW-65",
+      "title": "Which Jira project does Accept create the issue in?",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-65",
+      "body": "Accepting a proposal created the issue in a project we did not expect. Where is that configured?",
+      "created_at": "2026-10-23T14:10:00Z",
+      "labels": [
+        "forge"
+      ],
+      "components": [
+        "Forge app"
+      ]
+    },
+    {
+      "ref": "DOW-51",
+      "title": "Thanks - the doc drift lens found our stale runbook",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-51",
+      "body": "No ask, just feedback: the doc drift card about our deploy runbook was spot on.",
+      "created_at": "2026-10-14T17:00:00Z",
+      "labels": [
+        "feedback"
+      ],
+      "components": [
+        "Lens: Doc drift"
+      ]
+    },
+    {
+      "ref": "DOW-69",
+      "title": "Dark mode in the Forge inbox",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-69",
+      "body": "The inbox looks fine in dark mode now, closing my earlier request.",
+      "created_at": "2026-10-25T18:20:00Z",
+      "labels": [
+        "forge",
+        "feedback"
+      ],
+      "components": [
+        "Forge app"
+      ]
+    },
+    {
+      "ref": "DOW-71",
+      "title": "Windows: paths with spaces in the repo folder",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-71",
+      "body": "Our repo lives in 'C:\\Users\\Ana Lopez\\work\\shop'. The scan ran fine. Just checking this is supported.",
+      "created_at": "2026-10-27T08:00:00Z",
+      "labels": [
+        "question"
+      ],
+      "components": [
+        "Install"
+      ]
+    },
+    {
+      "ref": "DOW-72",
+      "title": "The overview table makes triage much faster",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-72",
+      "body": "Tried the new overview before the cards: we kept or rejected 9 of 14 straight from the table. Thanks.",
+      "created_at": "2026-10-29T20:10:00Z",
+      "labels": [
+        "feedback",
+        "triage-speed"
+      ],
+      "components": [
+        "Skill"
+      ]
+    },
+    {
+      "ref": "DOW-73",
+      "title": "How long did our triage take?",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-73",
+      "body": "Our goal says triage under 10 minutes. Nothing in Dowser or the inbox shows how long a scan's decisions took, so we cannot tell if we hit it.",
+      "created_at": "2026-10-29T20:20:00Z",
+      "labels": [
+        "triage-speed",
+        "metrics"
+      ],
+      "components": [
+        "Forge app"
+      ]
+    },
+    {
+      "ref": "DOW-74",
+      "title": "Security lens skips our forge/ lockfiles",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-74",
+      "body": "Dogfooding on the Dowser repo itself: the security lens is partial every run because forge/package-lock.json and forge/static/app/package-lock.json are never audited.",
+      "created_at": "2026-10-29T20:40:00Z",
+      "labels": [
+        "monorepo"
+      ],
+      "components": [
+        "Lens: Security"
+      ]
+    }
   ],
   "pages": [
-    { "ref": "PAGE-11", "title": "Dowser beta - getting started", "url": "https://dowser-beta.atlassian.net/wiki/spaces/DOW/pages/11", "space": "DOW", "updated_at": "2026-10-20T09:00:00Z",
-      "body": "Requirements: Node.js 20 or newer and Claude Code or Codex CLI.\n\nInstall from a clone: `node skill/install.mjs --harness claude` (user scope, ~/.claude/skills/dowser) or `--scope project` for one repository. `--dev-link` keeps the installed skill linked to your clone.\n\nRun `/dowser` in the repository you want to scan. `/dowser area: src/checkout` scans one folder; `/dowser goal: <text>` steers the scan towards a goal.\n\nEach scan shows at most 20 proposals, at most 4 per lens. Keep, reject, snooze or merge each one. Snoozed proposals come back automatically after 30 days.\n\nDowser never writes into your repository. Its memory is in ~/.dowser/projects/<project key>/dowser.db; set DOWSER_HOME to move it." },
-    { "ref": "PAGE-12", "title": "Triage guide for product managers", "url": "https://dowser-beta.atlassian.net/wiki/spaces/DOW/pages/12", "space": "DOW", "updated_at": "2026-10-18T15:00:00Z",
-      "body": "Switch to guided mode by saying 'switch to guided'. If the cards are too long, say 'compact' and Dowser shows only the title, rationale and size.\n\nWhen you reject a proposal, pick a reason: false-positive (the evidence is wrong), already-known (we have it on the backlog), not-our-direction, not-worth-it, wrong-size, or duplicate (it repeats another card). The reason teaches Dowser what to skip next time.\n\nAsk 'why this one?' about any card to see its evidence. Dowser answers from what it stored and does not scan again." },
-    { "ref": "PAGE-13", "title": "Dowser data handling - security review draft", "url": "https://dowser-beta.atlassian.net/wiki/spaces/SEC/pages/13", "space": "SEC", "updated_at": "2026-10-12T10:30:00Z",
-      "body": "Scope: the Dowser skill on developer laptops and the Dowser for Jira Forge app.\n\nLocal store: one SQLite file per project under ~/.dowser, not encrypted at rest; it holds proposal text and the quoted evidence lines.\n\nWhat leaves the machine: when the Forge app is connected, the skill pushes proposal titles, rationale and evidence references (file paths and line numbers). No source code lines leave the developer's machine.\n\nDependency auditing runs npm audit, osv-scanner or pip-audit only when they are already installed; Dowser never installs them.\n\nVulnerability reports: send them to the security contact in the repository's SECURITY.md." },
-    { "ref": "PAGE-14", "title": "Dowser for Jira - operations runbook", "url": "https://dowser-beta.atlassian.net/wiki/spaces/DOW/pages/14", "space": "DOW", "updated_at": "2026-10-28T11:00:00Z",
-      "body": "Local development without a Jira site: `npm run local:forge` starts the real core on node:sqlite, then `npm run local:ui` serves the Custom UI against it.\n\nGates before a deploy: `npm run forge:typecheck`, `npm run forge:test`, `npm run forge:check-shared`, then `npm run forge:build-ui`.\n\nThe shared modules in forge/src/shared are copies of the skill's model and fingerprint modules; after editing either, run `npm --prefix forge run sync-shared`." }
+    {
+      "ref": "PAGE-11",
+      "title": "Dowser beta - getting started",
+      "url": "https://dowser-beta.atlassian.net/wiki/spaces/DOW/pages/11",
+      "space": "DOW",
+      "updated_at": "2026-10-29T19:30:00Z",
+      "body": "Requirements: Node.js 22 or newer and Claude Code or Codex CLI.\n\nInstall from a clone: `node skill/install.mjs --harness claude` (user scope, ~/.claude/skills/dowser) or `--scope project` for one repository. `--dev-link` keeps the installed skill linked to your clone.\n\nRun `/dowser` in the repository you want to scan. `/dowser area: src/checkout` scans one folder; `/dowser goal: <text>` steers the scan towards a goal.\n\nEach scan shows at most 16 proposals, at most 4 per lens, starting with an overview table. Keep, reject, snooze or merge each one. A snoozed proposal comes back when its evidence grows, for example when new tickets ask for it.\n\nDowser never writes into your repository. Its memory is in ~/.dowser/projects/<project key>/dowser.db; set DOWSER_HOME to move it."
+    },
+    {
+      "ref": "PAGE-12",
+      "title": "Triage guide for product managers",
+      "url": "https://dowser-beta.atlassian.net/wiki/spaces/DOW/pages/12",
+      "space": "DOW",
+      "updated_at": "2026-10-29T19:30:00Z",
+      "body": "Switch to guided mode by saying 'switch to guided'. Triage opens with an overview table of every proposal. Say 'full cards' to see each card's summary and description, or 'compact' to go back to the short form.\n\nWhen you reject a proposal, pick a reason: false-positive (the evidence is wrong), already-known (we have it on the backlog), not-our-direction, not-worth-it, wrong-size, or other with a note. If a card repeats another one, merge it instead of rejecting it. The reason teaches Dowser what to skip next time.\n\nAsk 'why this one?' about any card to see its evidence. Dowser answers from what it stored and does not scan again."
+    },
+    {
+      "ref": "PAGE-13",
+      "title": "Dowser data handling - security review draft",
+      "url": "https://dowser-beta.atlassian.net/wiki/spaces/SEC/pages/13",
+      "space": "SEC",
+      "updated_at": "2026-10-29T19:30:00Z",
+      "body": "Scope: the Dowser skill on developer laptops and the Dowser for Jira Forge app.\n\nLocal store: one SQLite file per project under ~/.dowser, not encrypted at rest; it holds proposal text and the quoted evidence lines.\n\nWhat leaves the machine: when the Forge app is connected, the skill pushes each proposal's text and its evidence, including the quoted source and doc lines (at most one line each), which the inbox and the Jira issue show.\n\nDependency auditing runs npm audit, osv-scanner or pip-audit only when they are already installed; Dowser never installs them.\n\nVulnerability reports: send them to the security contact in the repository's SECURITY.md."
+    },
+    {
+      "ref": "PAGE-14",
+      "title": "Dowser for Jira - operations runbook",
+      "url": "https://dowser-beta.atlassian.net/wiki/spaces/DOW/pages/14",
+      "space": "DOW",
+      "updated_at": "2026-10-28T11:00:00Z",
+      "body": "Local development without a Jira site: `npm run local:forge` starts the real core on node:sqlite, then `npm run local:ui` serves the Custom UI against it.\n\nGates before a deploy: `npm run forge:typecheck`, `npm run forge:test`, `npm run forge:check-shared`, then `npm run forge:build-ui`.\n\nThe shared modules in forge/src/shared are copies of the skill's model and fingerprint modules; after editing either, run `npm --prefix forge run sync-shared`."
+    }
   ],
   "goals": [
-    { "ref": "G-1", "title": "Beta teams act on what Dowser proposes", "url": "https://dowser-beta.atlassian.net/goals/G-1", "body": "Product managers in the closed beta triage a scan in under 10 minutes and accept at least 40% of what they keep. Measured from the Forge inbox verdicts per team, monthly, through Q1 2027.", "status": "at_risk" },
-    { "ref": "G-2", "title": "Codegeist 2026: a judge sees the whole loop in 15 minutes", "url": "https://dowser-beta.atlassian.net/goals/G-2", "body": "Install, first scan, pre-triage, push to the inbox, a verdict and its effect on the next scan, on a fresh machine in 15 minutes from the README alone.", "status": "on_track" },
-    { "ref": "G-3", "title": "CRA-ready open-source release", "url": "https://dowser-beta.atlassian.net/goals/G-3", "body": "Before the public release: a published vulnerability disclosure contact, an SBOM with each release, signed release artifacts and documented support periods.", "status": "on_track" }
+    {
+      "ref": "G-1",
+      "title": "Beta teams act on what Dowser proposes",
+      "url": "https://dowser-beta.atlassian.net/goals/G-1",
+      "body": "Product managers in the closed beta triage a scan in under 10 minutes and accept at least 40% of what they keep. Measured from the Forge inbox verdicts per team, monthly, through Q1 2027.",
+      "status": "at_risk"
+    },
+    {
+      "ref": "G-2",
+      "title": "Codegeist 2026: a judge sees the whole loop in 15 minutes",
+      "url": "https://dowser-beta.atlassian.net/goals/G-2",
+      "body": "Install, first scan, pre-triage, push to the inbox, a verdict and its effect on the next scan, on a fresh machine in 15 minutes from the README alone.",
+      "status": "on_track"
+    },
+    {
+      "ref": "G-3",
+      "title": "CRA-ready open-source release",
+      "url": "https://dowser-beta.atlassian.net/goals/G-3",
+      "body": "Before the public release: a published vulnerability disclosure contact, an SBOM with each release, signed release artifacts and documented support periods.",
+      "status": "on_track"
+    }
   ],
   "directions": {
     "DOWSER_PROJECT": {
       "lenses": {
-        "opportunity": { "focus": ["triage speed for product managers"], "exclude": ["Codex CLI parity (the harness team owns it next quarter)"], "notes": "The beta's outcome is G-1: PMs triage fast and act on what they keep." },
-        "ux-friction": { "focus": ["guided mode for non-developers"], "exclude": ["the spark design skill and the rest of .claude/ (internal development tooling)"] },
-        "doc-drift": { "focus": ["install and first-run documentation"], "exclude": ["docs/project-documentation.md (the original Codegeist plan, kept as history)"], "spaces": ["DOW", "SEC"] },
-        "security-cra": { "focus": ["what the skill stores locally and sends to Forge"], "exclude": ["the lens evaluation fixture under skill/scripts/tests/fixtures (Pebble Shop is deliberately vulnerable)"] }
+        "opportunity": {
+          "focus": [
+            "triage speed for product managers"
+          ],
+          "exclude": [
+            "Codex CLI parity (the harness team owns it next quarter)"
+          ],
+          "notes": "The beta's outcome is G-1: PMs triage fast and act on what they keep."
+        },
+        "ux-friction": {
+          "focus": [
+            "guided mode for non-developers"
+          ],
+          "exclude": [
+            "the spark design skill and the rest of .claude/ (internal development tooling)"
+          ]
+        },
+        "doc-drift": {
+          "focus": [
+            "install and first-run documentation"
+          ],
+          "exclude": [
+            "docs/project-documentation.md (the original Codegeist plan, kept as history)"
+          ],
+          "spaces": [
+            "DOW",
+            "SEC"
+          ]
+        },
+        "security-cra": {
+          "focus": [
+            "what the skill stores locally and sends to Forge"
+          ],
+          "exclude": [
+            "the lens evaluation fixture under skill/scripts/tests/fixtures (Pebble Shop is deliberately vulnerable)"
+          ]
+        }
       }
     }
   }
