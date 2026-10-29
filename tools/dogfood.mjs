@@ -5,8 +5,8 @@
 // evaluation. lens-eval scores one lens on a fixture with an answer key; this has no answer key - the judge is a
 // person reading each card against the code.
 //
-// It clones the source's committed HEAD into the OS temp folder, removes the --hide paths from the clone in one
-// extra commit (by default the seed itself, so the scan cannot read the world it is being tested against), installs
+// It clones the source's committed HEAD into the OS temp folder, leaves the --hide paths out of the working tree by
+// a sparse checkout (by default the seed itself, so the scan cannot read the world it is being tested against), installs
 // the skill there at project scope (a copy: tests/ left out), gives it a fresh DOWSER_HOME and runs one headless
 // Claude Code scan. Nothing is written into the source repository.
 //
@@ -94,23 +94,17 @@ const git = (repo, args, env = {}) => execFileSync('git', ['-C', repo, '-c', 'co
   { encoding: 'utf8', env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 /**
- * Clones the source's HEAD and removes the hidden paths in one commit dated at HEAD, so the scan's git window
- * barely moves.
+ * Clones the source's HEAD with the hidden paths left out of the working tree by a sparse checkout. HEAD stays the
+ * source's real commit, so a campaign's incremental scans find the previous scan's head in the clone's history.
  * @param {string} source @param {string} repo @param {string[]} hide
  * @returns {{head: string, hidden: string[]}}
  */
 function cloneRepo(source, repo, hide) {
-  execFileSync('git', ['clone', '-q', '--no-hardlinks', source, repo], { stdio: ['ignore', 'pipe', 'pipe'] });
+  execFileSync('git', ['clone', '-q', '--no-hardlinks', '--no-checkout', source, repo], { stdio: ['ignore', 'pipe', 'pipe'] });
   const head = git(repo, ['rev-parse', '--short', 'HEAD']);
-  const hidden = hide.filter((p) => git(repo, ['ls-files', '--', p]) !== '');
-  if (hidden.length) {
-    git(repo, ['rm', '-r', '-q', '--', ...hidden]);
-    const when = git(repo, ['log', '-1', '--format=%cI']);
-    git(repo, ['commit', '-q', '--no-verify', '-m', 'dogfood: hide the evaluation seed from the scan'], {
-      GIT_AUTHOR_NAME: 'dogfood', GIT_AUTHOR_EMAIL: 'dogfood@invalid', GIT_COMMITTER_NAME: 'dogfood', GIT_COMMITTER_EMAIL: 'dogfood@invalid',
-      GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when,
-    });
-  }
+  const hidden = hide.filter((p) => git(repo, ['ls-tree', '-r', '--name-only', 'HEAD', '--', p]) !== '');
+  if (hidden.length) git(repo, ['sparse-checkout', 'set', '--no-cone', '/*', ...hidden.map((p) => `!/${p.replace(/\/+$/, '')}/`)]);
+  git(repo, ['checkout', '-q']);
   // The project-scope install lands in .claude/skills/dowser; keep it out of the scan's git view.
   appendFileSync(join(repo, '.git/info/exclude'), '\n.claude/skills/dowser/\n');
   return { head, hidden };
