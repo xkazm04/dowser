@@ -52,7 +52,7 @@ A focused scan is **partial** by definition. Its summary says so and never says 
 
 ## 1. Mode - dev or guided
 
-Run `prefs get mode`. If `mode` is absent, ask the runner once:
+Run `prefs get mode verbosity`. If `mode` is absent, ask the runner once:
 
 > How should Dowser talk to you? **Developer** (dense, file and line inline) or **Guided**
 > (plain language, evidence behind "show evidence")?
@@ -60,6 +60,8 @@ Run `prefs get mode`. If `mode` is absent, ask the runner once:
 Ask the runner with your harness's multiple-choice question tool if it has one, else with a
 numbered list. Store the answer with `prefs set mode=dev` or `prefs set mode=guided`. Do not
 ask again on later runs. The runner can say "switch to guided" at any time; store it the same way.
+`verbosity` (default `short`) sets how much of each card triage shows (`references/cards.md`
+"Rendering"); "compact" or "full cards" stores `prefs set verbosity=short|full`.
 
 Both modes run the same pipeline. Only what you print differs. Guided rules (vocabulary,
 preflight wording, ask-why) are in `references/guided-mode.md`. Load it now if mode is `guided`.
@@ -70,7 +72,8 @@ Check these in order. On a failure, give **one** plain fix (guided: the exact wo
 `references/guided-mode.md`) and stop cleanly. Never start a run you already know will fail on
 its environment halfway through.
 
-1. **Inside a git repo.** `git rev-parse --show-toplevel` exits 0.
+1. **Inside a git repo.** `git rev-parse --show-toplevel` exits 0. If `git --version` fails
+   too, git itself is missing: say that, not "not a project folder".
 2. **Node 22 or newer.** `node --version` reports v22 or higher.
 3. **Memory reachable.** `dowser.mjs init --repo "<repo>"` exits 0. Keep `project_key` and `db`
    from its output. A code 3 means the memory folder cannot be written. Say so and stop.
@@ -216,7 +219,8 @@ For each lens, print one progress line (`<lens>: gathering (tickets 42, code)`),
    `suppressed`, `duplicate` or `invalid:<why>`. Exit 1 means some lines were invalid: fix those
    lines once and re-propose only them. A line that is still invalid is reported, not dropped
    silently.
-9. **Progress line:** `<lens>: emitted <n>` (plus `, truncated <t>` when it applies).
+9. **Progress line:** `<lens>: emitted <n>` (plus `, truncated <t>` when it applies). Guided:
+   the wording in `references/guided-mode.md` "Progress"; this applies to every count line below.
 
 A lens whose pack says `requires_connection: true` still runs unconnected, as `partial`, on code
 and docs. Its candidates use `confidence: low` and name the missing source in `confidence_why`.
@@ -249,8 +253,10 @@ carry a reason.
 Load `references/triage.md` (statuses, moves, reason codes) and `references/cards.md`
 (rendering). Then:
 
-1. Show verified items in batches of at most 4 cards, rendered for the mode (dev: evidence
-   inline as `path:line`; guided: title and rationale first, evidence behind "show evidence").
+1. First show one overview table of every verified item: number, lens, title, size,
+   confidence. Then show them in batches of at most 4 cards, rendered for the mode and
+   `verbosity` (`references/cards.md` "Rendering"). The runner can keep or reject from the
+   overview directly, or open any card by its number.
 2. For each card, ask the runner, with the multiple-choice tool if your harness has one, else
    a numbered list:
    - **Keep**: no move. It stays `verified` and is pushed when connected.
@@ -315,7 +321,8 @@ Jira issue appears only when a person accepts the item there.
    - the run's mode and scope (`full`, `full re-anchor`, `incremental since <date>`, or
      `focused on <goal/area> - partial`);
    - per lens: state, verified count, and "top N of M" when truncation happened;
-   - skipped and partial lenses, each with its reason;
+   - skipped and partial lenses, each with its reason (guided: "Summary wording" in
+     `references/guided-mode.md`);
    - triage outcome: kept, rejected, snoozed, merged; pushed, with inbox links when connected;
      accepted items with their Jira issue key and link;
    - unapplied verdicts and refused pushes, if any.

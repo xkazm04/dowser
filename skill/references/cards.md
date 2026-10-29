@@ -159,6 +159,9 @@ the estimate is a guess: drop `confidence` to `low`.
 
 ## Rendering
 
+`verbosity: short` (the default) renders as below. `full` adds the body's Summary and
+Description under the rationale. Either way the full write-up is one "open <n>" away.
+
 ### Dev mode
 
 ```

@@ -16,6 +16,7 @@ top.
 | Node missing | "Dowser needs a free helper program called Node.js (version 22 or newer). Install the LTS version from nodejs.org, close and reopen this window, then type /dowser again." |
 | Node too old | "Your Node.js is version <v>. Dowser needs 22 or newer. Install the LTS version from nodejs.org, reopen this window, and try again." |
 | Memory folder not writable | "Dowser keeps its notes in a folder called .dowser in your home folder, and it cannot write there. Check that your user can create folders in <home>, or ask IT, then try again." |
+| Git missing (`git --version` fails) | "Dowser needs a free program called Git to read your project's history, and this computer does not have it. Install it from git-scm.com, reopen this window, then type /dowser again." |
 | Store busy (exit 3 on a lock) | "Another Dowser scan is running on this project. Wait for it to finish, then try again." |
 | Not connected to Jira | Not a failure. Say: "Dowser is not connected to your Jira and Confluence, so it will work from the project files only. Customer requests and goals will not be included, docs in Confluence will not be checked, and proposals will stay on this computer. To connect, ask your Jira admin to install the Dowser app and add its connection to this assistant." Then continue. |
 
@@ -63,6 +64,11 @@ Checking security and EU Cyber Resilience Act duties: done, no proposals.
 - Lead with the count and what ran: "Dowser read the whole project and wrote 6 proposals. You
   kept 4, set aside 1, and 1 was the same as an existing one."
 - When something was cut: "Showing the top 4 of 7 for opportunities. The other 3 are noted."
+- Set aside by the evidence check: "<n> proposals were set aside because the code no longer
+  says what they quoted. That is the check working, not an error."
+- A partial lens is expected, not a failure: "<Lens> was partly done because <source> is not
+  connected. That is normal without the Jira connection. To include <what it adds>, ask your
+  Jira admin to install the Dowser app and connect it here."
 - **Never** "all clear", "no issues" or "everything looks good". If there are no proposals: "No
   proposals this time. Dowser checked <what ran>. It could not check <what was skipped>, because
   <reason>."
