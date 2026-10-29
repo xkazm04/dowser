@@ -60,6 +60,7 @@ const largest = code.map((p) => ({ file: p, lines: nonBlank(p) })).sort((a, b) =
 /** Long top-level functions: a declaration line at indent 0, ended by the first line that is `}` or `};` at indent 0. */
 const longFns = [];
 for (const p of code) {
+  if (p.startsWith('forge/src/shared/')) continue; // synced copies of skill modules: counted once, at the source
   const ls = lines(p);
   for (let i = 0; i < ls.length; i++) {
     const m = ls[i].match(/^(?:export\s+)?(?:async\s+)?function\s*\*?\s*(\w+)|^(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>\s*\{\s*$/);

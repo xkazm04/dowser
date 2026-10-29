@@ -237,6 +237,232 @@ function checkArea(raw, i) {
   return /** @type {Area} */ (omitAbsent({ path, files, churn_90d: churn, authors_90d: authors, last_change: last }));
 }
 
+/** `dowser_sources_tickets`. @param {Backend} b @param {Obj} args @returns {Obj} */
+function dowserSourcesTickets(b, args) {
+  if (typeof args.query !== 'string') throw new ToolError('bad-input', 'query is required');
+  if (!Number.isInteger(args.limit) || args.limit < 1) throw new ToolError('bad-input', 'limit is an integer >= 1');
+  const ts = terms(args.query);
+  const items = b.tickets
+    .filter((t) => matches(t, ts) && (!str(args.since) || String(t.created_at ?? '') >= args.since))
+    .slice(0, args.limit)
+    .map((t) => omitAbsent({ ref: t.ref, title: t.title, url: t.url, body: t.body, created_at: t.created_at, labels: t.labels, components: t.components }));
+  return { items };
+}
+
+/** `dowser_sources_pages`. @param {Backend} b @param {Obj} args @returns {Obj} */
+function dowserSourcesPages(b, args) {
+  if (typeof args.query !== 'string') throw new ToolError('bad-input', 'query is required');
+  const ts = terms(args.query);
+  const items = b.pages
+    .filter((p) => matches(p, ts) && (!str(args.space) || p.space === args.space))
+    .map((p) => omitAbsent({ ref: p.ref, title: p.title, url: p.url, body: p.body, updated_at: p.updated_at }));
+  return { items };
+}
+
+/** `dowser_sources_goals`. @param {Backend} b @param {Obj} args @returns {Obj} */
+function dowserSourcesGoals(b, args) {
+  return { items: b.goals.map((g) => omitAbsent({ ref: g.ref, title: g.title, url: g.url, body: g.body, status: g.status })) };
+}
+
+/** `dowser_proposals_push`. @param {Backend} b @param {Obj} args @returns {Obj} */
+function dowserProposalsPush(b, args) {
+  if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
+  if (!str(args.run_id)) throw new ToolError('bad-input', 'run_id is required');
+  for (const k of ['repo_url', 'head_sha']) if (args[k] !== undefined && !str(args[k])) throw new ToolError('bad-input', `${k} is a non-empty string (omit it when absent)`);
+  const records = jsonArray(args.proposals_json, 'proposals_json', PUSH_MAX);
+  const p = project(b, args.project_key);
+  const results = records.map((raw) => {
+    const r = isObj(raw) ? raw : {};
+    if (!str(r.fp)) return { fp: '', result: 'refused', why: 'missing fp' };
+    if (!str(r.title) || !Array.isArray(r.evidence) || r.evidence.length === 0) return { fp: r.fp, result: 'refused', why: 'not a dowser-proposal/1 record (title and evidence are required)' };
+    if (r.status !== 'verified' && r.status !== 'pushed') return { fp: r.fp, result: 'refused', why: `only verified or pushed records are filed, not ${String(r.status)}` };
+    const existing = p.items[r.fp];
+    if (existing) {
+      existing.record = r;
+      existing.pushes++;
+      if (!existing.run_ids.includes(args.run_id)) existing.run_ids.push(args.run_id);
+      if (str(args.repo_url)) existing.repo_url = args.repo_url;
+      if (str(args.head_sha)) existing.head_sha = args.head_sha;
+      const before = snapshot(existing.evidence);
+      const grew = uniteEvidence(existing, r) > 0;
+      // reopen on growth: snoozed on any new key; rejected only under the store's resurfacing rule
+      if (grew && existing.status === 'snoozed') { existing.status = 'open'; existing.reopened = true; }
+      if (grew && existing.status === 'rejected' && resurfaces('rejected', existing.decided_snapshot ?? before, snapshot(existing.evidence)).resurface) {
+        existing.status = 'open';
+        existing.reopened = true;
+      }
+      return { fp: r.fp, result: 'updated', external_ref: existing.external_ref, external_url: existing.external_url };
+    }
+    const into = b.merge_existing[r.fp];
+    if (into) return { fp: r.fp, result: 'merged-existing', external_ref: into, external_url: INBOX_URL + into };
+    const ref = `DW-${b.next_item++}`;
+    /** @type {Item} */
+    const item = /** @type {Item} */ (omitAbsent({
+      fp: r.fp, external_ref: ref, external_url: INBOX_URL + ref, record: r, evidence: [], pushes: 1, run_ids: [args.run_id],
+      status: 'open', repo_url: str(args.repo_url) ? args.repo_url : undefined, head_sha: str(args.head_sha) ? args.head_sha : undefined,
+    }));
+    uniteEvidence(item, r);
+    p.items[r.fp] = item;
+    return { fp: r.fp, result: 'created', external_ref: ref, external_url: INBOX_URL + ref };
+  });
+  return { results };
+}
+
+/** `dowser_verdicts_pull`. @param {Backend} b @param {Obj} args @returns {Obj} */
+function dowserVerdictsPull(b, args) {
+  if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
+  const p = project(b, args.project_key);
+  const max = p.verdicts.length ? p.verdicts[p.verdicts.length - 1].seq : 0;
+  if (args.cursor !== undefined && (!/^\d+$/.test(String(args.cursor)) || Number(args.cursor) > max)) {
+    throw new ToolError('bad-cursor', `cursor ${JSON.stringify(args.cursor)} was not issued by this server`);
+  }
+  const after = args.cursor === undefined ? 0 : Number(args.cursor);
+  const page = p.verdicts.filter((v) => v.seq > after);
+  const last = page.length ? page[page.length - 1].seq : after;
+  return { verdicts: page.map(({ seq, ...v }) => omitAbsent(v)), cursor: String(last) };
+}
+
+/** `dowser_areas_push`. @param {Backend} b @param {Obj} args @returns {Obj} */
+function dowserAreasPush(b, args) {
+  if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
+  if (!str(args.run_id)) throw new ToolError('bad-input', 'run_id is required');
+  const list = jsonArray(args.areas_json, 'areas_json', AREAS_MAX).map(checkArea);
+  const paths = new Set(list.map((a) => a.path));
+  if (paths.size !== list.length) throw new ToolError('bad-input', 'areas_json lists a path twice');
+  const p = project(b, args.project_key);
+  p.areas = list; // the set replaces the previous one whole
+  p.areas_run_id = args.run_id;
+  return { stored: list.length };
+}
+
+/** `dowser_reflect_sync`. @param {Backend} b @param {Obj} args @returns {Obj} */
+function dowserReflectSync(b, args) {
+  if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
+  const offers = args.rules_json === undefined ? [] : jsonArray(args.rules_json, 'rules_json', RULES_MAX);
+  const p = project(b, args.project_key);
+  const rules = /** @type {Record<string, RuleRecord>} */ (p.rules);
+  offers.forEach((raw, i) => {
+    const at = `rules_json[${i}]`;
+    if (!isObj(raw)) throw new ToolError('bad-input', `${at} is an object`);
+    for (const k of ['id', 'lens', 'text', 'offered_at']) if (!str(raw[k])) throw new ToolError('bad-input', `${at}.${k} is required`);
+    if (raw.titles !== undefined && (!Array.isArray(raw.titles) || raw.titles.length > TITLES_MAX || raw.titles.some((/** @type {unknown} */ t) => !str(t)))) {
+      throw new ToolError('bad-input', `${at}.titles is at most ${TITLES_MAX} non-empty strings`);
+    }
+  });
+  for (const raw of /** @type {Obj[]} */ (offers)) {
+    const cur = rules[raw.id];
+    if (cur && cur.state !== 'offered') continue; // a decided rule is never reverted
+    rules[raw.id] = /** @type {RuleRecord} */ (omitAbsent({ id: raw.id, lens: raw.lens, text: raw.text, titles: raw.titles, offered_at: raw.offered_at, state: 'offered' }));
+  }
+  const decided = Object.values(rules).filter((r) => r.state !== 'offered')
+    .sort((x, y) => String(x.decided_at).localeCompare(String(y.decided_at)) || x.id.localeCompare(y.id))
+    .map((r) => omitAbsent({ id: r.id, lens: r.lens, state: r.state, text: r.text, decided_by: r.decided_by, decided_at: r.decided_at }));
+  const outcomes = /** @type {OutcomeRecord[]} */ (p.outcomes).slice(-OUTCOMES_MAX).map((o) => omitAbsent(o));
+  return { rules: decided, outcomes };
+}
+
+/** `dowser_direction_get`. @param {Backend} b @param {Obj} args @returns {Obj} */
+function dowserDirectionGet(b, args) {
+  if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
+  const lens = str(args.lens) ? String(args.lens) : 'all';
+  if (lens !== 'all' && !LENS_IDS.includes(lens)) throw new ToolError('bad-input', `lens is all or one of ${LENS_IDS.join(', ')}`);
+  const seededDir = (b.directions ?? {})[args.project_key];
+  if (!seededDir && !b.projects[args.project_key]) throw new ToolError('unknown-project', `no inbox for project ${args.project_key}; push proposals first`);
+  const all = isObj(seededDir?.lenses) ? seededDir.lenses : {};
+  const lenses = Object.fromEntries(Object.entries(all).filter(([l]) => lens === 'all' || l === lens));
+  return { lenses };
+}
+
+/** `mock_decide_rule`. @param {Backend} b @param {Obj} args @returns {Obj} */
+function mockDecideRule(b, args) {
+  if (!str(args.project_key) || !str(args.id)) throw new ToolError('bad-input', 'project_key and id are required');
+  if (args.state !== 'accepted' && args.state !== 'declined') throw new ToolError('bad-input', 'state is accepted|declined');
+  const p = project(b, args.project_key);
+  const rule = /** @type {Record<string, RuleRecord>} */ (p.rules)[args.id];
+  if (!rule) throw new ToolError('bad-input', `no rule ${args.id} offered in ${args.project_key}`);
+  if (rule.state !== 'offered') throw new ToolError('bad-input', `rule ${args.id} is already ${rule.state}`);
+  rule.state = args.state;
+  if (args.state === 'accepted' && str(args.text)) rule.text = args.text.trim();
+  rule.decided_by = str(args.decided_by) ? args.decided_by : 'forge:mock-user';
+  rule.decided_at = new Date(Date.now() + b.next_seq++).toISOString();
+  return { rule: omitAbsent({ id: rule.id, lens: rule.lens, state: rule.state, text: rule.text, decided_by: rule.decided_by, decided_at: rule.decided_at }) };
+}
+
+/** `mock_outcome`. @param {Backend} b @param {Obj} args @returns {Obj} */
+function mockOutcome(b, args) {
+  if (!str(args.ref)) throw new ToolError('bad-input', 'ref is required');
+  if (!RATINGS.includes(args.rating)) throw new ToolError('bad-input', `rating is ${RATINGS.join('|')}`);
+  const keys = str(args.project_key) ? [String(args.project_key)] : Object.keys(b.projects);
+  const key = keys.find((k) => Object.values(b.projects[k]?.items ?? {}).some((it) => it.external_ref === args.ref));
+  if (!key) throw new ToolError('bad-input', `no inbox item ${args.ref}`);
+  const item = Object.values(b.projects[key].items).find((it) => it.external_ref === args.ref);
+  if (!item || item.status !== 'accepted' || !item.issue_ref) throw new ToolError('bad-input', `${args.ref} is not an accepted item with a Jira issue`);
+  const p = project(b, key);
+  const recordedAt = new Date(Date.now() + b.next_seq++).toISOString();
+  const o = /** @type {OutcomeRecord} */ (omitAbsent({
+    ref: item.external_ref, fp: item.fp, rating: args.rating, note: str(args.note) ? args.note : undefined, issue_ref: item.issue_ref,
+    decided_by: str(args.decided_by) ? args.decided_by : 'forge:mock-user', recorded_at: recordedAt,
+  }));
+  /** @type {OutcomeRecord[]} */ (p.outcomes).push(o);
+  return { outcome: o };
+}
+
+/** `mock_decide`. @param {Backend} b @param {Obj} args @returns {Obj} */
+function mockDecide(b, args) {
+  if (!str(args.fp)) throw new ToolError('bad-input', 'fp is required');
+  if (!['accepted', 'rejected', 'merged', 'snoozed'].includes(args.status)) throw new ToolError('bad-input', 'status is accepted|rejected|merged|snoozed');
+  const keys = str(args.project_key) ? [String(args.project_key)] : Object.keys(b.projects);
+  const key = keys.find((k) => b.projects[k]?.items?.[args.fp]);
+  if (!key) throw new ToolError('bad-input', `no inbox item for fp ${args.fp}`);
+  const p = b.projects[key];
+  const item = p.items[args.fp];
+  item.status = args.status;
+  delete item.reopened;
+  if (args.status === 'rejected') item.decided_snapshot = snapshot(item.evidence);
+  if (args.status === 'accepted') {
+    // an accept creates the Jira issue first; the verdict carries it
+    const issue = `MOCK-${b.next_issue++}`;
+    item.issue_ref = issue;
+    item.issue_url = JIRA_URL + issue;
+  }
+  const decidedAt = new Date(Date.now() + p.verdicts.length).toISOString();
+  /** @type {Verdict} */
+  const v = /** @type {Verdict} */ (omitAbsent({
+    seq: b.next_seq++, fp: args.fp, status: args.status, reason: args.reason, note: args.note, merged_into: args.merged_into,
+    decided_by: str(args.decided_by) ? args.decided_by : 'forge:mock-user', decided_at: decidedAt, external_ref: item.external_ref,
+    issue_ref: args.status === 'accepted' ? item.issue_ref : undefined, issue_url: args.status === 'accepted' ? item.issue_url : undefined,
+  }));
+  p.verdicts.push(v);
+  const { seq, ...out } = v;
+  return { verdict: out };
+}
+
+/** `mock_inbox`. @param {Backend} b @param {Obj} args @returns {Obj} */
+function mockInbox(b, args) {
+  if (!str(args.fp)) throw new ToolError('bad-input', 'fp is required');
+  const keys = str(args.project_key) ? [String(args.project_key)] : Object.keys(b.projects);
+  const key = keys.find((k) => b.projects[k]?.items?.[args.fp]);
+  if (!key) throw new ToolError('bad-input', `no inbox item for fp ${args.fp}`);
+  const it = b.projects[key].items[args.fp];
+  return { item: omitAbsent({ fp: it.fp, external_ref: it.external_ref, status: it.status, reopened: it.reopened, evidence: it.evidence.length, pushes: it.pushes, issue_ref: it.issue_ref, issue_url: it.issue_url }) };
+}
+
+/** The tools by name. @type {Record<string, (b: Backend, args: Obj) => Obj>} */
+const HANDLERS = {
+  dowser_sources_tickets: dowserSourcesTickets,
+  dowser_sources_pages: dowserSourcesPages,
+  dowser_sources_goals: dowserSourcesGoals,
+  dowser_proposals_push: dowserProposalsPush,
+  dowser_verdicts_pull: dowserVerdictsPull,
+  dowser_areas_push: dowserAreasPush,
+  dowser_reflect_sync: dowserReflectSync,
+  dowser_direction_get: dowserDirectionGet,
+  mock_decide_rule: mockDecideRule,
+  mock_outcome: mockOutcome,
+  mock_decide: mockDecide,
+  mock_inbox: mockInbox,
+};
+
 /**
  * Runs one tool against the backend. Throws ToolError for a bad call.
  * @param {Backend} b
@@ -245,195 +471,9 @@ function checkArea(raw, i) {
  * @returns {Obj}
  */
 export function callTool(b, name, args) {
-  switch (name) {
-    case 'dowser_sources_tickets': {
-      if (typeof args.query !== 'string') throw new ToolError('bad-input', 'query is required');
-      if (!Number.isInteger(args.limit) || args.limit < 1) throw new ToolError('bad-input', 'limit is an integer >= 1');
-      const ts = terms(args.query);
-      const items = b.tickets
-        .filter((t) => matches(t, ts) && (!str(args.since) || String(t.created_at ?? '') >= args.since))
-        .slice(0, args.limit)
-        .map((t) => omitAbsent({ ref: t.ref, title: t.title, url: t.url, body: t.body, created_at: t.created_at, labels: t.labels, components: t.components }));
-      return { items };
-    }
-    case 'dowser_sources_pages': {
-      if (typeof args.query !== 'string') throw new ToolError('bad-input', 'query is required');
-      const ts = terms(args.query);
-      const items = b.pages
-        .filter((p) => matches(p, ts) && (!str(args.space) || p.space === args.space))
-        .map((p) => omitAbsent({ ref: p.ref, title: p.title, url: p.url, body: p.body, updated_at: p.updated_at }));
-      return { items };
-    }
-    case 'dowser_sources_goals':
-      return { items: b.goals.map((g) => omitAbsent({ ref: g.ref, title: g.title, url: g.url, body: g.body, status: g.status })) };
-    case 'dowser_proposals_push': {
-      if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
-      if (!str(args.run_id)) throw new ToolError('bad-input', 'run_id is required');
-      for (const k of ['repo_url', 'head_sha']) if (args[k] !== undefined && !str(args[k])) throw new ToolError('bad-input', `${k} is a non-empty string (omit it when absent)`);
-      const records = jsonArray(args.proposals_json, 'proposals_json', PUSH_MAX);
-      const p = project(b, args.project_key);
-      const results = records.map((raw) => {
-        const r = isObj(raw) ? raw : {};
-        if (!str(r.fp)) return { fp: '', result: 'refused', why: 'missing fp' };
-        if (!str(r.title) || !Array.isArray(r.evidence) || r.evidence.length === 0) return { fp: r.fp, result: 'refused', why: 'not a dowser-proposal/1 record (title and evidence are required)' };
-        if (r.status !== 'verified' && r.status !== 'pushed') return { fp: r.fp, result: 'refused', why: `only verified or pushed records are filed, not ${String(r.status)}` };
-        const existing = p.items[r.fp];
-        if (existing) {
-          existing.record = r;
-          existing.pushes++;
-          if (!existing.run_ids.includes(args.run_id)) existing.run_ids.push(args.run_id);
-          if (str(args.repo_url)) existing.repo_url = args.repo_url;
-          if (str(args.head_sha)) existing.head_sha = args.head_sha;
-          const before = snapshot(existing.evidence);
-          const grew = uniteEvidence(existing, r) > 0;
-          // reopen on growth: snoozed on any new key; rejected only under the store's resurfacing rule
-          if (grew && existing.status === 'snoozed') { existing.status = 'open'; existing.reopened = true; }
-          if (grew && existing.status === 'rejected' && resurfaces('rejected', existing.decided_snapshot ?? before, snapshot(existing.evidence)).resurface) {
-            existing.status = 'open';
-            existing.reopened = true;
-          }
-          return { fp: r.fp, result: 'updated', external_ref: existing.external_ref, external_url: existing.external_url };
-        }
-        const into = b.merge_existing[r.fp];
-        if (into) return { fp: r.fp, result: 'merged-existing', external_ref: into, external_url: INBOX_URL + into };
-        const ref = `DW-${b.next_item++}`;
-        /** @type {Item} */
-        const item = /** @type {Item} */ (omitAbsent({
-          fp: r.fp, external_ref: ref, external_url: INBOX_URL + ref, record: r, evidence: [], pushes: 1, run_ids: [args.run_id],
-          status: 'open', repo_url: str(args.repo_url) ? args.repo_url : undefined, head_sha: str(args.head_sha) ? args.head_sha : undefined,
-        }));
-        uniteEvidence(item, r);
-        p.items[r.fp] = item;
-        return { fp: r.fp, result: 'created', external_ref: ref, external_url: INBOX_URL + ref };
-      });
-      return { results };
-    }
-    case 'dowser_verdicts_pull': {
-      if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
-      const p = project(b, args.project_key);
-      const max = p.verdicts.length ? p.verdicts[p.verdicts.length - 1].seq : 0;
-      if (args.cursor !== undefined && (!/^\d+$/.test(String(args.cursor)) || Number(args.cursor) > max)) {
-        throw new ToolError('bad-cursor', `cursor ${JSON.stringify(args.cursor)} was not issued by this server`);
-      }
-      const after = args.cursor === undefined ? 0 : Number(args.cursor);
-      const page = p.verdicts.filter((v) => v.seq > after);
-      const last = page.length ? page[page.length - 1].seq : after;
-      return { verdicts: page.map(({ seq, ...v }) => omitAbsent(v)), cursor: String(last) };
-    }
-    case 'dowser_areas_push': {
-      if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
-      if (!str(args.run_id)) throw new ToolError('bad-input', 'run_id is required');
-      const list = jsonArray(args.areas_json, 'areas_json', AREAS_MAX).map(checkArea);
-      const paths = new Set(list.map((a) => a.path));
-      if (paths.size !== list.length) throw new ToolError('bad-input', 'areas_json lists a path twice');
-      const p = project(b, args.project_key);
-      p.areas = list; // the set replaces the previous one whole
-      p.areas_run_id = args.run_id;
-      return { stored: list.length };
-    }
-    case 'dowser_reflect_sync': {
-      if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
-      const offers = args.rules_json === undefined ? [] : jsonArray(args.rules_json, 'rules_json', RULES_MAX);
-      const p = project(b, args.project_key);
-      const rules = /** @type {Record<string, RuleRecord>} */ (p.rules);
-      offers.forEach((raw, i) => {
-        const at = `rules_json[${i}]`;
-        if (!isObj(raw)) throw new ToolError('bad-input', `${at} is an object`);
-        for (const k of ['id', 'lens', 'text', 'offered_at']) if (!str(raw[k])) throw new ToolError('bad-input', `${at}.${k} is required`);
-        if (raw.titles !== undefined && (!Array.isArray(raw.titles) || raw.titles.length > TITLES_MAX || raw.titles.some((/** @type {unknown} */ t) => !str(t)))) {
-          throw new ToolError('bad-input', `${at}.titles is at most ${TITLES_MAX} non-empty strings`);
-        }
-      });
-      for (const raw of /** @type {Obj[]} */ (offers)) {
-        const cur = rules[raw.id];
-        if (cur && cur.state !== 'offered') continue; // a decided rule is never reverted
-        rules[raw.id] = /** @type {RuleRecord} */ (omitAbsent({ id: raw.id, lens: raw.lens, text: raw.text, titles: raw.titles, offered_at: raw.offered_at, state: 'offered' }));
-      }
-      const decided = Object.values(rules).filter((r) => r.state !== 'offered')
-        .sort((x, y) => String(x.decided_at).localeCompare(String(y.decided_at)) || x.id.localeCompare(y.id))
-        .map((r) => omitAbsent({ id: r.id, lens: r.lens, state: r.state, text: r.text, decided_by: r.decided_by, decided_at: r.decided_at }));
-      const outcomes = /** @type {OutcomeRecord[]} */ (p.outcomes).slice(-OUTCOMES_MAX).map((o) => omitAbsent(o));
-      return { rules: decided, outcomes };
-    }
-    case 'dowser_direction_get': {
-      if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
-      const lens = str(args.lens) ? String(args.lens) : 'all';
-      if (lens !== 'all' && !LENS_IDS.includes(lens)) throw new ToolError('bad-input', `lens is all or one of ${LENS_IDS.join(', ')}`);
-      const seededDir = (b.directions ?? {})[args.project_key];
-      if (!seededDir && !b.projects[args.project_key]) throw new ToolError('unknown-project', `no inbox for project ${args.project_key}; push proposals first`);
-      const all = isObj(seededDir?.lenses) ? seededDir.lenses : {};
-      const lenses = Object.fromEntries(Object.entries(all).filter(([l]) => lens === 'all' || l === lens));
-      return { lenses };
-    }
-    case 'mock_decide_rule': {
-      if (!str(args.project_key) || !str(args.id)) throw new ToolError('bad-input', 'project_key and id are required');
-      if (args.state !== 'accepted' && args.state !== 'declined') throw new ToolError('bad-input', 'state is accepted|declined');
-      const p = project(b, args.project_key);
-      const rule = /** @type {Record<string, RuleRecord>} */ (p.rules)[args.id];
-      if (!rule) throw new ToolError('bad-input', `no rule ${args.id} offered in ${args.project_key}`);
-      if (rule.state !== 'offered') throw new ToolError('bad-input', `rule ${args.id} is already ${rule.state}`);
-      rule.state = args.state;
-      if (args.state === 'accepted' && str(args.text)) rule.text = args.text.trim();
-      rule.decided_by = str(args.decided_by) ? args.decided_by : 'forge:mock-user';
-      rule.decided_at = new Date(Date.now() + b.next_seq++).toISOString();
-      return { rule: omitAbsent({ id: rule.id, lens: rule.lens, state: rule.state, text: rule.text, decided_by: rule.decided_by, decided_at: rule.decided_at }) };
-    }
-    case 'mock_outcome': {
-      if (!str(args.ref)) throw new ToolError('bad-input', 'ref is required');
-      if (!RATINGS.includes(args.rating)) throw new ToolError('bad-input', `rating is ${RATINGS.join('|')}`);
-      const keys = str(args.project_key) ? [String(args.project_key)] : Object.keys(b.projects);
-      const key = keys.find((k) => Object.values(b.projects[k]?.items ?? {}).some((it) => it.external_ref === args.ref));
-      if (!key) throw new ToolError('bad-input', `no inbox item ${args.ref}`);
-      const item = Object.values(b.projects[key].items).find((it) => it.external_ref === args.ref);
-      if (!item || item.status !== 'accepted' || !item.issue_ref) throw new ToolError('bad-input', `${args.ref} is not an accepted item with a Jira issue`);
-      const p = project(b, key);
-      const recordedAt = new Date(Date.now() + b.next_seq++).toISOString();
-      const o = /** @type {OutcomeRecord} */ (omitAbsent({
-        ref: item.external_ref, fp: item.fp, rating: args.rating, note: str(args.note) ? args.note : undefined, issue_ref: item.issue_ref,
-        decided_by: str(args.decided_by) ? args.decided_by : 'forge:mock-user', recorded_at: recordedAt,
-      }));
-      /** @type {OutcomeRecord[]} */ (p.outcomes).push(o);
-      return { outcome: o };
-    }
-    case 'mock_decide': {
-      if (!str(args.fp)) throw new ToolError('bad-input', 'fp is required');
-      if (!['accepted', 'rejected', 'merged', 'snoozed'].includes(args.status)) throw new ToolError('bad-input', 'status is accepted|rejected|merged|snoozed');
-      const keys = str(args.project_key) ? [String(args.project_key)] : Object.keys(b.projects);
-      const key = keys.find((k) => b.projects[k]?.items?.[args.fp]);
-      if (!key) throw new ToolError('bad-input', `no inbox item for fp ${args.fp}`);
-      const p = b.projects[key];
-      const item = p.items[args.fp];
-      item.status = args.status;
-      delete item.reopened;
-      if (args.status === 'rejected') item.decided_snapshot = snapshot(item.evidence);
-      if (args.status === 'accepted') {
-        // an accept creates the Jira issue first; the verdict carries it
-        const issue = `MOCK-${b.next_issue++}`;
-        item.issue_ref = issue;
-        item.issue_url = JIRA_URL + issue;
-      }
-      const decidedAt = new Date(Date.now() + p.verdicts.length).toISOString();
-      /** @type {Verdict} */
-      const v = /** @type {Verdict} */ (omitAbsent({
-        seq: b.next_seq++, fp: args.fp, status: args.status, reason: args.reason, note: args.note, merged_into: args.merged_into,
-        decided_by: str(args.decided_by) ? args.decided_by : 'forge:mock-user', decided_at: decidedAt, external_ref: item.external_ref,
-        issue_ref: args.status === 'accepted' ? item.issue_ref : undefined, issue_url: args.status === 'accepted' ? item.issue_url : undefined,
-      }));
-      p.verdicts.push(v);
-      const { seq, ...out } = v;
-      return { verdict: out };
-    }
-    case 'mock_inbox': {
-      if (!str(args.fp)) throw new ToolError('bad-input', 'fp is required');
-      const keys = str(args.project_key) ? [String(args.project_key)] : Object.keys(b.projects);
-      const key = keys.find((k) => b.projects[k]?.items?.[args.fp]);
-      if (!key) throw new ToolError('bad-input', `no inbox item for fp ${args.fp}`);
-      const it = b.projects[key].items[args.fp];
-      return { item: omitAbsent({ fp: it.fp, external_ref: it.external_ref, status: it.status, reopened: it.reopened, evidence: it.evidence.length, pushes: it.pushes, issue_ref: it.issue_ref, issue_url: it.issue_url }) };
-    }
-    default:
-      throw new ToolError('bad-input', `no tool ${name}`);
-  }
+  const handler = Object.hasOwn(HANDLERS, name) ? HANDLERS[name] : undefined;
+  if (!handler) throw new ToolError('bad-input', `no tool ${name}`);
+  return handler(b, args);
 }
 
 /**
