@@ -300,12 +300,15 @@ const acceptedShare = (p) => {
 
 /**
  * Time to triage one push once every item is decided: "Decided in N min" (first decision to last, what G-1
- * reads), then a muted "(N min after the push)" when the push waited before the first decision. "Still open"
+ * reads), then a muted "(N min after the push)" when the push waited before the first decision; "Decided at once"
+ * when every decision has one timestamp (no span to measure). "Still open"
  * while any item is open, else nothing. A push without `deciding_minutes` (an older backend) shows the old text.
  */
 const triageText = (p) => {
   if (p.triage_minutes === undefined) return p.open > 0 ? 'Still open' : '';
   if (p.deciding_minutes === undefined) return `Triaged in ${p.triage_minutes} min`;
+  // one decision moment (one item, or all decided at once) has no deciding span to report
+  if (p.first_decided_at === p.decided_at) return `Decided at once, ${p.triage_minutes} min after the push`;
   return (
     <>
       Decided in {p.deciding_minutes} min

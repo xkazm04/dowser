@@ -36,7 +36,8 @@
 //                                          offered -> accepted|declined (others skipped), each outcome an
 //                                          append-only row -> {rules_applied, rules_skipped, outcomes_added,
 //                                          outcomes_seen}; idempotent
-//   prefs get [key ...] | prefs set key=value ...   ~/.dowser/user.json (mode dev|guided, verbosity short|full)
+//   prefs get [key ...] | prefs set key=value ...   ~/.dowser/user.json (mode dev|guided, verbosity short|full,
+//                                          quotes send|omit)
 //   outbox --run <id>                      -> {project_key, run_id, proposals_json, repo_url?, head_sha?, more?}:
 //                                          the dowser_proposals_push arguments (verified, not pushed yet; pushed
 //                                          items whose evidence grew), at most 50; `more: true` = run it again
