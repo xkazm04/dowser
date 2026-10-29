@@ -344,7 +344,7 @@ export const depRef = (f) => `${f.manifest}#${f.package}@${f.version}`;
  * @param {import('./store.mjs').Db} db
  * @param {{root: string, runId: string}} o
  * @param {System} [sys] the PATH lookup and spawner (tests inject a fake)
- * @returns {{out: {auditors: AuditorReport[], refs: {type: 'dep', ref: string, title: string}[]}}}
+ * @returns {{out: {auditors: AuditorReport[], refs: {type: 'dep', ref: string, title: string, url?: string, fixed_in?: string}[]}}}
  */
 export function runDeps(db, { root, runId }, sys = SYSTEM) {
   store.requireRunning(db, runId);
@@ -358,7 +358,7 @@ export function runDeps(db, { root, runId }, sys = SYSTEM) {
     const ins = db.prepare(`INSERT INTO sources_cache (run_id, type, ref, title, url, body, fetched_at) VALUES (?, 'dep', ?, ?, ?, ?, ?)
       ON CONFLICT (run_id, type, ref) DO UPDATE SET title = excluded.title, url = excluded.url, body = excluded.body, fetched_at = excluded.fetched_at`);
     const at = store.now();
-    /** @type {{type: 'dep', ref: string, title: string}[]} */
+    /** @type {{type: 'dep', ref: string, title: string, url?: string, fixed_in?: string}[]} */
     const refs = [];
     for (const ref of [...byRef.keys()].sort()) {
       const all = /** @type {Finding[]} */ (byRef.get(ref)).slice().sort((a, b) => rank(a) - rank(b) || a.advisory.localeCompare(b.advisory));
@@ -371,7 +371,8 @@ export function runDeps(db, { root, runId }, sys = SYSTEM) {
         advisories: ids.length > 1 ? ids : undefined,
       });
       ins.run(runId, ref, title, top.url ?? null, JSON.stringify(body), at);
-      refs.push({ type: 'dep', ref, title });
+      const fixedIn = top.fixed_in ?? all.find((f) => f.fixed_in)?.fixed_in;
+      refs.push({ type: 'dep', ref, title, ...(top.url ? { url: top.url } : {}), ...(fixedIn ? { fixed_in: fixedIn } : {}) });
     }
     return { out: { auditors: runs.map((r) => r.report), refs } };
   });

@@ -131,8 +131,8 @@ test('deps caches dep rows, reports ran/skipped honestly, leaves the repo byte-i
     { tool: 'pip-audit', state: 'skipped', reason: 'requirements.txt: ERROR: could not resolve flask==0.12' },
   ]);
   assert.deepEqual(out.refs, [
-    { type: 'dep', ref: 'package-lock.json#lodash@4.17.20', title: 'GHSA-jf85-cpcp-j695 critical' },
-    { type: 'dep', ref: 'package-lock.json#minimist@1.2.5', title: 'GHSA-xvch-5gv4-984h moderate' },
+    { type: 'dep', ref: 'package-lock.json#lodash@4.17.20', title: 'GHSA-jf85-cpcp-j695 critical', url: 'https://github.com/advisories/GHSA-jf85-cpcp-j695', fixed_in: '4.17.21' },
+    { type: 'dep', ref: 'package-lock.json#minimist@1.2.5', title: 'GHSA-xvch-5gv4-984h moderate', url: 'https://github.com/advisories/GHSA-xvch-5gv4-984h' },
   ]);
   assert.ok(calls.every((c) => c.cwd === repo), 'every auditor runs with cwd = the repo root');
   assert.deepEqual(calls.find((c) => c.cmd === 'npm')?.args, ['audit', '--json', '--package-lock-only']);
@@ -213,7 +213,7 @@ test('the real System finds and runs an auditor stub on PATH, in the repo root',
     const run = runStart(db, { mode: 'full' }).id;
     const out = runDeps(db, { root: repo, runId: run }, SYSTEM).out;
     assert.deepEqual(out.auditors.find((a) => a.tool === 'osv-scanner'), { tool: 'osv-scanner', state: 'ran', found: 1 });
-    assert.deepEqual(out.refs, [{ type: 'dep', ref: 'Cargo.lock#time@0.1.43', title: 'RUSTSEC-2020-0071 moderate' }]);
+    assert.deepEqual(out.refs, [{ type: 'dep', ref: 'Cargo.lock#time@0.1.43', title: 'RUSTSEC-2020-0071 moderate', url: 'https://osv.dev/vulnerability/RUSTSEC-2020-0071' }]);
   } finally {
     process.env.PATH = path;
   }
