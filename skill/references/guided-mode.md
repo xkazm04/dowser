@@ -66,6 +66,8 @@ Checking security and EU Cyber Resilience Act duties: done, no proposals.
 - When something was cut: "Showing the top 4 of 7 for opportunities. The other 3 are noted."
 - Set aside by the evidence check: "<n> proposals were set aside because the code no longer
   says what they quoted. That is the check working, not an error."
+- An earlier scan that was interrupted and has now been closed (`abandoned`): "An earlier scan of this
+  project stopped before it finished. Dowser has tidied it up; nothing was lost." Housekeeping, never an error.
 - A partial lens is expected, not a failure. Name its cause. Not connected: "<Lens> was partly
   done because <source> is not connected. That is normal without the Jira connection. To
   include <what it adds>, ask your Jira admin to install the Dowser app and connect it here."
