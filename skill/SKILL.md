@@ -142,8 +142,9 @@ the push step too. A half-synced memory must not push.
      Label the second case "full re-anchor";
    - `incremental` otherwise.
 2. Run `run start --mode <mode> --harness <claude-code|codex|other> --model <your model id>`,
-   adding the same `--focus` value for a focused run. Keep `run_id`, `base_sha` and
-   `head_sha`.
+   adding the same `--focus` value for a focused run. Keep `run_id`, `mode`, `base_sha` and
+   `head_sha`. When it prints `fallback`, the last scanned version is gone from the history
+   (a force-push or rebase): the run is `full`, and the summary says why.
 3. An incremental run scans what changed: `git diff --name-only <base_sha>..<head_sha>`, plus
    the files those import, plus any doc that names them. If that list is empty, every lens is
    `ran` with zero emitted, and the summary says no code changed since the last scan.
@@ -188,9 +189,10 @@ For each lens, print one progress line (`<lens>: gathering (tickets 42, code)`),
    `components`, `labels` and `created_at` when Jira has them: use them to group tickets for a
    demand table, and cite the ticket refs themselves.
    **Dependencies (security-cra).** Run `deps --run <run_id>`. It runs the dependency auditors this
-   machine has (`npm audit` for a root `package-lock.json`, `osv-scanner` for a root lockfile it
-   reads, `pip-audit` for root `requirements*.txt` or `pyproject.toml`), read-only, 60 s each, and
-   caches every finding on the run. Its output lists each auditor as `ran` (with `found`) or
+   machine has (`npm audit` for a `package-lock.json`, `osv-scanner` for a lockfile it reads,
+   `pip-audit` for `requirements*.txt` or `pyproject.toml`) in the root and in each manifest
+   directory up to three levels below it, read-only, 60 s each, and caches every finding on the
+   run. Directories it did not audit are listed under `not_audited`. Its output lists each auditor as `ran` (with `found`) or
    `skipped` (with `reason`). Cite only the `ref` values it returns as `dep` evidence. A skipped
    auditor is a gap: record the lens as `partial: <auditor> skipped (<reason>)`. Never report "no
    vulnerable dependencies" for an auditor that did not run.

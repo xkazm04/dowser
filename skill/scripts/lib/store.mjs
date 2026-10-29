@@ -331,23 +331,27 @@ export function lastDoneRun(db) {
 }
 
 /**
- * Starts a run. `base_sha` is the last done run's `head_sha` (absent on a first run).
+ * Starts a run. `base_sha` is the last done run's `head_sha` (absent on a first run). An incremental run whose
+ * base is no longer in the repository's history (`hasCommit` says so) starts as `full` instead, without a base,
+ * and the returned row carries `fallback` saying why: a diff against a missing commit cannot be taken.
  * @param {Db} db
- * @param {{mode: string, harness?: string, model?: string, focus?: string, headSha?: string}} o
+ * @param {{mode: string, harness?: string, model?: string, focus?: string, headSha?: string, hasCommit?: (sha: string) => boolean}} o
  * @returns {Row}
  */
-export function runStart(db, { mode, harness, model, focus, headSha }) {
+export function runStart(db, { mode, harness, model, focus, headSha, hasCommit }) {
   if (!isOneOf(RUN_MODES, mode)) throw new DowserError(`--mode must be one of ${RUN_MODES.join('|')}`, 2);
   if (mode === 'focused' && !focus) throw new DowserError('a focused run needs --focus goal:<...> or area:<...>', 2);
   if (focus !== undefined && !/^(goal|area):\S/.test(focus)) throw new DowserError('--focus is goal:<...> or area:<...>', 2);
   if (focus !== undefined && mode !== 'focused') throw new DowserError('--focus goes with --mode focused', 2);
   return tx(db, () => {
     const base = lastDoneRun(db);
+    const lost = mode === 'incremental' && base?.head_sha && hasCommit ? !hasCommit(base.head_sha) : false;
     const id = newRunId();
     db.prepare(`INSERT INTO runs (id, started_at, head_sha, base_sha, mode, focus, harness, model, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running')`)
-      .run(id, now(), sql(headSha), sql(base?.head_sha), mode, sql(focus), sql(harness), sql(model));
-    return /** @type {Row} */ (getRun(db, id));
+      .run(id, now(), sql(headSha), lost ? null : sql(base?.head_sha), lost ? 'full' : mode, sql(focus), sql(harness), sql(model));
+    const row = /** @type {Row} */ (getRun(db, id));
+    return lost ? { ...row, fallback: `base ${base?.head_sha} is not in this history; started a full run` } : row;
   });
 }
 

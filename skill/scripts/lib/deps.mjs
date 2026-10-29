@@ -31,8 +31,9 @@ export const OSV_LOCKFILES = /** @type {const} */ (['package-lock.json', 'yarn.l
 const REQUIREMENTS_RE = /^requirements[\w.-]*\.txt$/;
 /** How deep below the root manifest directories are looked for (forge/static/app is 3). */
 export const MAX_DEPTH = 3;
-/** At most this many directories below the root are audited; the rest are reported as not audited. */
-export const MAX_DIRS = 10;
+/** At most this many directories below the root are audited (each auditor has 60 s per directory); the rest are
+ * reported as not audited. */
+export const MAX_DIRS = 25;
 const NEVER_ENTER = new Set(['node_modules', 'vendor', 'dist', 'build', 'target', 'out', 'coverage']);
 const TEST_PATH_RE = /(^|\/)(test|tests|__tests__|spec|fixtures?|__fixtures__|examples?|testdata)(\/|$)/;
 

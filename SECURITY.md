@@ -21,4 +21,6 @@ released versions will be stated here when the first release is tagged.
 - When the Forge app is connected, the skill pushes each proposal with its evidence, including the quoted
   source and doc lines, to the Dowser inbox in Jira.
 - Dependency auditing runs `npm audit`, `osv-scanner` or `pip-audit` only when they are already installed.
-  Dowser never installs them.
+  Dowser never installs them. They send the project's package names and versions to their advisory
+  services (the npm registry, osv.dev, PyPI); `pip-audit` resolves a requirements file in a temporary
+  environment of its own.

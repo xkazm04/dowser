@@ -50,6 +50,9 @@ were partial and why. To connect the Jira inbox, install the Dowser for Jira app
 ([docs/forge-app.md](docs/forge-app.md#install-on-a-development-site)), then add its MCP server to
 Claude Code or Codex ([Connect an external MCP client](docs/forge-app.md#connect-an-external-mcp-client)).
 
+The first scan reads the whole project. Later scans read only what changed since the last one,
+with a full scan again every 14 days, or when the last scanned version is gone from the history.
+
 Dowser never changes the project it scans. Its memory lives in `~/.dowser/`, outside the project.
 
 ### Developer or guided

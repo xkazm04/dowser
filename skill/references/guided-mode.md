@@ -66,9 +66,11 @@ Checking security and EU Cyber Resilience Act duties: done, no proposals.
 - When something was cut: "Showing the top 4 of 7 for opportunities. The other 3 are noted."
 - Set aside by the evidence check: "<n> proposals were set aside because the code no longer
   says what they quoted. That is the check working, not an error."
-- A partial lens is expected, not a failure: "<Lens> was partly done because <source> is not
-  connected. That is normal without the Jira connection. To include <what it adds>, ask your
-  Jira admin to install the Dowser app and connect it here."
+- A partial lens is expected, not a failure. Name its cause. Not connected: "<Lens> was partly
+  done because <source> is not connected. That is normal without the Jira connection. To
+  include <what it adds>, ask your Jira admin to install the Dowser app and connect it here."
+  A checker missing on this computer: "<Lens> was partly done because a free checker program,
+  <tool>, is not installed here. A developer can install it; nothing else is needed."
 - **Never** "all clear", "no issues" or "everything looks good". If there are no proposals: "No
   proposals this time. Dowser checked <what ran>. It could not check <what was skipped>, because
   <reason>."

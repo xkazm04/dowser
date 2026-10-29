@@ -42,6 +42,16 @@ export function headSha(root) {
 }
 
 /**
+ * Whether `sha` names a commit in this repository (false after a force-push, a rebase or in a shallow clone).
+ * @param {string} root
+ * @param {string} sha
+ * @returns {boolean}
+ */
+export function hasCommit(root, sha) {
+  return git(root, ['cat-file', '-e', `${sha}^{commit}`]) !== undefined;
+}
+
+/**
  * `git remote get-url origin`, or undefined when there is no origin.
  * @param {string} root
  * @returns {string | undefined}

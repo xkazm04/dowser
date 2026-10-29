@@ -8,7 +8,8 @@
 //   node dowser.mjs <command> [--repo <path>] [flags]          (--repo defaults to the cwd)
 //   init                                   create the store -> {db, project_key, repo, user_version}
 //   run start --mode full|incremental|focused [--harness h] [--model m] [--focus goal:..|area:..]
-//                                          -> {run_id, base_sha?, head_sha?, db}  (base_sha = last done run's head)
+//                                          -> {run_id, mode, base_sha?, head_sha?, fallback?, db}  (base_sha = last
+//                                          done run's head; incremental with that head gone from history -> full)
 //   run finish --run <id> --lenses <json | @file> [--status done|failed]
 //                                          lenses: {<lens>: {state: ran|skipped|partial, reason?, emitted?,
 //                                          verified?, dropped?, truncated?}}
@@ -62,7 +63,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DowserError, LENSES } from './lib/model.mjs';
 import { dbPath, projectKey, repoRoot } from './lib/paths.mjs';
-import { headSha, originUrl, webUrl } from './lib/git.mjs';
+import { hasCommit, headSha, originUrl, webUrl } from './lib/git.mjs';
 
 const store = await import('./lib/store.mjs');
 const verifyLib = await import('./lib/verify.mjs');
@@ -175,8 +176,9 @@ export const COMMANDS = {
     const sub = a._[1];
     if (sub === 'start') {
       const db = ctx.open();
-      const r = store.runStart(db, { mode: /** @type {string} */ (opt(a, 'mode', true)), harness: opt(a, 'harness'), model: opt(a, 'model'), focus: opt(a, 'focus'), headSha: headSha(ctx.root) });
-      return { out: store.clean({ run_id: r.id, mode: r.mode, focus: r.focus, base_sha: r.base_sha, head_sha: r.head_sha, db: ctx.dbFile() }) };
+      const r = store.runStart(db, { mode: /** @type {string} */ (opt(a, 'mode', true)), harness: opt(a, 'harness'), model: opt(a, 'model'), focus: opt(a, 'focus'), headSha: headSha(ctx.root),
+        hasCommit: (sha) => hasCommit(ctx.root, sha) });
+      return { out: store.clean({ run_id: r.id, mode: r.mode, focus: r.focus, base_sha: r.base_sha, head_sha: r.head_sha, fallback: r.fallback, db: ctx.dbFile() }) };
     }
     if (sub === 'finish') {
       const db = ctx.open();

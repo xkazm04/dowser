@@ -195,6 +195,27 @@ test('no code path UPDATEs or DELETEs evidence or transitions (source grep)', ()
   }
 });
 
+test('an incremental run whose base left the history starts full, without a base, and says why', () => {
+  const d = tempDir('store-fallback');
+  const s = openStore(join(d, 'dowser.db'));
+  try {
+    const first = runStart(s, { mode: 'full', headSha: 'aaa111' });
+    runFinish(s, { runId: first.id, lenses: { opportunity: { state: 'ran', emitted: 0 } } });
+    const kept = runStart(s, { mode: 'incremental', headSha: 'bbb222', hasCommit: () => true });
+    assert.equal(kept.mode, 'incremental');
+    assert.equal(kept.base_sha, 'aaa111');
+    assert.equal(kept.fallback, undefined);
+    const lost = runStart(s, { mode: 'incremental', headSha: 'bbb222', hasCommit: (sha) => sha !== 'aaa111' });
+    assert.equal(lost.mode, 'full');
+    assert.equal(lost.base_sha, undefined, 'no base: a diff against a missing commit cannot be taken');
+    assert.match(String(lost.fallback), /aaa111 is not in this history/);
+    assert.equal(runStart(s, { mode: 'focused', focus: 'area:src', hasCommit: () => false }).fallback, undefined, 'only incremental falls back');
+  } finally {
+    s.close();
+    removeDir(d);
+  }
+});
+
 test('run finish validates per-lens state; status shows "top N of M"', () => {
   const r = runStart(db, { mode: 'full' });
   assert.throws(() => runFinish(db, { runId: r.id, lenses: { opportunity: { state: 'skipped' } } }), /needs a reason/);
