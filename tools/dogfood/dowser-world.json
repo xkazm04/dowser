@@ -876,6 +876,33 @@
       "components": [
         "Install"
       ]
+    },
+    {
+      "ref": "DOW-99",
+      "title": "Inbox feels the same after the update",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-99",
+      "body": "Updated the Jira app; the inbox works exactly as before, keyboard and all. (We heard the code behind it was reorganised.)",
+      "created_at": "2026-10-30T22:10:00Z",
+      "labels": [
+        "feedback",
+        "forge"
+      ],
+      "components": [
+        "Forge app"
+      ]
+    },
+    {
+      "ref": "DOW-100",
+      "title": "What should we scan next?",
+      "url": "https://dowser-beta.atlassian.net/browse/DOW-100",
+      "body": "Dowser now finds only a couple of follow-ups per scan on our main repo. Would scanning our other services, or a weekly instead of daily scan, be the better use?",
+      "created_at": "2026-10-30T22:30:00Z",
+      "labels": [
+        "question"
+      ],
+      "components": [
+        "Skill"
+      ]
     }
   ],
   "pages": [
@@ -900,8 +927,8 @@
       "title": "Dowser data handling - security review draft",
       "url": "https://dowser-beta.atlassian.net/wiki/spaces/SEC/pages/13",
       "space": "SEC",
-      "updated_at": "2026-10-30T18:00:00Z",
-      "body": "Scope: the Dowser skill on developer laptops and the Dowser for Jira Forge app.\n\nLocal store: one SQLite file per project under ~/.dowser, not encrypted at rest; it holds proposal text and the quoted evidence lines.\n\nWhat leaves the machine: when the Forge app is connected, the skill pushes each proposal's text and its evidence, including the quoted source and doc lines (at most one line each), which the inbox and the Jira issue show. A team can set quotes=omit to push a hash of each line instead of its text; a quoted line repeated in a card's text is replaced by a reference to its file and line.\n\nDependency auditing runs npm audit, osv-scanner or pip-audit only when they are already installed; Dowser never installs them. The auditors send package names and versions to their advisory services (npm registry, osv.dev, PyPI).\n\nVulnerability reports: send them to the security contact in the repository's SECURITY.md."
+      "updated_at": "2026-10-30T22:00:00Z",
+      "body": "Scope: the Dowser skill on developer laptops and the Dowser for Jira Forge app.\n\nLocal store: one SQLite file per project under ~/.dowser, not encrypted at rest; it holds proposal text and the quoted evidence lines.\n\nWhat leaves the machine: when the Forge app is connected, the skill pushes each proposal's text and its evidence, including the quoted source and doc lines (at most one line each), which the inbox and the Jira issue show. A team can set quotes=omit to push a hash of each line instead of its text; a quoted line repeated in a card's text is replaced by a reference to its file and line.\n\nDependency auditing runs npm audit, osv-scanner or pip-audit only when they are already installed; Dowser never installs them. The auditors send package names and versions to their advisory services (npm registry, osv.dev, PyPI).\n\nVulnerability reports: send them to the security contact in the repository's SECURITY.md. Jira and Confluence text a scan fetched is dropped when the scan finishes; an interrupted scan's text is dropped by the first scan that starts more than a day later."
     },
     {
       "ref": "PAGE-14",
