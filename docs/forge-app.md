@@ -92,6 +92,10 @@ Choices the data makes:
   `snoozed` are the status of those items today. Merged items count in no column. Pushes of one `run_id`
   (a run over 50 records is several calls) are one row. `dup_rate` is `updated / (created + updated)` and is
   omitted when the push had neither.
+- **Time to triage** (goal G-1: a scan triaged in under 10 minutes). Once none of a push's items is open and at
+  least one is accepted, rejected or snoozed, the row carries `decided_at` (the latest of their decisions) and
+  `triage_minutes`, the whole minutes rounded up from the run's earliest push to it. Otherwise both are omitted;
+  a push of merged items only has neither.
 - **Lens yield.** Only lenses that proposed at least one item appear. A lens with no row was not run, which
   is not the same as proposing nothing.
 - **Notes** come from the verdict log (accept, reject and snooze decisions that carry a note), newest first.

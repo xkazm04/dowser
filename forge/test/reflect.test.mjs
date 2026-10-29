@@ -204,6 +204,48 @@ test('a push with nothing created or updated has no dup_rate; a run pushed in se
   assert.deepEqual([big[0].created, big[0].open], [2, 2]);
 });
 
+test('time to triage: minutes from the push to its last decision, only once nothing is open; merged-only has none', async () => {
+  const MIN = 60_000;
+  const d = await seeded(); // r-1 pushed at T with DW-1..3
+  const T = Date.parse(d.now().toISOString());
+  d.clock.tick(3 * MIN);
+  await res(d, 'verdict.reject', { refs: ['DW-1'], reason: 'not-worth-it' }); // T+3m
+  d.clock.tick(2 * MIN);
+  await res(d, 'verdict.snooze', { refs: ['DW-3'] }); // T+5m
+  d.clock.tick(2 * MIN);
+  await res(d, 'verdict.accept', { ref: 'DW-2' }); // T+7m
+  d.clock.tick(MIN);
+  await tool(d, 'dowser_proposals_push', pushArgs([record({ topic: 'delta' })], { run_id: 'r-2' })); // DW-4 stays open
+  d.clock.tick(MIN);
+  await tool(d, 'dowser_proposals_push', pushArgs([record({ topic: 'epsilon' })], { run_id: 'r-3' })); // DW-5
+  d.clock.tick(MIN);
+  await res(d, 'verdict.merge', { ref: 'DW-5', into: 'DW-2' });
+
+  const data = await res(d, 'reflect.data', { project_key: PK });
+  const by = Object.fromEntries(data.pushes.map((/** @type {any} */ p) => [p.run_id, p]));
+  assert.equal(by['r-1'].triage_minutes, 7);
+  assert.equal(by['r-1'].decided_at, new Date(T + 7 * MIN).toISOString());
+  for (const k of ['r-2', 'r-3']) {
+    assert.ok(!('decided_at' in by[k]) && !('triage_minutes' in by[k]), `${k} has no triage time`);
+  }
+  assert.equal(by['r-2'].open, 1);
+});
+
+test('time to triage rounds up and counts from the run\'s earliest push when the run spans several calls', async () => {
+  const d = makeDeps();
+  const T = Date.parse(d.now().toISOString());
+  await tool(d, 'dowser_proposals_push', pushArgs([record({ topic: 'a' })], { run_id: 'r-big' }));
+  d.clock.tick(60_000);
+  await tool(d, 'dowser_proposals_push', pushArgs([record({ topic: 'b' })], { run_id: 'r-big' }));
+  d.clock.tick(60_000);
+  await res(d, 'verdict.snooze', { refs: ['DW-1'] }); // T+2m
+  d.clock.tick(1000);
+  await res(d, 'verdict.reject', { refs: ['DW-2'], reason: 'not-worth-it' }); // T+2m1s
+  const [p] = (await res(d, 'reflect.data', { project_key: PK })).pushes;
+  assert.equal(p.decided_at, new Date(T + 121_000).toISOString());
+  assert.equal(p.triage_minutes, 3);
+});
+
 test('names: a failing or missing Users port only drops the names', async () => {
   const d = await seeded();
   await res(d, 'verdict.reject', { refs: ['DW-1'], reason: 'other', note: 'because' });

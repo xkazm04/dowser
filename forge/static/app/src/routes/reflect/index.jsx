@@ -298,6 +298,9 @@ const acceptedShare = (p) => {
   return total > 0 ? p.accepted / total : undefined;
 };
 
+/** Time to triage one push: minutes once every item is decided, "Still open" while any is open, else nothing. */
+const triageText = (p) => (p.triage_minutes !== undefined ? `Triaged in ${p.triage_minutes} min` : p.open > 0 ? 'Still open' : '');
+
 function Retro({ pushes }) {
   const [latest, ...older] = pushes;
   const chrono = [...pushes].reverse();
@@ -308,6 +311,7 @@ function Retro({ pushes }) {
       <p className="dwr-retro__head">
         <strong>Latest push, {formatDate(latest.at)}</strong>
         {latest.head_sha && <span className="dwr-muted"> at <code>{latest.head_sha.slice(0, 7)}</code></span>}
+        {triageText(latest) && <span className="dwr-muted"> · {triageText(latest)}</span>}
       </p>
       <dl className="dwr-bigstats">
         <div><dd>{latest.created}</dd><dt>created</dt></div>
@@ -330,13 +334,13 @@ function Retro({ pushes }) {
               <summary>View the push data as a table</summary>
               <div className="dw-scroll">
                 <table className="dw-table">
-                  <thead><tr><th scope="col">Push</th><th scope="col">Created</th><th scope="col">Updated</th><th scope="col">Repeat rate</th><th scope="col">Accepted</th><th scope="col">Rejected</th><th scope="col">Snoozed</th><th scope="col">Open</th></tr></thead>
+                  <thead><tr><th scope="col">Push</th><th scope="col">Created</th><th scope="col">Updated</th><th scope="col">Repeat rate</th><th scope="col">Accepted</th><th scope="col">Rejected</th><th scope="col">Snoozed</th><th scope="col">Open</th><th scope="col">Triage</th></tr></thead>
                   <tbody>
                     {pushes.map((p) => (
                       <tr key={p.run_id}>
                         <th scope="row">{formatDate(p.at)}</th><td>{p.created}</td><td>{p.updated}</td>
                         <td>{p.dup_rate === undefined ? 'n/a' : `${Math.round(p.dup_rate * 100)}%`}</td>
-                        <td>{p.accepted}</td><td>{p.rejected}</td><td>{p.snoozed}</td><td>{p.open}</td>
+                        <td>{p.accepted}</td><td>{p.rejected}</td><td>{p.snoozed}</td><td>{p.open}</td><td>{triageText(p)}</td>
                       </tr>
                     ))}
                   </tbody>

@@ -140,41 +140,66 @@ function toRuleRow(r) {
  * "what did that scan yield, and what became of it" has one stable answer per item, while `last_run_id`
  * moves the item to a newer push every time its evidence grows. `created`/`updated` come from the push rows.
  * Merged items count in no status column, so `open + accepted + rejected + snoozed` may be below `created`.
+ * `triage_minutes` (with `decided_at`) is time to triage: see `triageOf`.
  * @param {Db} db
  * @param {string} projectKey
  * @returns {Promise<PushRetro[]>}
  */
 async function pushRetros(db, projectKey) {
   const rows = await db.query('SELECT run_id, head_sha, at, created, updated FROM pushes WHERE project_key = ? ORDER BY at DESC, id LIMIT 500', [projectKey]);
-  /** @type {Map<string, {run_id: string, head_sha?: string, at: string, created: number, updated: number}>} */
+  /** @type {Map<string, {run_id: string, head_sha?: string, at: string, first_at: string, created: number, updated: number}>} */
   const byRun = new Map();
   for (const r of rows) {
     const k = String(r.run_id);
     const g = byRun.get(k);
     if (!g) {
-      byRun.set(k, /** @type {any} */ (omitAbsent({ run_id: k, head_sha: r.head_sha, at: String(r.at), created: Number(r.created), updated: Number(r.updated) })));
+      byRun.set(k, /** @type {any} */ (omitAbsent({ run_id: k, head_sha: r.head_sha, at: String(r.at), first_at: String(r.at), created: Number(r.created), updated: Number(r.updated) })));
     } else {
       g.created += Number(r.created);
       g.updated += Number(r.updated);
+      g.first_at = String(r.at); // rows come `at DESC`: the last one seen is the run's earliest push
     }
   }
   const newest = [...byRun.values()].slice(0, RETRO_PUSHES);
   if (newest.length === 0) return [];
   const marks = newest.map(() => '?').join(', ');
   const counts = await db.query(
-    `SELECT first_run_id, status, COUNT(*) AS n FROM proposals WHERE project_key = ? AND first_run_id IN (${marks}) GROUP BY first_run_id, status`,
+    `SELECT first_run_id, status, COUNT(*) AS n, MAX(decided_at) AS last_at FROM proposals
+      WHERE project_key = ? AND first_run_id IN (${marks}) GROUP BY first_run_id, status`,
     [projectKey, ...newest.map((g) => g.run_id)],
   );
-  return newest.map((g) => {
+  return newest.map(({ first_at, ...g }) => {
     /** @type {Record<string, number>} */
     const by = { open: 0, accepted: 0, rejected: 0, snoozed: 0 };
-    for (const c of counts) if (String(c.first_run_id) === g.run_id && String(c.status) in by) by[String(c.status)] = Number(c.n);
+    const mine = counts.filter((c) => String(c.first_run_id) === g.run_id);
+    for (const c of mine) if (String(c.status) in by) by[String(c.status)] = Number(c.n);
     const total = g.created + g.updated;
     return /** @type {PushRetro} */ (omitAbsent({
       ...g, dup_rate: total > 0 ? Math.round((g.updated / total) * 100) / 100 : undefined,
       open: by.open, accepted: by.accepted, rejected: by.rejected, snoozed: by.snoozed,
+      ...(by.open === 0 ? triageOf(first_at, mine) : {}),
     }));
   });
+}
+
+/**
+ * Time to triage one push whose items are all decided: the latest `decided_at` among its accepted, rejected and
+ * snoozed items, and the whole minutes (rounded up) from the run's earliest push to it. Merged items are not a
+ * triage answer of their own, so a push whose items are all merged has neither key; so does a clock that runs
+ * backwards (a decision stamped before the push).
+ * @param {string} pushedAt
+ * @param {Row[]} groups  this push's `(status, n, last_at)` rows, without open ones
+ * @returns {{decided_at?: string, triage_minutes?: number}}
+ */
+function triageOf(pushedAt, groups) {
+  let last = '';
+  for (const c of groups) {
+    const s = String(c.status);
+    if ((s === 'accepted' || s === 'rejected' || s === 'snoozed') && isIso(c.last_at) && String(c.last_at) > last) last = String(c.last_at);
+  }
+  const ms = last ? Date.parse(last) - Date.parse(pushedAt) : NaN;
+  if (!(ms >= 0)) return {};
+  return { decided_at: last, triage_minutes: Math.ceil(ms / 60000) };
 }
 
 /**
