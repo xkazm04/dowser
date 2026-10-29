@@ -195,6 +195,6 @@ Excluded by direction: <topic> (<n> tickets) | none.
 ```
 
 Changelog: 0.1.0 - first pack.
-0.2.1 - the demand-table trigger is a check before `propose` (it did not fire on an 8-ticket card in 2 of 2 runs); slow-burning demand is re-counted over 180 days and reported beside the 90-day count; examples at 0.2.1.
+0.2.1 - the demand-table trigger is a check before `propose` (it did not fire on an 8-ticket card in 2 of 2 runs); slow-burning demand is re-counted over 180 days and reported beside the 90-day count; examples at 0.2.1. Measured 2026-10-29 (tools/lens-eval.mjs, fixture v3, default model, n = 1 run of 4 cards): recall at budget 1.0, precision 1.0, priority-1 2/2, focus 1/1, decoy hits 0, direction violations 0, views valid 1/1 (the demand table fired; 0.2.0: 0/0 on fixture v2).
 0.2.0 - demand-led: ticket sweep before code, themes by component/label/ask over a stated 90-day window, Ranking puts demand tier above code readiness (baseline: a flag-gated build with weak demand outranked a half-served demand cluster); Direction, Sources, Artifacts (demand table, goal-fit matrix); examples at 0.2.0, one per view and one without.
 Measured 2026-10-28 (tools/lens-eval.mjs, fixture v2, default model, n = 2 runs of 4 cards): recall at budget 1.0 both runs (0.1.0: 0.75), precision 1.0, decoy hits 0, direction violations 0, views 0/0 (the demand-table trigger did not fire on an 8-ticket card: open). The CSV-export finding was proposed merged into an order-history card; the 90-day window left out its older tickets.
