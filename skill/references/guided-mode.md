@@ -75,6 +75,22 @@ Checking security and EU Cyber Resilience Act duties: done, no proposals.
 - On a focused scan: "This scan only looked at <goal/area>, so it says nothing about the rest of
   the project."
 
+## Triage
+
+- The overview table names lenses in words ("Opportunities", "Confusing screens", "Docs",
+  "Security"), sizes in words ("a few days"), and shows no file paths or line numbers; a
+  `full` card's Description drops its `path:line` refs the same way.
+- Ask for a reject reason as a question, and store the code behind the answer:
+
+| Ask | Code |
+| --- | --- |
+| "The evidence does not show this" | `false-positive` |
+| "We already track it or decided it" | `already-known` |
+| "True, but not where we are going" | `not-our-direction` |
+| "True, but not worth the effort" | `not-worth-it` |
+| "Right idea, but too big or too small" | `wrong-size` |
+| "Something else (tell me why)" | `other`, with their words as the note |
+
 ## Ask-why patterns
 
 Answer from `show <fp>` only, in this order, in plain words:

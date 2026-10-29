@@ -14,7 +14,7 @@ with no origin gets `local-` plus the first 12 hex of sha256(realpath(repo root)
 Nothing is ever written inside the scanned repo. Paths are compared by real path, and a store path inside
 the repo is refused with exit 3.
 
-The store is SQLite through `node:sqlite` (Node >= 22.13) with WAL and `PRAGMA user_version = 3`. The DDL
+The store is SQLite through `node:sqlite` (Node >= 22.13) with WAL and `PRAGMA user_version = 4` (v4 added `proposals.artifacts_json`, a card's supporting views). The DDL
 runs in one `BEGIN IMMEDIATE` transaction that re-reads the version. A file with another version is
 refused.
 

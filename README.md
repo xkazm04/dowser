@@ -46,7 +46,9 @@ each one. When the Dowser Forge app is connected, the proposals you kept go to t
 in Jira, and the decisions made there come back into Dowser's memory before the next scan.
 
 Without the Forge connection Dowser still runs, on code and docs only. It tells you which lenses
-were partial and why.
+were partial and why. To connect the Jira inbox, install the Dowser for Jira app on your site
+([docs/forge-app.md](docs/forge-app.md#install-on-a-development-site)), then add its MCP server to
+Claude Code or Codex ([Connect an external MCP client](docs/forge-app.md#connect-an-external-mcp-client)).
 
 Dowser never changes the project it scans. Its memory lives in `~/.dowser/`, outside the project.
 
@@ -55,11 +57,13 @@ Dowser never changes the project it scans. Its memory lives in `~/.dowser/`, out
 | | Developer | Guided |
 | --- | --- | --- |
 | For | people who read code | product managers and others who do not |
+| Triage | an overview table of every proposal first, then the cards | the same, in plain words |
 | Cards | file and line inline, fingerprint shown | title and rationale first, evidence behind "show evidence" |
 | Setup problems | the failing check | one plain-language fix at a time |
 | Words | git and code terms | no "commit", "diff" or "SHA" |
 
-Switch at any time by saying "switch to guided" (or "developer"). Ask "why this one?" about any
+Switch at any time by saying "switch to guided" (or "developer"). Cards are short by default; say
+"full cards" to add each card's summary and description, or "compact" to go back. Ask "why this one?" about any
 proposal: Dowser answers from the evidence it stored and does not rescan.
 
 ## Develop

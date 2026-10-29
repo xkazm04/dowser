@@ -260,7 +260,8 @@ Load `references/triage.md` (statuses, moves, reason codes) and `references/card
 2. For each card, ask the runner, with the multiple-choice tool if your harness has one, else
    a numbered list:
    - **Keep**: no move. It stays `verified` and is pushed when connected.
-   - **Reject**: ask for the reason code (`false-positive`, `already-known`,
+   - **Reject**: ask for the reason code (guided: as the plain questions in
+     `references/guided-mode.md` "Triage") (`false-positive`, `already-known`,
      `not-our-direction`, `not-worth-it`, `wrong-size`, `other`). `other` needs a short note:
      ask for it, and do not record the move without it. Record with
      `move <fp> --to rejected --by human:<name> --reason <code> [--note "<text>"]`.
