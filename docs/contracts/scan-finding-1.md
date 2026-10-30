@@ -54,8 +54,11 @@ else verified is `band: reserve`. The run report prints, per lens: ranked/reserv
 title and score, and tokens when the harness shows them (omitted otherwise). A lens that could not
 run is reported skipped, never as zero findings.
 
-**Autonomy ladder** (per project x slice, slice = `lens|risk_class|size`; `risk_class` is lens-scan's
-vocabulary `secret|authz|money|data|llm|perf|reliability|ux|debt`):
+**Autonomy ladder** (per project x slice, slice key = `<category>|<lens>|<risk_class>|<size>` as one
+string, an absent part written `-`; `risk_class` is lens-scan's vocabulary
+`secret|authz|money|data|llm|perf|reliability|ux|debt`). **The gate lives in the store, not in the
+prompt:** the system that records decisions computes each slice's level from its own decision
+history and refuses a machine decision above it; a scanner's claim of a level is never trusted.
 
 | Level | The machine may | Proof |
 |---|---|---|
@@ -70,7 +73,10 @@ vocabulary `secret|authz|money|data|llm|perf|reliability|ux|debt`):
 - **Lose:** a slice drops one level, and its window resets, on any human reversal of a machine decision
   inside or after the veto window, or any landed change whose proof is later re-measured `not-better`.
 - **Ceilings:** `secret|authz|money` never above L1; anything that leaves the system (a Jira issue, a
-  message, a publish) is never machine-decided - the human click stays.
+  message, a publish) is never machine-decided - the human click stays. A scanner that may not write
+  into the scanned repo (Dowser) has no L2/L3: its ceiling is L1.
+- **Every transition is an append-only event** `{slice, from, to, reason, agreement, n, at}`, shown
+  to the human beside the slice's current level.
 - **Memory feeds the verdict:** before predicting, the scanner reads the project's recorded decisions
   for the same context and lens - verdict, reason, note - and quotes the closest one in `predicted_why`.
   Titles alone are not memory.
