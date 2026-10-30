@@ -62,7 +62,7 @@ modules:
       inputs:
         project_key: { title: Project key, type: string, required: true, description: The key Dowser derives from the repo origin. }
         run_id: { title: Run id, type: string, required: true, description: The Dowser run that pushed. }
-        proposals_json: { title: Proposals, type: string, required: true, description: JSON array of dowser-proposal/1 records, at most 50. }
+        proposals_json: { title: Proposals, type: string, required: true, description: JSON array of dowser-proposal/2 (or /1) records, at most 50. }
         repo_url: { title: Repo URL, type: string, required: false, description: The repo web URL without credentials. }
         head_sha: { title: Head commit, type: string, required: false, description: The commit the run scanned. }
     - key: dowser_verdicts_pull
@@ -90,6 +90,7 @@ modules:
       inputs:
         project_key: { title: Project key, type: string, required: true, description: The key Dowser derives from the repo origin. }
         rules_json: { title: Rules, type: string, required: false, description: JSON array of at most 50 offered rules with id and lens and text and offered_at and optional titles. Send an empty array to only read. }
+        trust_json: { title: Trust, type: string, required: false, description: JSON object with the skill's per-slice trust levels and their newest 50 events, as reflect export prints it. Omit it when absent. }
     - key: dowser_direction_get
       name: Get lens direction
       function: mcp

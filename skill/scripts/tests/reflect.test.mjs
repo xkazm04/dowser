@@ -88,7 +88,7 @@ function rows(sql) {
 test('setup: three same-reason rejections offer a rule; `reflect export` is read-only and shapes the tool arguments', () => {
   const init = cli('init');
   assert.equal(init.code, 0, init.stderr);
-  assert.equal(init.out.user_version, 5);
+  assert.equal(init.out.user_version, 6);
   projectKey = init.out.project_key;
   runId = cli('run', 'start', '--mode', 'full').out.run_id;
   const lines = [
@@ -107,7 +107,12 @@ test('setup: three same-reason rejections offer a rule; `reflect export` is read
   for (const fp of rejected) assert.equal(cli('move', fp, '--to', 'rejected', '--by', 'human:ann', '--reason', 'not-our-direction').code, 0);
 
   // before any offer: nothing to send, but the call is still worth making (decisions and outcomes come back)
-  assert.deepEqual(cli('reflect', 'export').out, { project_key: projectKey }, 'rules_json omitted when nothing is offered');
+  const bare = cli('reflect', 'export').out;
+  assert.deepEqual(Object.keys(bare).sort(), ['project_key', 'trust_json'], 'rules_json omitted when nothing is offered');
+  // three human rejects of predicted cards: the slice has history, so its trust goes to the Learning tab
+  const trust = JSON.parse(bare.trust_json);
+  assert.deepEqual(trust.slices.map((/** @type {any} */ s) => [s.slice, s.level, s.ceiling, s.n]), [['product|opportunity|-|S', 0, 1, 3]]);
+  assert.deepEqual(trust.events, [], 'no level change yet');
 
   const offers = cli('rules', 'offer').out.offers;
   assert.equal(offers.length, 1);
@@ -115,7 +120,7 @@ test('setup: three same-reason rejections offer a rule; `reflect export` is read
   const before = rows('SELECT * FROM rules');
   const ex = cli('reflect', 'export');
   assert.equal(ex.code, 0, ex.stderr);
-  assert.deepEqual(Object.keys(ex.out).sort(), ['project_key', 'rules_json']);
+  assert.deepEqual(Object.keys(ex.out).sort(), ['project_key', 'rules_json', 'trust_json']);
   assert.equal(ex.out.project_key, projectKey);
   const sent = JSON.parse(ex.out.rules_json);
   assert.equal(sent.length, 1);
@@ -254,6 +259,9 @@ test('mock round trip over stdio: offer, person decides in Forge, person rates t
   assert.equal(JSON.parse(ex.out.rules_json).length, 1, 'only the still-offered rule goes out');
   assert.deepEqual(await tool('dowser_reflect_sync', ex.out), { rules: [], outcomes: [] });
   assert.deepEqual(await tool('dowser_reflect_sync', ex.out), { rules: [], outcomes: [] }, 'idempotent');
+  // the seam: the per-slice trust the store computed reaches the mock as reflect export printed it
+  assert.ok(ex.out.trust_json, 'people rejected predicted cards: trust goes out');
+  assert.deepEqual((await tool('mock_trust', { project_key: projectKey })).trust, JSON.parse(ex.out.trust_json));
 
   // 2. people act in Forge
   await tool('mock_decide_rule', { project_key: projectKey, id: offer2.id, state: 'declined', decided_by: 'forge:jane' });
@@ -279,7 +287,8 @@ test('mock round trip over stdio: offer, person decides in Forge, person rates t
 
   // 4. context weighs accepted-but-wrong patterns; show lists the rows; status is unchanged
   const ctx = cli('context', '--run', runId, '--lens', 'security-cra');
-  assert.deepEqual(ctx.out.outcomes, { right: 0, partly: 0, wrong: 1 });
+  assert.deepEqual(ctx.out.outcomes, { right: 0, partly: 0, wrong: 1, notes: [{ title: 'Password compared in plaintext', rating: 'wrong', note: 'Broke the SSO login' }] },
+    'the person\'s note comes along: memory, not just a count');
   assert.equal(cli('context', '--run', runId, '--lens', 'opportunity').out.outcomes, undefined, 'omitted when the lens has none');
   const shown = cli('show', accepted).out.outcomes;
   assert.equal(shown.length, 1);
@@ -290,7 +299,7 @@ test('mock round trip over stdio: offer, person decides in Forge, person rates t
   const sync2 = await tool('dowser_reflect_sync', { project_key: projectKey });
   assert.equal(sync2.outcomes.length, 2);
   assert.deepEqual(cli('reflect', 'ingest', '--file', save('sync2.json', sync2)).out, { rules_applied: 0, rules_skipped: 1, outcomes_added: 1, outcomes_seen: 2 });
-  assert.deepEqual(cli('context', '--run', runId, '--lens', 'security-cra').out.outcomes, { right: 1, partly: 0, wrong: 0 });
+  assert.deepEqual(cli('context', '--run', runId, '--lens', 'security-cra').out.outcomes, { right: 1, partly: 0, wrong: 0 }, 'the latest rating has no note: notes omitted');
   assert.equal(cli('show', accepted).out.outcomes.length, 2);
   assert.equal(cli('status').code, 0);
 });

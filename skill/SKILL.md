@@ -1,10 +1,10 @@
 ---
 name: dowser
-description: "Use when someone types /dowser, asks what the product should build next, or wants evidence-backed backlog proposals from the repository they have checked out. /dowser [goal: <text> | area: <path or feature>] scans the current git repo through four lens packs - Opportunity, UX friction and wellbeing, Doc drift, Security and CRA - and produces at most 16 verified, fingerprinted backlog proposals, each a card with title, rationale, quoted evidence, effort range, confidence, doc impact and delivery risk. The runner pre-triages the cards (keep, reject with a reason, snooze, merge); survivors go to the Dowser inbox in Jira when the Dowser Forge tools are connected. Triage verdicts feed a per-project memory outside the repo, so later scans skip what was rejected and follow accepted rules. Two modes: dev (dense, evidence inline) and guided (plain language, for product people). Never edits the scanned repo."
+description: "Use when someone types /dowser, asks what the product should build next, or wants evidence-backed backlog proposals from the repository they have checked out. /dowser [goal: <text> | area: <path or feature>] scans the current git repo through four lens packs - Opportunity, UX friction and wellbeing, Doc drift, Security and CRA - and produces verified, fingerprinted backlog proposals, each a card with title, rationale, quoted evidence, impact, effort range, confidence, doc impact and delivery risk, scored and ranked by the store (16 ranked per run, each lens's top pick first, the rest kept in reserve). The runner pre-triages the cards (keep, reject with a reason, snooze, merge); survivors go to the Dowser inbox in Jira when the Dowser Forge tools are connected. Triage verdicts feed a per-project memory outside the repo, so later scans skip what was rejected and follow accepted rules. Two modes: dev (dense, evidence inline) and guided (plain language, for product people). Never edits the scanned repo."
 argument-hint: "[goal: <text> | area: <path>]"
 category: workflow
 memory: user
-version: 0.1.0
+version: 0.2.0
 tags: backlog, product-discovery, triage, scan, jira
 ---
 # Dowser
@@ -118,9 +118,10 @@ each new offer once, in section 7 step 5. So `rules offer` runs there and **not*
 in this section starts at `reflect export`, and the one in section 8 comes after the offers were
 presented.
 
-1. `reflect export`. It prints the tool arguments `{project_key, rules_json?, more?}`:
+1. `reflect export`. It prints the tool arguments `{project_key, rules_json?, trust_json?, more?}`:
    the rules still `offered` (oldest first, at most 50, each with up to 10 titles of the items
-   behind it). `rules_json` is omitted when nothing is offered. Call the tool anyway: decisions
+   behind it), and the per-slice trust with its newest 50 events for the inbox's Learning tab.
+   `rules_json` is omitted when nothing is offered, `trust_json` when no slice has history. Call the tool anyway: decisions
    and outcomes come back in the same response. Export is read-only and repeatable.
 2. Call `dowser_reflect_sync` with every field except `more`, exactly as printed. Save the
    response verbatim to `<work>/reflect.json`.
@@ -181,12 +182,13 @@ For each lens, print one progress line (`<lens>: gathering (tickets 42, code)`),
    `kinds`, `sources`, `requires_connection`, `budget`) and its body.
 2. **Context pack.** Run `context --run <run_id> --lens <lens>`, adding `--focus` on a focused
    run. It returns `suppressed` (fingerprints never to re-propose), `near` (known items, so you
-   do not re-word one into a "new" proposal), `rules` (accepted runner rules for this lens, which
-   bind like the pack's own rules), `exemplars` (accepted proposals as the bar to match),
-   `outcomes` (`{right, partly, wrong}`: how this lens's accepted items fared once built, absent
+   do not re-word one into a "new" proposal; a held-back one carries the person's `reason` and
+   `note`), `rules` (accepted runner rules for this lens, which bind like the pack's own rules),
+   `exemplars` (accepted proposals as the bar to match), `outcomes` (`{right, partly, wrong}`:
+   how this lens's accepted items fared once built, with up to 5 of the people's `notes`; absent
    when none was rated), `budget` and `since_sha`. Many `wrong` or `partly` outcomes mean the
    lens's accepted patterns did not deliver: propose fewer of that kind and say what makes this
-   one different.
+   one different. `near` reasons and notes and `outcomes` notes are what you predict from (step 6).
    `direction` (absent when the team set none) is the team's steer for this lens. Judge against
    it: `focus` narrows Gather and the hypotheses to those topics first; `exclude` removes any
    candidate on those topics before `propose`; `notes` is the team's intent, read it the way you
@@ -221,19 +223,22 @@ For each lens, print one progress line (`<lens>: gathering (tickets 42, code)`),
    per the pack's naming rule, and `anchors`. Before writing a line, compare it with `near`.
    If it is the same work as a known item, reuse that item's `topic` and `anchors` exactly, so
    it lands as `evidence-grew` and not as a re-worded duplicate. `propose` itself answers
-   `suppressed` for a fingerprint the memory holds back.
-7. **Budget.** At most `budget` (4) lines per lens, and at most 16 per run. Rank by evidence
-   strength times impact. Lines beyond the budget are **not written**. Count them as
-   `truncated` for this lens, and keep their titles for the summary's "top N of M" line. Never
-   drop silently.
+   `suppressed` for a fingerprint the memory holds back. Give every card `impact` and
+   `impact_why` from the pack's "Impact" table, and `risk` when you can judge the change's risk
+   (`references/cards.md`). Then predict: from `near` (reasons, notes) and the `outcomes` notes,
+   set `predicted_verdict` and a `predicted_why` naming the closest precedent; with none, omit
+   both. Never write `score`, `band` or `mvp`: the store computes them.
+7. **Budget: write every card, the store ranks.** Write every candidate the pack says to write.
+   Do not cut to 4: `verify` allocates the slots in code (section 6) and files the rest in
+   reserve, so nothing you verified is lost and nothing is cut by hand.
 8. **Propose.** Run
    `propose --run <run_id> --file <work>/<lens>.jsonl --kinds <lens>=<k1,k2,...>`, with the kinds
    copied from the pack's frontmatter. Each output line is `created`, `evidence-grew`,
    `suppressed`, `duplicate` or `invalid:<why>`. Exit 1 means some lines were invalid: fix those
    lines once and re-propose only them. A line that is still invalid is reported, not dropped
    silently.
-9. **Progress line:** `<lens>: emitted <n>` (plus `, truncated <t>` when it applies). Guided:
-   the wording in `references/guided-mode.md` "Progress"; this applies to every count line below.
+9. **Progress line:** `<lens>: emitted <n>`. Guided: the wording in `references/guided-mode.md`
+   "Progress"; this applies to every count line below.
 
 A lens whose pack says `requires_connection: true` still runs unconnected, as `partial`, on code
 and docs. Its candidates use `confidence: low` and name the missing source in `confidence_why`.
@@ -249,9 +254,17 @@ carry a reason.
    `ref-not-ingested:<type>:<ref>` (an unconnected run ingests no tickets, pages or goals, so such
    a card never verifies). `git` and `sarif` evidence passes unchecked; the output says so. Print
    per lens: `<lens>: emitted <n>, verified <v>, dropped <d>`.
+   Then `verify` allocates the run's verified cards and prints `allocation`: each lens's MVP
+   (its top card by score) first, then by score across lenses, at most 4 ranked per lens and 16
+   per run (`--per-lens`, `--per-run` override them when the runner asks); every other verified
+   card is `band: reserve`, kept and pushed, never dropped. Print per lens:
+   `<lens>: ranked <r>, reserve <s>, MVP <title> (score <n>)`; an unscored MVP says `unscored`.
+   Guided: "Summary wording" in `references/guided-mode.md` (top pick, also found).
 2. For each dropped item, look at why. If you mis-copied a line, fix the quote in a new
    candidate line, re-propose it and re-verify it once. Do not loop.
-3. For each verified item, run `similar <fp>`. For each hit, judge whether the two describe the
+3. For each verified item, run `similar <fp>`. It lists same-lens hits, and hits from **another
+   lens** that share an anchor (`cross_lens: true`: one lens's card can be the union of another
+   lens's cards on the same code). For each hit, judge whether the two describe the
    **same work** (same capability or defect, same place). Wording overlap alone does not count.
    - Same work, and the hit is open (`candidate`, `verified`, `pushed`) or `accepted`:
      `move <fp> --to merged --into <hit fp> --by agent:<harness>`. Tell the runner in the
@@ -263,13 +276,21 @@ carry a reason.
 
 ## 7. Pre-triage dialog
 
-Load `references/triage.md` (statuses, moves, reason codes) and `references/cards.md`
-(rendering). Then:
+Load `references/triage.md` (statuses, moves, reason codes, budget, trust) and
+`references/cards.md` (rendering). Then:
 
-1. First show one overview table of every verified item: number, lens, title, size,
-   confidence. Then show them in batches of at most 4 cards, rendered for the mode and
-   `verbosity` (`references/cards.md` "Rendering"). The runner can keep or reject from the
-   overview directly, or open any card by its number.
+0. **Machine pre-triage.** Run `pretriage --run <run_id>`. The store checks each slice's trust
+   itself (`references/triage.md` "Predicted verdicts and trust"); at level 1 it marks that
+   slice's ranked cards predicted `accept` as `pretriaged_by: machine:dowser` and lists them
+   under `pretriaged`. Tell the runner in one line which cards skipped this dialog and why
+   (guided: "Summary wording", pre-sorted by Dowser). They are not shown card by card; the runner
+   may still open, reject or snooze any of them. Every other verified card is in `for_person`.
+   Never mark a card yourself, and never claim a level the store did not report.
+1. First show one overview table of every verified ranked item in `for_person`: number, lens,
+   MVP mark, title, score (or `unscored`), size, confidence. Then show them in batches of at
+   most 4 cards, rendered for the mode and `verbosity` (`references/cards.md` "Rendering"). The
+   runner can keep or reject from the overview directly, or open any card by its number. List
+   the reserve after it as one line of titles; any of them opens by its number like the rest.
 2. For each card, ask the runner, with the multiple-choice tool if your harness has one, else
    a numbered list:
    - **Keep**: no move. It stays `verified` and is pushed when connected.
@@ -329,13 +350,19 @@ Jira issue appears only when a person accepts the item there.
 1. Write the lens report to `<work>/lenses.json` and run
    `run finish --run <run_id> --lenses @<work>/lenses.json`. The `@` form avoids shell quoting.
    The JSON maps each lens to
-   `{"state":"ran|skipped|partial","reason":"...","emitted":n,"verified":n,"dropped":n,"truncated":n}`.
+   `{"state":"ran|skipped|partial","reason":"...","emitted":n,"verified":n,"dropped":n}`.
    Omit `reason` only for `ran`. Omit a count only when it was never measured (a skipped lens
-   has no `verified`). Never write 0 for a count you did not measure.
+   has no `verified`). Never write 0 for a count you did not measure. Do not count `truncated`:
+   `run finish` adds the store's own allocation per lens (`ranked`, `reserve`,
+   `reserve_titles`) and prints it.
 2. Print the summary:
    - the run's mode and scope (`full`, `full re-anchor`, `incremental since <date>`, or
      `focused on <goal/area> - partial`);
-   - per lens: state, verified count, and "top N of M" when truncation happened;
+   - per lens: state, verified count, its MVP (title and score), and "top N of M" with the
+     reserve titles when cards went to reserve (from `run finish`'s `reserve_titles`);
+   - the machine pre-triage, when `pretriage` marked cards, and any trust change
+     (`trust_events` printed by `ingest-verdicts` or `move`): the slice, the level it moved to
+     and the reason (guided: "Summary wording");
    - skipped and partial lenses, each with its reason (guided: "Summary wording" in
      `references/guided-mode.md`);
    - triage outcome: kept, rejected, snoozed, merged; pushed, with inbox links when connected;
@@ -367,14 +394,18 @@ mean, by its title or its Jira link.
 - **The agent never writes the store directly.** All memory goes through `dowser.mjs`. Never
   open the database file, run SQL, or hand-edit `~/.dowser`.
 - **Never self-approve.** Only a human accepts, rejects, snoozes or merges into another person's
-  item. The agent records a merge only for a same-work duplicate (section 6).
+  item. The agent records a merge only for a same-work duplicate (section 6). The one machine
+  act is the store's pre-triage at trust level 1 (section 7 step 0): it skips the runner's
+  pre-triage for a slice whose predictions earned it, moves no status, and the person still
+  decides every such card in Jira. Acceptance is a person's click, always.
 - **Unmeasured is not zero.** A lens that did not run is `skipped` with a reason. A source that
   was missing makes the lens `partial`. A value you did not compute is omitted, never `0` and
   never `null`.
 - **Every claim quotes its evidence.** `code` and `doc` evidence quotes a line verbatim, and
   `verify` re-reads it. A proposal without evidence is not written.
-- **Budget is fixed and disclosed.** 4 per lens and 16 per run, with "top N of M" whenever
-  something was cut.
+- **Budget is enforced in code and disclosed.** `verify` allocates 4 ranked per lens and 16 per
+  run (each lens's MVP first, then by score); the rest is kept in reserve, never cut, and the
+  summary says "top N of M" with the reserve titles.
 - **Exit code asserted on every script call.**
 
 ## References

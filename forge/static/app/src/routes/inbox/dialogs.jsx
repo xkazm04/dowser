@@ -104,6 +104,12 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
         <span className="dw-label">Issue preview</span>
         <div className="dw-preview" tabIndex={0} role="region" aria-label="Preview of the Jira issue">
           <div className="dw-preview__summary">{preview.summary}</div>
+          <div className="dw-md">
+            <table className="dw-table dw-preview__facts" aria-label="Facts">
+              <thead><tr><th scope="col">Fact</th><th scope="col">Value</th></tr></thead>
+              <tbody>{preview.facts.map((f) => <tr key={f.label}><th scope="row">{f.label}</th><td>{f.value}</td></tr>)}</tbody>
+            </table>
+          </div>
           <div className="dw-md"><p>{preview.rationale}</p></div>
           <Markdown source={preview.body} />
           {preview.artifacts && (

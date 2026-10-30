@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeDeps, pushArgs, record } from './helpers.mjs';
 import { runResolver, runTool } from '../src/core/app.mjs';
-import { issueDescription, markdownToAdf } from '../src/core/adf.mjs';
+import { factsTable, issueDescription, markdownToAdf } from '../src/core/adf.mjs';
 
 const PK = 'github-com-Acme-Shop';
 const EVIDENCE = [
@@ -45,10 +45,11 @@ const headingAt = (content, h) => content.findIndex((n) => n.type === 'heading' 
 /** The blocks under "Supporting views", up to the Evidence heading. @param {any} doc @returns {any[]} */
 const views = (doc) => doc.content.slice(headingAt(doc.content, 'Supporting views') + 1, headingAt(doc.content, 'Evidence'));
 
-test('a card without artifacts produces exactly the ADF it did before artifacts existed', () => {
+test('a card without artifacts produces exactly the ADF it did before artifacts existed, after the facts table', () => {
   const inbox = 'https://acme.atlassian.net/inbox?ref=DW-4';
   const expected = {
     type: 'doc', version: 1, content: [
+      factsTable(card()),
       { type: 'paragraph', content: [{ type: 'text', text: 'Carts vanish.' }] },
       ...markdownToAdf(BODY.replace('## Description', '## Details')),
       { type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: 'Evidence' }] },

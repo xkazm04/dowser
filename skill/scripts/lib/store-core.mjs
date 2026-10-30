@@ -9,9 +9,41 @@ import { dirname, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { DowserError } from './model.mjs';
 
-export const USER_VERSION = 5;
+export const USER_VERSION = 6;
 /** The decider the store itself writes for machine moves (creation, resurfacing). */
 export const SYSTEM_DECIDER = 'skill:dowser';
+
+/** The proposals columns v6 added (scan-finding/1), in DDL order. */
+export const V6_COLUMNS = Object.freeze(['impact', 'impact_why', 'risk', 'category', 'score', 'score_parts_json', 'band', 'mvp', 'mvp_rule',
+  'mvp_why', 'predicted_verdict', 'predicted_why', 'predicted_by', 'pretriaged_by']);
+
+/**
+ * v6: per-slice trust (scan-finding/1 autonomy ladder; lib/trust.mjs owns the logic). trust_state is the current
+ * level per slice and the transition id its agreement window starts after; trust_events is the append-only log of
+ * every level change.
+ */
+const TRUST_DDL = `
+CREATE TABLE IF NOT EXISTS trust_state (
+  slice         TEXT PRIMARY KEY,
+  level         INTEGER NOT NULL,
+  window_after  INTEGER NOT NULL DEFAULT 0, -- transitions.id: decisions after it count (a demotion resets the window)
+  changed_at    TEXT,
+  reason        TEXT
+);
+CREATE TABLE IF NOT EXISTS trust_events (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  at          TEXT NOT NULL,
+  slice       TEXT NOT NULL,
+  from_level  INTEGER NOT NULL,
+  to_level    INTEGER NOT NULL,
+  reason      TEXT NOT NULL,
+  agreement   REAL,
+  n           INTEGER NOT NULL,
+  item_id     TEXT
+);
+CREATE TRIGGER IF NOT EXISTS trust_events_no_update BEFORE UPDATE ON trust_events BEGIN SELECT RAISE(ABORT, 'trust_events is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS trust_events_no_delete BEFORE DELETE ON trust_events BEGIN SELECT RAISE(ABORT, 'trust_events is append-only'); END;
+`;
 
 export const DDL = `
 PRAGMA user_version = ${USER_VERSION};
@@ -57,6 +89,20 @@ CREATE TABLE IF NOT EXISTS proposals (
   issue_url           TEXT, -- v2: a link to that issue
   artifacts_json      TEXT, -- v4: the card's supporting views (model.mjs ARTIFACT_KINDS), else NULL
   snooze_until        TEXT, -- v5: YYYY-MM-DD a snoozed item wakes on (run start); NULL = no date, and NULL once it leaves snoozed
+  impact              INTEGER, -- v6 (scan-finding/1): 1-10 as the judge set it; NULL = not judged (the card is unscored)
+  impact_why          TEXT,
+  risk                INTEGER, -- v6: 1-10 risk of making the change (judge's, else from delivery_risk.blast); NULL = unknown
+  category            TEXT CHECK (category IN ('technical','product')),
+  score               REAL,    -- v6: scan-score/1, computed by propose; NULL = unscored, never 0
+  score_parts_json    TEXT,
+  band                TEXT CHECK (band IN ('ranked','reserve')), -- v6: the slot allocation of the card's last verify
+  mvp                 INTEGER, -- v6: 1 on each lens's top card of that allocation, else NULL
+  mvp_rule            TEXT CHECK (mvp_rule IN ('top-score','override')),
+  mvp_why             TEXT,
+  predicted_verdict   TEXT CHECK (predicted_verdict IN ('accept','reject','defer')),
+  predicted_why       TEXT,
+  predicted_by        TEXT,
+  pretriaged_by       TEXT,    -- v6: machine:dowser when an L1 slice skipped the person's pre-triage (pretriage)
   decided_by          TEXT,
   decided_at          TEXT,
   first_run_id        TEXT NOT NULL REFERENCES runs (id),
@@ -149,7 +195,7 @@ CREATE TABLE IF NOT EXISTS outcomes (
 CREATE INDEX IF NOT EXISTS outcomes_fp ON outcomes (fp, id);
 CREATE TRIGGER IF NOT EXISTS outcomes_no_update BEFORE UPDATE ON outcomes BEGIN SELECT RAISE(ABORT, 'outcomes is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS outcomes_no_delete BEFORE DELETE ON outcomes BEGIN SELECT RAISE(ABORT, 'outcomes is append-only'); END;
-`;
+${TRUST_DDL}`;
 
 /**
  * In-place upgrades, keyed by the version they start from. Each runs inside openStore's BEGIN IMMEDIATE after
@@ -191,6 +237,26 @@ PRAGMA user_version = 4;
 ALTER TABLE proposals ADD COLUMN snooze_until TEXT;
 PRAGMA user_version = 5;
 `,
+  5: `
+-- v6: the scan-finding/1 fields (docs/contracts/scan-finding-1.md) and per-slice trust. Rows from v5 keep NULL in
+-- every new column: unscored, unallocated, no prediction - never 0.
+ALTER TABLE proposals ADD COLUMN impact INTEGER;
+ALTER TABLE proposals ADD COLUMN impact_why TEXT;
+ALTER TABLE proposals ADD COLUMN risk INTEGER;
+ALTER TABLE proposals ADD COLUMN category TEXT CHECK (category IN ('technical','product'));
+ALTER TABLE proposals ADD COLUMN score REAL;
+ALTER TABLE proposals ADD COLUMN score_parts_json TEXT;
+ALTER TABLE proposals ADD COLUMN band TEXT CHECK (band IN ('ranked','reserve'));
+ALTER TABLE proposals ADD COLUMN mvp INTEGER;
+ALTER TABLE proposals ADD COLUMN mvp_rule TEXT CHECK (mvp_rule IN ('top-score','override'));
+ALTER TABLE proposals ADD COLUMN mvp_why TEXT;
+ALTER TABLE proposals ADD COLUMN predicted_verdict TEXT CHECK (predicted_verdict IN ('accept','reject','defer'));
+ALTER TABLE proposals ADD COLUMN predicted_why TEXT;
+ALTER TABLE proposals ADD COLUMN predicted_by TEXT;
+ALTER TABLE proposals ADD COLUMN pretriaged_by TEXT;
+${TRUST_DDL}
+PRAGMA user_version = 6;
+`,
 };
 
 /**
@@ -201,7 +267,9 @@ PRAGMA user_version = 5;
  * @typedef {{refs: number, types: string[]}} EvidenceSnapshot
  * @typedef {'created' | 'evidence-grew' | 'suppressed' | 'duplicate'} ProposeOutcome
  * @typedef {{result: ProposeOutcome | `invalid:${string}`, fp?: string, added?: number, resurfaced?: {from: string, rule: string}, status?: string, note?: string}} ProposeResult
- * @typedef {{state: 'ran'|'skipped'|'partial', reason?: string, emitted?: number, verified?: number, dropped?: number, truncated?: number}} LensRecord
+ * @typedef {{state: 'ran'|'skipped'|'partial', reason?: string, emitted?: number, verified?: number, dropped?: number, truncated?: number,
+ *   ranked?: number, reserve?: number, reserve_titles?: string[]}} LensRecord
+ *   ranked / reserve / reserve_titles are the store's slot allocation (run finish writes them; the agent does not).
  */
 
 export const now = () => new Date().toISOString();

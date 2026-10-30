@@ -41,7 +41,8 @@ Open Claude Code or Codex CLI inside the project you want to scan, and type:
 On the first run Dowser asks whether you want **developer** or **guided** mode, and remembers the
 answer. It checks the environment, then runs four lenses: Opportunity, UX friction and
 wellbeing, Doc drift, and Security and CRA. It re-checks every quoted line of evidence against
-the code and shows you at most 16 proposals. You keep, reject (with a reason), snooze or merge
+the code, scores every proposal and shows you the top 16 (each lens's top pick first); the rest
+are kept in reserve, never thrown away. You keep, reject (with a reason), snooze or merge
 each one. When the Dowser Forge app is connected, the proposals you kept go to the Dowser inbox
 in Jira, and the decisions made there come back into Dowser's memory before the next scan.
 

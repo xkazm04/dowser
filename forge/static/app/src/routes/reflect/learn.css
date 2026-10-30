@@ -68,3 +68,6 @@
 :root .dw-stack__seg--accepted { background: var(--ds-icon, #44546F); color: var(--ds-text-inverse, #FFFFFF); }
 :root .dwr-sec .dw-table, :root .dwr-more .dw-table { margin-top: 4px; }
 
+:root .dwr-trust th[scope="row"] { font-weight: 400; text-align: left; }
+:root .dwr-trust__slice { display: inline-flex; align-items: center; gap: 8px; }
+:root .dwr-trust td { font-variant-numeric: tabular-nums; white-space: nowrap; }

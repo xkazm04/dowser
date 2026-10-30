@@ -29,7 +29,7 @@ budget: 4
 | `sources` | A subset of `code`, `docs`, `git`, `tickets`, `pages`, `goals`, `deps`, `sarif`. |
 | `optional_sources` | Sources whose absence does **not** make the lens partial (for example `sarif`, which only exists if the runner supplies it). Defaults to `[]`. |
 | `requires_connection` | `true` when the lens's central hypotheses need Jira or Confluence data. Unconnected, it still runs, as `partial`, with `confidence: low` on every candidate. |
-| `budget` | Proposals per run. Fixed at 4 in v0.1, and not learned. |
+| `budget` | Ranked proposals per lens per run: the store's slot allocation at `verify` keeps at most this many `ranked` (the rest go to `reserve`, still pushed). 4 for every pack; `verify --per-lens` overrides it for one run. Not learned. |
 
 Frontmatter is ASCII. Keep values on one line, because the parser reads a small YAML subset.
 

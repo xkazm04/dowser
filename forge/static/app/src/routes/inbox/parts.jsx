@@ -35,11 +35,16 @@ export function effortDays(effort) {
   return '';
 }
 
-/** The three compact row signals, aligned in fixed columns. An unmeasured signal leaves its column empty. */
+/**
+ * The compact row signals, aligned in fixed columns: the stored score (or "unscored", never 0), effort, confidence,
+ * evidence. An unmeasured effort leaves its column empty.
+ */
 export function RowSignals({ card }) {
   const strength = evidenceStrength(card);
   const days = card.effort ? effortDays(card.effort) : '';
+  const scored = typeof card.score === 'number';
   const said = [
+    scored ? `score ${card.score}` : 'unscored',
     card.effort ? `effort ${card.effort.size}` : 'effort not estimated',
     `confidence ${(LEVEL_LABELS[card.confidence] ?? card.confidence ?? 'not stated').toLowerCase()}`,
     `evidence ${strength.label.toLowerCase()}, ${plural(strength.count, 'item')}`,
@@ -47,6 +52,7 @@ export function RowSignals({ card }) {
   return (
     <span className="dwr-sig">
       <span className="dwr-visually-hidden">{said}</span>
+      <span className={`dwr-sig__score${scored ? '' : ' dwr-sig__score--none'}`} aria-hidden="true" title={scored ? `Score ${card.score} (scan-score/1)` : 'Unscored: no impact was judged'}>{scored ? card.score : 'unscored'}</span>
       <span className="dwr-sig__effort" aria-hidden="true" title={card.effort ? `Effort ${card.effort.size}${days ? `, ${days}` : ''}` : 'Effort not estimated'}>{card.effort?.size ?? ''}</span>
       <span aria-hidden="true" title={`Confidence ${(LEVEL_LABELS[card.confidence] ?? '').toLowerCase()}`}><Pips level={card.confidence} /></span>
       <span aria-hidden="true" title={`Evidence: ${strength.label}`}><Meter strength={strength} /></span>

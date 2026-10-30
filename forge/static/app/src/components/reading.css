@@ -75,6 +75,8 @@
 :root .dwr-seg__btn[aria-pressed="true"] {
   background: var(--ds-surface-raised, #FFFFFF); color: var(--ds-text, #292A2E); font-weight: 653; box-shadow: var(--ds-shadow-raised, 0 1px 1px #1E1F2140, 0 0 1px #1E1F214F);
 }
+:root .dwr-filter { height: 32px; background: var(--ds-background-neutral, #0515240F); white-space: nowrap; }
+:root .dwr-filter[aria-pressed="true"] { background: var(--ds-background-selected, #E9F2FE); color: var(--ds-text-selected, #1868DB); box-shadow: inset 0 0 0 1px var(--ds-border-selected, #1868DB); }
 :root .dwr-seg__n { font-variant-numeric: tabular-nums; font-weight: 653; color: var(--ds-text-selected, #1868DB); }
 :root .dwr-runline { margin: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; font-size: 12px; line-height: 16px; color: var(--ds-text-subtle, #505258); font-variant-numeric: tabular-nums; }
 :root .dwr-iconbtn {
@@ -136,9 +138,17 @@
 :root .dwr-mark--new { color: var(--ds-text-discovery, #803FA5); }
 :root .dwr-mark--grew { color: var(--ds-text-information, #1558BC); }
 :root .dwr-mark--reopened { color: var(--ds-text-warning, #9E4C00); }
+:root .dwr-mark--mvp { color: var(--ds-text-success, #4C6B1F); }
+:root .dwr-mark--machine { color: var(--ds-text-subtle, #505258); font-weight: 500; }
 :root .dwr-row .dw-lozenge { font-size: 10px; line-height: 14px; }
-:root .dwr-sig { display: grid; grid-template-columns: 18px 30px 40px; gap: 8px; align-items: center; justify-items: start; flex: none; }
+:root .dwr-sig { display: grid; grid-template-columns: 52px 18px 30px 40px; gap: 8px; align-items: center; justify-items: start; flex: none; }
+:root .dwr-sig__score { font-weight: 653; font-variant-numeric: tabular-nums; color: var(--ds-text, #292A2E); justify-self: end; }
+:root .dwr-sig__score--none { font-weight: 400; color: var(--ds-text-subtlest, #6B6E76); }
 :root .dwr-sig__effort { font-weight: 653; font-variant-numeric: tabular-nums; color: var(--ds-text, #292A2E); text-align: center; justify-self: center; }
+:root .dwr-reserve { border-top: 1px solid var(--ds-border, #0B120E24); }
+:root .dwr-reserve__sum { cursor: pointer; padding: 8px 16px 8px 40px; font-size: 12px; line-height: 16px; font-weight: 653; color: var(--ds-text-subtle, #505258); }
+:root .dwr-reserve__sum:focus-visible { outline: 2px solid var(--ds-border-focused, #4688EC); outline-offset: -2px; }
+:root .dwr-reserve__sum .dwr-muted { font-weight: 400; }
 
 :root .dwr-more-rows { padding: 16px; }
 
@@ -254,8 +264,9 @@
   :root .dwr-item { transition: none; }
 }
 
-/* The toolbar stays one 48px row down to 720px; the run line gives way (ellipsis) before "?" wraps. */
-@media (min-width: 720px) {
+/* The toolbar stays one 48px row down to 960px; the run line gives way (ellipsis) before "?" wraps. Below 960px it
+   wraps to a second row: with the "Pre-triaged" filter its controls need about 910px, and nowrap scrolled sideways. */
+@media (min-width: 960px) {
   :root .dwr-toolbar { flex-wrap: nowrap; }
   :root .dwr-runline { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   :root .dwr-toolbar > :not(.dwr-runline):not(.dwr-spacer) { flex: none; }

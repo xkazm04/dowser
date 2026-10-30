@@ -90,7 +90,7 @@ Three resolvers serve the Learning tab (page route `reflect`), and tool 7 serves
 
 | Key | Does |
 |---|---|
-| `reflect.data` `{project_key}` | Everything the tab shows, derived from the existing tables plus `rules` and `outcomes`: `totals` by status, `rejects` by lens and reason, the newest 10 decision `notes`, the newest 8 `pushes` with today's status of their items, `lens_yield`, `rules`, `candidates` and `outcomes` |
+| `reflect.data` `{project_key}` | Everything the tab shows, derived from the existing tables plus `rules` and `outcomes`: `totals` by status, `rejects` by lens and reason, the newest 10 decision `notes`, the newest 8 `pushes` with today's status of their items, `lens_yield`, `rules`, `candidates`, `outcomes`, and `trust` (table `trust`, migration v023: the skill's per-slice trust as its last `dowser_reflect_sync` sent it, with `updated_at`; omitted until it sends one) |
 | `rule.decide` `{project_key, id, state, text?}` | Moves a rule `offered` -> `accepted` or `declined` as the caller (compare-and-set). `text` replaces the draft and goes only with accept. A rule that is no longer offered is refused with its current state |
 | `outcome.record` `{ref, rating, note?}` | Records how an accepted item turned out, once per ref, as the caller. It refuses an item that is not accepted and never overwrites. It answers the outcome and the refreshed candidates |
 
@@ -233,14 +233,24 @@ The surfaces call the backend only through `call()` in `src/api.js`, which uses 
 The inbox is a queue you scan on the left and a reading pane you decide in on the right. It is grouped by
 push, not a sortable table.
 
-- **Toolbar.** One row: the **Inbox** picker (one repository, or all of them), the status control (default
-  **Open**; every status shows its count, and the counts move as you decide), the lens filter, the last push and `?` for the keyboard help. Jira's sidebar
+- **Toolbar.** One row from 960px (two below): the **Inbox** picker (one repository, or all of them), the status control (default
+  **Open**; every status shows its count, and the counts move as you decide), the lens filter, **Pre-triaged** (only
+  the cards the scan pre-triaged on its own, `inbox.list {pretriaged: true}`), the last push and `?` for the keyboard help. Jira's sidebar
   carries the navigation between Inbox, Opportunity map, Learning and Settings.
 - **Queue.** Each sticky heading names one push by date and time and counts its **New**, **Evidence grew**
   and **Reopened** items; the commit and run id are in its tooltip. Each row shows the title, lens, ref,
-  change marker, effort size, confidence and evidence strength. Rows keep the server's order inside a group.
-- **Reading pane.** The selected proposal: title, rationale, then a facts grid with effort (size, day range,
-  basis), confidence with its reason, evidence strength, delivery risk and doc impact. A missing bus factor
+  change marker, the stored score (or **unscored**, never 0), effort size, confidence and evidence strength.
+  Rows keep the server's order inside a group (scan-finding/1): each lens's top card first, marked **MVP**, then
+  the ranked cards by the score the skill stored (Forge never recomputes it), unscored after every scored card,
+  then the push's reserve folded as "**N in reserve**" (verified, scored, over the scan's budget; it opens by
+  click, or by itself while `j`/`k` walk into it). A card the skill's trust gate pre-triaged is marked
+  **Pre-triaged**: accepting it stays a person's click. Cards pushed before scan-finding/1 keep the older order
+  (confidence, evidence count, first seen) among themselves.
+- **Reading pane.** The selected proposal: title (with the **MVP of <lens>**, **In reserve** and **Machine
+  pre-triaged** markers when they apply), rationale, then a facts grid with the score and its scan-score/1
+  breakdown ("Unscored" with the reason when it has none), impact and its reason, the predicted verdict with who
+  predicted it and the precedent it quotes, effort (size, 1-10 effort, day range, basis), confidence with its
+  reason, evidence strength, delivery risk (1-10 risk of the change, blast radius, bus factor) and doc impact. A missing bus factor
   reads "not measured", never 0, and a bus factor of 1 gets a "single owner" flag. When the card carries
   supporting views (`artifacts`, up to three), **Supporting views** comes next. Each view shows its message in
   bold, then the view, then "From" and the evidence refs it was drawn from. A view with an unknown kind or
@@ -260,7 +270,10 @@ push, not a sortable table.
   - **Accept** opens a dialog with the target Jira project and issue type, filled in from the inbox
     setting. It previews the issue summary and description, in the issue's own order. When the accept succeeds,
     the issue key shows as a link. In the issue, the card's Description section is headed **Details**, because Jira already
-    titles the field Description. **Accepted issue:** the description is the rationale, then the card body, then
+    titles the field Description. **Accepted issue:** the description opens with a **facts table** (Impact n/10 and
+    its reason; Score with its breakdown in one line, or "unscored"; Confidence and why; Effort n/10 with size and
+    days; Risk n/10 with the blast radius; Lens / kind; "MVP of the <lens> lens" when it is one; each value clipped
+    to 300 characters), then the rationale, then the card body, then
     **Supporting views** when the card has any, then **Evidence**, then "Proposed by Dowser (DW-n)". Each view is
     its message in bold, the view, then "From <refs>" in italics. A table or matrix becomes a Jira table, and a
     highlighted row is bold. A flow becomes a numbered list, and a marked step ends with "(friction)", "(failure)",
@@ -293,7 +306,11 @@ A digest first: a few plain sentences written from the data (the last push and i
 accepted, the most common reason to say no, what is waiting). Then **Needs you**: rule offers to accept (the text
 is editable) or decline, and accepted items to rate (**Right call**, **Partly**, **Wrong call**, with an optional
 note), the ones whose Jira issue is done first. Then the supporting detail: lens yield, reject reasons with the
-latest decision notes, and the scan retro with the trend over recent pushes.
+latest decision notes, the scan retro with the trend over recent pushes, and **Trust**: per slice (lens, category,
+size) the level against its ceiling (Dowser's is 1), how often the scan's predicted verdict matched yours and over
+how many decisions, then the level changes with their reasons (earned at 90 % of 20, lost on a reject of a
+pre-triaged card). The skill computes trust in its store and sends it with `dowser_reflect_sync` (`trust_json`);
+Forge only shows it.
 
 ### Settings (Apps > Dowser > Settings)
 

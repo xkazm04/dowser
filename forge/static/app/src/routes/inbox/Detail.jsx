@@ -1,5 +1,6 @@
-// The reading content of one proposal: header, rationale, a facts grid (effort, confidence and its reason, evidence
-// strength, delivery risk, doc impact), the supporting views when the card has any, the evidence EXPANDED (this is where people decide), the write-up behind a
+// The reading content of one proposal: header (with the MVP, reserve and machine pre-triage markers), rationale, a
+// facts grid (the stored score and its scan-score/1 breakdown, impact and its reason, the predicted verdict with the
+// precedent it quotes, effort, confidence and its reason, evidence strength, delivery risk, doc impact), the supporting views when the card has any, the evidence EXPANDED (this is where people decide), the write-up behind a
 // disclosure and the triage history. Used by the reading pane, the narrow accordion and the 360px issue panel.
 // Every fact is printed, "not measured" included: the pane is the expanded view.
 import React from 'react';
@@ -8,7 +9,8 @@ import { Markdown } from '../../components/Markdown.jsx';
 import { TriageHistory } from '../../components/ProposalCard.jsx';
 import { Artifacts } from '../../components/Artifact.jsx';
 import {
-  CHANGE_LABELS, EVIDENCE_LABELS, LENS_LABELS, LEVEL_LABELS, STATUS_APPEARANCE, STATUS_LABELS, comesBack, evidenceStrength, plural,
+  CHANGE_LABELS, EVIDENCE_LABELS, LENS_LABELS, LEVEL_LABELS, MACHINE_DECIDER, STATUS_APPEARANCE, STATUS_LABELS, VERDICT_LABELS, comesBack,
+  evidenceStrength, plural, scoreBreakdown,
 } from '../../components/labels.js';
 import { LensDot, Meter, Pips, effortDays } from './parts.jsx';
 import { safeHref } from '../../safeHref.js';
@@ -72,6 +74,9 @@ export function Detail({ card, change, history, compact = false, titleId }) {
             ? <Lozenge appearance="moved">Reopened</Lozenge>
             : <Lozenge appearance={marker === 'new' ? 'new' : 'inprogress'}>{CHANGE_LABELS[marker]}</Lozenge>)}
           {!isOpen && <Lozenge appearance={STATUS_APPEARANCE[card.status] ?? 'default'}>{STATUS_LABELS[card.status] ?? card.status}</Lozenge>}
+          {card.mvp && <Lozenge appearance="success">MVP of {LENS_LABELS[card.lens] ?? card.lens}</Lozenge>}
+          {card.band === 'reserve' && <Lozenge appearance="default">In reserve</Lozenge>}
+          {card.pretriaged_by === MACHINE_DECIDER && <Lozenge appearance="moved">Machine pre-triaged</Lozenge>}
           {card.issue_ref && (safeHref(card.issue_url)
             ? <a href={safeHref(card.issue_url)} target="_blank" rel="noreferrer noopener">{card.issue_ref}</a>
             : <span>{card.issue_ref}</span>)}
@@ -83,10 +88,32 @@ export function Detail({ card, change, history, compact = false, titleId }) {
       <p className="dwr-rationale">{card.rationale}</p>
 
       <dl className="dwr-facts">
+        <dt>Score</dt>
+        <dd>
+          {typeof card.score === 'number'
+            ? <><strong>{card.score}</strong>{card.score_parts && <div className="dwr-why">= {scoreBreakdown(card.score_parts)} <span className="dwr-muted">({card.score_parts.formula})</span></div>}</>
+            : <span className="dwr-muted">Unscored: the scan judged no impact, so it ranks after every scored proposal</span>}
+        </dd>
+        <dt>Impact</dt>
+        <dd>
+          {card.impact !== undefined
+            ? <><strong>{card.impact}/10</strong>{card.impact_why && <div className="dwr-why">{card.impact_why}</div>}</>
+            : <span className="dwr-muted">Not judged</span>}
+        </dd>
+        <dt>Predicted</dt>
+        <dd>
+          {card.predicted_verdict
+            ? <>
+              <strong>{VERDICT_LABELS[card.predicted_verdict] ?? card.predicted_verdict}</strong>
+              {card.predicted_by && <span className="dwr-muted"> · by {card.predicted_by}</span>}
+              {card.predicted_why && <div className="dwr-why">{card.predicted_why}</div>}
+            </>
+            : <span className="dwr-muted">No prediction recorded</span>}
+        </dd>
         <dt>Effort</dt>
         <dd>
           {card.effort
-            ? <><strong>{card.effort.size}</strong>{days && <span className="dwr-muted"> · {days}</span>}</>
+            ? <><strong>{card.effort.size}</strong>{card.effort.score !== undefined && <span className="dwr-muted"> · {card.effort.score}/10</span>}{days && <span className="dwr-muted"> · {days}</span>}</>
             : <span className="dwr-muted">Not estimated</span>}
           {basis.length > 0 && <div className="dwr-why">Rests on {basis.map((b, i) => <span key={b}>{i > 0 && ', '}<span className="dwr-ref">{b}</span></span>)}</div>}
         </dd>
@@ -101,7 +128,7 @@ export function Detail({ card, change, history, compact = false, titleId }) {
           <span className="dwr-muted"> · {strength.count === 0 ? 'none attached' : `${plural(strength.count, 'item')} of ${plural(strength.kinds, 'kind')}`}</span>
         </dd>
         <dt>Delivery risk</dt>
-        <dd><Risk risk={card.delivery_risk} /></dd>
+        <dd>{card.risk !== undefined && <><strong>{card.risk}/10</strong><span className="dwr-muted"> · </span></>}<Risk risk={card.delivery_risk} /></dd>
         <dt>Doc impact</dt>
         <dd>
           {card.doc_impact && card.doc_impact.length > 0

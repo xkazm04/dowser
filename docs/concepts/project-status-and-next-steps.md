@@ -18,6 +18,13 @@ Dowser runs as two halves joined by one contract:
 - **The seam**: `docs/contracts/forge-mcp-2.md` (eight tools: the original six plus
   `dowser_reflect_sync` and `dowser_direction_get`; scalar inputs). `tools/mock-forge-mcp.mjs`
   is its executable spec for tests; `tools/forge-live-e2e.mjs` drives the live app.
+- **The finding contract** `scan-finding/1` (`docs/contracts/scan-finding-1.md`, shared with the
+  registry's scan-sweep and lens-scan): cards carry impact, a stored `scan-score/1` score with its
+  breakdown, a budget enforced in code at `verify` (MVP per lens, 4 ranked per lens, 16 per run, the
+  rest in reserve), a predicted verdict quoting the closest precedent, and per-slice trust (earned L1
+  lets the store pre-triage; ceiling L1, acceptance stays human). Records are `dowser-proposal/2`;
+  store v6; Forge SQL v019-v023. Open: `tools/lens-eval.mjs` still scores every emitted card, so its
+  `recall_at_budget` should be re-read against the ranked band, and the 0.3.0 packs are unmeasured.
 
 Gates on `master`: root `npm run typecheck` clean and `npm test` green; `npm run forge:typecheck`
 clean, `npm run forge:test` green, `npm run forge:check-shared` clean, `npm run forge:build-ui` green

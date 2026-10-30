@@ -27,6 +27,9 @@ export const PUSH_MAX = 50;
 export const NOTE_MAX = 2000;
 export const RULE_TEXT_MAX = 2000;
 export const RULE_TITLES_MAX = 10;
+/** `trust_json` caps (dowser_reflect_sync): slices, and the newest events the skill sends (skill reflect.mjs). */
+export const TRUST_SLICES_MAX = 200;
+export const TRUST_EVENTS_MAX = 50;
 export const AREAS_MAX = 200;
 /** Lens direction caps: focus and exclude items each, one line of at most DIRECTION_LINE_MAX characters. */
 export const DIRECTION_ITEMS_MAX = 10;
@@ -43,7 +46,9 @@ export const PAGE_SIZE = 50;
  * @typedef {typeof PUSH_RESULTS[number]} PushResult
  * @typedef {typeof ERROR_CODES[number]} ErrorCode
  * @typedef {typeof VIAS[number]} Via
- * @typedef {Record<string, any>} ProposalRecord  a full `dowser-proposal/1` record (skill/schema/dowser-proposal-1.schema.json)
+ * @typedef {Record<string, any>} ProposalRecord  a full `dowser-proposal/2` record (skill/schema/dowser-proposal-2.schema.json; a
+ *   /1 record is a /2 record without the scan-finding/1 fields): score, score_parts, band, mvp, impact, impact_why, risk,
+ *   category, predicted_verdict/why/by and pretriaged_by ride on the card as the skill computed them
  */
 
 /**
@@ -71,7 +76,12 @@ export const PAGE_SIZE = 50;
  * @typedef {typeof RULE_STATES[number]} RuleState
  * @typedef {typeof OUTCOME_RATINGS[number]} OutcomeRating
  * @typedef {{id: string, lens: string, text: string, titles?: string[], offered_at: string}} RuleOffer  `titles` at most 10
- * @typedef {{project_key: string, rules_json?: string}} ReflectInput  rules_json = JSON array of RuleOffer, at most RULES_MAX
+ * @typedef {{project_key: string, rules_json?: string, trust_json?: string}} ReflectInput  rules_json = JSON array of RuleOffer, at most RULES_MAX;
+ *   trust_json = a Trust object (the skill store's per-slice trust), stored whole for the Learning tab
+ * @typedef {{slice: string, level: number, ceiling: number, start: number, n: number, agreement?: number, changed_at?: string, reason?: string}} TrustSlice
+ *   slice = `<category>|<lens>|<risk_class>|<size>` (scan-finding/1); level 0-1 for Dowser (ceiling L1); n and agreement over the current window
+ * @typedef {{slice: string, from: number, to: number, reason: string, agreement?: number, n: number, item_id?: string, at: string}} TrustEvent
+ * @typedef {{slices: TrustSlice[], events: TrustEvent[]}} Trust
  * @typedef {{id: string, lens: string, state: 'accepted' | 'declined', text: string, decided_by: string, decided_at: string}} RuleDecision
  * @typedef {{ref: string, fp: string, rating: OutcomeRating, note?: string, issue_ref: string, decided_by: string, recorded_at: string}} Outcome
  * @typedef {{rules: RuleDecision[], outcomes: Outcome[]}} ReflectOutput  outcomes: newest OUTCOMES_MAX
@@ -122,14 +132,16 @@ export const PAGE_SIZE = 50;
  *   decided_by_name?: string, decided_at?: string}} RuleRow
  * @typedef {{ref: string, title: string, issue_ref: string, issue_url: string, issue_status: string, done: boolean}} OutcomeCandidate  accepted, no outcome yet; `done` = Jira status category done
  * @typedef {{totals: Record<InboxStatus, number>, rejects: RejectCount[], notes: DecisionNote[], pushes: PushRetro[],
- *   lens_yield: LensYield[], rules: RuleRow[], candidates: OutcomeCandidate[], outcomes: (Outcome & {title: string, decided_by_name?: string})[]}} ReflectData
- *   pushes: newest 8. notes: newest 10 that carry a note. candidates: done ones first, at most 20.
+ *   lens_yield: LensYield[], rules: RuleRow[], candidates: OutcomeCandidate[], outcomes: (Outcome & {title: string, decided_by_name?: string})[],
+ *   trust?: Trust & {updated_at: string}}} ReflectData
+ *   pushes: newest 8. notes: newest 10 that carry a note. candidates: done ones first, at most 20. trust: as the
+ *   skill last synced it (omitted until it sends one).
  */
 
 /**
  * Resolver contract (invoke key -> payload -> result). Every resolver answers `{error, message}` on failure.
  * @typedef {{
- *   'inbox.list': [{project_key?: string, status?: InboxStatus, lens?: string, cursor?: string}, {inboxes: InboxSummary[], groups: InboxGroup[], next?: string}],
+ *   'inbox.list': [{project_key?: string, status?: InboxStatus, lens?: string, cursor?: string, pretriaged?: boolean}, {inboxes: InboxSummary[], groups: InboxGroup[], next?: string}],
  *   'proposal.get': [{ref: string}, {card: Card, history: HistoryRow[]}],
  *   'verdict.accept': [{ref: string, jira_project_key?: string, issue_type_id?: string, note?: string}, {card: Card}],
  *   'verdict.reject': [{refs: string[], reason: string, note?: string}, {cards: Card[]}],

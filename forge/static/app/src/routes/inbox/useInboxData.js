@@ -23,6 +23,7 @@ export function useInboxData({ cw, removed, leaving, onReset }) {
   const [projectKey, setProjectKey] = useState('');
   const [status, setStatus] = useState('open');
   const [lens, setLens] = useState('');
+  const [pretriaged, setPretriaged] = useState(false);
   const [load, setLoad] = useState(/** @type {{status: 'loading'|'ready'|'error', error?: any}} */ ({ status: 'loading' }));
   const [inboxes, setInboxes] = useState(/** @type {any[]} */ ([]));
   const [groups, setGroups] = useState(/** @type {any[]} */ ([]));
@@ -32,12 +33,13 @@ export function useInboxData({ cw, removed, leaving, onReset }) {
   const seq = useRef(0);
 
   const filters = useMemo(() => {
-    /** @type {{project_key?: string, status?: string, lens?: string}} */
+    /** @type {{project_key?: string, status?: string, lens?: string, pretriaged?: boolean}} */
     const f = { status };
     if (projectKey) f.project_key = projectKey;
     if (lens) f.lens = lens;
+    if (pretriaged) f.pretriaged = true;
     return f;
-  }, [projectKey, status, lens]);
+  }, [projectKey, status, lens, pretriaged]);
 
   const reload = useCallback(() => {
     const mine = ++seq.current;
@@ -101,7 +103,7 @@ export function useInboxData({ cw, removed, leaving, onReset }) {
   }
 
   return {
-    projectKey, setProjectKey, status, setStatus, lens, setLens, load, inboxes, next, moreState, lastPush, reload, loadMore,
+    projectKey, setProjectKey, status, setStatus, lens, setLens, pretriaged, setPretriaged, load, inboxes, next, moreState, lastPush, reload, loadMore,
     visible, shown, flat, byRef, groupOf,
   };
 }

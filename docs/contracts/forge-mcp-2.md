@@ -191,7 +191,7 @@ Input:
 |---|---|---|
 | `project_key` | string | required. 1-191 letters, digits or hyphens, starting with a letter or digit (`^[A-Za-z0-9][A-Za-z0-9-]{0,190}$`, the shape the skill derives), else `bad-input` |
 | `run_id` | string | required. The Dowser run that pushed. Forge records it per push |
-| `proposals_json` | string | required. A JSON array; each element a full `dowser-proposal/1` record (`skill/schema/dowser-proposal-1.schema.json`): identity, card, every evidence item, sizing, risk, the optional `artifacts` (supporting views), provenance and triage fields, with `status` `verified` (a first push) or `pushed` (a re-push after evidence grew). At most 50 records. Each record is held to the field caps below; a record over a cap is `refused` with a `why` naming the field |
+| `proposals_json` | string | required. A JSON array; each element a full `dowser-proposal/2` record (`skill/schema/dowser-proposal-2.schema.json`; a `dowser-proposal/1` record, which lacks the scan-finding/1 fields, is still accepted): identity, card, every evidence item, sizing, risk, the optional `artifacts` (supporting views), the optional scan-finding/1 fields (`impact`, `impact_why`, `risk`, `category`, `score`, `score_parts`, `band`, `mvp`, `mvp_rule`, `mvp_why`, `predicted_verdict`, `predicted_why`, `predicted_by`, `pretriaged_by`; `docs/contracts/scan-finding-1.md`), provenance and triage fields, with `status` `verified` (a first push) or `pushed` (a re-push after evidence grew). At most 50 records. Each record is held to the field caps below; a record over a cap is `refused` with a `why` naming the field |
 | `repo_url` | string | optional. The repo's web URL, credentials stripped (`https://github.com/Acme/Shop`): an absolute `https://` URL, or `http://` for a repo whose `origin` is an `http://` remote. Any other scheme, a URL with credentials, or one over 2000 chars is `bad-input`. Omitted when the repo has no `origin` |
 | `head_sha` | string | optional. The commit the run scanned. Forge links `code`/`doc` evidence to `<repo_url>/blob/<head_sha>/<path>#L<line>` (GitHub) or `<repo_url>/src/<head_sha>/<path>#lines-<line>` (Bitbucket), and shows the plain ref for any other host |
 
@@ -223,7 +223,20 @@ skill refuses an oversize card at `propose` before it is ever pushed. Strings co
 | `evidence[].url` | 2000, and an absolute `https://` URL: any other scheme is refused |
 | `doc_impact`, `effort.basis` | 20 items, each at most 300 |
 | `artifacts[].refs` | 100 items (the view caps are in `skill/references/cards.md`) |
+| `impact_why`, `mvp_why` | 200, one line |
+| `predicted_why` | 300 |
+| `predicted_by` | 200, one line |
+| `impact`, `risk`, `effort.score` | integers 1-10 |
+| `score` | a number above 0, at most 100; `score_parts` only with `score`, all five keys |
 | each `provenance` string | 200 |
+
+**scan-finding/1 on the inbox side.** Forge stores the record as pushed and never recomputes a score. It copies
+`score`, `band`, `mvp` and `pretriaged_by` to sortable columns (Forge SQL migrations v019-v022) on every push.
+Inside a push group the inbox orders each lens's MVP first, then ranked before reserve, then `score` descending
+with unscored cards after every scored one, then the older confidence / evidence count / first seen order; a
+record without these fields (a /1 record) keeps the old order among its peers. The Custom UI's `inbox.list` takes
+`pretriaged: true` to list only the cards the skill's L1 trust gate marked `pretriaged_by: machine:dowser`. The
+mark changes nothing about a decision: every such card is still accepted, rejected or snoozed by a person.
 
 **Idempotency.** Push is idempotent on `(project_key, fp)`. A re-push never creates a second item: it
 updates the card of the existing one, unites its evidence and returns `updated`. Evidence on the Forge side
@@ -341,7 +354,7 @@ propose `csv` items for the opportunity lens again") and offers them for a perso
 Forge is where the person decides. This tool is one idempotent round trip: the skill pushes its `offered`
 rules and reads back every rule decided in Forge and the recorded outcomes of accepted items.
 
-Input: `{project_key, rules_json?}`.
+Input: `{project_key, rules_json?, trust_json?}`.
 
 | field | type | rule |
 |---|---|---|
@@ -352,6 +365,9 @@ Input: `{project_key, rules_json?}`.
 | `rules_json[].text` | string | required, 1-2000 characters. The draft wording |
 | `rules_json[].titles` | string[] | optional, at most 10, the titles of the rejected items behind the rule. Omitted when there are none |
 | `rules_json[].offered_at` | string | required ISO timestamp |
+| `trust_json` | string | optional. A JSON object `{slices, events}`: the skill store's per-slice trust (`reflect export`, from `skill/scripts/lib/trust.mjs`), at most 200 slices and the newest 50 events. Forge stores it whole per inbox (table `trust`, migration v023) and shows it in the Learning tab; it never computes or acts on a level itself. Omitted (or empty) leaves the stored one. Malformed is `bad-input` |
+| `trust_json.slices[]` | object | `{slice, level, ceiling, start, n, agreement?, changed_at?, reason?}`: `slice` `<category>\|<lens>\|<risk_class>\|<size>` (at most 200 chars), levels 0-3 (Dowser's ceiling is 1), `n` >= 0 decisions in the current window, `agreement` 0-1 (omitted when n is 0) |
+| `trust_json.events[]` | object | `{slice, from, to, reason, agreement?, n, item_id?, at}`: one level change; `item_id` is the fp that caused it (16 hex), `at` an ISO timestamp |
 
 A single invalid rule refuses the whole call with `bad-input` (the message names its index) and stores nothing.
 
@@ -406,3 +422,10 @@ Additive amendments:
   `until` is `YYYY-MM-DD` after today, else `bad-input`). The verdict then carries `snooze_until`. The skill
   records it as the card's snooze date, even when the day has passed by the time it pulls, and the next `run start`
   wakes the item. A skill that ignores the new key keeps an undated snooze.
+- **scan-finding/1 (2026-10-30).** A pushed record may be a `dowser-proposal/2` record: the optional
+  scan-finding/1 fields (`docs/contracts/scan-finding-1.md`) ride on it and Forge validates them with the shared
+  `validateCandidate` (wire mode); the inbox orders by the stored `score` (MVP first, reserve last) and filters
+  on `pretriaged_by`; the issue Accept creates opens with a facts table (impact, score and its breakdown,
+  confidence, effort, risk, lens and kind, MVP). `dowser_reflect_sync` takes an optional `trust_json` (the
+  skill's per-slice trust) and the Learning tab shows it. A /1 record and a sync without `trust_json` behave as
+  before.

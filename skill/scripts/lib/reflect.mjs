@@ -1,8 +1,9 @@
 // @ts-check
 // Dowser reflection (WP2 of the learning loop): the skill's side of the `dowser_reflect_sync` Forge tool
 // (docs/contracts/forge-mcp-2.md, additive tool 7; wire types in forge/src/core/types.mjs).
-//   exportOffers   -> the tool's arguments {project_key, rules_json?, more?}: the rules in state `offered`
-//                     (oldest first, at most RULES_MAX, titles at most TITLES_MAX); read-only
+//   exportOffers   -> the tool's arguments {project_key, rules_json?, trust_json?, more?}: the rules in state
+//                     `offered` (oldest first, at most RULES_MAX, titles at most TITLES_MAX) and the per-slice trust
+//                     (trust.mjs trustReport, the newest TRUST_EVENTS_MAX events) for the Learning tab; read-only
 //   ingestReflect  <- the tool's response {rules: RuleDecision[], outcomes: Outcome[]}: each decided rule is a
 //                     compare-and-set offered -> accepted|declined (a rule not `offered` is skipped, so a replay
 //                     is a no-op); each outcome is an append-only row in `outcomes`, unique (fp, recorded_at)
@@ -10,6 +11,7 @@
 // Offers are created by `rules offer` (memory.mjs); nothing here creates one.
 import { DECIDER_RE, DowserError, isOneOf } from './model.mjs';
 import { clean, now, tx } from './store.mjs';
+import { trustReport } from './trust.mjs';
 
 /** @typedef {import('./store.mjs').Db} Db @typedef {import('./store.mjs').Row} Row */
 
@@ -17,6 +19,8 @@ export const OUTCOME_RATINGS = /** @type {const} */ (['right', 'partly', 'wrong'
 /** At most this many offered rules per `dowser_reflect_sync` call, and titles per rule (forge/src/core/types.mjs). */
 export const RULES_MAX = 50;
 export const TITLES_MAX = 10;
+/** The newest trust events `trust_json` carries (forge/src/core/types.mjs TRUST_EVENTS_MAX). */
+export const TRUST_EVENTS_MAX = 50;
 /** The decider kind for a Forge decision whose `decided_by` carries no `<kind>:` of its own. */
 const FORGE_KIND = 'forge';
 
@@ -58,7 +62,12 @@ export function exportOffers(db, projectKey) {
     }).filter((t) => t !== undefined);
     return clean({ id: r.id, lens: r.lens, text: r.text, titles: titles.length ? titles : undefined, offered_at: r.offered_at });
   });
-  return /** @type {Row} */ (clean({ project_key: projectKey, rules_json: offers.length ? JSON.stringify(offers) : undefined, more: more ? true : undefined }));
+  const trust = trustReport(db, { sync: false, maxEvents: TRUST_EVENTS_MAX });
+  return /** @type {Row} */ (clean({
+    project_key: projectKey, rules_json: offers.length ? JSON.stringify(offers) : undefined,
+    trust_json: trust.slices.length || trust.events.length ? JSON.stringify(trust) : undefined,
+    more: more ? true : undefined,
+  }));
 }
 
 /**
@@ -163,6 +172,27 @@ export function outcomeCounts(db, lens) {
   const c = { right: 0, partly: 0, wrong: 0 };
   for (const r of rows) c[/** @type {'right' | 'partly' | 'wrong'} */ (String(r.rating))] = Number(r.n);
   return c;
+}
+
+/**
+ * The newest outcome notes of a lens's items (latest rating per item, only ratings that carry a note), newest first:
+ * `[{title, rating, note}]`, each note clipped to `noteCap` characters. What a person said once the item was built is
+ * memory the judge reads before predicting (scan-finding/1 "Memory feeds the verdict").
+ * @param {Db} db
+ * @param {string} lens
+ * @param {number} max
+ * @param {number} noteCap
+ * @returns {{title: string, rating: string, note: string}[]}
+ */
+export function outcomeNotes(db, lens, max, noteCap) {
+  return /** @type {Row[]} */ (db.prepare(
+    `SELECT p.title, o.rating, o.note FROM outcomes o JOIN proposals p ON p.fp = o.fp
+     WHERE p.lens = ? AND o.note IS NOT NULL AND o.id = (SELECT MAX(o2.id) FROM outcomes o2 WHERE o2.fp = o.fp)
+     ORDER BY o.recorded_at DESC, o.id DESC LIMIT ?`,
+  ).all(lens, max)).map((r) => {
+    const note = String(r.note).replace(/\s+/g, ' ').trim();
+    return { title: String(r.title), rating: String(r.rating), note: note.length > noteCap ? `${note.slice(0, noteCap - 1)}…` : note };
+  });
 }
 
 /**

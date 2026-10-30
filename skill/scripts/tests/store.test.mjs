@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { DowserError, MoveRefused } from '../lib/model.mjs';
 import {
-  DDL, USER_VERSION, evidenceOf, getProposal, move, openStore, propose, resurfaces, runFinish, runStart, statusSummary, transitionsOf,
+  DDL, USER_VERSION, V6_COLUMNS, evidenceOf, getProposal, move, openStore, propose, resurfaces, runFinish, runStart, statusSummary, transitionsOf,
 } from '../lib/store.mjs';
 import { KINDS, candidate, removeDir, tempDir } from './_fixture.mjs';
 
@@ -24,9 +24,9 @@ after(() => { db.close(); removeDir(dir); });
 /** @param {Record<string, unknown>} over */
 const prop = (over) => propose(db, run, candidate(over), { kinds: KINDS });
 
-test('the store opens WAL at user_version 5 and is re-openable', () => {
-  assert.equal(USER_VERSION, 5);
-  assert.equal(Number(/** @type {any} */ (db.prepare('PRAGMA user_version').get()).user_version), 5);
+test('the store opens WAL at user_version 6 and is re-openable', () => {
+  assert.equal(USER_VERSION, 6);
+  assert.equal(Number(/** @type {any} */ (db.prepare('PRAGMA user_version').get()).user_version), 6);
   assert.equal(String(/** @type {any} */ (db.prepare('PRAGMA journal_mode').get()).journal_mode).toLowerCase(), 'wal');
   const cols = /** @type {any[]} */ (db.prepare('PRAGMA table_info(proposals)').all()).map((c) => c.name);
   assert.ok(cols.includes('issue_ref') && cols.includes('issue_url'), 'a fresh store has the v2 columns');
@@ -35,7 +35,8 @@ test('the store opens WAL at user_version 5 and is re-openable', () => {
 });
 
 /** The v1 schema: the current one without the v3 outcomes block, the issue columns (v1 -> v2), the v4 artifacts column and the v5 snooze_until column. */
-const DDL_V1 = DDL.split('-- v3:')[0].replace(/^\s*(issue_ref|issue_url|artifacts_json|snooze_until)\s.*\n/gm, '').replace(`PRAGMA user_version = ${USER_VERSION};`, 'PRAGMA user_version = 1;');
+const DDL_V1 = DDL.split('-- v3:')[0].replace(/^\s*(issue_ref|issue_url|artifacts_json|snooze_until)\s.*\n/gm, '')
+  .replace(new RegExp(`^\\s*(${V6_COLUMNS.join('|')})\\s.*\\n`, 'gm'), '').replace(`PRAGMA user_version = ${USER_VERSION};`, 'PRAGMA user_version = 1;');
 
 test('a v1 store file is upgraded to the current version in place, data intact; an unknown version is refused', () => {
   assert.ok(!DDL_V1.includes('issue_ref') && DDL_V1.includes('PRAGMA user_version = 1;'));
@@ -56,7 +57,7 @@ test('a v1 store file is upgraded to the current version in place, data intact; 
 
   const up = openStore(file);
   try {
-    assert.equal(Number(/** @type {any} */ (up.prepare('PRAGMA user_version').get()).user_version), 5);
+    assert.equal(Number(/** @type {any} */ (up.prepare('PRAGMA user_version').get()).user_version), 6);
     assert.ok((/** @type {any[]} */ (up.prepare('PRAGMA table_info(proposals)').all())).some((c) => c.name === 'artifacts_json'));
     assert.equal(getProposal(up, 'aaaaaaaaaaaaaaaa')?.artifacts, undefined, 'artifacts start absent');
     assert.ok(up.prepare("SELECT 1 FROM sqlite_master WHERE name = 'outcomes'").get());

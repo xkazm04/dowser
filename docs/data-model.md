@@ -1,8 +1,9 @@
 # Dowser data model
 
 The store is the single source of local memory. `skill/scripts/dowser.mjs` is its only writer, and the
-agent never writes SQL. Code: `skill/scripts/lib/{model,store,fingerprint,verify,paths,git}.mjs`. Record
-schema: `skill/schema/dowser-proposal-1.schema.json`.
+agent never writes SQL. Code: `skill/scripts/lib/{model,store,fingerprint,verify,paths,git,scan-score,predict,budget,trust}.mjs`.
+Record schema: `skill/schema/dowser-proposal-2.schema.json` (`dowser-proposal-1.schema.json` is kept: a /1 record is
+a valid /2 record). The scan-finding/1 contract the /2 fields follow is `docs/contracts/scan-finding-1.md`.
 
 ## Location
 
@@ -14,7 +15,7 @@ with no origin gets `local-` plus the first 12 hex of sha256(realpath(repo root)
 Nothing is ever written inside the scanned repo. Paths are compared by real path, and a store path inside
 the repo is refused with exit 3.
 
-The store is SQLite through `node:sqlite` (Node >= 22.13) with WAL and `PRAGMA user_version = 5` (v4 added `proposals.artifacts_json`, a card's supporting views; v5 added `proposals.snooze_until`, the date a snoozed item wakes on). The DDL
+The store is SQLite through `node:sqlite` (Node >= 22.13) with WAL and `PRAGMA user_version = 6` (v4 added `proposals.artifacts_json`, a card's supporting views; v5 added `proposals.snooze_until`, the date a snoozed item wakes on; v6 added the scan-finding/1 columns and the trust tables). The DDL
 runs in one `BEGIN IMMEDIATE` transaction that re-reads the version. A file with another version is
 refused.
 
@@ -25,24 +26,30 @@ version: `ALTER TABLE proposals ADD COLUMN issue_ref TEXT`, the same for `issue_
 at the current version. Version 3 adds the `outcomes` table (below): `CREATE TABLE IF NOT EXISTS` plus its index and
 triggers, then `PRAGMA user_version = 3`. Version 4 adds `proposals.artifacts_json`. Version 5 adds
 `proposals.snooze_until` (`ALTER TABLE proposals ADD COLUMN snooze_until TEXT`, then `PRAGMA user_version = 5`); it
-starts NULL (absent) on every existing row. An existing file is upgraded one step at a time (1 -> 2 -> 3 -> 4 -> 5) and
-no row is rewritten. Any version other than 0 (new), 1, 2, 3, 4 or 5 is refused with exit 3.
+starts NULL (absent) on every existing row. Version 6 adds the scan-finding/1 columns to `proposals` (`impact`,
+`impact_why`, `risk`, `category`, `score`, `score_parts_json`, `band`, `mvp`, `mvp_rule`, `mvp_why`, `predicted_verdict`,
+`predicted_why`, `predicted_by`, `pretriaged_by`; `store-core.mjs` `V6_COLUMNS`) and the `trust_state` and
+`trust_events` tables, then `PRAGMA user_version = 6`; every existing row stays unscored, unallocated and without a
+prediction (NULL, never 0). An existing file is upgraded one step at a time (1 -> 2 -> 3 -> 4 -> 5 -> 6) and
+no row is rewritten. Any version other than 0 (new), 1, 2, 3, 4, 5 or 6 is refused with exit 3.
 
 ## Tables
 
 | table | role | keys |
 |---|---|---|
 | `runs` | one scan: `id`, `started_at`, `finished_at`, `head_sha`, `base_sha`, `mode` (`full\|incremental\|focused`), `focus`, `harness`, `model`, `status` (`running\|done\|failed`; `run start` closes a run still `running` after 24 h as `failed`), `lenses_json` | PK `id` (`r-YYYYMMDDHHMMSS-xxxx`) |
-| `proposals` | the current card: identity (`lens`, `kind`, normalized `topic`, `anchors_json`), card text, `effort_json`, `confidence`, `confidence_why`, `doc_impact_json`, `delivery_risk_json`, `provenance_json`, `asserted_json` (the evidence keys the newest propose line carried; internal, not part of the record), triage fields (`status`, `reason`, `note`, `merged_into`, `external_ref`, `external_url`, `decided_by`, `decided_at`), `issue_ref`, `issue_url` (v2: the Jira issue an `accepted` verdict carried; not part of the record), `artifacts_json` (v4), `snooze_until` (v5: `YYYY-MM-DD`, set by `move --to snoozed --until` (a date after today) or by `ingest-verdicts` from a Jira snooze with a date (a past date kept, so the next `run start` wakes it); cleared by any move out of `snoozed`), `first_run_id`, `last_run_id` | PK `fp`; `external_ref` UNIQUE where not null |
+| `proposals` | the current card: identity (`lens`, `kind`, normalized `topic`, `anchors_json`), card text, `effort_json`, `confidence`, `confidence_why`, `doc_impact_json`, `delivery_risk_json`, `provenance_json`, `asserted_json` (the evidence keys the newest propose line carried; internal, not part of the record), triage fields (`status`, `reason`, `note`, `merged_into`, `external_ref`, `external_url`, `decided_by`, `decided_at`), `issue_ref`, `issue_url` (v2: the Jira issue an `accepted` verdict carried; not part of the record), `artifacts_json` (v4), `snooze_until` (v5: `YYYY-MM-DD`, set by `move --to snoozed --until` (a date after today) or by `ingest-verdicts` from a Jira snooze with a date (a past date kept, so the next `run start` wakes it); cleared by any move out of `snoozed`), the v6 scan-finding/1 columns (below, "Proposal record"), `first_run_id`, `last_run_id` | PK `fp`; `external_ref` UNIQUE where not null |
+| `trust_state` | v6: the current trust level of each slice (`<category>\|<lens>\|-\|<size>`), `window_after` (the transition id its agreement window starts after; a demotion resets it), `changed_at`, `reason`. Written only by `lib/trust.mjs` `syncTrust` | PK `slice` |
+| `trust_events` | **append-only** (v6): one row per level change `{at, slice, from_level, to_level, reason, agreement, n, item_id}` | triggers refuse UPDATE and DELETE |
 | `evidence` | **append-only**: `fp`, `run_id`, `type`, `ref`, `key`, `path`, `line` (hint), `quote`, `url`, `added_at`; one row per key, written when the key is first seen | UNIQUE (`fp`, `type`, `key`) |
 | `transitions` | **append-only**: `fp`, `from_status` (NULL on creation), `to_status`, `by`, `at`, `reason`, `note`, `run_id`, `evidence_seq` | `evidence_seq` = max evidence id of the fp at the move |
 | `rules` | offered and accepted prompt rules (`offered\|accepted\|declined`). `cluster_json` keeps the source fingerprints, who decided (`decided_by`: a human at the prompt, or `forge:<account>`) and, when the wording was edited, the original as `draft_text` | PK `id` |
 | `outcomes` | **append-only** (v3): how an accepted item turned out once built, as a person rated it in Forge. `fp`, `ref` (the inbox item `DW-n`), `rating` (`right|partly|wrong`), `note`, `issue_ref`, `decided_by` (`forge:<account>`), `recorded_at`. Written only by `reflect ingest`. No foreign key on `fp`: an outcome may name an item this store never saw (it is kept, and not counted in `context`) | UNIQUE (`fp`, `recorded_at`), so a replayed sync adds nothing |
 | `sources_cache` | tickets, pages and goals fetched per run; logic in WP4 | PK (`run_id`, `type`, `ref`) |
-| `sync_state` | Forge sync bookkeeping: `verdicts_cursor`; `push_seq:<fp>` (evidence id at last push); `outbox:last` (ids actually sent); `verdict:<fp>@<decided_at>` (idempotency). See `docs/contracts/forge-mcp-2.md` | PK `key` |
+| `sync_state` | Forge sync bookkeeping: `verdicts_cursor`; `trust_through` (the last transition id the trust replay read); `push_seq:<fp>` (evidence id at last push); `outbox:last` (ids actually sent); `verdict:<fp>@<decided_at>` (idempotency). See `docs/contracts/forge-mcp-2.md` | PK `key` |
 
-Append-only is enforced twice. Triggers abort any UPDATE or DELETE on `evidence`, `transitions` and `outcomes`, and a
-test greps the sources for such statements on the first two.
+Append-only is enforced twice. Triggers abort any UPDATE or DELETE on `evidence`, `transitions`, `outcomes` and
+`trust_events`, and a test greps the sources for such statements on the first two.
 
 ## Reflection (`reflect`)
 
@@ -50,7 +57,8 @@ The seam is the `dowser_reflect_sync` Forge tool (additive tool 7 of forge-mcp-2
 `forge/src/core/types.mjs`). Like every Forge tool the skill never calls it: the agent does, and the CLI prints and
 reads the payloads.
 
-- `reflect export` prints `{project_key, rules_json?, more?}`, the tool's arguments: the rules in state `offered`,
+- `reflect export` prints `{project_key, rules_json?, trust_json?, more?}`, the tool's arguments: `trust_json` is the
+  per-slice trust (`trust` below) with its newest 50 events, omitted when no slice has history; the rules in state `offered`,
   oldest first, at most 50, each `{id, lens, text, titles?, offered_at}` with at most 10 titles. It writes nothing. It
   does not create offers (`rules offer` does, once, in the triage dialog), so run `rules offer` first. `rules_json` is
   omitted when nothing is offered; the call is still made, because decisions and outcomes come back in its answer.
@@ -62,17 +70,42 @@ reads the payloads.
   draft on accept. A rule that is unknown or no longer `offered` is skipped, so a replay and a late decision for a rule
   the runner already settled change nothing. Each outcome is one `outcomes` row; `outcomes_seen` counts the response's
   outcomes, `outcomes_added` the new ones.
-- `context` gains `outcomes: {right, partly, wrong}` per lens: the latest rating of each of the lens's items that
-  has one. It is omitted when the lens has none. `show <fp>` lists the item's outcome rows (omitted when none).
+- `context` gains `outcomes: {right, partly, wrong, notes?}` per lens: the latest rating of each of the lens's items
+  that has one, and up to 5 of those ratings' notes (`{title, rating, note}`, newest first, each clipped to 300
+  characters). It is omitted when the lens has none. `near` rows carry the person's `reason` and `note` (clipped). `show <fp>` lists the item's outcome rows (omitted when none).
   `status` is unchanged.
 - A verdict `note` on an `accepted` or `snoozed` verdict is stored on the transition and on the card, like any other.
 
 `runs.lenses_json` holds one record per lens:
-`{state: ran|skipped|partial, reason?, emitted?, verified?, dropped?, truncated?}`. A skipped or partial
-lens needs a reason. When `truncated > 0`, `status` reports "top N of M", where N = `emitted` and
-M = `emitted + truncated`.
+`{state: ran|skipped|partial, reason?, emitted?, verified?, dropped?, truncated?, ranked?, reserve?, reserve_titles?}`.
+A skipped or partial lens needs a reason. `ranked`, `reserve` and `reserve_titles` are the store's own slot
+allocation, which `run finish` writes (the agent never counts them). When `reserve > 0`, `status` reports "top N of
+M" with N = `ranked` and M = `ranked + reserve`; a record from before v6 that only has `truncated > 0` keeps the old
+reading (N = `emitted`, M = `emitted + truncated`).
 
-## Proposal record (`dowser-proposal/1`)
+## Budget, score and trust (scan-finding/1)
+
+- **Score.** `propose` fills `effort.score` from `size` (XS 1, S 2, M 4, L 7, XL 10) unless the judge set it, `risk`
+  from `delivery_risk.blast` (low 2, medium 5, high 8) unless the judge set it, `category` from the lens
+  (`model.mjs` `LENS_CATEGORY`) unless the judge set it, then `score` and `score_parts` with `scan-score/1`
+  (`lib/scan-score.mjs`, a copy of the registry's helper). A card without `impact` is unscored: `score` absent.
+- **Prediction.** `propose` records `predicted_verdict`, `predicted_why` and `predicted_by` before anyone sees the
+  card (`lib/predict.mjs`): the judge's verdict, else the closest decided precedent's (same lens, a shared anchor or
+  two topic tokens; accepted -> accept, rejected -> reject, snoozed -> defer), else `defer`. `predicted_why` names
+  that precedent with its reason and note; `predicted_by` is `dowser-<lens>@<lens_version>:<model>` (`:memory` when
+  the store derived it). Refreshed only while the card is a `candidate`, like the card text.
+- **Budget.** `verify` ends with `lib/budget.mjs` `allocateRun` over the run's verified cards: each lens's top card is
+  its MVP (`mvp` 1, `mvp_rule` `top-score`), the remaining slots go by score across lenses with at most the pack's
+  `budget` (4) per lens and 16 per run (`--per-lens`, `--per-run`), and every other card is `band` `reserve`. Order:
+  score desc (unscored last), confidence, evidence count, fp. A re-verify re-allocates.
+- **Trust.** `lib/trust.mjs` replays the person's decisions (`human:`/`forge:` moves to accepted, rejected, snoozed
+  on cards with a prediction) per slice: technical slices start at L1 (contract start capped at the ceiling), product at L0; L0 -> L1 at >= 90 % agreement over the last 20 (min 20); a person's reject
+  of a card `pretriaged_by: machine:dowser` drops the slice one level and resets its window. Ceiling L1 for every
+  slice. Each change is a `trust_events` row. `ingest-verdicts` and `move` sync it and print `trust_events`;
+  `trust [--slice]` reports it; `pretriage --run` is the L1 gate (marks ranked cards predicted `accept` in L1 slices,
+  no status move). `model.DECIDER_GUARDS` is unchanged: `verified -> accepted` stays human-only.
+
+## Proposal record (`dowser-proposal/2`)
 
 - **Identity:** `fp`, `lens` (`opportunity|ux-friction|doc-drift|security-cra`), `kind`, `topic`, and
   `anchors[]`.
@@ -93,6 +126,12 @@ M = `emitted + truncated`.
 - **Provenance:** `provenance{lens_version, model?, harness?, run_id?, focus?}`. `propose` always stamps
   `run_id` from `--run`, so the agent may omit it. A line carrying a different `run_id` is overwritten, not
   refused, and that line's output gets a `note`. `model`, `harness` and `focus` default from the run.
+- **scan-finding/1 (judge):** `impact?` (1-10) with `impact_why`, `risk?` (1-10), `category?`
+  (`technical|product`), `predicted_verdict?` (`accept|reject|defer`) with `predicted_why?`, `effort.score?` (1-10).
+- **scan-finding/1 (store):** `score?`, `score_parts?` (`{impact, confidence_w, effort_div, risk_factor, formula}`),
+  `band?` (`ranked|reserve`), `mvp?` (`true`, else omitted), `mvp_rule?`, `mvp_why?`, `predicted_by?`,
+  `pretriaged_by?` (`machine:dowser`). Store-computed: a propose line that carries one is refused
+  (`store-computed-field:<key>`); a pushed record carries them (wire mode).
 - **Triage:** `status`, `reason?`, `note?`, `merged_into?`, `external_ref?`, `external_url?`,
   `decided_by` and `decided_at`. These are store-owned, so a propose line that carries one is
   invalid. `external_ref` is the Dowser inbox item (`DW-12`) and `external_url` links to it.
@@ -134,6 +173,7 @@ An illegal move, a stale `--from`, or an unknown fp is refused with exit 2. Stdo
 - `forge:<jira-user>` for verdicts pulled from Jira.
 - `skill:dowser` and `skill:dowser-verify` for the store's own moves (creation, resurfacing, verify);
   `skill:dowser-sync` for moves the Forge ingest makes on its own (push results).
+- `machine:dowser` decides no move: it is only the `pretriaged_by` mark of the L1 gate.
 - A decider name may contain `:` so raw Atlassian account ids (`forge:712020:uuid`) pass; the kind is the text before the FIRST colon.
 
 `model.DECIDER_GUARDS` restricts some moves by decider kind. `verified -> accepted` is allowed only for
@@ -157,7 +197,8 @@ fp = sha256(lens | kind | normTopic | sortedUniqueNormAnchors.join(',')).hex[0:1
   fragments are stripped, and `#symbol` is kept.
 - Title and body wording never enter the fingerprint.
 
-The near tier (`similar`, merge judgement) is WP2's.
+The near tier (`similar`, merge judgement) is WP2's: same-lens items sharing an anchor or two topic tokens, and
+other-lens items sharing an anchor (`cross_lens: true`).
 
 ## propose outcomes
 
@@ -194,7 +235,8 @@ such `code`/`doc` quote must be a whitespace-normalized substring of the file at
 working tree.
 
 - With a `:line` hint, the result is `near-line` (within ±30 lines) or `in-file` (anywhere in the file).
-- If all quotes are found, the item becomes `verified`.
+- If all quotes are found, the item becomes `verified`. After the moves, `verify` allocates the run's slots
+  ("Budget, score and trust" above) and prints the result as `allocation`.
 - If any quote is missing, the item becomes `dropped` with note `verify-failed:<ref>`.
 - Other evidence types are reported as `unchecked`. The agent judges them.
 

@@ -12,7 +12,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DECIDER_RE, DowserError, LENSES, STATUSES, isOneOf } from './model.mjs';
 import { dowserHome, isInside } from './paths.mjs';
-import { outcomeCounts, outcomesOf } from './reflect.mjs';
+import { outcomeCounts, outcomeNotes, outcomesOf } from './reflect.mjs';
+import { topicTokens } from './predict.mjs';
 import { directionFor } from './direction.mjs';
 import { clean, evidenceOf, getProposal, getRun, now, transitionsOf, tx } from './store.mjs';
 
@@ -31,6 +32,11 @@ const NEAR_STATUSES = ['candidate', 'verified', 'pushed', 'snoozed', 'rejected']
 const SUPPRESSED_STATUSES = ['rejected', 'snoozed', 'merged'];
 export const NEAR_CAP = 40;
 export const EXEMPLAR_CAP = 5;
+/** Outcome notes `context` carries per lens (newest first), and the length a note is clipped to there. */
+export const OUTCOME_NOTES_CAP = 5;
+export const NOTE_CAP = 300;
+/** @param {string} s @param {number} n */
+const clip = (s, n) => { const t = s.replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
 /** Items of one (lens, reason, token) needed before a rule is offered (D5). */
 export const RULE_THRESHOLD = 3;
 
@@ -99,17 +105,8 @@ export function loadLensPack(lens, dir = LENS_DIR) {
 
 // ------------------------------------------------------------------------------------------- shared
 
-/** Short words that carry no topic on their own. */
-const STOP = new Set(['and', 'the', 'for', 'with', 'from', 'into', 'not', 'are', 'was', 'its', 'via', 'per', 'out', 'all', 'any', 'has', 'can', 'use', 'when', 'that', 'this', 'than', 'then', 'onto', 'over', 'non']);
-
-/**
- * The tokens of a normalized (kebab) topic that can carry meaning: 3+ characters, not a stop word, de-duplicated.
- * @param {string} topic
- * @returns {string[]}
- */
-export function topicTokens(topic) {
-  return [...new Set(String(topic).split('-').filter((t) => t.length >= 3 && !STOP.has(t)))];
-}
+/** topicTokens lives in predict.mjs (propose's precedent search uses it too); re-exported here. */
+export { topicTokens } from './predict.mjs';
 
 /** @param {Row} r @param {string} k */
 const parsed = (r, k) => (r[k] === null || r[k] === undefined ? undefined : JSON.parse(r[k]));
@@ -118,9 +115,11 @@ const parsed = (r, k) => (r[k] === null || r[k] === undefined ? undefined : JSON
 
 /**
  * The context pack for one lens in one run: what the lens must not re-propose, what it already knows, the
- * runner's accepted rules and the accepted exemplars, plus the pack's version, kinds and budget. `outcomes`
- * counts how the lens's accepted items fared once built ({right, partly, wrong}, latest rating per item); omitted
- * when none was recorded.
+ * runner's accepted rules and the accepted exemplars, plus the pack's version, kinds and budget. `near` rows carry
+ * the person's `reason` and `note` (clipped to NOTE_CAP) when the item has them. `outcomes` counts how the lens's
+ * accepted items fared once built ({right, partly, wrong}, latest rating per item) and carries up to
+ * OUTCOME_NOTES_CAP of their notes (`notes: [{title, rating, note}]`, newest first, omitted when none); `outcomes`
+ * is omitted when none was recorded.
  * `since_sha` is the run's base_sha on an incremental run (omitted otherwise). `direction` is what the team set
  * for this lens in Forge Settings, as `ingest-direction` cached it on the run (omitted when there is none); a
  * local `focus` applies on top of it for this run. Absent values are omitted.
@@ -137,10 +136,14 @@ export function contextPack(db, { runId, lens, focus, lensDir }) {
     `SELECT fp FROM proposals WHERE lens = ? AND status IN (${SUPPRESSED_STATUSES.map(() => '?').join(',')}) ORDER BY fp`,
   ).all(lens, ...SUPPRESSED_STATUSES)).map((r) => String(r.fp));
 
+  // a held-back item carries the person's reason and note: titles alone are not memory (scan-finding/1)
   const near = /** @type {Row[]} */ (db.prepare(
-    `SELECT fp, title, topic, anchors_json, status FROM proposals WHERE lens = ? AND status IN (${NEAR_STATUSES.map(() => '?').join(',')})
+    `SELECT fp, title, topic, anchors_json, status, reason, note FROM proposals WHERE lens = ? AND status IN (${NEAR_STATUSES.map(() => '?').join(',')})
      ORDER BY updated_at DESC, fp LIMIT ?`,
-  ).all(lens, ...NEAR_STATUSES, NEAR_CAP)).map((r) => ({ fp: r.fp, title: r.title, topic: r.topic, anchors: parsed(r, 'anchors_json'), status: r.status }));
+  ).all(lens, ...NEAR_STATUSES, NEAR_CAP)).map((r) => /** @type {Row} */ (clean({
+    fp: r.fp, title: r.title, topic: r.topic, anchors: parsed(r, 'anchors_json'), status: r.status,
+    reason: r.reason, note: typeof r.note === 'string' ? clip(r.note, NOTE_CAP) : undefined,
+  })));
 
   const rules = /** @type {Row[]} */ (db.prepare("SELECT id, text FROM rules WHERE lens = ? AND state = 'accepted' ORDER BY decided_at, id").all(lens))
     .map((r) => ({ id: String(r.id), text: String(r.text) }));
@@ -153,9 +156,11 @@ export function contextPack(db, { runId, lens, focus, lensDir }) {
     evidence_types: /** @type {Row[]} */ (db.prepare('SELECT DISTINCT type FROM evidence WHERE fp = ? ORDER BY type').all(r.fp)).map((e) => String(e.type)),
   }));
 
+  const counts = outcomeCounts(db, lens);
+  const notes = counts ? outcomeNotes(db, lens, OUTCOME_NOTES_CAP, NOTE_CAP) : [];
   return /** @type {Row} */ (clean({
     lens, lens_version: pack.version, kinds: pack.kinds, budget: pack.budget, suppressed, near, rules, exemplars,
-    outcomes: outcomeCounts(db, lens),
+    outcomes: counts ? { ...counts, ...(notes.length ? { notes } : {}) } : undefined,
     since_sha: run.mode === 'incremental' ? run.base_sha : undefined,
     focus: focus ?? run.focus,
     direction: directionFor(db, runId, lens),
@@ -166,8 +171,10 @@ export function contextPack(db, { runId, lens, focus, lensDir }) {
 
 /**
  * The near tier of the fingerprint (D3): items of the same lens that share at least one normalized anchor or
- * at least two topic tokens with `fp`, any status except `dropped`. Each hit states its overlap. The agent
- * judges whether a hit is the same work; nothing is merged here.
+ * at least two topic tokens with `fp`, plus items of ANOTHER lens that share at least one normalized anchor (those
+ * carry `lens` and `cross_lens: true`: one lens's card can be the union of another lens's cards on the same code),
+ * any status except `dropped`. Each hit states its overlap. The agent judges whether a hit is the same work;
+ * nothing is merged here.
  * @param {Db} db
  * @param {string} fp
  * @returns {Row}
@@ -180,14 +187,16 @@ export function similar(db, fp) {
   /** @type {Row[]} */
   const hits = [];
   for (const r of /** @type {Row[]} */ (db.prepare(
-    "SELECT fp, title, topic, anchors_json, status, reason, merged_into, decided_by, decided_at FROM proposals WHERE lens = ? AND fp <> ? AND status <> 'dropped' ORDER BY updated_at DESC, fp",
-  ).all(self.lens, fp))) {
+    "SELECT fp, lens, title, topic, anchors_json, status, reason, merged_into, decided_by, decided_at FROM proposals WHERE fp <> ? AND status <> 'dropped' ORDER BY updated_at DESC, fp",
+  ).all(fp))) {
+    const cross = r.lens !== self.lens;
     const theirAnchors = /** @type {string[]} */ (parsed(r, 'anchors_json'));
     const sharedAnchors = theirAnchors.filter((a) => anchors.has(a));
     const sharedTokens = topicTokens(String(r.topic)).filter((t) => tokens.has(t));
-    if (sharedAnchors.length < 1 && sharedTokens.length < 2) continue;
+    if (cross ? sharedAnchors.length < 1 : sharedAnchors.length < 1 && sharedTokens.length < 2) continue;
     hits.push(/** @type {Row} */ (clean({
-      fp: r.fp, title: r.title, topic: r.topic, anchors: theirAnchors, status: r.status, reason: r.reason,
+      fp: r.fp, lens: cross ? r.lens : undefined, cross_lens: cross ? true : undefined,
+      title: r.title, topic: r.topic, anchors: theirAnchors, status: r.status, reason: r.reason,
       merged_into: r.merged_into, decided_by: r.decided_by, decided_at: r.decided_at,
       overlap: clean({ anchors: sharedAnchors.length ? sharedAnchors : undefined, topic_tokens: sharedTokens.length ? sharedTokens : undefined }),
     })));
@@ -196,8 +205,8 @@ export function similar(db, fp) {
   return { fp, lens: self.lens, title: self.title, topic: self.topic, similar: hits };
 }
 
-/** Anchors weigh more than wording. @param {Row} h */
-const score = (h) => (h.overlap.anchors?.length ?? 0) * 10 + (h.overlap.topic_tokens?.length ?? 0);
+/** Same-lens hits first; inside each, anchors weigh more than wording. @param {Row} h */
+const score = (h) => (h.cross_lens ? 0 : 1000) + (h.overlap.anchors?.length ?? 0) * 10 + (h.overlap.topic_tokens?.length ?? 0);
 
 // ------------------------------------------------------------------------------------------- show / list
 

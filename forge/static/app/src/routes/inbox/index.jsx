@@ -125,7 +125,7 @@ export default function Inbox({ context }) {
     <main className={`dwr-root${wide ? ' dwr-root--wide' : ''}`}>
       <Toolbar
         inboxes={data.inboxes} decided={verdicts.decided} projectKey={data.projectKey} onProject={data.setProjectKey} status={data.status}
-        onStatus={data.setStatus} lens={data.lens} onLens={data.setLens} onHelp={() => setDialog({ kind: 'help', refs: [] })}
+        onStatus={data.setStatus} lens={data.lens} onLens={data.setLens} pretriaged={data.pretriaged} onPretriaged={data.setPretriaged} onHelp={() => setDialog({ kind: 'help', refs: [] })}
       />
       <h1 className="dwr-visually-hidden">Dowser inbox</h1>
 

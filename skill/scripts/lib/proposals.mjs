@@ -8,6 +8,7 @@ import {
 } from './model.mjs';
 import { evidenceKey, fingerprint, normalizeAnchor, normalizeTopic } from './fingerprint.mjs';
 import { SYSTEM_DECIDER, clean, localDate, now, requireRunning, sql, tx } from './store-core.mjs';
+import { closestPrecedent, predictionOf, scoreOf } from './predict.mjs';
 
 /** @import { Db, Row, EvidenceSnapshot, ProposeResult } from './store-core.mjs' */
 
@@ -82,6 +83,7 @@ export function getProposal(db, fp) {
     else out[k] = v;
   }
   delete out.asserted;
+  if (out.mvp === 1) out.mvp = true; else delete out.mvp;
   out.evidence = evidenceOf(db, fp).map(({ type, ref, quote, url }) => clean({ type, ref, quote, url }));
   return out;
 }
@@ -176,11 +178,19 @@ export function propose(db, runId, input, { kinds }) {
     ? `provenance.run_id ${c.provenance.run_id} replaced by ${runId}` : undefined;
   const provenance = clean({ ...c.provenance, run_id: runId, model: c.provenance.model ?? run.model, harness: c.provenance.harness ?? run.harness, focus: c.provenance.focus ?? run.focus });
   const anchors = [...new Set(c.anchors.map(normalizeAnchor).filter(Boolean))].sort();
+  const s = scoreOf(c);
   const card = {
-    title: c.title, rationale: c.rationale, body: c.body, effort_json: json(c.effort), confidence: c.confidence,
+    title: c.title, rationale: c.rationale, body: c.body, effort_json: json(s.effort), confidence: c.confidence,
     confidence_why: c.confidence_why, doc_impact_json: json(c.doc_impact), delivery_risk_json: json(c.delivery_risk),
     provenance_json: json(provenance), artifacts_json: json(c.artifacts),
+    impact: sql(c.impact), impact_why: sql(c.impact_why), risk: sql(s.risk), category: s.category,
+    score: sql(s.score), score_parts_json: json(s.score_parts),
+    // shadow mode: the prediction is recorded now, before any person sees the card
+    ...predictionOf(c, closestPrecedent(db, { fp, lens: c.lens, topic: normalizeTopic(c.topic), anchors }), provenance?.model),
   };
+  const SCORED = ['impact', 'impact_why', 'risk', 'category', 'score', 'score_parts_json', 'predicted_verdict', 'predicted_why', 'predicted_by'];
+  /** @type {(import('node:sqlite').SQLInputValue)[]} */
+  const scored = SCORED.map((k) => /** @type {any} */ (card)[k]);
 
   return tx(db, () => {
     const at = now();
@@ -204,17 +214,18 @@ export function propose(db, runId, input, { kinds }) {
       return added;
     };
     const refreshCard = () => db.prepare(`UPDATE proposals SET title = ?, rationale = ?, body = ?, effort_json = ?, confidence = ?,
-        confidence_why = ?, doc_impact_json = ?, delivery_risk_json = ?, provenance_json = ?, artifacts_json = ?, updated_at = ? WHERE fp = ?`)
+        confidence_why = ?, doc_impact_json = ?, delivery_risk_json = ?, provenance_json = ?, artifacts_json = ?,
+        ${SCORED.map((k) => `${k} = ?`).join(', ')}, updated_at = ? WHERE fp = ?`)
       .run(card.title, card.rationale, card.body, card.effort_json, card.confidence, card.confidence_why,
-        card.doc_impact_json, card.delivery_risk_json, card.provenance_json, card.artifacts_json, at, fp);
+        card.doc_impact_json, card.delivery_risk_json, card.provenance_json, card.artifacts_json, ...scored, at, fp);
 
     if (!existing) {
       db.prepare(`INSERT INTO proposals (fp, lens, kind, topic, anchors_json, title, rationale, body, effort_json, confidence,
-          confidence_why, doc_impact_json, delivery_risk_json, provenance_json, artifacts_json, status, first_run_id, last_run_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'candidate', ?, ?, ?, ?)`)
+          confidence_why, doc_impact_json, delivery_risk_json, provenance_json, artifacts_json, ${SCORED.join(', ')}, status, first_run_id, last_run_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SCORED.map(() => '?').join(', ')}, 'candidate', ?, ?, ?, ?)`)
         .run(fp, c.lens, c.kind, normalizeTopic(c.topic), JSON.stringify(anchors), card.title, card.rationale, card.body,
           card.effort_json, card.confidence, card.confidence_why, card.doc_impact_json, card.delivery_risk_json,
-          card.provenance_json, card.artifacts_json, runId, runId, at, at);
+          card.provenance_json, card.artifacts_json, ...scored, runId, runId, at, at);
       const added = addEvidence();
       appendTransition(db, { fp, from: undefined, to: 'candidate', by: SYSTEM_DECIDER, at, runId });
       return /** @type {ProposeResult} */ (clean({ result: 'created', fp, added, status: 'candidate', note }));

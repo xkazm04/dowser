@@ -16,6 +16,11 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import { QUOTED_TYPES, isOneOf } from './model.mjs';
 import { parseRef, squash } from './fingerprint.mjs';
 import { assertedEvidence, candidatesOfRun, move, requireRunning } from './store.mjs';
+import { allocateRun } from './budget.mjs';
+import { loadLensPack } from './memory.mjs';
+
+/** A lens pack's `budget`, or undefined when the pack cannot be read (the allocation then uses its default). */
+const packBudget = (/** @type {string} */ lens) => { try { return loadLensPack(lens).budget; } catch { return undefined; } };
 
 export const LINE_WINDOW = 30;
 export const VERIFY_DECIDER = 'skill:dowser-verify';
@@ -64,13 +69,16 @@ export function findQuote(root, ref, quote) {
 }
 
 /**
- * Verifies every `candidate` the run touched and moves each to `verified` or `dropped`.
+ * Verifies every `candidate` the run touched and moves each to `verified` or `dropped`, then allocates the run's
+ * verified cards to ranked and reserve slots (budget.mjs allocateRun; `perLens` / `perRun` override the packs'
+ * budget and the run cap of 16). `allocation` is that result.
  * @param {import('./store.mjs').Db} db
  * @param {string} root the repo root (its current working tree is read)
  * @param {string} runId a running run
- * @returns {{run: string, verified: number, dropped: number, results: FpResult[]}}
+ * @param {{perLens?: number, perRun?: number}} [budget]
+ * @returns {{run: string, verified: number, dropped: number, results: FpResult[], allocation: Record<string, any>}}
  */
-export function verifyRun(db, root, runId) {
+export function verifyRun(db, root, runId, budget = {}) {
   requireRunning(db, runId);
   const cached = db.prepare('SELECT 1 FROM sources_cache WHERE run_id = ? AND type = ? AND ref = ?');
   /** @type {FpResult[]} */
@@ -110,5 +118,6 @@ export function verifyRun(db, root, runId) {
     verified: results.filter((r) => r.result === 'verified').length,
     dropped: results.filter((r) => r.result === 'dropped').length,
     results,
+    allocation: allocateRun(db, runId, { capOf: packBudget, ...budget }),
   };
 }

@@ -14,7 +14,7 @@ Dowser Forge inbox in Jira when it is connected.
   - `lenses/` holds the four lens packs (versioned frontmatter, plus prompt and evidence rules).
   - `scripts/dowser.mjs` is the single CLI and the only writer of the store. Its modules are in
     `scripts/lib/` and its tests in `scripts/tests/`.
-  - `schema/dowser-proposal-1.schema.json` is the proposal wire format.
+  - `schema/dowser-proposal-2.schema.json` is the proposal wire format (scan-finding/1 fields; `-1` kept readable).
   - `install.mjs` installs the skill: `--harness claude|codex [--scope user|project] [--dev-link] [--dry-run]`.
 - `tools/` holds development tools: the mock Forge MCP server, and `forge-live-e2e.mjs`, which drives
   the live Forge app through a headless Claude Code run.

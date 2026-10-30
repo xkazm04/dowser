@@ -95,6 +95,16 @@ const storedRecord = (record) => {
 };
 
 /**
+ * The sortable / filterable copies of the record's scan-finding/1 fields (migrations v019-v022): score, band, mvp
+ * (1 or NULL) and pretriaged_by. Absent on the record -> NULL; never 0.
+ * @param {Record<string, any>} record
+ * @returns {unknown[]}
+ */
+const rankCols = (record) => [
+  typeof record.score === 'number' ? record.score : null, sqlv(record.band), record.mvp === true ? 1 : null, sqlv(record.pretriaged_by),
+];
+
+/**
  * `dowser_proposals_push`.
  * @param {Deps} deps
  * @param {Record<string, unknown>} args
@@ -146,8 +156,9 @@ async function fileOne(deps, o) {
     try {
       await db.exec(
         `INSERT INTO proposals (id, ref, project_key, fp, status, lens, title, confidence, record_json, evidence_count, evidence_types,
-          first_run_id, last_run_id, first_seen, last_push_at, reopened, change_kind) VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, 0, '', ?, ?, ?, ?, 0, 'new')`,
-        [n, ref, o.projectKey, o.fp, o.record.lens, o.record.title, o.record.confidence, storedRecord(o.record), o.runId, o.runId, o.at, o.at],
+          first_run_id, last_run_id, first_seen, last_push_at, reopened, change_kind, score, band, mvp, pretriaged_by)
+          VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, 0, '', ?, ?, ?, ?, 0, 'new', ?, ?, ?, ?)`,
+        [n, ref, o.projectKey, o.fp, o.record.lens, o.record.title, o.record.confidence, storedRecord(o.record), o.runId, o.runId, o.at, o.at, ...rankCols(o.record)],
       );
       const u = await uniteEvidence(db, n, o.record.evidence, { runId: o.runId, headSha: o.headSha, at: o.at });
       await db.exec('UPDATE proposals SET evidence_count = ?, evidence_types = ? WHERE id = ?', [u.count, u.types.join(','), n]);
@@ -174,9 +185,10 @@ async function updateOne(deps, p, o) {
   const grew = u.added > 0;
   // The card is refreshed; the item moves to this push's group only when its evidence grew (F8 run diff).
   await db.exec(
-    `UPDATE proposals SET lens = ?, title = ?, confidence = ?, record_json = ?, evidence_count = ?, evidence_types = ?
+    `UPDATE proposals SET lens = ?, title = ?, confidence = ?, record_json = ?, evidence_count = ?, evidence_types = ?,
+      score = ?, band = ?, mvp = ?, pretriaged_by = ?
       ${grew ? ", last_run_id = ?, last_push_at = ?, change_kind = 'grew'" : ''} WHERE id = ?`,
-    [o.record.lens, o.record.title, o.record.confidence, storedRecord(o.record), u.count, u.types.join(','),
+    [o.record.lens, o.record.title, o.record.confidence, storedRecord(o.record), u.count, u.types.join(','), ...rankCols(o.record),
       ...(grew ? [o.runId, o.at] : []), p.id],
   );
 

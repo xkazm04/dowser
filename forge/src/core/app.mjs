@@ -185,7 +185,8 @@ export const RESOLVERS = {
   'inbox.list': async (d, p, _, __, acc) => {
     const project = optStr(p, 'project_key');
     if (project) await acc.inbox(project);
-    return listInbox(d.db, { project_key: project, status: optStr(p, 'status'), lens: optStr(p, 'lens'), cursor: optStr(p, 'cursor'), visible: await acc.visibleKeys() });
+    if (p.pretriaged !== undefined && typeof p.pretriaged !== 'boolean') throw new AppError('bad-input', 'pretriaged must be true or false');
+    return listInbox(d.db, { project_key: project, status: optStr(p, 'status'), lens: optStr(p, 'lens'), cursor: optStr(p, 'cursor'), pretriaged: p.pretriaged === true || undefined, visible: await acc.visibleKeys() });
   },
   'proposal.get': async (d, p, _, __, acc) => { await acc.proposal(needStr(p, 'ref')); return getProposal(d, needStr(p, 'ref')); },
   'verdict.accept': async (d, p, id, via, acc) => {
@@ -284,7 +285,7 @@ export function runResolver(deps, key, payload, accountId, via) {
  */
 const brief = (c) => omitAbsent({
   ref: c.ref, fp: c.fp, project_key: c.project_key, status: c.status, lens: c.lens, title: c.title, rationale: c.rationale,
-  confidence: c.confidence, effort: c.effort?.size, evidence_count: c.evidence.length,
+  confidence: c.confidence, effort: c.effort?.size, score: c.score, band: c.band, mvp: c.mvp, evidence_count: c.evidence.length,
   evidence_types: [...new Set(c.evidence.map((e) => e.type))].sort(), reopened: c.reopened, issue_ref: c.issue_ref,
 });
 

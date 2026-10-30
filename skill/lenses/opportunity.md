@@ -1,6 +1,6 @@
 ---
 id: opportunity
-version: 0.2.1
+version: 0.3.0
 name: Opportunity
 kinds: [expose-capability, extend-capability, missing-capability, goal-gap, workflow-shortcut]
 sources: [code, docs, git, tickets, goals]
@@ -121,7 +121,7 @@ unconnected, and the lens report says so.
 
 ## Ranking
 
-Fill the budget in this order, and never by how finished the code is:
+Rank in this order, and never by how finished the code is:
 
 1. **Demand tier** of the candidate's theme in the window: strong (10 or more tickets, or 3 or
    more components), medium (5-9), weak (1-4), none. A goal-gap card ranks as medium when its
@@ -133,6 +133,30 @@ Fill the budget in this order, and never by how finished the code is:
 
 A half-built, flag-gated capability with weak demand loses to a strong theme the code serves
 in part. Name the losers in the lens report: `ranked <topic> (<n> tickets) over <topic> (<n>)`.
+Write every candidate that has evidence: the store keeps the budget's 4 ranked slots by score
+(the lens's top card is its MVP) and files the rest in `reserve`, named in the summary. The
+order above reaches the store through `impact`.
+
+## Impact, risk and the predicted verdict
+
+Set `impact` (1-10) from the **demand tier**, with `impact_why` naming the tier, the ticket
+count and the window in one line ("strong: 14 tickets in 90 days, 3 components"):
+
+| Demand tier | impact |
+| --- | --- |
+| strong (10+ tickets, or 3+ components) | 8 |
+| medium (5-9), or a goal-gap on an active goal | 6 |
+| weak (1-4) | 4 |
+| none (unconnected: a capability-exists claim) | 2 |
+
+Add 1 when the theme serves an ingested goal or the direction notes' outcome (at most 9). Code
+readiness never raises impact: it lowers `effort`. `risk` is the risk of making the change
+(exposing an internal call behind a flag 2, a new public route 5, a change to billing or auth 8);
+omit it and the store reads `delivery_risk.blast`. `category` is `product` (the default for this
+lens). Before writing a card, read `context`'s `near` (with each reason and note) and `outcomes`
+(with notes): set `predicted_verdict` and a `predicted_why` that names the closest precedent
+("an export card was accepted and rated right"). With no precedent, omit both; the store
+records `defer`.
 
 ## Evidence rules
 

@@ -1,9 +1,11 @@
 # The card - one shape for every proposal
 
-Every proposal is one JSON line in the `dowser-proposal/1` shape. You write the candidate
-fields below. `dowser.mjs` computes `fp` and owns every triage field (`status`, `reason`,
-`note`, `merged_into`, `external_ref`, `external_url`, `decided_by`, `decided_at`). Never write
-those yourself.
+Every proposal is one JSON line in the `dowser-proposal/2` shape (`schema/dowser-proposal-2.schema.json`;
+the scan-finding/1 fields of `docs/contracts/scan-finding-1.md`). You write the candidate fields
+below. `dowser.mjs` computes `fp` and owns every triage field (`status`, `reason`, `note`,
+`merged_into`, `external_ref`, `external_url`, `decided_by`, `decided_at`) and every computed
+field (`score`, `score_parts`, `band`, `mvp`, `mvp_rule`, `mvp_why`, `predicted_by`,
+`pretriaged_by`). Never write those yourself: a line that carries one is refused.
 
 **Absent values: omit the key.** Never write `null`. Never write `0` or `""` for something you
 did not measure.
@@ -26,6 +28,18 @@ did not measure.
 | `doc_impact` | Docs or pages that must change when it ships (repo paths or page refs). Omit the key if none; do not write `[]` for "not checked". |
 | `delivery_risk` | `{blast: low|medium|high, bus_factor?}`. Include `bus_factor` only when you counted it (below). |
 | `provenance` | `{lens_version, model, harness, focus?}`: the pack's `version`, your model id, the harness, and `focus` on a focused run. You may omit `run_id`: `propose` stamps it from `--run`, and overwrites a different one with a `note`. |
+| `impact` | 1-10, from the lens pack's "Impact" table: defects, how bad if left (10 = data loss, breach, an outage on a main path); opportunities, the value if done. Omit it only when you cannot judge it: the card is then **unscored** and ranks after every scored card. |
+| `impact_why` | One line, at most 200 characters: the reason for the number. Required with `impact`. |
+| `risk` | 1-10, the risk of **making the change** (blast radius x irreversibility), never the severity. Omit it and the store reads `delivery_risk.blast` (low 2, medium 5, high 8). |
+| `category` | `technical` (the codebase's own quality) or `product` (what users get). Omit it for the lens default: doc-drift and security-cra `technical`, opportunity and ux-friction `product`. |
+| `predicted_verdict` | `accept`, `reject` or `defer`: what you expect the person to decide, before they see it. Read `context`'s `near` (reasons and notes) and `outcomes` (notes) first. Omit it with no precedent: the store records `defer`. |
+| `predicted_why` | At most 300 characters, naming the closest precedent ("SEC-12 already tracks it: rejected as already-known"). The store appends the precedent it found when your text does not name it. |
+
+`effort` may also carry `score` (1-10); omit it and the store maps `size` (XS 1, S 2, M 4, L 7,
+XL 10). From impact, confidence, effort and risk the store computes `score` (`scan-score/1`,
+`lib/scan-score.mjs`) with its breakdown `score_parts`, and at `verify` it allocates the run's
+slots (`band` ranked or reserve, `mvp` on each lens's top card). You never rank by cutting: write
+every card the pack says to write.
 
 ## Title
 
@@ -165,8 +179,9 @@ Description under the rationale. Either way the full write-up is one "open <n>" 
 ### Dev mode
 
 ```
-[opportunity, M, confidence high] Export for reports that already have a CSV writer
+[opportunity, MVP, score 56.9, M, confidence high] Export for reports that already have a CSV writer
   Customers ask for CSV export; the serializer exists but no route exposes it.
+  impact 7/10 - 14 tickets in 90 days ask for it   predicted accept (an export card was accepted)
   evidence: src/export/csv.ts:41 "export function toCsv(rows: Row[]): string {"
             ticket SUP-118 (+11 more), goal G-7
   effort M 2-4d (src/export/csv.ts#toCsv, src/routes/reports.ts)  blast low  bus factor 1
@@ -180,8 +195,12 @@ Description under the rationale. Either way the full write-up is one "open <n>" 
    Customers ask for CSV export. Most of the work is already built and only needs to be
    switched on for reports.
    Size: a few days (M)   How sure: high - customer requests and the code agree
+   Worth: 7 of 10 - 14 customers asked in three months   Top pick for Opportunity
    [show evidence]
 ```
+
+A card without `impact` shows "unscored" (dev) or "Worth: not judged" (guided), never 0. A card
+in reserve is listed by title only, under "also found" (`references/guided-mode.md`).
 
 "show evidence" expands to the evidence list in plain words: "Customer request SUP-118 and 11
 more", "The code that writes CSV files (src/export/csv.ts, line 41)". No fingerprint is shown in

@@ -26,12 +26,15 @@ import { DowserError, MoveRefused, QUOTED_TYPES, REASONS, isOneOf } from './mode
 import { quoteSha } from './fingerprint.mjs';
 import * as store from './store.mjs';
 import { commitDate, commitsSince, lastChange, treeFiles } from './git.mjs';
+import { syncTrust } from './trust.mjs';
 
 /** The decider written for the moves this module makes on its own (verified -> pushed, merged-existing). */
 export const SYNC_DECIDER = 'skill:dowser-sync';
-/** The fields of a `dowser-proposal/1` record, in order (skill/schema/dowser-proposal-1.schema.json). */
+/** The fields of a `dowser-proposal/2` record, in order (skill/schema/dowser-proposal-2.schema.json). */
 export const RECORD_KEYS = /** @type {const} */ (['fp', 'lens', 'kind', 'topic', 'anchors', 'title', 'rationale', 'body',
-  'evidence', 'effort', 'confidence', 'confidence_why', 'doc_impact', 'delivery_risk', 'artifacts', 'provenance', 'status', 'reason',
+  'evidence', 'effort', 'confidence', 'confidence_why', 'doc_impact', 'delivery_risk', 'artifacts', 'provenance',
+  'category', 'impact', 'impact_why', 'risk', 'score', 'score_parts', 'band', 'mvp', 'mvp_rule', 'mvp_why',
+  'predicted_verdict', 'predicted_why', 'predicted_by', 'pretriaged_by', 'status', 'reason',
   'note', 'merged_into', 'external_ref', 'external_url', 'decided_by', 'decided_at']);
 export const PUSH_RESULTS = /** @type {const} */ (['created', 'updated', 'merged-existing', 'refused']);
 export const VERDICT_STATUSES = /** @type {const} */ (['accepted', 'rejected', 'merged', 'snoozed']);
@@ -154,7 +157,7 @@ export function outbox(db, { projectKey, runId, repoUrl, limit = PUSH_MAX, quote
 }
 
 /** The card fields a withheld quote is masked in: every text field a person reads, views included. */
-const MASKED_FIELDS = /** @type {const} */ (['title', 'rationale', 'body', 'confidence_why', 'artifacts']);
+const MASKED_FIELDS = /** @type {const} */ (['title', 'rationale', 'body', 'confidence_why', 'artifacts', 'impact_why', 'predicted_why']);
 
 /**
  * `value` with every string in it (deeply, so a view's message, alt, cells and step labels too) passed through `f`.
@@ -385,8 +388,10 @@ export function ingestVerdicts(db, doc) {
     items.push(item);
   }
   if (typeof d.cursor === 'string') setState(db, 'verdicts_cursor', d.cursor);
+  // the people's verdicts are what each slice's trust is measured against (trust.mjs)
+  const trust = syncTrust(db);
   const bad = items.filter((x) => !['applied', 'already-applied', 'in-sync'].includes(String(x.outcome))).length;
-  return { code: bad > 0 ? 1 : 0, out: store.clean({ verdicts: items, summary, cursor: typeof d.cursor === 'string' ? d.cursor : undefined }) ?? {} };
+  return { code: bad > 0 ? 1 : 0, out: store.clean({ verdicts: items, summary, cursor: typeof d.cursor === 'string' ? d.cursor : undefined, trust_events: trust.length ? trust : undefined }) ?? {} };
 }
 
 /**

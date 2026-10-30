@@ -146,17 +146,24 @@ export async function inboxSummaries(db, visible) {
   return out;
 }
 
-/** Policy order inside a group (F8): confidence desc, evidence count desc, first seen asc. */
+/**
+ * Policy order inside a group (F8, scan-finding/1): each lens's MVP first, then ranked before reserve, then the
+ * producer's stored `score` desc with unscored cards after every scored one (the inbox never recomputes a score),
+ * then the older tie-breakers: confidence desc, evidence count desc, first seen asc. Cards pushed before v019 have no
+ * score, band or mvp and keep the old order among themselves.
+ */
 const ORDER = `ORDER BY last_push_at DESC, last_run_id,
+  CASE WHEN mvp = 1 THEN 0 ELSE 1 END, CASE WHEN band = 'reserve' THEN 1 ELSE 0 END, CASE WHEN score IS NULL THEN 1 ELSE 0 END, score DESC,
   CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, evidence_count DESC, first_seen, id`;
 
 /**
  * `inbox.list` (F8): the items of one status (default `open`), newest push first, grouped by the push that
  * created, grew or reopened them; policy order inside a group. Pages of PAGE_SIZE items; `next` is an opaque
  * offset cursor. A group can continue on the next page under the same `run_id`. `visible` (core/access.mjs)
- * limits the items and the summaries to those inboxes; the dispatch door always passes it.
+ * limits the items and the summaries to those inboxes; the dispatch door always passes it. `pretriaged: true`
+ * keeps only the cards the skill's L1 trust gate pre-triaged (`pretriaged_by` set).
  * @param {Db} db
- * @param {{project_key?: string, status?: string, lens?: string, cursor?: string, visible?: string[]}} q
+ * @param {{project_key?: string, status?: string, lens?: string, cursor?: string, pretriaged?: boolean, visible?: string[]}} q
  * @returns {Promise<{inboxes: InboxSummary[], groups: InboxGroup[], next?: string}>}
  */
 export async function listInbox(db, q) {
@@ -170,6 +177,7 @@ export async function listInbox(db, q) {
   const params = [status];
   if (q.project_key) { where.push('project_key = ?'); params.push(q.project_key); }
   if (q.lens) { where.push('lens = ?'); params.push(q.lens); }
+  if (q.pretriaged) where.push('pretriaged_by IS NOT NULL');
   if (q.visible) {
     if (!q.visible.length) return { inboxes: [], groups: [] };
     where.push(`project_key IN (${q.visible.map(() => '?').join(', ')})`);

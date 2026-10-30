@@ -139,6 +139,9 @@ function Body({ projectKey }) {
         <Section id="decided" wide title="Decided rules and recorded outcomes" hint="What you already answered." r={r} empty={!d || ((d.rules ?? []).filter((x) => x.state !== 'offered').length === 0 && (d.outcomes ?? []).length === 0)} emptyText="No rule has been decided and no outcome recorded yet.">
           {d && <Decided rules={(d.rules ?? []).filter((x) => x.state !== 'offered')} outcomes={d.outcomes ?? []} />}
         </Section>
+        <Section id="trust" wide title="Trust" hint="How often the scan's predicted verdict matched yours, per kind of proposal. At level 1 a slice's top proposals skip the pre-triage in the scan and arrive marked machine pre-triaged; accepting one stays your click. One reject of a pre-triaged proposal drops the slice back to level 0." r={r} empty={!d || !d.trust || (d.trust.slices.length === 0 && d.trust.events.length === 0)} emptyText="No trust yet. It grows from your accept, reject and snooze decisions once the scan sends it.">
+          {d?.trust && <Trust trust={d.trust} />}
+        </Section>
       </div>
     </>
   );
@@ -420,6 +423,66 @@ function WhyNo({ rejects, notes }) {
           </ul>
         )}
     </>
+  );
+}
+
+/** `technical|doc-drift|-|S` -> its parts, named. */
+export function sliceParts(slice) {
+  const [category, lens, risk, size] = String(slice).split('|');
+  return { category: category === '-' ? undefined : category, lens, risk: risk === '-' ? undefined : risk, size: size === '-' ? undefined : size };
+}
+
+/** The Learning tab's Trust section: each slice's level against its ceiling, its agreement over n, then the events. */
+function Trust({ trust }) {
+  const slices = [...trust.slices].sort((a, b) => b.level - a.level || b.n - a.n || a.slice.localeCompare(b.slice));
+  const events = [...trust.events].reverse();
+  return (
+    <div className="dwr-decided">
+      <div>
+        <h4 className="dwr-h4 dwr-h4--first">Slices</h4>
+        <table className="dw-table dwr-trust">
+          <thead><tr><th scope="col">Slice</th><th scope="col">Level</th><th scope="col">Agreement</th><th scope="col">Decisions</th></tr></thead>
+          <tbody>
+            {slices.map((s) => {
+              const p = sliceParts(s.slice);
+              return (
+                <tr key={s.slice}>
+                  <th scope="row">
+                    <span className="dwr-trust__slice"><LensDot lens={p.lens} />{LENS_LABELS[p.lens] ?? p.lens}</span>
+                    <span className="dwr-need__when"> {[p.category, p.size && `size ${p.size}`, p.risk].filter(Boolean).join(' · ')}</span>
+                  </th>
+                  <td><Lozenge appearance={s.level > 0 ? 'success' : 'default'}>L{s.level}</Lozenge> <span className="dwr-muted">of {s.ceiling}</span></td>
+                  <td>{s.agreement !== undefined ? `${Math.round(s.agreement * 100)}%` : <span className="dwr-muted">none yet</span>}</td>
+                  <td>{s.n}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <h4 className="dwr-h4 dwr-h4--first">Changes</h4>
+        {events.length === 0
+          ? <p className="dwr-muted">No slice has changed level yet. A slice reaches level 1 after 20 decisions with at least 90% agreement.</p>
+          : (
+            <ul className="dwr-notes">
+              {events.map((e, i) => {
+                const p = sliceParts(e.slice);
+                return (
+                  <li key={`${e.at}:${i}`}>
+                    <div className="dwr-notes__head">
+                      <Lozenge appearance={e.to > e.from ? 'success' : 'removed'}>L{e.from} to L{e.to}</Lozenge>
+                      <LensDot lens={p.lens} /><span>{LENS_LABELS[p.lens] ?? p.lens}{p.size && <span className="dwr-muted"> · size {p.size}</span>}</span>
+                    </div>
+                    <p className="dwr-notes__text">{e.reason}</p>
+                    <div className="dwr-need__when">{formatDate(e.at)}{e.agreement !== undefined && <> · {Math.round(e.agreement * 100)}% of {e.n}</>}</div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+      </div>
+    </div>
   );
 }
 

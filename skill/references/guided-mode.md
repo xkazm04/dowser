@@ -44,6 +44,12 @@ Guided output never uses the words on the left. Say the right column instead.
 | endpoint, route, handler | "the part of the app that handles <what>" |
 | verified / dropped | "checked" / "set aside because the evidence did not hold up" |
 | candidate | "draft proposal" |
+| score, scan-score, impact 7/10 | "worth: 7 of 10" (impact), or leave the score out |
+| unscored | "worth: not judged" |
+| MVP | "top pick for <lens>" |
+| reserve, band | "also found" |
+| predicted verdict, slice, trust level, L1 | "Dowser's guess", "this kind of proposal", "how often Dowser guesses your decisions right" |
+| pretriaged_by, machine pre-triaged | "pre-sorted by Dowser" |
 
 "Merge" in triage stays, because it is the runner's own action: "this is the same as another
 proposal".
@@ -64,7 +70,16 @@ Checking security and EU Cyber Resilience Act duties: done, no proposals.
 
 - Lead with the count and what ran: "Dowser read the whole project and wrote 6 proposals. You
   kept 4, set aside 1, and 1 was the same as an existing one."
-- When something was cut: "Showing the top 4 of 7 for opportunities. The other 3 are noted."
+- When cards went to reserve: "Showing the top 4 of 7 for opportunities. The other 3 are kept
+  as 'also found': <their titles>. They go to the inbox too, folded away."
+- The top pick of a lens (its MVP): "Top pick for <lens in words>: <title>."
+- Machine pre-triage (`pretriage` marked cards): "<n> proposals of a kind you have agreed with
+  Dowser about 9 times out of 10 skipped this review and went straight to the inbox, marked as
+  pre-sorted by Dowser. You still decide each one there."
+- A trust change (`trust_events` from `ingest-verdicts` or `move`): earned - "Dowser has guessed
+  your decisions on <lens in words> proposals of this size right 9 times out of 10, so from now
+  on it may pre-sort them for you."; lost - "You turned down a proposal Dowser had pre-sorted, so
+  it will ask you about that kind again."
 - Set aside by the evidence check: "<n> proposals were set aside because the code no longer
   says what they quoted. That is the check working, not an error."
 - An earlier scan that was interrupted and has now been closed (`abandoned`): "An earlier scan of this
@@ -83,8 +98,10 @@ Checking security and EU Cyber Resilience Act duties: done, no proposals.
 ## Triage
 
 - The overview table names lenses in words ("Opportunities", "Confusing screens", "Docs",
-  "Security"), sizes in words ("a few days"), and shows no file paths or line numbers; a
-  `full` card's Description drops its `path:line` refs the same way.
+  "Security"), sizes in words ("a few days"), worth as "7 of 10" ("not judged" when unscored),
+  marks each lens's top pick, and shows no file paths or line numbers; a `full` card's
+  Description drops its `path:line` refs the same way. The reserve follows as one line: "Also
+  found (kept, not shown card by card): <titles>. Ask to see any of them."
 - Ask for a reject reason as a question, and store the code behind the answer:
 
 | Ask | Code |
@@ -115,6 +132,8 @@ Answer from `show <fp>` only, in this order, in plain words:
 | "Why this one?" | rationale + evidence |
 | "Where does it say that?" | evidence quotes, as plain sentences with their location |
 | "How big is it?" | effort size, days and basis, in words ("about 2 to 4 days, mostly in the reports area") |
+| "Why is this one first?" | its worth (impact and its reason), how sure, the size and the risk, in words: "Worth 7 of 10 because 14 customers asked, sure, a few days, low risk". Never the formula. |
+| "What did Dowser expect me to say?" | `predicted_verdict` and `predicted_why`, as "Dowser guessed you would <accept/turn down/put off> it, because <the precedent in words>". |
 | "Didn't we reject this?" | transitions: who decided what, and when |
 | "Is this still true?" | Say that the stored evidence is from <date>, and offer a new scan. Do not rescan unasked. |
 

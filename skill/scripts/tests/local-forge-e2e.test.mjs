@@ -152,6 +152,7 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
   const run1 = cli('run', 'start', '--mode', 'full', '--harness', 'claude-code', '--model', 'm').out.run_id;
   const proposed = proposeFile(run1, 'run1.jsonl', [
     candidate({ lens: 'opportunity', kind: 'gap', topic: 'csv export', anchors: ['src/export.js#exportReport'], title: 'Add CSV export', evidence: [EXPORT],
+      impact: 7, impact_why: 'One ticket asks; the writer exists', delivery_risk: { blast: 'low' },
       artifacts: [{ kind: 'table', message: 'One writer, no route', alt: 'A table of the CSV writer and its callers.', refs: [EXPORT.ref], data: { columns: ['Code', 'Callers'], rows: [['exportReport', '0']] } }] }),
     onbCandidate(0), onbCandidate(1), onbCandidate(2),
     staleCandidate([SETUP]),
@@ -180,7 +181,17 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
   assert.equal(inbox.groups[0].items.length, 5);
   assert.deepEqual((await invoke('jira.projects')).projects.map((/** @type {any} */ p) => p.key), ['DOW']);
   // the seam: a card's supporting view reaches the inbox card through outbox and the real core
-  assert.equal((await invoke('proposal.get', { ref: ref[fpA] })).card.artifacts?.[0]?.kind, 'table');
+  const cardA = (await invoke('proposal.get', { ref: ref[fpA] })).card;
+  assert.equal(cardA.artifacts?.[0]?.kind, 'table');
+  // the seam (scan-finding/1): the store's score, breakdown, allocation and shadow prediction reach the inbox card
+  // as computed - (7, high, S=2, blast low=2) = 7 * 10 * 0.95 / 1.111 * 0.95 = 56.9 - and the inbox never recomputes
+  assert.deepEqual([cardA.score, cardA.score_parts.formula, cardA.impact, cardA.effort.score, cardA.risk, cardA.category, cardA.band, cardA.mvp],
+    [56.9, 'scan-score/1', 7, 2, 2, 'product', 'ranked', true]);
+  assert.deepEqual([cardA.predicted_verdict, cardA.predicted_by], ['defer', 'dowser-opportunity@1.0.0:memory'], 'no judge verdict, no precedent: the store says defer');
+  assert.equal(cardA.predicted_why, 'no recorded decision on similar work; a person decides');
+  assert.equal(inbox.groups[0].items[0].ref, ref[fpA], 'the opportunity MVP is pinned at the top of its push group');
+  const unscored = inbox.groups[0].items.filter((/** @type {any} */ c) => c.score === undefined);
+  assert.equal(unscored.length, 4, 'cards without an impact are unscored: no score key, never 0');
   await invoke('settings.set', { project_key: projectKey, jira_project_key: 'DOW', issue_type_id: '10001' });
   const acc = await invoke('verdict.accept', { ref: ref[fpA], note: 'Ship it this sprint' });
   assert.equal(acc.card.status, 'accepted');
@@ -188,6 +199,14 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
   const issue = (await http('/browse/DOW-1')).body.issue;
   assert.equal(issue.summary, 'Add CSV export');
   assert.equal(issue.status.category, 'new');
+  const facts = issue.description.content[0];
+  assert.equal(facts.type, 'table', 'the Jira description opens with the facts table');
+  /** @param {any} n @returns {string} */
+  const txt = (n) => (n.type === 'text' ? n.text : (n.content ?? []).map(txt).join(''));
+  const factRows = Object.fromEntries(facts.content.slice(1).map((/** @type {any} */ r) => r.content.map(txt)));
+  assert.equal(factRows.Impact, '7/10 - One ticket asks; the writer exists');
+  assert.match(factRows.Score, /^56\.9 = 10 x impact 7 x confidence 0\.95 \/ effort 1\.111 x risk 0\.95 \(scan-score\/1\)$/);
+  assert.equal(factRows.MVP, 'MVP of the Opportunity lens');
   const rej = await invoke('verdict.reject', { refs: [ref[fpR1], ref[fpR2], ref[fpR3]], reason: 'not-our-direction' });
   assert.deepEqual(rej.cards.map((/** @type {any} */ c) => c.status), ['rejected', 'rejected', 'rejected']);
   await invoke('verdict.snooze', { refs: [ref[fpS]], note: 'After the redesign', until: '2099-01-01' }); // a dated snooze (DW-42)
@@ -261,7 +280,7 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
   assert.deepEqual([local.state, local.text], ['accepted', edited]);
   const ctx = cli('context', '--run', run2, '--lens', 'opportunity').out;
   assert.ok(ctx.rules.some((/** @type {any} */ r) => r.text === edited), 'the accepted rule reaches the lens context');
-  assert.deepEqual(ctx.outcomes, { right: 0, partly: 1, wrong: 0 });
+  assert.deepEqual(ctx.outcomes, { right: 0, partly: 1, wrong: 0, notes: [{ title: 'Add CSV export', rating: 'partly', note: 'Half of it shipped' }] });
 
   const rd2 = await invoke('reflect.data', { project_key: projectKey });
   assert.deepEqual(rd2.pushes.map((/** @type {any} */ p) => [p.run_id, p.created, p.updated, p.dup_rate]), [[run2, 0, 1, 1], [run1, 5, 0, 0]]);
@@ -281,5 +300,78 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
 
   const state = (await http('/dev/state')).body.tables;
   assert.deepEqual([state.proposals, state.verdicts, state.rules, state.outcomes, state.local_jira_issues, state.pushes], [5, 5, 1, 1, 1, 2]);
+
+  // --- 7. budget in code, earned L1, machine pre-triage, a person's reversal, trust in the Learning tab
+  // 7a. twenty doc-drift cards in one run: the store keeps 4 ranked (the MVP first) and files 16 in reserve - all pushed
+  const run3 = cli('run', 'start', '--mode', 'full', '--harness', 'claude-code', '--model', 'm').out.run_id;
+  const drift = Array.from({ length: 20 }, (_, i) => candidate({
+    lens: 'doc-drift', kind: 'stale', topic: `setup drift ${i}`, anchors: [`docs/setup.md#part${i}`], title: `Setup drift ${i}`, evidence: [SETUP],
+    impact: 1 + (i % 10), impact_why: 'A reader runs the wrong command', predicted_verdict: 'reject', predicted_why: 'cosmetic doc drift; the team rejects these',
+  }));
+  assert.equal(proposeFile(run3, 'run3.jsonl', drift).length, 20);
+  const v3 = cli('verify', '--run', run3);
+  assert.equal(v3.code, 0, v3.stdout);
+  assert.deepEqual([v3.out.allocation.per_lens['doc-drift'].ranked, v3.out.allocation.per_lens['doc-drift'].reserve], [4, 16]);
+  const ob3 = cli('outbox', '--run', run3);
+  const sent3 = JSON.parse(ob3.out.proposals_json);
+  assert.equal(sent3.length, 20, 'reserve cards are pushed too: filed, not discarded');
+  assert.deepEqual(sent3.filter((/** @type {any} */ p) => p.band === 'ranked').length, 4);
+  const push3 = await tool('dowser_proposals_push', ob3.out);
+  assert.equal(cli('ingest-push', '--file', save('push3.json', push3)).code, 0);
+  const fin3 = cli('run', 'finish', '--run', run3, '--lenses', JSON.stringify({ 'doc-drift': { state: 'ran' } }));
+  assert.equal(fin3.code, 0, fin3.stdout);
+  assert.deepEqual([fin3.out.lenses['doc-drift'].ranked, fin3.out.lenses['doc-drift'].reserve, fin3.out.lenses['doc-drift'].reserve_titles.length], [4, 16, 16],
+    'run finish names the reserve by title');
+  const group3 = (await invoke('inbox.list', { project_key: projectKey })).groups.find((/** @type {any} */ g) => g.run_id === run3);
+  assert.deepEqual(group3.items.slice(0, 5).map((/** @type {any} */ c) => [c.mvp ?? false, c.band]), [[true, 'ranked'], [false, 'ranked'], [false, 'ranked'], [false, 'ranked'], [false, 'reserve']],
+    'the inbox orders the group MVP first, ranked by score, reserve after');
+  const scores = group3.items.slice(1, 4).map((/** @type {any} */ c) => c.score);
+  assert.deepEqual(scores, [...scores].sort((a, b) => b - a), 'ranked by the stored score, descending');
+
+  // 7b. the person rejects all twenty and the predictions agreed. doc-drift is a technical slice, which starts at its
+  // ceiling L1 (technical items default to automation), so the agreement holds it there and no event is written
+  await invoke('verdict.reject', { refs: push3.results.map((/** @type {any} */ r) => r.external_ref), reason: 'not-worth-it' });
+  const page3 = await tool('dowser_verdicts_pull', { project_key: projectKey, cursor: page.cursor });
+  const iv3 = cli('ingest-verdicts', '--file', save('verdicts3.json', page3));
+  assert.equal(iv3.code, 0, iv3.stdout);
+  const SLICE = 'technical|doc-drift|-|S';
+  assert.deepEqual((iv3.out.trust_events ?? []).map((/** @type {any} */ e) => [e.slice, e.from, e.to, e.n]), []);
+  const held = cli('trust', '--slice', SLICE).out.slices[0];
+  assert.deepEqual([held.level, held.start, held.n, held.agreement], [1, 1, 20, 1]);
+
+  // 7c. next run: an L1 slice's ranked card predicted `accept` skips the person's pre-triage; acceptance stays human
+  const run4 = cli('run', 'start', '--mode', 'full', '--harness', 'claude-code', '--model', 'm').out.run_id;
+  const [nextCard] = proposeFile(run4, 'run4.jsonl', [candidate({ lens: 'doc-drift', kind: 'stale', topic: 'start command renamed', anchors: ['docs/setup.md#start'],
+    title: 'Start command renamed', evidence: [SETUP2], impact: 6, impact_why: 'Every new developer hits it', predicted_verdict: 'accept', predicted_why: 'a broken first step' })]);
+  assert.equal(cli('verify', '--run', run4).code, 0);
+  const pre = cli('pretriage', '--run', run4);
+  assert.equal(pre.code, 0, pre.stdout);
+  assert.deepEqual(pre.out.pretriaged.map((/** @type {any} */ p) => [p.fp, p.level]), [[nextCard.fp, 1]]);
+  const machineAccept = cli('move', nextCard.fp, '--to', 'accepted', '--by', 'machine:dowser');
+  assert.equal(machineAccept.code, 2, 'the machine never accepts: verified -> accepted stays human-only');
+  const ob4 = cli('outbox', '--run', run4);
+  assert.equal(JSON.parse(ob4.out.proposals_json)[0].pretriaged_by, 'machine:dowser');
+  const push4 = await tool('dowser_proposals_push', ob4.out);
+  assert.equal(cli('ingest-push', '--file', save('push4.json', push4)).code, 0);
+  const marked = await invoke('inbox.list', { project_key: projectKey, pretriaged: true });
+  assert.deepEqual(marked.groups.flatMap((/** @type {any} */ g) => g.items).map((/** @type {any} */ c) => [c.fp, c.pretriaged_by]), [[nextCard.fp, 'machine:dowser']],
+    'the inbox filters to the machine pre-triaged cards');
+
+  // 7d. the person rejects the machine's pre-triage: a reversal, so the slice drops back to L0 and says why
+  await invoke('verdict.reject', { refs: [push4.results[0].external_ref], reason: 'false-positive' });
+  const page4 = await tool('dowser_verdicts_pull', { project_key: projectKey, cursor: page3.cursor });
+  const iv4 = cli('ingest-verdicts', '--file', save('verdicts4.json', page4));
+  assert.equal(iv4.code, 0, iv4.stdout);
+  assert.deepEqual(iv4.out.trust_events.map((/** @type {any} */ e) => [e.from, e.to, e.item_id]), [[1, 0, nextCard.fp]]);
+  assert.match(iv4.out.trust_events[0].reason, /^reversal: forge:local-user rejected/);
+
+  // 7e. trust reaches the Learning tab through dowser_reflect_sync
+  const ex3 = cli('reflect', 'export').out;
+  assert.ok(ex3.trust_json);
+  await tool('dowser_reflect_sync', ex3);
+  const rd3 = await invoke('reflect.data', { project_key: projectKey });
+  const slice = rd3.trust.slices.find((/** @type {any} */ s) => s.slice === SLICE);
+  assert.deepEqual([slice.level, slice.ceiling, slice.start], [0, 1, 1], 'a technical slice starts at L1 and a reversal took it to L0');
+  assert.deepEqual(rd3.trust.events.filter((/** @type {any} */ e) => e.slice === SLICE).map((/** @type {any} */ e) => [e.from, e.to]), [[1, 0]]);
   assert.deepEqual(listFiles(repo), filesBefore, 'nothing written inside the repo');
 });

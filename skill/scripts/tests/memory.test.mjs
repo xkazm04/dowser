@@ -100,22 +100,26 @@ test('exemplars: the 5 newest accepted of the lens, with effort and evidence typ
   assert.ok(!c.near.some((/** @type {any} */ n) => fps.includes(n.fp)), 'accepted items are exemplars, not near');
 });
 
-test('similar: an anchor overlap with different wording, or 2+ topic tokens; dropped and other lenses excluded', () => {
+test('similar: an anchor overlap with different wording, or 2+ topic tokens; dropped excluded; another lens only on a shared anchor', () => {
   const a = verified({ lens: 'ux-friction', kind: 'dead-end', topic: 'checkout error no retry', anchors: ['src/checkout.js#pay:12'] });
   const b = verified({ lens: 'ux-friction', kind: 'overload', topic: 'payment failure leaves user stuck', anchors: ['./src/checkout.js#pay'], title: 'Stuck after a failed payment' });
   const c = verified({ lens: 'ux-friction', kind: 'dead-end', topic: 'checkout error copy', anchors: ['src/copy.js'] });
   const d = verified({ lens: 'ux-friction', kind: 'dead-end', topic: 'checkout banner', anchors: ['src/banner.js'] });
   const dropped = propose(db, run, candidate({ lens: 'ux-friction', kind: 'dead-end', topic: 'checkout error again', anchors: ['src/checkout.js#pay'] }), { kinds: KINDS }).fp;
   move(db, /** @type {string} */ (dropped), 'dropped', { by: 'skill:dowser-verify', note: 'verify-failed:x' });
-  verified({ lens: 'security-cra', topic: 'checkout error secret', anchors: ['src/checkout.js#pay'] });
+  const sec = verified({ lens: 'security-cra', topic: 'checkout error secret', anchors: ['src/checkout.js#pay'] });
+  verified({ lens: 'security-cra', topic: 'checkout error token', anchors: ['src/token.js'] });
 
   const s = similar(db, a);
   const byFp = Object.fromEntries(s.similar.map((/** @type {any} */ h) => [h.fp, h]));
   assert.deepEqual(byFp[b].overlap, { anchors: ['src/checkout.js#pay'] }, 'same anchor, different wording');
+  assert.equal(byFp[b].cross_lens, undefined, 'a same-lens hit carries no cross_lens');
   assert.deepEqual(byFp[c].overlap, { topic_tokens: ['checkout', 'error'] });
   assert.equal(byFp[d], undefined, 'one shared token is not enough');
   assert.equal(byFp[/** @type {string} */ (dropped)], undefined, 'dropped excluded');
-  assert.equal(s.similar.length, 2, 'other lenses excluded');
+  assert.equal(byFp[sec].cross_lens, true, 'another lens on the same anchor is a hit, flagged');
+  assert.equal(byFp[sec].lens, 'security-cra');
+  assert.equal(s.similar.length, 3, 'another lens sharing only topic tokens is not a hit');
   assert.equal(s.similar[0].fp, b, 'anchor overlap ranks first');
   assert.throws(() => similar(db, 'f'.repeat(16)), (e) => /** @type {any} */ (e).code === 2);
 });

@@ -2,12 +2,14 @@
 // @ts-check
 // mock-forge-mcp - a zero-dependency stdio MCP server that stands in for Dowser's Forge app (rovo:mcp), so the
 // skill and its scripts are testable end to end without a Jira site. It implements the eight tools of
-// docs/contracts/forge-mcp-2.md over an in-memory backend, plus four test-only tools: `mock_decide` simulates a
-// person's verdict in the inbox, `mock_inbox` reads an inbox item back (its status and whether it reopened),
-// `mock_decide_rule` simulates a person accepting or declining an offered rule in Forge, and `mock_outcome`
-// simulates a person rating an accepted item's built result.
+// docs/contracts/forge-mcp-2.md over an in-memory backend, plus five test-only tools: `mock_decide` simulates a
+// person's verdict in the inbox, `mock_inbox` reads an inbox item back (its status, whether it reopened, and the
+// scan-finding/1 score, band, mvp and pretriaged_by it was pushed with), `mock_decide_rule` simulates a person
+// accepting or declining an offered rule in Forge, `mock_outcome` simulates a person rating an accepted item's
+// built result, and `mock_trust` reads back the trust the last reflect sync stored.
 //
-// Tool 7, `dowser_reflect_sync` {project_key, rules_json?}: rules_json (a JSON array of at most 50 RuleOffer
+// Tool 7, `dowser_reflect_sync` {project_key, rules_json?, trust_json?}: trust_json (the skill's per-slice trust
+// {slices, events}, at most 50 events) is stored whole; rules_json (a JSON array of at most 50 RuleOffer
 // {id, lens, text, titles?(<=10), offered_at}) is upserted - a new id is stored `offered`, an `offered` one takes
 // the new text and titles, a decided one is never reverted - and the reply is {rules, outcomes}: every rule a
 // person decided (RuleDecision) and the newest 200 outcomes (oldest first). Idempotent both ways.
@@ -60,7 +62,7 @@ import { LENSES, resurfaces } from '../skill/scripts/lib/model.mjs';
  * decided_by?: string, decided_at?: string}} RuleRecord
  * @typedef {{ref: string, fp: string, rating: string, note?: string, issue_ref: string, decided_by: string, recorded_at: string}} OutcomeRecord
  * @typedef {{items: Record<string, Item>, verdicts: Verdict[], areas: Area[], areas_run_id?: string,
- *   rules?: Record<string, RuleRecord>, outcomes?: OutcomeRecord[]}} Project
+ *   rules?: Record<string, RuleRecord>, outcomes?: OutcomeRecord[], trust?: Obj}} Project
  * @typedef {{
  *   tickets: SourceItem[], pages: SourceItem[], goals: SourceItem[], merge_existing: Record<string, string>,
  *   projects: Record<string, Project>, next_item: number, next_issue: number, next_seq: number,
@@ -78,6 +80,8 @@ const JSON_MAX = 4 * 1024 * 1024;
 const RULES_MAX = 50;
 const TITLES_MAX = 10;
 const OUTCOMES_MAX = 200;
+/** trust_json caps (forge/src/core/types.mjs TRUST_EVENTS_MAX). */
+const TRUST_EVENTS_MAX = 50;
 const RATINGS = ['right', 'partly', 'wrong'];
 /** @type {readonly string[]} */
 const LENS_IDS = LENSES;
@@ -109,14 +113,14 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { query: S, space: S }, required: ['query'], additionalProperties: false } },
   { name: 'dowser_sources_goals', description: 'List the team goals (TWG). Returns {items:[{ref,title,url,body,status?}]}.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
-  { name: 'dowser_proposals_push', description: 'File dowser-proposal/1 records (proposals_json, a JSON array of at most 50) in the Dowser inbox; idempotent on (project_key, fp). Returns {results:[{fp,result,external_ref?,external_url?,why?}]}.',
+  { name: 'dowser_proposals_push', description: 'File dowser-proposal/2 (or /1) records (proposals_json, a JSON array of at most 50) in the Dowser inbox; idempotent on (project_key, fp). Returns {results:[{fp,result,external_ref?,external_url?,why?}]}.',
     inputSchema: { type: 'object', properties: { project_key: S, run_id: S, proposals_json: S, repo_url: S, head_sha: S }, required: ['project_key', 'run_id', 'proposals_json'], additionalProperties: false } },
   { name: 'dowser_verdicts_pull', description: 'Verdicts decided in the inbox since the cursor. Returns {verdicts:[...], cursor}.',
     inputSchema: { type: 'object', properties: { project_key: S, cursor: S }, required: ['project_key'], additionalProperties: false } },
   { name: 'dowser_areas_push', description: 'Replace the project\'s area stats (areas_json, a JSON array of at most 200 {path,files,churn_90d,authors_90d?,last_change?}). Returns {stored}.',
     inputSchema: { type: 'object', properties: { project_key: S, run_id: S, areas_json: S }, required: ['project_key', 'run_id', 'areas_json'], additionalProperties: false } },
   { name: 'dowser_reflect_sync', description: 'Offer rules (rules_json, a JSON array of at most 50 {id,lens,text,titles?,offered_at}) and read back every rule a person decided plus the newest 200 outcomes. Idempotent. Returns {rules:[{id,lens,state,text,decided_by,decided_at}], outcomes:[{ref,fp,rating,note?,issue_ref,decided_by,recorded_at}]}.',
-    inputSchema: { type: 'object', properties: { project_key: S, rules_json: S }, required: ['project_key'], additionalProperties: false } },
+    inputSchema: { type: 'object', properties: { project_key: S, rules_json: S, trust_json: S }, required: ['project_key'], additionalProperties: false } },
   { name: 'dowser_direction_get', description: 'What the team set in Settings for each lens of this inbox (lens = one lens id, or all). Returns {lenses:{[lens]:{focus?,exclude?,notes?,spaces?}}}.',
     inputSchema: { type: 'object', properties: { project_key: S, lens: S }, required: ['project_key'], additionalProperties: false } },
   { name: 'mock_decide', description: 'TEST ONLY: simulate a person\'s verdict in the inbox on a pushed fp (status accepted|rejected|merged|snoozed; snooze_until = YYYY-MM-DD with snoozed, a past date allowed so tests reach the skill\'s wake path).',
@@ -125,8 +129,10 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { project_key: S, id: S, state: S, text: S, decided_by: S }, required: ['project_key', 'id', 'state'], additionalProperties: false } },
   { name: 'mock_outcome', description: 'TEST ONLY: simulate a person rating the built result of an accepted item (ref = its inbox ref DW-n; rating right|partly|wrong).',
     inputSchema: { type: 'object', properties: { ref: S, rating: S, note: S, project_key: S, decided_by: S }, required: ['ref', 'rating'], additionalProperties: false } },
-  { name: 'mock_inbox', description: 'TEST ONLY: read one inbox item back. Returns {item:{fp,external_ref,status,reopened?,evidence,pushes,issue_ref?,issue_url?}}.',
+  { name: 'mock_inbox', description: 'TEST ONLY: read one inbox item back. Returns {item:{fp,external_ref,status,reopened?,evidence,pushes,issue_ref?,issue_url?,score?,band?,mvp?,pretriaged_by?}}.',
     inputSchema: { type: 'object', properties: { fp: S, project_key: S }, required: ['fp'], additionalProperties: false } },
+  { name: 'mock_trust', description: 'TEST ONLY: read back the trust the last dowser_reflect_sync stored (trust_json). Returns {trust?:{slices,events}}.',
+    inputSchema: { type: 'object', properties: { project_key: S }, required: ['project_key'], additionalProperties: false } },
 ];
 
 /** A tool-level error (becomes `isError: true`). */
@@ -343,6 +349,14 @@ function dowserReflectSync(b, args) {
   if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
   const offers = args.rules_json === undefined ? [] : jsonArray(args.rules_json, 'rules_json', RULES_MAX);
   const p = project(b, args.project_key);
+  if (args.trust_json !== undefined) {
+    /** @type {unknown} */
+    let t;
+    try { t = JSON.parse(String(args.trust_json)); } catch { throw new ToolError('bad-input', 'trust_json is not valid JSON'); }
+    if (!isObj(t) || !Array.isArray(t.slices) || !Array.isArray(t.events)) throw new ToolError('bad-input', 'trust_json must be {"slices": [...], "events": [...]}');
+    if (t.events.length > TRUST_EVENTS_MAX) throw new ToolError('bad-input', `trust_json holds at most ${TRUST_EVENTS_MAX} events`);
+    p.trust = t; // stored whole, as Forge does; the levels are the skill's
+  }
   const rules = /** @type {Record<string, RuleRecord>} */ (p.rules);
   offers.forEach((raw, i) => {
     const at = `rules_json[${i}]`;
@@ -451,7 +465,15 @@ function mockInbox(b, args) {
   const key = keys.find((k) => b.projects[k]?.items?.[args.fp]);
   if (!key) throw new ToolError('bad-input', `no inbox item for fp ${args.fp}`);
   const it = b.projects[key].items[args.fp];
-  return { item: omitAbsent({ fp: it.fp, external_ref: it.external_ref, status: it.status, reopened: it.reopened, evidence: it.evidence.length, pushes: it.pushes, issue_ref: it.issue_ref, issue_url: it.issue_url }) };
+  return { item: omitAbsent({ fp: it.fp, external_ref: it.external_ref, status: it.status, reopened: it.reopened, evidence: it.evidence.length, pushes: it.pushes, issue_ref: it.issue_ref, issue_url: it.issue_url,
+    score: it.record.score, band: it.record.band, mvp: it.record.mvp, pretriaged_by: it.record.pretriaged_by }) };
+}
+
+/** `mock_trust`. @param {Backend} b @param {Obj} args @returns {Obj} */
+function mockTrust(b, args) {
+  if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
+  const t = b.projects[args.project_key]?.trust;
+  return t ? { trust: t } : {};
 }
 
 /** The tools by name. @type {Record<string, (b: Backend, args: Obj) => Obj>} */
@@ -468,6 +490,7 @@ const HANDLERS = {
   mock_outcome: mockOutcome,
   mock_decide: mockDecide,
   mock_inbox: mockInbox,
+  mock_trust: mockTrust,
 };
 
 /**

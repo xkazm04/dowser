@@ -1,6 +1,6 @@
 ---
 id: ux-friction
-version: 0.2.0
+version: 0.3.0
 name: UX friction and wellbeing
 kinds: [dead-end, unrecoverable-error, dark-pattern, accessibility-gap, missing-feedback, confusing-copy]
 sources: [code, docs, git, tickets]
@@ -37,8 +37,8 @@ step below as written.
   hypothesis first.
 - **`exclude`**: before writing `<work>/ux-friction.jsonl`, remove every candidate whose topic,
   screen or kind matches an excluded term. Never re-word one to slip past it. List each removed
-  title in the lens summary as `excluded by direction: <term> - <title>`; it never counts as
-  `truncated` and is never dropped silently.
+  title in the lens summary as `excluded by direction: <term> - <title>`; it is never written
+  (so never in `reserve`) and never dropped silently.
 - **`notes`**: the team's intent, binding like this pack's own guidance. Apply it at ranking: a
   note such as "mobile first" or "we know about the legacy admin" moves matching candidates up
   or down within a tier. A note never lifts a candidate whose evidence would not pass on its own.
@@ -103,8 +103,10 @@ record `partial: tickets not connected (demand per screen unmeasured)`.
 
 ## Choosing under the budget
 
-There are usually more findings than the 4 slots. Rank every candidate, write the top 4, and
-count the rest as `truncated` with their titles. Fewer than 4 strong cards beat 4 with filler.
+There are usually more findings than the 4 slots. Rank every candidate and write each one that
+survives step 5: the store keeps the 4 ranked slots by score (the lens's top card is its MVP)
+and files the rest in `reserve`, named in the summary. Your ranking reaches the store through
+`impact` (below). Filler is still not a card: a weak candidate is dropped, not reserved.
 
 1. **Tier by effect on the person, shown in the evidence.**
    - **Blocked**: the person cannot finish or loses something: a dead end or unrecoverable error
@@ -124,6 +126,24 @@ count the rest as `truncated` with their titles. Fewer than 4 strong cards beat 
 5. **Drop before ranking**: anything that recovers one level up (Gather step 2), an empty state
    that offers an action, a confirm step the law or the domain needs (say so in the summary),
    test, story or fixture-only code, and tickets that do not name the screen.
+
+## Impact, risk and the predicted verdict
+
+Set `impact` (1-10) from the tier and the reach, with `impact_why` naming both in one line
+("blocked on checkout: 12 tickets tagged blocked in 90 days"):
+
+| Tier | Core path, or 10+ tickets | Elsewhere |
+| --- | --- | --- |
+| Blocked | 9 | 7 |
+| Pressured | 7 | 5 |
+| Slowed | 4 | 3 |
+
+`risk` is the risk of making the change (copy or a message 2, a new step or state 5, a change to
+payment or consent flows 8); omit it and the store reads `delivery_risk.blast`. `category` is
+`product` (the default for this lens). Before writing a card, read `context`'s `near` (with each
+reason and note) and `outcomes` (with notes): set `predicted_verdict` and a `predicted_why` that
+names the closest precedent ("a retry card on this screen was accepted"). With no precedent,
+omit both; the store records `defer`.
 
 ## Evidence rules
 

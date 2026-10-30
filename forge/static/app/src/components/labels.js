@@ -62,15 +62,64 @@ export function changeOf(card, group) {
 }
 export const CHANGE_LABELS = { new: 'New', grew: 'Evidence grew', reopened: 'Reopened' };
 
+/** The predicted verdict as the inbox says it. */
+export const VERDICT_LABELS = { accept: 'Accept', reject: 'Reject', defer: 'Defer' };
+export const MACHINE_DECIDER = 'machine:dowser';
+
+const FACT_MAX = 300;
+const scale10 = (v) => Number.isInteger(v) && v >= 1 && v <= 10;
+const posNum = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
+const clipText = (s, n) => { const t = String(s).replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
+
+/**
+ * The facts table the issue opens with: a line-for-line mirror of `factsOf` in skill/scripts/lib/model.mjs (the
+ * server's forge/src/core/adf.mjs builds the real table from that one; this copy only feeds the accept preview).
+ * @param {Record<string, any>} card
+ * @returns {{label: string, value: string}[]}
+ */
+export function factsOf(card) {
+  const rows = [];
+  const lens = LENS_LABELS[card.lens] ?? String(card.lens);
+  if (scale10(card.impact)) rows.push({ label: 'Impact', value: clipText(`${card.impact}/10${card.impact_why ? ` - ${card.impact_why}` : ''}`, FACT_MAX) });
+  const sp = card.score_parts;
+  if (typeof card.score === 'number') {
+    const parts = sp && typeof sp === 'object' ? ` = 10 x impact ${sp.impact} x confidence ${sp.confidence_w} / effort ${sp.effort_div} x risk ${sp.risk_factor} (${sp.formula})` : '';
+    rows.push({ label: 'Score', value: clipText(`${card.score}${parts}`, FACT_MAX) });
+  } else {
+    rows.push({ label: 'Score', value: 'unscored (no impact or effort judged)' });
+  }
+  if (['low', 'medium', 'high'].includes(card.confidence)) {
+    const c = String(card.confidence);
+    rows.push({ label: 'Confidence', value: clipText(`${c[0].toUpperCase()}${c.slice(1)}${card.confidence_why ? ` - ${card.confidence_why}` : ''}`, FACT_MAX) });
+  }
+  const ef = card.effort && typeof card.effort === 'object' ? card.effort : undefined;
+  if (ef) {
+    const days = posNum(ef.days_low) && posNum(ef.days_high) ? `, ${ef.days_low}-${ef.days_high} days` : posNum(ef.days_high) ? `, up to ${ef.days_high} days` : '';
+    rows.push({ label: 'Effort', value: clipText(scale10(ef.score) ? `${ef.score}/10 (${ef.size}${days})` : `${ef.size}${days}`, FACT_MAX) });
+  }
+  const blast = card.delivery_risk && typeof card.delivery_risk === 'object' ? card.delivery_risk.blast : undefined;
+  if (scale10(card.risk)) rows.push({ label: 'Risk', value: `${card.risk}/10${blast ? ` (blast ${blast})` : ''}` });
+  else if (blast) rows.push({ label: 'Risk', value: `blast ${blast}` });
+  rows.push({ label: 'Lens / kind', value: clipText(`${lens} / ${card.kind}`, FACT_MAX) });
+  if (card.mvp === true) rows.push({ label: 'MVP', value: clipText(`MVP of the ${lens} lens`, FACT_MAX) });
+  return rows;
+}
+
+/** "56.9 = 10 x impact 7 x confidence 0.95 / effort 1.111 x risk 0.95": the stored breakdown, never recomputed. */
+export function scoreBreakdown(parts) {
+  if (!parts || typeof parts !== 'object') return '';
+  return `10 x impact ${parts.impact} x confidence ${parts.confidence_w} / effort ${parts.effort_div} x risk ${parts.risk_factor}`;
+}
+
 /**
  * The issue the accept will create, as a preview of what forge/src/core/adf.mjs `issueDescription` builds, in the
- * same order: the rationale, the card body (rendered by the markdown subset in markdown.js), the supporting views
- * when there are any, an Evidence list, then "Proposed by Dowser (DW-n)". The server builds the real issue
- * (verdict.accept); this preview only mirrors it. `artifacts` is omitted when the card has none.
+ * same order: the facts table, the rationale, the card body (rendered by the markdown subset in markdown.js), the
+ * supporting views when there are any, an Evidence list, then "Proposed by Dowser (DW-n)". The server builds the
+ * real issue (verdict.accept); this preview only mirrors it. `artifacts` is omitted when the card has none.
  * @param {{title: string, rationale?: string, body?: string, ref: string, evidence?: {type: string, ref: string, quote?: string}[], artifacts?: any[]}} card
  */
 export function issuePreview(card) {
-  const preview = { summary: card.title, rationale: String(card.rationale ?? ''), body: String(card.body ?? '').replace(/^(\s*#{1,6}\s+)Description\s*#*\s*$/m, '$1Details'), evidence: card.evidence ?? [] };
+  const preview = { summary: card.title, facts: factsOf(card), rationale: String(card.rationale ?? ''), body: String(card.body ?? '').replace(/^(\s*#{1,6}\s+)Description\s*#*\s*$/m, '$1Details'), evidence: card.evidence ?? [] };
   return Array.isArray(card.artifacts) && card.artifacts.length > 0 ? { ...preview, artifacts: card.artifacts } : preview;
 }
 

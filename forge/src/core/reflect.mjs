@@ -9,7 +9,7 @@ import { LENSES, isOneOf } from '../shared/model.mjs';
 import { namesOf } from './names.mjs';
 import { logLine } from './observe.mjs';
 import { findProposal, needInbox, toProposal } from './store.mjs';
-import { INBOX_STATUSES, NOTE_MAX, OUTCOMES_MAX, OUTCOME_RATINGS, RULES_MAX, RULE_TEXT_MAX, RULE_TITLES_MAX } from './types.mjs';
+import { INBOX_STATUSES, NOTE_MAX, OUTCOMES_MAX, OUTCOME_RATINGS, RULES_MAX, RULE_TEXT_MAX, RULE_TITLES_MAX, TRUST_EVENTS_MAX, TRUST_SLICES_MAX } from './types.mjs';
 import { AppError, DuplicateKey, isIso, isObj, needStr, omitAbsent, optStr, sqlv, str } from './util.mjs';
 import { deciderOf } from './verdicts.mjs';
 import { parseJsonArray } from './push.mjs';
@@ -77,8 +77,10 @@ export async function reflectSync(deps, args) {
   const raw = args.rules_json;
   if (raw !== undefined && raw !== null && typeof raw !== 'string') throw new AppError('bad-input', 'rules_json must be a JSON array as a string');
   const offers = typeof raw === 'string' && raw.trim() !== '' ? parseJsonArray(args, 'rules_json', RULES_MAX).map(checkOffer) : [];
+  const trust = checkTrust(args.trust_json);
   await needInbox(db, projectKey);
   for (const o of offers) await upsertOffer(db, projectKey, o);
+  if (trust) await putTrust(db, projectKey, trust, deps.now().toISOString());
 
   const rules = (await db.query("SELECT * FROM rules WHERE project_key = ? AND state IN ('accepted', 'declined') ORDER BY decided_at, id", [projectKey]))
     .map((r) => /** @type {RuleDecision} */ ({
@@ -111,6 +113,81 @@ async function upsertOffer(db, projectKey, o) {
   }
   await db.exec("UPDATE rules SET lens = ?, text = ?, titles_json = ?, offered_at = ? WHERE project_key = ? AND id = ? AND state = 'offered'",
     [o.lens, o.text, titles, o.offered_at, projectKey, o.id]);
+}
+
+/**
+ * Checks `trust_json` (the skill's trust.mjs trustReport): `{slices: TrustSlice[], events: TrustEvent[]}`, at most
+ * TRUST_SLICES_MAX slices and TRUST_EVENTS_MAX events. Absent or empty -> undefined (nothing stored). The levels are
+ * the skill's store's; Forge shows them and never computes or trusts one for a decision of its own.
+ * @param {unknown} raw
+ * @returns {import('./types.mjs').Trust | undefined}
+ */
+export function checkTrust(raw) {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  if (typeof raw !== 'string') throw new AppError('bad-input', 'trust_json must be a JSON object as a string');
+  if (Buffer.byteLength(raw, 'utf8') > 1024 * 1024) throw new AppError('bad-input', 'trust_json is larger than 1 MB');
+  /** @type {any} */
+  let t;
+  try { t = JSON.parse(raw); } catch (e) { throw new AppError('bad-input', `trust_json is not valid JSON (${/** @type {Error} */ (e).message})`); }
+  if (!isObj(t) || !Array.isArray(t.slices) || !Array.isArray(t.events)) throw new AppError('bad-input', 'trust_json must be {"slices": [...], "events": [...]}');
+  if (t.slices.length > TRUST_SLICES_MAX || t.events.length > TRUST_EVENTS_MAX) {
+    throw new AppError('bad-input', `trust_json holds at most ${TRUST_SLICES_MAX} slices and ${TRUST_EVENTS_MAX} events`);
+  }
+  const lvl = (/** @type {unknown} */ v) => Number.isInteger(v) && /** @type {number} */ (v) >= 0 && /** @type {number} */ (v) <= 3;
+  const cnt = (/** @type {unknown} */ v) => Number.isInteger(v) && /** @type {number} */ (v) >= 0;
+  const share = (/** @type {unknown} */ v) => v === undefined || (typeof v === 'number' && v >= 0 && v <= 1);
+  const line = (/** @type {unknown} */ v, /** @type {number} */ max) => str(v) && /** @type {string} */ (v).length <= max;
+  const slices = t.slices.map((/** @type {any} */ s, /** @type {number} */ i) => {
+    const at = `trust_json.slices[${i}]`;
+    if (!isObj(s) || !line(s.slice, 200) || !lvl(s.level) || !lvl(s.ceiling) || !lvl(s.start) || !cnt(s.n) || !share(s.agreement)) {
+      throw new AppError('bad-input', `${at} needs slice, level, ceiling, start (0-3), n (>= 0) and an optional agreement 0-1`);
+    }
+    if (s.changed_at !== undefined && !isIso(s.changed_at)) throw new AppError('bad-input', `${at}.changed_at must be an ISO 8601 timestamp`);
+    if (s.reason !== undefined && !line(s.reason, 500)) throw new AppError('bad-input', `${at}.reason must be 1-500 characters`);
+    return omitAbsent({ slice: s.slice, level: s.level, ceiling: s.ceiling, start: s.start, n: s.n, agreement: s.agreement, changed_at: s.changed_at, reason: s.reason });
+  });
+  const events = t.events.map((/** @type {any} */ e, /** @type {number} */ i) => {
+    const at = `trust_json.events[${i}]`;
+    if (!isObj(e) || !line(e.slice, 200) || !lvl(e.from) || !lvl(e.to) || !line(e.reason, 500) || !cnt(e.n) || !share(e.agreement) || !isIso(e.at)) {
+      throw new AppError('bad-input', `${at} needs slice, from, to (0-3), reason, n, at and an optional agreement 0-1`);
+    }
+    if (e.item_id !== undefined && !(typeof e.item_id === 'string' && /^[0-9a-f]{16}$/.test(e.item_id))) throw new AppError('bad-input', `${at}.item_id must be a 16-hex fingerprint`);
+    return omitAbsent({ slice: e.slice, from: e.from, to: e.to, reason: e.reason, agreement: e.agreement, n: e.n, item_id: e.item_id, at: e.at });
+  });
+  return /** @type {import('./types.mjs').Trust} */ ({ slices, events });
+}
+
+/**
+ * Replaces the inbox's trust row (check-then-insert; a concurrent insert falls back to the update).
+ * @param {Db} db
+ * @param {string} projectKey
+ * @param {import('./types.mjs').Trust} trust
+ * @param {string} at
+ */
+async function putTrust(db, projectKey, trust, at) {
+  const json = JSON.stringify(trust);
+  const have = await db.query('SELECT project_key FROM trust WHERE project_key = ?', [projectKey]);
+  if (have.length === 0) {
+    try {
+      await db.exec('INSERT INTO trust (project_key, trust_json, updated_at) VALUES (?, ?, ?)', [projectKey, json, at]);
+      return;
+    } catch (e) {
+      if (!(e instanceof DuplicateKey)) throw e;
+    }
+  }
+  await db.exec('UPDATE trust SET trust_json = ?, updated_at = ? WHERE project_key = ?', [json, at, projectKey]);
+}
+
+/**
+ * The inbox's trust as last synced, with `updated_at`; undefined when the skill never sent one.
+ * @param {Db} db
+ * @param {string} projectKey
+ * @returns {Promise<(import('./types.mjs').Trust & {updated_at: string}) | undefined>}
+ */
+async function trustOf(db, projectKey) {
+  const rows = await db.query('SELECT trust_json, updated_at FROM trust WHERE project_key = ?', [projectKey]);
+  if (!rows.length) return undefined;
+  try { return { ...JSON.parse(String(rows[0].trust_json)), updated_at: String(rows[0].updated_at) }; } catch { return undefined; }
 }
 
 // ---------------------------------------------------------------------------------------------- row mapping
@@ -289,6 +366,7 @@ export async function reflectData(deps, p) {
     [projectKey],
   );
   const names = await namesOf(deps, [...noteRows.map((r) => r.decided_by), ...ruleRows.map((r) => r.decided_by), ...outcomeRows.map((r) => r.decided_by)]);
+  const trust = await trustOf(db, projectKey);
 
   return {
     totals: /** @type {ReflectData['totals']} */ (totals),
@@ -302,6 +380,7 @@ export async function reflectData(deps, p) {
     rules: ruleRows.map((r) => omitAbsent({ ...toRuleRow(r), decided_by_name: r.decided_by ? names[String(r.decided_by)] : undefined })),
     candidates: await candidatesOf(deps, projectKey),
     outcomes: outcomeRows.map((r) => omitAbsent({ ...toOutcome(r), title: String(r.title), decided_by_name: names[String(r.decided_by)] })),
+    ...(trust ? { trust } : {}),
   };
 }
 

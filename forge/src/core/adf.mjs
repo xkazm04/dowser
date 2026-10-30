@@ -3,7 +3,7 @@
 // comment a merge into a Jira issue adds (F5), and ADF / Confluence storage HTML to plain text for the
 // source tools. ADF reference: developer.atlassian.com/cloud/jira/platform/apis/document/structure/.
 
-import { artifactsProblem } from '../shared/model.mjs';
+import { artifactsProblem, factsOf } from '../shared/model.mjs';
 
 /**
  * @typedef {import('./ports.mjs').AdfNode} AdfNode
@@ -160,17 +160,36 @@ function artifactBlocks(a, evidenceRefs) {
  */
 export const issueBody = (body) => String(body ?? '').replace(/^(\s*#{1,6}\s+)Description\s*#*\s*$/m, '$1Details');
 
+/** Lens display names in the facts table (the lens packs' `name`, as the Custom UI's labels.js shows them). */
+export const LENS_NAMES = Object.freeze({
+  opportunity: 'Opportunity', 'ux-friction': 'UX friction and wellbeing', 'doc-drift': 'Doc drift', 'security-cra': 'Security and CRA',
+});
+
+/**
+ * The facts table the issue opens with (scan-finding/1): one header row and one row per fact of the shared factsOf
+ * (Impact, Score with its breakdown, Confidence and why, Effort, Risk, Lens / kind, MVP). Every value is clipped to
+ * FACT_MAX characters, so the table adds at most a few kB to the description.
+ * @param {Card} card
+ * @returns {AdfNode}
+ */
+export function factsTable(card) {
+  return table([
+    [cell('tableHeader', 'Fact'), cell('tableHeader', 'Value')],
+    ...factsOf(card, LENS_NAMES).map((f) => [cell('tableHeader', f.label), cell('tableCell', f.value)]),
+  ]);
+}
+
 /**
  * The description of the issue an accept creates (contract amendment 3, the UI preview shows the same order):
- * rationale, the card body (its five sections), the supporting views under "Supporting views" when the card has
- * any, the evidence list with links, then "Proposed by Dowser (DW-n)".
+ * the facts table, the rationale, the card body (its five sections), the supporting views under "Supporting views"
+ * when the card has any, the evidence list with links, then "Proposed by Dowser (DW-n)".
  * @param {Card} card
  * @param {string} [inboxUrl]
  * @returns {AdfDoc}
  */
 export function issueDescription(card, inboxUrl) {
   /** @type {AdfNode[]} */
-  const content = [paragraph(inline(String(card.rationale)))];
+  const content = [factsTable(card), paragraph(inline(String(card.rationale)))];
   content.push(...markdownToAdf(issueBody(card.body)));
   if (Array.isArray(card.artifacts) && card.artifacts.length > 0) {
     const refs = card.evidence.map((e) => e.ref);

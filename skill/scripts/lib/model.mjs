@@ -1,12 +1,19 @@
 // @ts-check
-// The `dowser-proposal/1` record (design note "Data & API"), its closed enums, the status transition table
+// The `dowser-proposal/2` record (design note "Data & API"), its closed enums, the status transition table
 // (D4) as data, and the candidate validator. Pure: no I/O. The JSON Schema twin is
-// ../../schema/dowser-proposal-1.schema.json - change both together.
+// ../../schema/dowser-proposal-2.schema.json - change both together. `dowser-proposal/1` records (no scan-finding
+// fields) stay valid: every field /2 added is optional.
+//
+// /2 adds the scan-finding/1 fields (docs/contracts/scan-finding-1.md). The judge writes impact, impact_why, risk,
+// category, effort.score and its predicted verdict on the candidate line; the store computes score, score_parts,
+// band, mvp, mvp_rule, predicted_by and pretriaged_by (COMPUTED_KEYS: refused on a propose line, carried on the wire).
 //
 // Absent values: a key with no value is OMITTED. `null` is never written, and `0` is never written for
-// something unmeasured (a missing `bus_factor` means "not computed").
+// something unmeasured (a missing `bus_factor` means "not computed"; a missing `score` means "unscored").
 
-export const SCHEMA_ID = 'dowser-proposal/1';
+export const SCHEMA_ID = 'dowser-proposal/2';
+/** Record versions this code reads: /1 records simply lack the /2 fields. */
+export const SCHEMA_IDS = /** @type {const} */ (['dowser-proposal/1', 'dowser-proposal/2']);
 
 /** The four gate lenses (D-wave 2). */
 export const LENSES = /** @type {const} */ (['opportunity', 'ux-friction', 'doc-drift', 'security-cra']);
@@ -28,6 +35,19 @@ export const RUN_MODES = /** @type {const} */ (['full', 'incremental', 'focused'
 export const RUN_STATUSES = /** @type {const} */ (['running', 'done', 'failed']);
 export const LENS_STATES = /** @type {const} */ (['ran', 'skipped', 'partial']);
 export const TITLE_MAX = 80;
+/** scan-finding/1 `category`: technical = the codebase's own quality, product = what users get. */
+export const CATEGORIES = /** @type {const} */ (['technical', 'product']);
+/** The category a lens's findings default to when the judge did not set one. */
+export const LENS_CATEGORY = Object.freeze({ opportunity: 'product', 'ux-friction': 'product', 'doc-drift': 'technical', 'security-cra': 'technical' });
+/** scan-finding/1 `predicted_verdict`: the machine's verdict, recorded before any person sees the card. */
+export const VERDICTS = /** @type {const} */ (['accept', 'reject', 'defer']);
+/** scan-finding/1 `band`: `reserve` = verified and scored, but over the run's cap; filed, not discarded. */
+export const BANDS = /** @type {const} */ (['ranked', 'reserve']);
+export const MVP_RULES = /** @type {const} */ (['top-score', 'override']);
+/** The decider of a machine pre-triage (an L1 slice, see the autonomy ladder in scan-finding/1). */
+export const MACHINE_DECIDER = 'machine:dowser';
+/** The scan-score/1 breakdown keys, in order. */
+export const SCORE_PART_KEYS = /** @type {const} */ (['impact', 'confidence_w', 'effort_div', 'risk_factor', 'formula']);
 /**
  * Length caps on the free-text and list fields of a candidate (chars for strings, items for lists). They bound
  * what one record may store, here and on push. Each sits well above what real scans write (measured on a
@@ -39,6 +59,7 @@ export const TITLE_MAX = 80;
 export const FIELD_LIMITS = Object.freeze({
   kind: 64, topic: 160, anchors: 12, anchor: 300, rationale: 2000, body: 12000, confidence_why: 1000,
   evidence: 100, ref: 500, quote: 2000, url: 2000, list: 20, item: 300, provenance: 200,
+  impact_why: 200, predicted_why: 300, mvp_why: 200,
 });
 /** Supporting views a card may carry (`artifacts[]`): one message each, drawn from the card's own evidence. */
 export const ARTIFACT_KINDS = /** @type {const} */ (['table', 'flow', 'before-after', 'matrix']);
@@ -107,7 +128,9 @@ export function deciderAllowed(from, to, by) {
  * @typedef {typeof SIZES[number]} Size
  * @typedef {typeof CONFIDENCES[number]} Confidence
  * @typedef {{type: EvidenceType, ref: string, quote?: string, quote_sha?: string, url?: string}} Evidence
- * @typedef {{size: Size, days_low?: number, days_high?: number, basis?: string[]}} Effort
+ * @typedef {{size: Size, days_low?: number, days_high?: number, basis?: string[], score?: number}} Effort
+ *   `score` = scan-finding/1 effort 1-10; the store fills it from `size` when the judge did not.
+ * @typedef {{impact: number, confidence_w: number, effort_div: number, risk_factor: number, formula: string}} ScoreParts
  * @typedef {{blast: typeof BLASTS[number], bus_factor?: number}} DeliveryRisk
  * @typedef {{lens_version: string, model?: string, harness?: string, run_id?: string, focus?: string}} Provenance
  * @typedef {{columns: string[], rows: string[][], highlight?: number[]}} TableData
@@ -120,11 +143,15 @@ export function deciderAllowed(from, to, by) {
  *   fp?: string, lens: Lens, kind: string, topic: string, anchors: string[],
  *   title: string, rationale: string, body: string,
  *   evidence: Evidence[], effort: Effort, confidence: Confidence, confidence_why: string,
- *   doc_impact?: string[], delivery_risk?: DeliveryRisk, artifacts?: Artifact[], provenance: Provenance
+ *   doc_impact?: string[], delivery_risk?: DeliveryRisk, artifacts?: Artifact[], provenance: Provenance,
+ *   impact?: number, impact_why?: string, risk?: number, category?: typeof CATEGORIES[number],
+ *   predicted_verdict?: typeof VERDICTS[number], predicted_why?: string
  * }} Candidate
  * @typedef {Candidate & {
  *   fp: string, status: Status, reason?: Reason, note?: string, merged_into?: string,
- *   external_ref?: string, external_url?: string, decided_by?: string, decided_at?: string
+ *   external_ref?: string, external_url?: string, decided_by?: string, decided_at?: string,
+ *   score?: number, score_parts?: ScoreParts, band?: typeof BANDS[number], mvp?: true, mvp_rule?: typeof MVP_RULES[number],
+ *   mvp_why?: string, predicted_by?: string, pretriaged_by?: string
  * }} Proposal
  * @typedef {{ok: true, value: Candidate} | {ok: false, why: string}} Validation
  */
@@ -177,9 +204,15 @@ export function canMove(from, to) {
 }
 
 const CANDIDATE_KEYS = ['fp', 'lens', 'kind', 'topic', 'anchors', 'title', 'rationale', 'body', 'evidence', 'effort',
-  'confidence', 'confidence_why', 'doc_impact', 'delivery_risk', 'artifacts', 'provenance'];
+  'confidence', 'confidence_why', 'doc_impact', 'delivery_risk', 'artifacts', 'provenance',
+  'impact', 'impact_why', 'risk', 'category', 'predicted_verdict', 'predicted_why'];
 /** Triage fields the store owns; a candidate line that carries one is refused. */
 export const STORE_OWNED = ['status', 'reason', 'note', 'merged_into', 'external_ref', 'external_url', 'decided_by', 'decided_at'];
+/**
+ * scan-finding/1 fields the local store computes (score, the run's slot allocation, who predicted, a machine
+ * pre-triage). A propose line that carries one is refused; a pushed record (wire mode) carries them.
+ */
+export const COMPUTED_KEYS = ['score', 'score_parts', 'band', 'mvp', 'mvp_rule', 'mvp_why', 'predicted_by', 'pretriaged_by'];
 
 /**
  * The path of the first `null` inside `v`, or undefined.
@@ -347,7 +380,11 @@ export function validateCandidate(input, opts = {}) {
   if (nul) return no(`null-at:${nul} (omit the key instead)`);
   const owned = Object.keys(o).find((k) => STORE_OWNED.includes(k));
   if (owned) return no(`store-owned-field:${owned}`);
-  const extra = extraKey(o, CANDIDATE_KEYS);
+  if (!wire) {
+    const computed = Object.keys(o).find((k) => COMPUTED_KEYS.includes(k));
+    if (computed) return no(`store-computed-field:${computed} (the store computes it; omit it)`);
+  }
+  const extra = extraKey(o, wire ? [...CANDIDATE_KEYS, ...COMPUTED_KEYS] : CANDIDATE_KEYS);
   if (extra) return no(`unknown-field:${extra}`);
 
   if (!isOneOf(LENSES, o.lens)) return no(`lens:must be one of ${LENSES.join('|')}`);
@@ -399,9 +436,10 @@ export function validateCandidate(input, opts = {}) {
 
   if (!obj(o.effort)) return no('effort:required');
   const ef = /** @type {Record<string, unknown>} */ (o.effort);
-  const efx = extraKey(ef, ['size', 'days_low', 'days_high', 'basis']);
+  const efx = extraKey(ef, ['size', 'days_low', 'days_high', 'basis', 'score']);
   if (efx) return no(`effort:unknown field ${efx}`);
   if (!isOneOf(SIZES, ef.size)) return no(`effort.size:must be one of ${SIZES.join('|')}`);
+  if (ef.score !== undefined && !scale10(ef.score)) return no('effort.score:an integer 1-10 (omit it to default from size)');
   if (ef.days_low !== undefined && !posNum(ef.days_low)) return no('effort.days_low:must be > 0 (omit when unmeasured)');
   if (ef.days_high !== undefined && !posNum(ef.days_high)) return no('effort.days_high:must be > 0 (omit when unmeasured)');
   if (typeof ef.days_low === 'number' && typeof ef.days_high === 'number' && ef.days_low > ef.days_high) return no('effort:days_low > days_high');
@@ -443,7 +481,118 @@ export function validateCandidate(input, opts = {}) {
   }
   if (o.fp !== undefined && !(typeof o.fp === 'string' && /^[0-9a-f]{16}$/.test(o.fp))) return no('fp:must be 16 lowercase hex (or omitted)');
 
+  const sf = findingProblem(o);
+  if (sf) return no(sf);
+  if (wire) {
+    const cf = computedProblem(o);
+    if (cf) return no(cf);
+  }
   return { ok: true, value: /** @type {Candidate} */ (/** @type {unknown} */ (o)) };
+}
+
+/** @param {unknown} v */
+const scale10 = (v) => Number.isInteger(v) && /** @type {number} */ (v) >= 1 && /** @type {number} */ (v) <= 10;
+
+/**
+ * Why the judge-written scan-finding/1 fields are invalid, or undefined. `impact` needs its one-line `impact_why`.
+ * @param {Record<string, unknown>} o
+ * @returns {string | undefined}
+ */
+function findingProblem(o) {
+  const F = FIELD_LIMITS;
+  if (o.impact !== undefined && !scale10(o.impact)) return 'impact:an integer 1-10 (omit when not judged)';
+  if (o.impact !== undefined && o.impact_why === undefined) return 'impact_why:required with impact (one line, the reason for the number)';
+  if (o.impact_why !== undefined && !short(o.impact_why, F.impact_why)) return `impact_why:one line, at most ${F.impact_why} chars`;
+  if (o.risk !== undefined && !scale10(o.risk)) return 'risk:an integer 1-10, the risk of making the change (omit to default from delivery_risk.blast)';
+  if (o.category !== undefined && !isOneOf(CATEGORIES, o.category)) return `category:must be one of ${CATEGORIES.join('|')}`;
+  if (o.predicted_verdict !== undefined && !isOneOf(VERDICTS, o.predicted_verdict)) return `predicted_verdict:must be one of ${VERDICTS.join('|')}`;
+  if (o.predicted_why !== undefined && !(str(o.predicted_why) && /** @type {string} */ (o.predicted_why).length <= F.predicted_why)) {
+    return `predicted_why:at most ${F.predicted_why} chars`;
+  }
+  if (o.predicted_why !== undefined && o.predicted_verdict === undefined) return 'predicted_why:goes with predicted_verdict';
+  return undefined;
+}
+
+/**
+ * Why the store-computed fields of a pushed record are invalid, or undefined (wire mode only).
+ * @param {Record<string, unknown>} o
+ * @returns {string | undefined}
+ */
+function computedProblem(o) {
+  const F = FIELD_LIMITS;
+  if (o.score !== undefined && !(typeof o.score === 'number' && Number.isFinite(o.score) && o.score > 0 && o.score <= 100)) return 'score:a number above 0, at most 100';
+  if (o.score_parts !== undefined) {
+    if (o.score === undefined) return 'score_parts:goes with score';
+    if (!obj(o.score_parts)) return 'score_parts:must be an object';
+    const sp = /** @type {Record<string, unknown>} */ (o.score_parts);
+    const x = extraKey(sp, [...SCORE_PART_KEYS]) ?? SCORE_PART_KEYS.find((k) => sp[k] === undefined);
+    if (x) return `score_parts:${x} is unknown or missing`;
+    if (!str(sp.formula)) return 'score_parts.formula:required';
+    for (const k of ['impact', 'confidence_w', 'effort_div', 'risk_factor']) {
+      if (typeof sp[k] !== 'number' || !Number.isFinite(sp[k])) return `score_parts.${k}:must be a number`;
+    }
+  }
+  if (o.band !== undefined && !isOneOf(BANDS, o.band)) return `band:must be one of ${BANDS.join('|')}`;
+  if (o.mvp !== undefined && o.mvp !== true) return 'mvp:true on a lens\'s top finding (omit otherwise)';
+  if (o.mvp_rule !== undefined && !isOneOf(MVP_RULES, o.mvp_rule)) return `mvp_rule:must be one of ${MVP_RULES.join('|')}`;
+  if (o.mvp_why !== undefined && !short(o.mvp_why, F.mvp_why)) return `mvp_why:one line, at most ${F.mvp_why} chars`;
+  if (o.mvp_rule === 'override' && o.mvp_why === undefined) return 'mvp_why:required when mvp_rule is override';
+  if (o.predicted_by !== undefined && !short(o.predicted_by, F.provenance)) return `predicted_by:one line, at most ${F.provenance} chars`;
+  if (o.pretriaged_by !== undefined && !(typeof o.pretriaged_by === 'string' && DECIDER_RE.test(o.pretriaged_by))) return 'pretriaged_by:a decider <kind>:<name>';
+  return undefined;
+}
+
+/**
+ * The slice a proposal's trust is kept in (scan-finding/1 autonomy ladder): `<category>|<lens>|<risk_class>|<size>`,
+ * an absent part written `-`. Dowser has no risk_class vocabulary of its own, so that part is always `-`.
+ * @param {{category?: string, lens: string, effort?: {size?: string}}} p
+ * @returns {string}
+ */
+export function sliceKey(p) {
+  return `${p.category ?? '-'}|${p.lens}|-|${p.effort?.size ?? '-'}`;
+}
+
+/** @param {unknown} s @param {number} n */
+const clipText = (s, n) => { const t = String(s).replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
+/** The longest value one facts row shows: the table stays far inside Jira's description cap. */
+export const FACT_MAX = 300;
+
+/**
+ * The facts table the Jira issue (and the accept preview) opens with: label/value rows, in order, only the rows the
+ * card has values for. Impact; Score with its breakdown in one line ("unscored" when the card has none); Confidence
+ * and why; Effort (n/10, size, days range); Risk (n/10, blast); Lens / kind; "MVP of the <lens> lens" when it is.
+ * @param {Record<string, any>} card  a proposal record or a Forge card
+ * @param {Record<string, string>} [lensNames]  lens id -> display name (default: the id)
+ * @returns {{label: string, value: string}[]}
+ */
+export function factsOf(card, lensNames = {}) {
+  /** @type {{label: string, value: string}[]} */
+  const rows = [];
+  const lens = lensNames[card.lens] ?? String(card.lens);
+  if (scale10(card.impact)) rows.push({ label: 'Impact', value: clipText(`${card.impact}/10${card.impact_why ? ` - ${card.impact_why}` : ''}`, FACT_MAX) });
+  const sp = card.score_parts;
+  if (typeof card.score === 'number') {
+    const parts = obj(sp) ? ` = 10 x impact ${sp.impact} x confidence ${sp.confidence_w} / effort ${sp.effort_div} x risk ${sp.risk_factor} (${sp.formula})` : '';
+    rows.push({ label: 'Score', value: clipText(`${card.score}${parts}`, FACT_MAX) });
+  } else {
+    rows.push({ label: 'Score', value: 'unscored (no impact or effort judged)' });
+  }
+  if (isOneOf(CONFIDENCES, card.confidence)) {
+    const c = String(card.confidence);
+    rows.push({ label: 'Confidence', value: clipText(`${c[0].toUpperCase()}${c.slice(1)}${card.confidence_why ? ` - ${card.confidence_why}` : ''}`, FACT_MAX) });
+  }
+  const ef = obj(card.effort) ? card.effort : undefined;
+  if (ef) {
+    const days = posNum(ef.days_low) && posNum(ef.days_high) ? `, ${ef.days_low}-${ef.days_high} days` : posNum(ef.days_high) ? `, up to ${ef.days_high} days` : '';
+    const head = scale10(ef.score) ? `${ef.score}/10 (${ef.size}${days})` : `${ef.size}${days}`;
+    rows.push({ label: 'Effort', value: clipText(head, FACT_MAX) });
+  }
+  const blast = obj(card.delivery_risk) ? card.delivery_risk.blast : undefined;
+  if (scale10(card.risk)) rows.push({ label: 'Risk', value: `${card.risk}/10${blast ? ` (blast ${blast})` : ''}` });
+  else if (blast) rows.push({ label: 'Risk', value: `blast ${blast}` });
+  rows.push({ label: 'Lens / kind', value: clipText(`${lens} / ${card.kind}`, FACT_MAX) });
+  if (card.mvp === true) rows.push({ label: 'MVP', value: clipText(`MVP of the ${lens} lens`, FACT_MAX) });
+  return rows;
 }
 
 /**

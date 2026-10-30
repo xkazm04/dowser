@@ -18,19 +18,29 @@
 //                                          JSONL out, one line per input line: {line, result, fp?, ...} where
 //                                          result is created | evidence-grew | suppressed | duplicate |
 //                                          invalid:<why>; then one {summary} line
-//   verify --run <id>                      re-check code/doc quotes -> verified | dropped (verify-failed:<ref>)
+//   verify --run <id> [--per-lens n] [--per-run n]
+//                                          re-check code/doc quotes -> verified | dropped (verify-failed:<ref>);
+//                                          then allocate the run's verified cards: each lens's MVP, then by score,
+//                                          at most the pack budget (4) per lens and 16 per run -> band ranked; the
+//                                          rest band reserve (stored and pushed, never dropped) -> allocation
+//   pretriage --run <id>                   the L1 gate: mark verified ranked cards predicted `accept` in slices at
+//                                          trust level 1 pretriaged_by machine:dowser -> {pretriaged, for_person}
+//   trust [--slice <key>]                  per-slice trust -> {slices: [{slice, level, ceiling, start, n,
+//                                          agreement?, changed_at?, reason?}], events: [...]} (append-only events)
 //   move <fp> --to <status> --by <kind:name> [--from s] [--reason code] [--note t] [--into fp] [--run id]
 //                                          [--until YYYY-MM-DD]  (only with --to snoozed; a date after today)
 //   status [--runs n]                      counts by status and lens, last runs, "top N of M" truncation
 //   context --run <id> --lens <l> [--focus f]  -> {lens, lens_version, kinds, budget, suppressed, near, rules,
 //                                          exemplars, outcomes?: {right, partly, wrong}, since_sha?, focus?, direction?}
-//   similar <fp>                           same-lens items sharing an anchor or 2+ topic tokens, with the overlap
+//   similar <fp>                           same-lens items sharing an anchor or 2+ topic tokens, and other-lens items
+//                                          sharing an anchor (cross_lens: true), with the overlap
 //   show <fp>                              ask-why: the card, every evidence row, every transition (no rescan)
 //   list [--lens l] [--status s] [--title substring]  -> {proposals: [{fp, lens, status, title, decided_at?,
 //                                          snooze_until?}]}
 //   rules offer | rules list [--lens l] | rules accept|decline <id> --by human:<name> [--text t]
-//   reflect export                         -> {project_key, rules_json?, more?}: the dowser_reflect_sync arguments
-//                                          (rules in state `offered`, oldest first, at most 50; read-only;
+//   reflect export                         -> {project_key, rules_json?, trust_json?, more?}: the dowser_reflect_sync
+//                                          arguments (rules in state `offered`, oldest first, at most 50, and the
+//                                          per-slice trust with its newest 50 events; read-only;
 //                                          run `rules offer` first)
 //   reflect ingest --file <json>           apply a dowser_reflect_sync response: each rule Forge decided is a CAS
 //                                          offered -> accepted|declined (others skipped), each outcome an
@@ -80,6 +90,7 @@ const reflectLib = await import('./lib/reflect.mjs');
 const directionLib = await import('./lib/direction.mjs');
 const depsLib = await import('./lib/deps.mjs');
 const shareLib = await import('./lib/share.mjs');
+const trustLib = await import('./lib/trust.mjs');
 
 /**
  * @typedef {{_: string[], [flag: string]: string | string[] | true | string[] | undefined}} Args
@@ -158,6 +169,20 @@ export function parseKinds(a) {
 }
 
 /**
+ * A positive-integer flag's value, or undefined when absent.
+ * @param {Args} a
+ * @param {string} k
+ * @returns {number | undefined}
+ */
+function intOpt(a, k) {
+  const v = opt(a, k);
+  if (v === undefined) return undefined;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 1) throw new DowserError(`--${k} is a positive integer`, 2);
+  return n;
+}
+
+/**
  * Reads `--lenses` as inline JSON or `@<file>`.
  * @param {string} v
  * @returns {unknown}
@@ -229,7 +254,7 @@ export const COMMANDS = {
 
   verify(a, ctx) {
     const db = ctx.open();
-    return { out: verifyLib.verifyRun(db, ctx.root, /** @type {string} */ (opt(a, 'run', true))) };
+    return { out: verifyLib.verifyRun(db, ctx.root, /** @type {string} */ (opt(a, 'run', true)), { perLens: intOpt(a, 'per-lens'), perRun: intOpt(a, 'per-run') }) };
   },
 
   move(a, ctx) {
@@ -240,7 +265,16 @@ export const COMMANDS = {
       from: opt(a, 'from'), by: /** @type {string} */ (opt(a, 'by', true)), reason: opt(a, 'reason'),
       note: opt(a, 'note'), into: opt(a, 'into'), runId: opt(a, 'run'), until: opt(a, 'until'),
     });
-    return { out: { fp: row.fp, status: row.status, ...store.clean({ reason: row.reason, note: row.note, merged_into: row.merged_into, snooze_until: row.snooze_until }), decided_by: row.decided_by, decided_at: row.decided_at } };
+    const events = trustLib.syncTrust(db);
+    return { out: { fp: row.fp, status: row.status, ...store.clean({ reason: row.reason, note: row.note, merged_into: row.merged_into, snooze_until: row.snooze_until }), decided_by: row.decided_by, decided_at: row.decided_at, ...(events.length ? { trust_events: events } : {}) } };
+  },
+
+  trust(a, ctx) {
+    return { out: trustLib.trustReport(ctx.open(), { slice: opt(a, 'slice') }) };
+  },
+
+  pretriage(a, ctx) {
+    return { out: trustLib.pretriageRun(ctx.open(), /** @type {string} */ (opt(a, 'run', true))) };
   },
 
   status(a, ctx) {

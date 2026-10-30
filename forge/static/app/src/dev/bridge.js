@@ -8,7 +8,9 @@
 //   #byline (Confluence page 90211, two proposals)   &page=<id> another page (48213: one; 1: none)
 //   &fail=<resolver key>  that key answers {error, message}     &empty  no proposals at all
 //   &slow                 every call takes 1.5 s (to see skeletons)
-//   #reflect              the Learning tab (`reflect.data`; github.com/acme/shop has data, billing is empty)
+//   #reflect              the Learning tab (`reflect.data`; github.com/acme/shop has data and trust, billing is empty)
+//   The latest push of the shop inbox shows the scan-finding/1 order: three MVPs pinned, a ranked card, two in reserve;
+//   DW-9 is machine pre-triaged (the toolbar's "Machine pre-triaged" filter keeps it alone).
 //   &fail=reflect.data | rule.decide | outcome.record | verdict.snooze | verdict.reject   that call fails
 //   #settings             accept targets and Lens direction (shop has Opportunity set)   &fail=direction.set
 //   &page=<n>             inbox page size (default 4)     &mode=dark|light   colour mode (default: the OS)
@@ -39,6 +41,18 @@ function summary(i) {
   return { ...i, open: by_status.open, by_status };
 }
 function err(error, message) { return { error, message }; }
+/**
+ * The order inside a push group, as forge/src/core/cards.mjs ORDER: MVPs first, ranked before reserve, the stored
+ * score desc with unscored cards after every scored one, then confidence desc (the fixture's array order breaks ties).
+ */
+const CONF = { high: 0, medium: 1, low: 2 };
+function policy(a, b) {
+  const key = (c) => [c.mvp ? 0 : 1, c.band === 'reserve' ? 1 : 0, typeof c.score === 'number' ? 0 : 1, -(c.score ?? 0), CONF[c.confidence] ?? 2];
+  const ka = key(a);
+  const kb = key(b);
+  for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i] - kb[i];
+  return 0;
+}
 function decide(ref, status, extra = {}) {
   const c = cards.find((x) => x.ref === ref);
   if (!c) throw err('bad-input', `No proposal ${ref}.`);
@@ -51,11 +65,13 @@ function decide(ref, status, extra = {}) {
 }
 
 const handlers = {
-  'inbox.list'({ project_key, status, lens, cursor }) {
+  'inbox.list'({ project_key, status, lens, cursor, pretriaged }) {
     if (params().has('empty')) return { inboxes: [], groups: [] };
-    const pick = cards.filter((c) => (!project_key || c.project_key === project_key) && (!status || c.status === status) && (!lens || c.lens === lens));
+    if (pretriaged !== undefined && typeof pretriaged !== 'boolean') throw err('bad-input', 'pretriaged must be true or false');
+    const pick = cards.filter((c) => (!project_key || c.project_key === project_key) && (!status || c.status === status) && (!lens || c.lens === lens)
+      && (!pretriaged || c.pretriaged_by));
     const ordered = [...PUSHES].sort((a, b) => b.at.localeCompare(a.at))
-      .flatMap((p) => pick.filter((c) => GROUP_OF[c.ref] === p.run_id).map((c) => [p, c]));
+      .flatMap((p) => pick.filter((c) => GROUP_OF[c.ref] === p.run_id).sort(policy).map((c) => [p, c]));
     const start = cursor ? Number(cursor) : 0;
     if (!Number.isInteger(start) || start < 0 || start > ordered.length) throw err('bad-cursor', 'The cursor is not valid.');
     const size = Number(params().get('page')) || PAGE;

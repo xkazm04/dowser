@@ -1,4 +1,5 @@
-// The inbox toolbar: inbox picker, status segments with counts, lens filter, the last-push line and the help button.
+// The inbox toolbar: inbox picker, status segments with counts, lens filter, the machine pre-triaged filter, the
+// last-push line and the help button.
 import React from 'react';
 import { Mark } from '../../components/Brand.jsx';
 import { LENSES, LENS_LABELS, STATUSES, STATUS_LABELS, formatDate } from '../../components/labels.js';
@@ -20,7 +21,7 @@ function summarise(inboxes, projectKey, status, decided) {
   return { by, last, count: list.length };
 }
 
-export function Toolbar({ inboxes, decided, projectKey, onProject, status, onStatus, lens, onLens, onHelp }) {
+export function Toolbar({ inboxes, decided, projectKey, onProject, status, onStatus, lens, onLens, pretriaged = false, onPretriaged, onHelp }) {
   const { by, last, count } = summarise(inboxes, projectKey, status, decided);
   return (
     <header className="dwr-toolbar">
@@ -48,6 +49,13 @@ export function Toolbar({ inboxes, decided, projectKey, onProject, status, onSta
           {LENSES.map((l) => <option key={l} value={l}>{LENS_LABELS[l]}</option>)}
         </select>
       </label>
+      {onPretriaged && (
+        <button type="button" className="dwr-seg__btn dwr-filter" aria-pressed={pretriaged} onClick={() => onPretriaged(!pretriaged)}
+          aria-label="Only machine pre-triaged proposals"
+          title="Only the proposals the scan pre-triaged on its own (a kind of proposal where its predictions matched yours)">
+          Pre-triaged
+        </button>
+      )}
       <span className="dwr-spacer" />
       <p className="dwr-runline" aria-label="Run summary">
         {last

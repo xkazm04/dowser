@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { DowserError } from '../lib/model.mjs';
 import {
-  DDL, SYSTEM_DECIDER, USER_VERSION, getProposal, localDate, move, openStore, propose, runStart, transitionsOf, untilProblem,
+  DDL, SYSTEM_DECIDER, USER_VERSION, V6_COLUMNS, getProposal, localDate, move, openStore, propose, runStart, transitionsOf, untilProblem,
 } from '../lib/store.mjs';
 import { KINDS, candidate, gitRepo, removeDir, tempDir } from './_fixture.mjs';
 
@@ -39,9 +39,11 @@ function cli(...args) {
   return { code: r.status, out, stdout: r.stdout, stderr: r.stderr };
 }
 
-test('a v4 store file upgrades in place to v5: snooze_until added, absent on old rows', () => {
-  assert.equal(USER_VERSION, 5);
-  const ddlV4 = DDL.replace(/^\s*snooze_until\s.*\n/m, '').replace(`PRAGMA user_version = ${USER_VERSION};`, 'PRAGMA user_version = 4;');
+test('a v4 store file upgrades in place to v5 (and on to v6): snooze_until added, absent on old rows', () => {
+  assert.equal(USER_VERSION, 6);
+  const v6 = new RegExp(`^\\s*(${V6_COLUMNS.join('|')})\\s.*\\n`, 'gm');
+  const ddlV4 = DDL.replace(/^\s*snooze_until\s.*\n/m, '').replace(v6, '').split('CREATE TABLE IF NOT EXISTS trust_state')[0]
+    .replace(`PRAGMA user_version = ${USER_VERSION};`, 'PRAGMA user_version = 4;');
   assert.ok(!ddlV4.includes('snooze_until') && ddlV4.includes('PRAGMA user_version = 4;'));
   const file = join(dir, 'v4.db');
   const raw = new DatabaseSync(file);
@@ -56,7 +58,7 @@ test('a v4 store file upgrades in place to v5: snooze_until added, absent on old
 
   const up = openStore(file);
   try {
-    assert.equal(Number(/** @type {any} */ (up.prepare('PRAGMA user_version').get()).user_version), 5);
+    assert.equal(Number(/** @type {any} */ (up.prepare('PRAGMA user_version').get()).user_version), 6);
     assert.ok((/** @type {any[]} */ (up.prepare('PRAGMA table_info(proposals)').all())).some((c) => c.name === 'snooze_until'));
     const p = getProposal(up, 'bbbbbbbbbbbbbbbb');
     assert.equal(p?.status, 'snoozed');

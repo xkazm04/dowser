@@ -1,6 +1,6 @@
 ---
 id: doc-drift
-version: 0.2.0
+version: 0.3.0
 name: Doc drift
 kinds: [contradicted-by-code, removed-still-documented, undocumented-change, stale-example, missing-doc]
 sources: [code, docs, git, pages]
@@ -35,7 +35,7 @@ Confluence pages were reachable.
   rest of the repo is still read: focus orders the work, it does not hide a first-run break.
 - **`exclude`** (topics). Before writing `<work>/doc-drift.jsonl`, remove every candidate whose
   `topic`, documented subject or primary doc matches an excluded term. Removed candidates are
-  not truncated: list them in the lens report as `excluded by direction: <topic> (<term>)`.
+  not reserved: list them in the lens report as `excluded by direction: <topic> (<term>)`.
   Never drop one silently.
 - **`notes`** (the team's intent). Read them as part of this pack. They may move a doc between
   reader-harm tiers ("integrators first" lifts the API reference to tier 1; "the admin guide is
@@ -110,7 +110,9 @@ Record steps that found nothing and go on.
 
 ## Choosing under the budget
 
-Rank every surviving candidate by **reader harm**, then **certainty**. Write the top 4.
+Rank every surviving candidate by **reader harm**, then **certainty**, and write each one: the
+store keeps the 4 ranked slots by score (the lens's top card is its MVP) and files the rest in
+`reserve`. Reader harm reaches the store through `impact`, certainty through `confidence`.
 
 - **Reader harm.** Tier 1: the first-run path - README install and quickstart, getting started,
   auth setup, the first example a new user copies. Tier 2: reference read in daily work -
@@ -125,7 +127,27 @@ Rank every surviving candidate by **reader harm**, then **certainty**. Write the
 - **One card per doc subject.** Claims on the same documented thing with one fix (one table of
   defaults, one example) are one card with a row each in the view. Distinct subjects are
   distinct cards, even in one file.
-- Candidates past 4 are truncated; keep their titles for the "top 4 of M" line.
+- Candidates past 4 go to `reserve` (the store decides, by score); the run summary names them
+  in its "top 4 of M" line.
+
+## Impact, risk and the predicted verdict
+
+Set `impact` (1-10) from the reader-harm tier, with `impact_why` naming the tier and the harm in
+one line ("first-run: step 3 fails with an unknown flag"):
+
+| Reader harm | A documented step fails | Only misleads |
+| --- | --- | --- |
+| Tier 1 (first run) | 8 | 6 |
+| Tier 2 (daily reference) | 6 | 4 |
+| Tier 3 (rarely read) | 3 | 2 |
+
+Certainty sets `confidence`, not impact: `sure` is medium or high, `likely` is low. `risk` is the
+risk of making the change (a doc edit 2; a doc edit that needs a code or release change 5);
+omit it and the store reads `delivery_risk.blast`. `category` is `technical` (the default for
+this lens). Before writing a card, read `context`'s `near` (with each reason and note) and
+`outcomes` (with notes): set `predicted_verdict` and a `predicted_why` that names the closest
+precedent ("typo-level fixes were rejected as not-worth-it"). With no precedent, omit both; the
+store records `defer`.
 
 ## Evidence rules
 

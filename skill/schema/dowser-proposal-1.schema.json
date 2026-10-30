@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:dowser:schema:dowser-proposal-1",
   "title": "dowser-proposal/1",
-  "description": "A Dowser backlog proposal as the store returns it. Twin of skill/scripts/lib/model.mjs (change both together). Absent values are omitted: never null, never 0 for something unmeasured. A propose input line is $defs/candidate (the same record without the store-owned triage fields). Checks the schema cannot express are enforced by validateCandidate: the body carries the five '## ' sections, effort.days_low <= days_high, `kind` is one of the lens pack's kinds.",
+  "description": "A Dowser backlog proposal as the store returned it before the scan-finding/1 fields. Superseded by dowser-proposal-2.schema.json, model.mjs's current twin; kept so /1 records (which are valid /2 records) stay readable. Absent values are omitted: never null, never 0 for something unmeasured. A propose input line is $defs/candidate (the same record without the store-owned triage fields). Checks the schema cannot express are enforced by validateCandidate: the body carries the five '## ' sections, effort.days_low <= days_high, `kind` is one of the lens pack's kinds.",
   "type": "object",
   "additionalProperties": false,
   "required": ["fp", "lens", "kind", "topic", "anchors", "title", "rationale", "body", "evidence", "effort", "confidence", "confidence_why", "provenance", "status"],

@@ -202,4 +202,24 @@ export const MIGRATIONS = Object.freeze([
   // see the inbox until a Jira project is configured for it. NULL on inboxes created before v018: until a Jira
   // project is configured, only Jira admins see those.
   { name: 'v018_inboxes_created_by', statement: 'ALTER TABLE inboxes ADD COLUMN created_by VARCHAR(191)' },
+  // scan-finding/1 (dowser-proposal/2): the columns the inbox sorts and filters by, copied from the pushed record on
+  // every push; record_json carries every other new field (impact, score_parts, predicted verdict, ...). NULL on rows
+  // pushed before v019 and on unscored or unallocated cards: they sort after every scored, ranked card. One statement
+  // each: SQLite (the tests and the local core) has no multi-column ALTER TABLE.
+  { name: 'v019_proposals_score', statement: 'ALTER TABLE proposals ADD COLUMN score DOUBLE' },
+  { name: 'v020_proposals_band', statement: 'ALTER TABLE proposals ADD COLUMN band VARCHAR(16)' },
+  { name: 'v021_proposals_mvp', statement: 'ALTER TABLE proposals ADD COLUMN mvp TINYINT' },
+  // machine:dowser when the skill's L1 trust gate skipped the person's pre-triage (the inbox's marker and filter)
+  { name: 'v022_proposals_pretriaged_by', statement: 'ALTER TABLE proposals ADD COLUMN pretriaged_by VARCHAR(64)' },
+  {
+    name: 'v023_trust',
+    // The skill's per-slice trust as its last dowser_reflect_sync sent it (trust_json): the Learning tab's Trust
+    // section. One row per inbox, replaced whole on every sync; the skill's store keeps the append-only event log.
+    statement: `CREATE TABLE IF NOT EXISTS trust (
+  project_key VARCHAR(191) NOT NULL,
+  trust_json MEDIUMTEXT NOT NULL,
+  updated_at VARCHAR(32) NOT NULL,
+  PRIMARY KEY (project_key)
+)`,
+  },
 ]);

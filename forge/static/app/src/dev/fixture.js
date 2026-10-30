@@ -1,5 +1,7 @@
 // Realistic fixture data for the dev server (VITE_DOWSER_FIXTURE=1). Shapes follow forge/src/core/types.mjs:
-// Card = dowser-proposal/1 record + inbox state. Absent values are omitted keys, as on the wire.
+// Card = dowser-proposal/2 record + inbox state. Absent values are omitted keys, as on the wire. The latest push carries
+// the scan-finding/1 fields (score and its breakdown, band, MVP, impact, predicted verdict, one machine pre-triage, two
+// cards in reserve); DW-10 is unscored; the oldest push is /1 records with none of them.
 
 const REPO = 'https://github.com/acme/shop';
 const SHA1 = '9f2c4e1a7b3d5e6f8091a2b3c4d5e6f708192a3b';
@@ -42,6 +44,12 @@ function card(over) {
     ...over,
   };
 }
+
+/** The scan-finding/1 fields as the skill's store computes them (scan-score/1); the UI never recomputes them. */
+const scored = (score, impact, why, cw, ed, rf, over = {}) => ({
+  score, impact, impact_why: why, band: 'ranked',
+  score_parts: { impact, confidence_w: cw, effort_div: ed, risk_factor: rf, formula: 'scan-score/1' }, ...over,
+});
 
 const code = (path, line, quote) => ({ type: 'code', ref: `${path}:${line}`, quote, link: `${REPO}/blob/${SHA1}/${path}#L${line}` });
 
@@ -139,6 +147,10 @@ export const CARDS = [
     rationale: 'A declined card leaves a blank error and no retry. Support sees it weekly, and it is the top checkout ticket theme.',
     confidence: 'high', confidence_why: 'Code quote shows the swallowed error and 41 tickets agree; a funnel metric would raise it.',
     delivery_risk: { blast: 'medium', bus_factor: 1 }, doc_impact: ['docs/checkout.md', '48213'],
+    effort: { size: 'M', days_low: 2, days_high: 4, score: 4, basis: ['src/checkout/payment.ts#submitPayment', 'src/checkout/ui/Error.tsx#PaymentError'] },
+    ...scored(45.6, 8, '41 tickets in 90 days, on the main checkout path', 0.95, 1.333, 0.8, { mvp: true, mvp_rule: 'top-score', risk: 5 }),
+    category: 'product', predicted_verdict: 'accept', predicted_by: 'dowser-opportunity@0.3.0:claude-opus-5-5',
+    predicted_why: 'Checkout recovery was accepted before [closest precedent "Retry declined card payments once" (41526a7b8c9d0e1f) accepted]',
     artifacts: [ART.demand],
     evidence: [
       code('src/checkout/payment.ts', 88, "catch (e) { setError(''); }"),
@@ -150,8 +162,11 @@ export const CARDS = [
   card({
     ref: 'DW-9', fp: 'b2c3d4e5f6071829', change: 'grew', lens: 'doc-drift', kind: 'stale-instruction', title: 'Fix the install guide that still names the removed --legacy flag',
     rationale: 'The guide tells admins to pass a flag the CLI no longer accepts, so first installs fail at step 3.',
-    effort: { size: 'XS', days_low: 0.25, days_high: 0.5, basis: ['docs/install.md'] },
+    effort: { size: 'XS', days_low: 0.25, days_high: 0.5, score: 1, basis: ['docs/install.md'] },
     delivery_risk: { blast: 'low' }, doc_impact: ['docs/install.md'], first_seen: PUSHES[1].at,
+    ...scored(42.8, 6, 'Every first install fails at step 3', 0.75, 1, 0.95, { mvp: true, mvp_rule: 'top-score', risk: 2 }),
+    category: 'technical', predicted_verdict: 'accept', predicted_by: 'dowser-doc-drift@0.3.0:claude-opus-5-5', pretriaged_by: 'machine:dowser',
+    predicted_why: 'Broken install steps were accepted 19 of the last 20 times [closest precedent "Fix the upgrade guide" (7a8b9c0d1e2f3a4b) accepted]',
     artifacts: [ART.installDrift],
     evidence: [
       { type: 'doc', ref: 'docs/install.md:42', quote: 'shopctl init --legacy', link: `${REPO}/blob/${SHA1}/docs/install.md#L42` },
@@ -163,7 +178,10 @@ export const CARDS = [
     ref: 'DW-6', fp: 'c3d4e5f607182930', lens: 'security-cra', kind: 'vulnerable-dependency', reopened: true, change: 'reopened',
     title: 'Upgrade the image library with a known decoder overflow',
     rationale: 'The pinned version has a published overflow in its PNG decoder, and product images are user uploads.',
-    effort: { size: 'S', days_low: 0.5, days_high: 1.5, basis: ['package.json#sharp'] }, confidence: 'high',
+    effort: { size: 'S', days_low: 0.5, days_high: 1.5, score: 2, basis: ['package.json#sharp'] }, confidence: 'high',
+    ...scored(50, 9, 'Product images are user uploads decoded by the affected library', 0.95, 1.111, 0.65, { mvp: true, mvp_rule: 'top-score', risk: 8 }),
+    category: 'technical', predicted_verdict: 'defer', predicted_by: 'dowser-security-cra@0.3.0:claude-opus-5-5',
+    predicted_why: 'closest precedent "Upgrade the image library with a known decoder overflow" (c3d4e5f607182930) snoozed: Revisit after the Node 22 upgrade lands',
     confidence_why: 'Lockfile pins the affected version and SARIF flags it; a reachability probe would raise it.',
     delivery_risk: { blast: 'high', bus_factor: 2 }, first_seen: PUSHES[2].at,
     artifacts: [ART.craMatrix, ART.advisory],
@@ -173,13 +191,41 @@ export const CARDS = [
       { type: 'sarif', ref: 'audit.sarif#GHSA-54xq-cgqr-rpm3@package-lock.json', quote: 'Heap overflow in PNG decoder' },
     ],
   }),
+  card({
+    ref: 'DW-17', fp: '6a7b8c9d0e1f2031', change: 'new', title: 'Show the delivery date on the order confirmation',
+    rationale: 'Buyers write in to ask when an order arrives; the carrier date is already on the order.',
+    confidence: 'high', confidence_why: 'The date field is quoted and 12 tickets ask for it.',
+    effort: { size: 'S', days_low: 1, days_high: 2, score: 2 }, delivery_risk: { blast: 'low' },
+    ...scored(40.6, 5, '12 tickets a month ask when the order arrives', 0.95, 1.111, 0.95, { risk: 2 }),
+    category: 'product', predicted_verdict: 'accept', predicted_by: 'dowser-opportunity@0.3.0:claude-opus-5-5', predicted_why: 'like the accepted shipping-cost card',
+    evidence: [code('src/orders/confirm.ts', 40, 'const eta = order.carrier.eta;'), { type: 'ticket', ref: 'SUP-150', url: 'https://acme.atlassian.net/browse/SUP-150' }],
+  }),
+  card({
+    ref: 'DW-15', fp: '7b8c9d0e1f203142', change: 'new', title: 'Let buyers save a cart for later',
+    rationale: 'Two tickets ask to keep a cart across devices.', confidence: 'medium',
+    effort: { size: 'S', days_low: 1, days_high: 3, score: 2 },
+    ...scored(20.3, 4, 'A nice-to-have two buyers asked for', 0.75, 1.111, 0.75, { band: 'reserve' }),
+    category: 'product', predicted_verdict: 'defer', predicted_by: 'dowser-opportunity@0.3.0:memory', predicted_why: 'no recorded decision on similar work; a person decides',
+    evidence: [code('src/cart/store.ts', 12, 'localStorage.setItem(CART_KEY, json);')],
+  }),
+  card({
+    ref: 'DW-16', fp: '8c9d0e1f20314253', change: 'new', title: 'Offer gift wrapping at checkout',
+    rationale: 'One ticket asks for gift wrapping in December.', confidence: 'low', confidence_why: 'One ticket; inferred.',
+    ...scored(8.4, 3, 'One seasonal request', 0.5, 1.333, 0.75, { band: 'reserve' }),
+    effort: { size: 'M', days_low: 2, days_high: 4, score: 4 },
+    category: 'product', predicted_verdict: 'reject', predicted_by: 'dowser-opportunity@0.3.0:memory',
+    predicted_why: 'closest precedent "Add a loyalty points ledger" (5a6b7c8d9e0f1a2b) rejected as not-our-direction: Loyalty is owned by the CRM vendor',
+    evidence: [{ type: 'ticket', ref: 'SUP-151', url: 'https://acme.atlassian.net/browse/SUP-151' }],
+  }),
   // Group 2
   card({
     ref: 'DW-11', fp: 'd4e5f60718293041', change: 'new', lens: 'ux-friction', kind: 'dead-end', title: 'Keep the cart when a session times out',
     rationale: 'A timed-out session empties the cart without warning; mobile users lose carts while paying in another app.',
     first_seen: PUSHES[1].at, last_push_at: PUSHES[1].at,
     provenance: { lens_version: '1.0.3', model: 'claude-opus-5-5', harness: 'codex', run_id: PUSHES[1].run_id },
-    effort: { size: 'L', days_low: 5, days_high: 9 },
+    effort: { size: 'L', days_low: 5, days_high: 9, score: 7 },
+    ...scored(23.6, 7, 'Mobile buyers lose the cart while paying in a banking app', 0.75, 1.667, 0.75, { mvp: true, mvp_rule: 'top-score' }),
+    category: 'product', predicted_verdict: 'defer', predicted_by: 'dowser-ux-friction@0.3.0:memory', predicted_why: 'no recorded decision on similar work; a person decides',
     artifacts: [ART.timeoutFlow, ART.timeoutSteps],
     evidence: [
       code('src/session/expire.ts', 17, 'store.clear(CART_KEY);'),
@@ -191,7 +237,8 @@ export const CARDS = [
     rationale: 'A CSV writer already exists for invoices; finance asks for order exports every month-end.',
     confidence: 'low', confidence_why: 'Inferred from two tickets; no usage count. A count of export requests would raise it.',
     effort: { size: 'S', days_low: 1, days_high: 2, basis: ['src/reports/csv.ts#writeCsv'] },
-    delivery_risk: { blast: 'low' }, first_seen: PUSHES[1].at, last_push_at: PUSHES[1].at,
+    delivery_risk: { blast: 'low' }, first_seen: PUSHES[1].at, last_push_at: PUSHES[1].at, band: 'ranked', risk: 2, category: 'product',
+    predicted_verdict: 'defer', predicted_by: 'dowser-opportunity@0.3.0:memory', predicted_why: 'no recorded decision on similar work; a person decides',
     artifacts: [ART.malformed],
     provenance: { lens_version: '1.2.0', run_id: PUSHES[1].run_id },
     evidence: [code('src/reports/csv.ts', 12, 'export function writeCsv(rows, columns) {'), { type: 'ticket', ref: 'FIN-77', url: 'https://acme.atlassian.net/browse/FIN-77' }],
@@ -323,6 +370,20 @@ export const REFLECT = {
       { ref: 'DW-1', title: 'Explain shipping costs before the payment step', issue_ref: 'SHOP-101', issue_url: 'https://acme.atlassian.net/browse/SHOP-101', issue_status: 'Done', done: true },
       { ref: 'DW-4', title: 'Show stock levels on the product page', issue_ref: 'SHOP-97', issue_url: 'https://acme.atlassian.net/browse/SHOP-97', issue_status: 'In Progress', done: false },
     ],
+    trust: {
+      updated_at: '2026-10-27T09:20:00.000Z',
+      slices: [
+        { slice: 'technical|doc-drift|-|XS', level: 1, ceiling: 1, start: 0, n: 20, agreement: 0.95, changed_at: '2026-10-26T08:00:00.000Z', reason: 'earned: predicted verdicts agreed on 95 % of the last 20 decisions' },
+        { slice: 'product|opportunity|-|S', level: 0, ceiling: 1, start: 0, n: 14, agreement: 0.786 },
+        { slice: 'product|opportunity|-|M', level: 0, ceiling: 1, start: 0, n: 3, agreement: 0.667, changed_at: '2026-10-21T10:02:00.000Z', reason: 'reversal: forge:712020:7d1c rejected 5a6b7c8d9e0f1a2b, which machine:dowser pre-triaged' },
+        { slice: 'technical|security-cra|-|S', level: 0, ceiling: 1, start: 0, n: 0 },
+      ],
+      events: [
+        { slice: 'product|opportunity|-|M', from: 0, to: 1, reason: 'earned: predicted verdicts agreed on 90 % of the last 20 decisions', agreement: 0.9, n: 20, item_id: '41526a7b8c9d0e1f', at: '2026-10-12T09:00:00.000Z' },
+        { slice: 'product|opportunity|-|M', from: 1, to: 0, reason: 'reversal: forge:712020:7d1c rejected 5a6b7c8d9e0f1a2b, which machine:dowser pre-triaged', agreement: 0.85, n: 20, item_id: '5a6b7c8d9e0f1a2b', at: '2026-10-21T10:02:00.000Z' },
+        { slice: 'technical|doc-drift|-|XS', from: 0, to: 1, reason: 'earned: predicted verdicts agreed on 95 % of the last 20 decisions', agreement: 0.95, n: 20, item_id: '7a8b9c0d1e2f3a4b', at: '2026-10-26T08:00:00.000Z' },
+      ],
+    },
     outcomes: [
       { ref: 'DW-8', fp: '41526a7b8c9d0e1f', rating: 'right', note: 'Checkout errors fell from 41 to 6 tickets in the next 90 days.', issue_ref: 'SHOP-88', decided_by: 'forge:712020:7d1c', decided_by_name: 'Priya Natarajan', recorded_at: '2026-10-18T14:00:00.000Z', title: 'Retry declined card payments once' },
       { ref: 'DW-7', fp: '526a7b8c9d0e1f20', rating: 'partly', issue_ref: 'SHOP-90', decided_by: 'forge:712020:9a2b', decided_by_name: 'Tom Berger', recorded_at: '2026-10-12T09:30:00.000Z', title: 'Filter the order list by status' },

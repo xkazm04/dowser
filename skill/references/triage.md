@@ -26,7 +26,8 @@ status it expects to move from. A move that is illegal, or that comes from a sta
 A resurfaced item goes back through `verify` like a new one. `decided_by` is always
 `kind:name`: `human:<name>` for the runner, `agent:<harness>` for the scanning agent,
 `forge:<jira-user>` for a verdict pulled from Jira, and `skill:dowser` / `skill:dowser-verify`
-for the store's own moves.
+for the store's own moves. `machine:dowser` is not a decider of any move: it only marks a card
+`pretriaged_by` (see "Predicted verdicts and trust").
 
 An **evidence key** is what makes evidence "new". For `code` and `doc` it is the path plus the
 quote with whitespace collapsed. The line number is only a hint, so the same quote at a shifted
@@ -118,7 +119,42 @@ token, `rules offer` drafts a rule, for example:
   overwritten. A Forge decision is recorded as decided by `forge:<account>`.
 - Only accepted rules reach a lens's `context` pack. There they bind like the pack's own
   rules. A declined cluster is never offered again.
-- Rules change **what** a lens proposes and **how**, never how many. The budget stays 4 per lens.
+- Rules change **what** a lens proposes and **how**, never how many. The budget stays 4 ranked
+  per lens and 16 per run, enforced by the store at `verify` (the rest is filed in `reserve`).
+
+## Budget, MVP and reserve
+
+`verify` ends by allocating the run's verified cards (`lib/budget.mjs`): (1) each lens with a
+verified card gets one ranked slot, its **MVP** (its top card by score); (2) the remaining slots
+go by `score` across lenses, at most the pack's `budget` (4) per lens and 16 per run
+(`--per-lens`, `--per-run` override them); (3) every other verified card is `band: reserve`.
+Reserve cards are stored, pushed and shown collapsed in the inbox as "N in reserve"; nothing
+verified is lost. Unscored cards (no `impact`) rank after every scored card. `run finish` writes
+the allocation into the lens record (`ranked`, `reserve`, `reserve_titles`) and `status` prints
+"top N of M". Pre-triage the ranked cards card by card; offer the reserve as one list of titles.
+
+## Predicted verdicts and trust
+
+Every card carries a `predicted_verdict` recorded at `propose`, before anyone sees it: yours
+(written from `context`'s `near` reasons and notes and the `outcomes` notes), else the closest
+decided precedent's, else `defer`. `predicted_why` names that precedent. Nothing acts on it at
+level 0: it is measured.
+
+Trust is kept per **slice** `<category>|<lens>|-|<size>` (`lib/trust.mjs`), from the person's
+decisions only (`human:` and `forge:` moves to accepted, rejected or snoozed):
+
+- A `technical` slice starts at **L1** (the contract's L2 start capped by Dowser's ceiling: technical items default to automation); a `product` slice starts at **L0** and reaches **L1** when its predicted verdicts agreed with the
+  person's on at least 90 % of its last 20 decisions (at least 20). Dowser's ceiling is L1:
+  it never writes into the repo, and a Jira issue leaves the system, so nothing is ever built
+  or accepted by the machine.
+- At L1, `pretriage --run <id>` marks the slice's ranked cards predicted `accept`
+  `pretriaged_by: machine:dowser`. They skip the runner's pre-triage and go to the inbox marked
+  "machine pre-triaged". No status moves: the person still accepts, rejects or snoozes each in
+  Jira, and `verified -> accepted` stays a human-only move.
+- A person rejecting a machine pre-triaged card is a **reversal**: the slice drops one level (to L0) and its
+  window starts over.
+- Every level change is an append-only `trust_events` row; `trust` prints the slices and the
+  events, and `reflect export` sends them to the inbox's Learning tab.
 
 ## Exemplars
 

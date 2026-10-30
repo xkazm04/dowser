@@ -4,6 +4,7 @@
 import { DowserError, LENSES, LENS_STATES, RUN_MODES, isOneOf } from './model.mjs';
 import { clean, getRun, lastDoneRun, localDate, newRunId, now, sql, tx } from './store-core.mjs';
 import { wakeSnoozed } from './proposals.mjs';
+import { allocationOf } from './budget.mjs';
 
 /** @import { Db, Row, LensRecord } from './store-core.mjs' */
 
@@ -101,6 +102,15 @@ export function checkLenses(lenses) {
 export function runFinish(db, { runId, lenses, status = 'done' }) {
   if (status !== 'done' && status !== 'failed') throw new DowserError('--status must be done|failed', 2);
   const rec = checkLenses(lenses);
+  // the store's own slot allocation (budget.mjs) overrides what the agent counted: ranked and reserve per lens, and
+  // the reserve titles, so the summary's "top N of M" names what was held back
+  const alloc = allocationOf(db, runId);
+  for (const [lens, a] of Object.entries(alloc)) {
+    const r = /** @type {Row} */ (rec[lens] ??= { state: 'ran' });
+    r.ranked = a.ranked;
+    r.reserve = a.reserve;
+    if (a.reserve_titles) r.reserve_titles = a.reserve_titles;
+  }
   return tx(db, () => {
     const r = db.prepare("UPDATE runs SET status = ?, finished_at = ?, lenses_json = ? WHERE id = ? AND status = 'running' RETURNING id")
       .get(status, now(), JSON.stringify(rec), runId);
@@ -117,11 +127,14 @@ export function runFinish(db, { runId, lenses, status = 'done' }) {
 // ------------------------------------------------------------------------------------------------ status
 
 /**
- * "top N of M" for a lens record whose truncated > 0 (N = emitted, M = emitted + truncated), else undefined.
+ * "top N of M" for a lens record with cards in reserve (N = ranked, M = ranked + reserve: the store's allocation),
+ * or, on a record written before the budget moved into code, with truncated > 0 (N = emitted, M = emitted +
+ * truncated); else undefined.
  * @param {LensRecord} rec
  * @returns {string | undefined}
  */
 export function truncationNote(rec) {
+  if (rec.reserve) return `top ${rec.ranked ?? 0} of ${(rec.ranked ?? 0) + rec.reserve}`;
   if (!rec.truncated) return undefined;
   const n = rec.emitted ?? 0;
   return `top ${n} of ${n + rec.truncated}`;

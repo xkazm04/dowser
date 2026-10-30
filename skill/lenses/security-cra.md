@@ -1,6 +1,6 @@
 ---
 id: security-cra
-version: 0.2.3
+version: 0.3.0
 name: Security and CRA
 kinds: [vulnerable-dependency, risky-pattern, secret-exposure, vulnerability-handling-gap, sbom-gap, update-mechanism-gap]
 sources: [code, docs, git, deps, sarif]
@@ -37,10 +37,10 @@ propose the work it implies, not the finding again.
   chain -> H1; injection, input, XSS, SQL, shell -> H2; secret, key, credential -> H3; CRA,
   compliance, disclosure, SBOM, update -> H4-H6. An entry that names a path or component limits
   gather steps 5-6 to it (`git grep ... -- <path>`) and H1 to packages imported there. Run the
-  focused steps first and fill the budget from focused candidates first. Off-focus candidates
-  take a slot at rank 1-2 (see Ranking), and any slot the focused candidates leave empty, in rank
-  order; the rest go in the summary as `off focus: <topic>`. Focus orders, it never hides a real
-  finding while the budget has room.
+  focused steps first. A focused candidate's `impact` is one above what its rank alone gives
+  (at most 10), so it wins the store's slots at equal rank; off-focus candidates are still
+  written and take any slot their score earns, the rest landing in `reserve`. Focus orders, it
+  never hides a real finding.
 - **`exclude`** removes, before the jsonl is written, every candidate whose topic, package,
   anchor path or hypothesis matches an entry (case-insensitive). Name each one in the summary as
   `excluded by direction: <topic> (rank <n>)`. Never drop one silently, and say so plainly when
@@ -127,8 +127,32 @@ package, tests, fixtures, examples, docs). E0 is never a card. Severity is the w
 6. Anything else (H2 at E1, low severity, constant input): no card, named in the report.
 
 Ties go to the higher evidence rung (`count`, `probe` over `quote`), then the smaller effort.
-One card per upgrade: packages fixed by one bump share a card. Every candidate not written
-counts as `truncated`, with its title and rank in the summary.
+One card per upgrade: packages fixed by one bump share a card. Write every candidate of ranks
+1-5: the store keeps the budget's 4 ranked slots (the lens's top card is its MVP) and files the
+rest in `reserve`, named in the summary. Never cut a card yourself; rank 6 stays no card.
+
+## Impact, risk and the predicted verdict
+
+Set `impact` (1-10) from the rank and the exposure class, with `impact_why` naming both in one
+line ("critical advisory, E3: the upload route decodes with it"):
+
+| Rank | Finding | impact |
+| --- | --- | --- |
+| 1 | H3 live secret in a shipped or deployed file | 10 |
+| 2 | H1 critical/high at E3 | 9 |
+| 2 | H2 at E3 | 8 |
+| 3 | H4 while the product ships to users | 7 |
+| 4 | H1 critical/high at E2; H2 at E2 | 6 |
+| 4 | H1 critical/high at E1, or shipped with no import path found | 5 |
+| 5 | H6 | 5 |
+| 5 | H5; H1 moderate at E3 | 4 |
+
+`risk` is the risk of making the change, not the severity: a patch bump with tests is 2, a
+minor bump or a new release step 5, a major bump or a changed auth flow 8. Omit it and the store
+reads `delivery_risk.blast`. `category` is `technical` (the default for this lens). Before
+writing a card, read `context`'s `near` (with each reason and note) and `outcomes` (with notes):
+set `predicted_verdict` and a `predicted_why` that names the closest precedent ("SEC-12 already
+tracks it: rejected as already-known"). With no precedent, omit both; the store records `defer`.
 
 ## Evidence rules
 

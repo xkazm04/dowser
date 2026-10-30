@@ -1,0 +1,913 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dowser:schema:dowser-proposal-2",
+  "title": "dowser-proposal/2",
+  "description": "A Dowser backlog proposal as the store returns it: dowser-proposal/1 plus the scan-finding/1 fields (docs/contracts/scan-finding-1.md). Twin of skill/scripts/lib/model.mjs (change both together). Every field /2 added is optional, so a /1 record is a valid /2 record. Absent values are omitted: never null, never 0 for something unmeasured (a record without impact has no score: unscored). A propose input line is $defs/candidate: the record without the store-owned triage fields and without the store-computed fields (score, score_parts, band, mvp, mvp_rule, mvp_why, predicted_by, pretriaged_by). Checks the schema cannot express are enforced by validateCandidate: the body carries the five '## ' sections, effort.days_low <= days_high, `kind` is one of the lens pack's kinds, impact needs impact_why, predicted_why needs predicted_verdict, score_parts needs score, mvp_rule override needs mvp_why.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "fp",
+    "lens",
+    "kind",
+    "topic",
+    "anchors",
+    "title",
+    "rationale",
+    "body",
+    "evidence",
+    "effort",
+    "confidence",
+    "confidence_why",
+    "provenance",
+    "status"
+  ],
+  "properties": {
+    "fp": {
+      "$ref": "#/$defs/fp"
+    },
+    "lens": {
+      "$ref": "#/$defs/lens"
+    },
+    "kind": {
+      "$ref": "#/$defs/kind"
+    },
+    "topic": {
+      "$ref": "#/$defs/topic"
+    },
+    "anchors": {
+      "$ref": "#/$defs/anchors"
+    },
+    "title": {
+      "$ref": "#/$defs/title"
+    },
+    "rationale": {
+      "$ref": "#/$defs/rationale"
+    },
+    "body": {
+      "$ref": "#/$defs/body"
+    },
+    "evidence": {
+      "$ref": "#/$defs/evidenceList"
+    },
+    "effort": {
+      "$ref": "#/$defs/effort"
+    },
+    "confidence": {
+      "$ref": "#/$defs/confidence"
+    },
+    "confidence_why": {
+      "$ref": "#/$defs/confidenceWhy"
+    },
+    "doc_impact": {
+      "$ref": "#/$defs/stringList"
+    },
+    "delivery_risk": {
+      "$ref": "#/$defs/deliveryRisk"
+    },
+    "artifacts": {
+      "$ref": "#/$defs/artifactList"
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance"
+    },
+    "category": {
+      "$ref": "#/$defs/category"
+    },
+    "impact": {
+      "$ref": "#/$defs/scale10"
+    },
+    "impact_why": {
+      "$ref": "#/$defs/impactWhy"
+    },
+    "risk": {
+      "$ref": "#/$defs/scale10"
+    },
+    "predicted_verdict": {
+      "$ref": "#/$defs/verdict"
+    },
+    "predicted_why": {
+      "$ref": "#/$defs/predictedWhy"
+    },
+    "score": {
+      "$ref": "#/$defs/score"
+    },
+    "score_parts": {
+      "$ref": "#/$defs/scoreParts"
+    },
+    "band": {
+      "$ref": "#/$defs/band"
+    },
+    "mvp": {
+      "const": true,
+      "description": "true on each lens's top card of the run's allocation; omitted otherwise"
+    },
+    "mvp_rule": {
+      "enum": [
+        "top-score",
+        "override"
+      ]
+    },
+    "mvp_why": {
+      "$ref": "#/$defs/mvpWhy"
+    },
+    "predicted_by": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[^\\r\\n]+$",
+      "description": "<skill>@<version>:<model>: dowser-<lens>@<lens_version>:<model>, or :memory when the store derived the verdict"
+    },
+    "pretriaged_by": {
+      "$ref": "#/$defs/decider",
+      "description": "machine:dowser when an L1 slice skipped the person's pre-triage"
+    },
+    "status": {
+      "enum": [
+        "candidate",
+        "verified",
+        "dropped",
+        "rejected",
+        "snoozed",
+        "merged",
+        "pushed",
+        "accepted"
+      ]
+    },
+    "reason": {
+      "enum": [
+        "false-positive",
+        "already-known",
+        "not-our-direction",
+        "not-worth-it",
+        "wrong-size",
+        "other"
+      ]
+    },
+    "note": {
+      "$ref": "#/$defs/text"
+    },
+    "merged_into": {
+      "$ref": "#/$defs/fp"
+    },
+    "external_ref": {
+      "$ref": "#/$defs/text"
+    },
+    "external_url": {
+      "$ref": "#/$defs/text"
+    },
+    "decided_by": {
+      "$ref": "#/$defs/decider"
+    },
+    "decided_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "rejected"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "reason"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "reason": {
+            "const": "other"
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "then": {
+        "required": [
+          "note"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "merged"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "merged_into"
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "impact"
+        ]
+      },
+      "then": {
+        "required": [
+          "impact_why"
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "score_parts"
+        ]
+      },
+      "then": {
+        "required": [
+          "score"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mvp_rule": {
+            "const": "override"
+          }
+        },
+        "required": [
+          "mvp_rule"
+        ]
+      },
+      "then": {
+        "required": [
+          "mvp_why"
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "candidate": {
+      "description": "One `propose` input line: the record without status/reason/note/merged_into/external_*/decided_* and without the store-computed fields. `fp`, when given, must equal the computed fingerprint; provenance.run_id/model/harness/focus default from the run; effort.score defaults from size, risk from delivery_risk.blast, category from the lens.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lens",
+        "kind",
+        "topic",
+        "anchors",
+        "title",
+        "rationale",
+        "body",
+        "evidence",
+        "effort",
+        "confidence",
+        "confidence_why",
+        "provenance"
+      ],
+      "properties": {
+        "fp": {
+          "$ref": "#/$defs/fp"
+        },
+        "lens": {
+          "$ref": "#/$defs/lens"
+        },
+        "kind": {
+          "$ref": "#/$defs/kind"
+        },
+        "topic": {
+          "$ref": "#/$defs/topic"
+        },
+        "anchors": {
+          "$ref": "#/$defs/anchors"
+        },
+        "title": {
+          "$ref": "#/$defs/title"
+        },
+        "rationale": {
+          "$ref": "#/$defs/rationale"
+        },
+        "body": {
+          "$ref": "#/$defs/body"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidenceList"
+        },
+        "effort": {
+          "$ref": "#/$defs/effort"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "confidence_why": {
+          "$ref": "#/$defs/confidenceWhy"
+        },
+        "doc_impact": {
+          "$ref": "#/$defs/stringList"
+        },
+        "delivery_risk": {
+          "$ref": "#/$defs/deliveryRisk"
+        },
+        "artifacts": {
+          "$ref": "#/$defs/artifactList"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "category": {
+          "$ref": "#/$defs/category"
+        },
+        "impact": {
+          "$ref": "#/$defs/scale10"
+        },
+        "impact_why": {
+          "$ref": "#/$defs/impactWhy"
+        },
+        "risk": {
+          "$ref": "#/$defs/scale10"
+        },
+        "predicted_verdict": {
+          "$ref": "#/$defs/verdict"
+        },
+        "predicted_why": {
+          "$ref": "#/$defs/predictedWhy"
+        }
+      }
+    },
+    "fp": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$",
+      "description": "first 16 hex of sha256(lens|kind|normTopic|sortedUniqueNormAnchors)"
+    },
+    "lens": {
+      "enum": [
+        "opportunity",
+        "ux-friction",
+        "doc-drift",
+        "security-cra"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "one of the lens pack's closed `kinds`"
+    },
+    "topic": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "description": "normalized to a lowercase kebab slug before fingerprinting"
+    },
+    "anchors": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 300
+      },
+      "description": "path#symbol; line suffixes are stripped"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[^\\r\\n]+$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "confidenceWhy": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 12000,
+      "description": "Markdown with ## Summary, ## Description, ## Flow, ## Expected impact, ## Evaluation"
+    },
+    "stringList": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 300
+      }
+    },
+    "evidenceList": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "ref"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "code",
+            "doc",
+            "git",
+            "ticket",
+            "page",
+            "goal",
+            "dep",
+            "sarif"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "code/doc: repo-relative path, optionally :line[:col]"
+        },
+        "quote": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "quote_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$",
+          "description": "code/doc on the wire only: first 16 hex of sha256 of the whitespace-normalised quote, sent in place of quote when the team set quotes=omit"
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "format": "uri",
+          "pattern": "^https://",
+          "description": "an absolute https URL; any other scheme is refused"
+        }
+      },
+      "if": {
+        "properties": {
+          "type": {
+            "enum": [
+              "code",
+              "doc"
+            ]
+          }
+        }
+      },
+      "then": {
+        "anyOf": [
+          {
+            "required": [
+              "quote"
+            ]
+          },
+          {
+            "required": [
+              "quote_sha"
+            ]
+          }
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "quote_sha"
+          ]
+        }
+      }
+    },
+    "effort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "size"
+      ],
+      "properties": {
+        "size": {
+          "enum": [
+            "XS",
+            "S",
+            "M",
+            "L",
+            "XL"
+          ]
+        },
+        "days_low": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "days_high": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "basis": {
+          "$ref": "#/$defs/stringList"
+        },
+        "score": {
+          "$ref": "#/$defs/scale10",
+          "description": "scan-finding/1 effort 1-10; the store fills it from size (XS=1, S=2, M=4, L=7, XL=10) when omitted"
+        }
+      }
+    },
+    "confidence": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "artifactList": {
+      "description": "Supporting views (omit the key when none), max 3. Each: a one-line message stated first, a text alternative, the refs of this card's own evidence it was drawn from (membership checked by the validator), and kind-specific data. Table rows carry one cell per column and matrix cells one row per row label and one cell per column - checked by the validator.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "message",
+          "alt",
+          "refs",
+          "data"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "table",
+              "flow",
+              "before-after",
+              "matrix"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^[^\\r\\n]+$"
+          },
+          "alt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          },
+          "refs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/tableData"
+              },
+              {
+                "$ref": "#/$defs/flowData"
+              },
+              {
+                "$ref": "#/$defs/beforeAfterData"
+              },
+              {
+                "$ref": "#/$defs/matrixData"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "artifactLabel": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40,
+      "pattern": "^[^\\r\\n]+$"
+    },
+    "artifactLine": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[^\\r\\n]+$"
+    },
+    "tableData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "columns",
+        "rows"
+      ],
+      "properties": {
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/artifactLabel"
+          }
+        },
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 80,
+              "pattern": "^[^\\r\\n]*$"
+            }
+          }
+        },
+        "highlight": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "row indexes to emphasise; omit when none"
+        }
+      }
+    },
+    "flowData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "steps"
+      ],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "label"
+            ],
+            "properties": {
+              "label": {
+                "$ref": "#/$defs/artifactLabel"
+              },
+              "mark": {
+                "enum": [
+                  "friction",
+                  "failure",
+                  "missing",
+                  "new"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "beforeAfterData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "measure",
+        "before",
+        "after"
+      ],
+      "properties": {
+        "measure": {
+          "$ref": "#/$defs/artifactLabel"
+        },
+        "before": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/artifactLine"
+          }
+        },
+        "after": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/artifactLine"
+          }
+        }
+      }
+    },
+    "matrixData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rows",
+        "columns",
+        "cells"
+      ],
+      "properties": {
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/artifactLabel"
+          }
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/artifactLabel"
+          }
+        },
+        "cells": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "v"
+              ],
+              "properties": {
+                "v": {
+                  "type": "string",
+                  "maxLength": 40
+                },
+                "level": {
+                  "enum": [
+                    0,
+                    1,
+                    2,
+                    3
+                  ],
+                  "description": "shade, 0 lowest; omit when none"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "deliveryRisk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "blast"
+      ],
+      "properties": {
+        "blast": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "bus_factor": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "omitted when not computed"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lens_version"
+      ],
+      "properties": {
+        "lens_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "harness": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "focus": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^(goal|area):\\S"
+        }
+      }
+    },
+    "decider": {
+      "type": "string",
+      "pattern": "^[a-z][a-z-]*:[A-Za-z0-9._@:-]+$"
+    },
+    "scale10": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10
+    },
+    "category": {
+      "enum": [
+        "technical",
+        "product"
+      ]
+    },
+    "verdict": {
+      "enum": [
+        "accept",
+        "reject",
+        "defer"
+      ]
+    },
+    "band": {
+      "enum": [
+        "ranked",
+        "reserve"
+      ]
+    },
+    "impactWhy": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[^\\r\\n]+$"
+    },
+    "predictedWhy": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "mvpWhy": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[^\\r\\n]+$"
+    },
+    "score": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 100,
+      "description": "scan-score/1, one decimal; computed by propose, never by a consumer"
+    },
+    "scoreParts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "impact",
+        "confidence_w",
+        "effort_div",
+        "risk_factor",
+        "formula"
+      ],
+      "properties": {
+        "impact": {
+          "type": "number"
+        },
+        "confidence_w": {
+          "type": "number"
+        },
+        "effort_div": {
+          "type": "number"
+        },
+        "risk_factor": {
+          "type": "number"
+        },
+        "formula": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}
