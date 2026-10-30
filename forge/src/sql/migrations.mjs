@@ -198,4 +198,8 @@ export const MIGRATIONS = Object.freeze([
   // proposal as part of the decision stamp (so repairVerdicts can rebuild it) and on the verdict the pull returns.
   { name: 'v016_proposals_snooze_until', statement: 'ALTER TABLE proposals ADD COLUMN snooze_until VARCHAR(10)' },
   { name: 'v017_verdicts_snooze_until', statement: 'ALTER TABLE verdicts ADD COLUMN snooze_until VARCHAR(10)' },
+  // Inbox access (core/access.mjs): the decider (forge:<accountId>) whose first push created the inbox. It may
+  // see the inbox until a Jira project is configured for it. NULL on inboxes created before v018: until a Jira
+  // project is configured, only Jira admins see those.
+  { name: 'v018_inboxes_created_by', statement: 'ALTER TABLE inboxes ADD COLUMN created_by VARCHAR(191)' },
 ]);

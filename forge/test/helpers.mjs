@@ -110,6 +110,28 @@ export function fakeUsers() {
   return u;
 }
 
+/**
+ * A fake Perms port: every permission is granted unless `deny` holds it, as `KEY` (everywhere, e.g. ADMINISTER)
+ * or `KEY:<project or issue key>` (e.g. BROWSE_PROJECTS:SHOP). `calls` records each lookup; `fail = true` throws.
+ */
+export function fakePerms() {
+  const p = {
+    fail: false,
+    /** @type {Set<string>} */
+    deny: new Set(),
+    /** @type {{keys: string[], on?: {projectKey?: string, issueKey?: string}}[]} */
+    calls: [],
+    /** @param {string[]} keys @param {{projectKey?: string, issueKey?: string}} [on] */
+    async mine(keys, on) {
+      p.calls.push({ keys, on });
+      if (p.fail) throw new Error('Jira answered 503');
+      const where = on?.projectKey ?? on?.issueKey;
+      return Object.fromEntries(keys.map((k) => [k, !p.deny.has(k) && !(where && p.deny.has(`${k}:${where}`))]));
+    },
+  };
+  return p;
+}
+
 /** A clock the test moves. */
 export function clock(start = '2026-10-27T10:00:00.000Z') {
   let t = Date.parse(start);
@@ -122,17 +144,18 @@ export function clock(start = '2026-10-27T10:00:00.000Z') {
 
 /**
  * Deps over fresh in-memory ports.
- * @returns {Deps & {db: ReturnType<typeof sqliteDb>, jira: ReturnType<typeof fakeJira>, users: ReturnType<typeof fakeUsers>, logs: string[], clock: ReturnType<typeof clock>}}
+ * @returns {Deps & {db: ReturnType<typeof sqliteDb>, jira: ReturnType<typeof fakeJira>, users: ReturnType<typeof fakeUsers>, perms: ReturnType<typeof fakePerms>, logs: string[], clock: ReturnType<typeof clock>}}
  */
 export function makeDeps() {
   const c = clock();
   const db = sqliteDb();
   const jira = fakeJira();
   const users = fakeUsers();
+  const perms = fakePerms();
   /** @type {string[]} */
   const logs = [];
   return {
-    db, jira, users, logs, clock: c, now: c.now, log: (/** @type {string} */ l) => { logs.push(l); },
+    db, jira, users, perms, logs, clock: c, now: c.now, log: (/** @type {string} */ l) => { logs.push(l); },
     links: { inboxUrl: async (ref) => `https://acme.atlassian.net/jira/apps/app/env/inbox?ref=${ref}` },
     sources: {
       tickets: async () => [],

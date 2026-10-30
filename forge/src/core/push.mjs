@@ -7,6 +7,7 @@ import { STORE_OWNED, resurfaces, validateCandidate } from '../shared/model.mjs'
 import { PUSH_MAX } from './types.mjs';
 import { DuplicateKey, AppError, isObj, needStr, optStr, sqlv } from './util.mjs';
 import { ensureInbox, getByFp, nextCounter, uniteEvidence } from './store.mjs';
+import { deciderOf } from './verdicts.mjs';
 
 /**
  * @typedef {import('./ports.mjs').Deps} Deps
@@ -18,6 +19,22 @@ import { ensureInbox, getByFp, nextCounter, uniteEvidence } from './store.mjs';
 
 /** Parsed `_json` inputs are capped at 4 MB (contract "JSON-string inputs"). */
 export const JSON_INPUT_MAX = 4 * 1024 * 1024;
+/**
+ * A pushed `project_key`: the skill's `projectKey` slug (`[A-Za-z0-9-]`, or `local-<12 hex>`), within the
+ * VARCHAR(191) column.
+ */
+export const PROJECT_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9-]{0,190}$/;
+export const REPO_URL_MAX = 2000;
+/**
+ * True when `v` is a web URL a repo link may carry: `https:`, or `http:` because the skill keeps the scheme of
+ * an `http://` git remote (git.mjs `webUrl`, a self-hosted server). Any other scheme (`javascript:`, `data:`)
+ * is refused.
+ * @param {string} v
+ */
+export function webRepoUrl(v) {
+  if (v.length > REPO_URL_MAX) return false;
+  try { return ['https:', 'http:'].includes(new URL(v).protocol); } catch { return false; }
+}
 /** Statuses a pushed record may carry: a first push (`verified`) or a re-push after growth (`pushed`). */
 const PUSHABLE = ['verified', 'pushed'];
 /** Store-owned fields of a full record, plus the v2 issue fields; the inbox owns these, so they are dropped. */
@@ -81,18 +98,21 @@ const storedRecord = (record) => {
  * `dowser_proposals_push`.
  * @param {Deps} deps
  * @param {Record<string, unknown>} args
+ * @param {string} accountId  the caller; a new inbox records it as its creator
  * @returns {Promise<PushOutput>}
  */
-export async function pushProposals(deps, args) {
+export async function pushProposals(deps, args, accountId) {
   const { db } = deps;
   const projectKey = needStr(args, 'project_key');
+  if (!PROJECT_KEY_RE.test(projectKey)) throw new AppError('bad-input', 'project_key must be 1-191 letters, digits or hyphens, starting with a letter or digit');
   const runId = needStr(args, 'run_id');
   const repoUrl = optStr(args, 'repo_url');
   const headSha = optStr(args, 'head_sha');
   if (repoUrl && /\/\/[^/]*@/.test(repoUrl)) throw new AppError('bad-input', 'repo_url must not carry credentials');
+  if (repoUrl && !webRepoUrl(repoUrl)) throw new AppError('bad-input', `repo_url must be an https:// (or http://) URL of at most ${REPO_URL_MAX} chars`);
   const records = parseJsonArray(args, 'proposals_json', PUSH_MAX);
   const at = deps.now().toISOString();
-  await ensureInbox(db, projectKey, { repoUrl, at });
+  await ensureInbox(db, projectKey, { repoUrl, at, by: deciderOf(accountId) });
 
   /** @type {PushResultRow[]} */
   const results = [];

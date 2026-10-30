@@ -115,11 +115,13 @@ export async function getProposal(deps, ref) {
 /**
  * The inbox summaries (settings, the inbox header and its empty state): target settings, the open count, the
  * count per status (`by_status`, every status present: a zero is a count, not an absence) and the newest push
- * (`last_push`), whatever status the inbox is filtered to.
+ * (`last_push`), whatever status the inbox is filtered to. `visible` (core/access.mjs) limits it to those inboxes;
+ * the dispatch door always passes it.
  * @param {Db} db
+ * @param {string[]} [visible]
  * @returns {Promise<InboxSummary[]>}
  */
-export async function inboxSummaries(db) {
+export async function inboxSummaries(db, visible) {
   /** @returns {Record<InboxStatus, number>} */
   const zero = () => /** @type {any} */ (Object.fromEntries(INBOX_STATUSES.map((s) => [s, 0])));
   /** @type {Map<string, Record<string, number>>} */
@@ -132,7 +134,8 @@ export async function inboxSummaries(db) {
   /** @type {InboxSummary[]} */
   const out = [];
   for (const i of await listInboxRows(db)) {
-    const push = (await db.query('SELECT * FROM pushes WHERE project_key = ? ORDER BY at DESC, id LIMIT 1', [i.project_key]))[0];
+    if (visible && !visible.includes(i.project_key)) continue;
+    const push =(await db.query('SELECT * FROM pushes WHERE project_key = ? ORDER BY at DESC, id LIMIT 1', [i.project_key]))[0];
     out.push(/** @type {InboxSummary} */ (omitAbsent({
       project_key: i.project_key, repo_url: i.repo_url, jira_project_key: i.jira_project_key, issue_type_id: i.issue_type_id,
       open: counts.get(i.project_key)?.open ?? 0,
@@ -150,9 +153,10 @@ const ORDER = `ORDER BY last_push_at DESC, last_run_id,
 /**
  * `inbox.list` (F8): the items of one status (default `open`), newest push first, grouped by the push that
  * created, grew or reopened them; policy order inside a group. Pages of PAGE_SIZE items; `next` is an opaque
- * offset cursor. A group can continue on the next page under the same `run_id`.
+ * offset cursor. A group can continue on the next page under the same `run_id`. `visible` (core/access.mjs)
+ * limits the items and the summaries to those inboxes; the dispatch door always passes it.
  * @param {Db} db
- * @param {{project_key?: string, status?: string, lens?: string, cursor?: string}} q
+ * @param {{project_key?: string, status?: string, lens?: string, cursor?: string, visible?: string[]}} q
  * @returns {Promise<{inboxes: InboxSummary[], groups: InboxGroup[], next?: string}>}
  */
 export async function listInbox(db, q) {
@@ -166,6 +170,11 @@ export async function listInbox(db, q) {
   const params = [status];
   if (q.project_key) { where.push('project_key = ?'); params.push(q.project_key); }
   if (q.lens) { where.push('lens = ?'); params.push(q.lens); }
+  if (q.visible) {
+    if (!q.visible.length) return { inboxes: [], groups: [] };
+    where.push(`project_key IN (${q.visible.map(() => '?').join(', ')})`);
+    params.push(...q.visible);
+  }
   const rows = await db.query(`SELECT * FROM proposals WHERE ${where.join(' AND ')} ${ORDER} LIMIT ${PAGE_SIZE + 1} OFFSET ${offset}`, params);
   const page = rows.slice(0, PAGE_SIZE).map(toProposal);
   const repos = new Map((await listInboxRows(db)).map((i) => [i.project_key, i.repo_url]));
@@ -182,7 +191,7 @@ export async function listInbox(db, q) {
     if (p.status === 'open') card.change = p.change_kind;
     g.items.push(card);
   }
-  return omitAbsent({ inboxes: await inboxSummaries(db), groups, next: rows.length > PAGE_SIZE ? String(offset + PAGE_SIZE) : undefined });
+  return omitAbsent({ inboxes: await inboxSummaries(db, q.visible), groups, next: rows.length > PAGE_SIZE ? String(offset + PAGE_SIZE) : undefined });
 }
 
 /**
@@ -200,12 +209,14 @@ export async function panelForIssue(deps, issueKey) {
 }
 
 /**
- * `byline.forPage`: open and accepted proposals whose `page` evidence ref or `doc_impact` entry is the page id.
+ * `byline.forPage`: open and accepted proposals whose `page` evidence ref or `doc_impact` entry is the page id,
+ * from the `visible` inboxes only (core/access.mjs; the dispatch door always passes it).
  * @param {Db} db
  * @param {string} pageId
+ * @param {string[]} [visible]
  * @returns {Promise<{count: number, cards: Card[]}>}
  */
-export async function bylineForPage(db, pageId) {
+export async function bylineForPage(db, pageId, visible) {
   const byEvidence = await db.query(
     "SELECT DISTINCT p.id FROM proposals p JOIN evidence e ON e.proposal_id = p.id WHERE e.type = 'page' AND e.ref = ? AND p.status IN ('open', 'accepted')",
     [pageId],
@@ -223,7 +234,7 @@ export async function bylineForPage(db, pageId) {
   const cards = [];
   for (const id of [...ids].sort((a, b) => a - b)) {
     const rows = await db.query('SELECT * FROM proposals WHERE id = ?', [id]);
-    if (rows.length) cards.push(await cardOf(db, toProposal(rows[0])));
+    if (rows.length && (!visible || visible.includes(String(rows[0].project_key)))) cards.push(await cardOf(db, toProposal(rows[0])));
   }
   return { count: cards.length, cards };
 }

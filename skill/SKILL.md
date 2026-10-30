@@ -135,7 +135,10 @@ A rule the runner decides in the triage dialog (section 7) is decided locally; F
 decision for the same rule is skipped. Whichever is first wins.
 
 When the pull tool errors, say "could not read decisions from Jira" and go on unconnected for
-the push step too. A half-synced memory must not push.
+the push step too. A half-synced memory must not push. A `forbidden` error means the runner's Jira
+account may not open this project's inbox (it follows a Jira project's Browse permission, or its
+creator until one is set): quote its message, which says what would allow it, and do not retry. Guided
+mode: the "Jira answers forbidden" row of `references/guided-mode.md`.
 
 ## 4. Start the run
 

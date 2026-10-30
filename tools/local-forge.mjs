@@ -32,7 +32,7 @@ import { dirname, join, relative, resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TOOL_NAMES, runResolver, runTool } from '../forge/src/core/app.mjs';
 import {
-  DEFAULT_ACCOUNT, applySeed, issueOf, localJira, localSources, localUsers, openLocalDb, rowCounts, setIssueStatus,
+  DEFAULT_ACCOUNT, applySeed, issueOf, localJira, localPerms, localSources, localUsers, openLocalDb, rowCounts, setIssueStatus,
 } from './local-forge/ports.mjs';
 
 /**
@@ -104,7 +104,7 @@ export function localForge(o) {
   /** @type {Deps} */
   const deps = {
     db, now, log: (line) => { console.error(line); },
-    jira: localJira(raw, () => site.browseBase, now), users: localUsers(raw), sources: localSources(raw),
+    jira: localJira(raw, () => site.browseBase, now), users: localUsers(raw), sources: localSources(raw), perms: localPerms(),
     links: { inboxUrl: async (ref) => `${UI_ORIGIN}/#inbox&ref=${encodeURIComponent(ref)}` },
   };
   const account = o.account ?? DEFAULT_ACCOUNT;

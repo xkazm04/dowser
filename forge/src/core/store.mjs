@@ -18,7 +18,8 @@ import { REF_RE } from './types.mjs';
  *   accept_claim?: string, change_kind: 'new' | 'grew' | 'reopened', snooze_until?: string
  * }} ProposalRow
  * @typedef {{type: string, ref: string, quote?: string, url?: string, head_sha?: string, added_run_id: string, added_at: string}} EvidenceRow
- * @typedef {{project_key: string, repo_url?: string, jira_project_key?: string, issue_type_id?: string, created_at: string}} InboxRow
+ * @typedef {{project_key: string, repo_url?: string, jira_project_key?: string, issue_type_id?: string, created_at: string, created_by?: string}} InboxRow
+ *   `created_by` = the decider (forge:<accountId>) whose first push created it; absent before migration v018.
  */
 
 const CAS_TRIES = 20;
@@ -65,7 +66,7 @@ export async function counterValue(db, name) {
 /** @param {Row} r @returns {InboxRow} */
 const toInbox = (r) => /** @type {InboxRow} */ (omitAbsent({
   project_key: String(r.project_key), repo_url: r.repo_url, jira_project_key: r.jira_project_key,
-  issue_type_id: r.issue_type_id, created_at: String(r.created_at),
+  issue_type_id: r.issue_type_id, created_at: String(r.created_at), created_by: r.created_by,
 }));
 
 /**
@@ -91,17 +92,18 @@ export async function needInbox(db, projectKey) {
 }
 
 /**
- * Creates the inbox on first use; records `repo_url` when given (the newest push wins).
+ * Creates the inbox on first use, stamped with its creator; records `repo_url` when given (the newest push
+ * wins). Whether the caller may push to an inbox that already exists is decided before this (core/access.mjs).
  * @param {Db} db
  * @param {string} projectKey
- * @param {{repoUrl?: string, at: string}} o
+ * @param {{repoUrl?: string, at: string, by: string}} o  `by` = the creator's decider id
  * @returns {Promise<InboxRow>}
  */
-export async function ensureInbox(db, projectKey, { repoUrl, at }) {
+export async function ensureInbox(db, projectKey, { repoUrl, at, by }) {
   let inbox = await getInbox(db, projectKey);
   if (!inbox) {
     try {
-      await db.exec('INSERT INTO inboxes (project_key, repo_url, created_at) VALUES (?, ?, ?)', [projectKey, sqlv(repoUrl), at]);
+      await db.exec('INSERT INTO inboxes (project_key, repo_url, created_at, created_by) VALUES (?, ?, ?, ?)', [projectKey, sqlv(repoUrl), at, by]);
     } catch (e) {
       if (!(e instanceof DuplicateKey)) throw e;
     }

@@ -10,7 +10,8 @@ export const INBOX_STATUSES = /** @type {const} */ (['open', 'accepted', 'reject
 /** Verdict statuses as forge-mcp-2 sends them to the skill. */
 export const VERDICT_STATUSES = /** @type {const} */ (['accepted', 'rejected', 'merged', 'snoozed']);
 export const PUSH_RESULTS = /** @type {const} */ (['created', 'updated', 'merged-existing', 'refused']);
-export const ERROR_CODES = /** @type {const} */ (['bad-input', 'bad-cursor', 'unknown-project', 'unauthorized', 'unavailable']);
+/** `forbidden` (additive to forge-mcp-2): signed in, but not allowed to see this inbox or do this in Jira. */
+export const ERROR_CODES = /** @type {const} */ (['bad-input', 'bad-cursor', 'unknown-project', 'unauthorized', 'forbidden', 'unavailable']);
 /** Where a verdict was made; stored on the verdict row, never sent to the skill. */
 export const VIAS = /** @type {const} */ (['inbox', 'panel', 'rovo']);
 /** Inbox ref format: `DW-<n>`, unique per installation. */

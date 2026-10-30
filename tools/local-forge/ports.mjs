@@ -245,6 +245,18 @@ export function localUsers(raw) {
 }
 
 /**
+ * Jira permissions on the local site. The local operator is the only person and its admin, so every permission is
+ * granted, on any project or issue (inbox access in core/access.mjs then opens every inbox, as in a one-person
+ * Jira site).
+ * @returns {import('../../forge/src/core/ports.mjs').Perms}
+ */
+export function localPerms() {
+  return {
+    async mine(keys) { return Object.fromEntries(keys.map((k) => [k, true])); },
+  };
+}
+
+/**
  * The `text ~ "<term>"` terms of a JQL/CQL string the core built (sources.mjs textClause).
  * @param {string} q
  * @returns {string[]}

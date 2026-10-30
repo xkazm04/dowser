@@ -33,3 +33,13 @@ released versions will be stated here when the first release is tagged.
   Dowser never installs them. They send the project's package names and versions to their advisory
   services (the npm registry, osv.dev, PyPI); `pip-audit` resolves a requirements file in a temporary
   environment of its own.
+- In the Forge app an inbox follows Jira's permissions: it opens for whoever may browse the Jira project set
+  for it in Dowser settings, for the account that first pushed to it until a project is set, and for Jira
+  admins. This holds for the inbox, the issue panel, the Confluence byline, the Rovo agent and every MCP tool.
+  Accept and merge create the issue or comment as the app, but only for a person who holds Create issues or
+  Add comments there. A repo's project key is derived from its URL and is not a secret.
+- The Forge app caps the length of every pushed card field and accepts evidence links only as `https://`
+  URLs (a repo link may also be `http://`, for an `http://` git remote). The inbox renders a link only when
+  it is `https://` or `http://`; any other scheme shows as plain text. Its per-call log lines name a project
+  by a 12-hex hash of its key, never the key (which names the repo), and a failed call's line carries the
+  error code, not its message.

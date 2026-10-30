@@ -68,7 +68,24 @@ A failure the caller can act on is a tool result with `isError: true`. Its JSON 
 | `bad-cursor` | the `cursor` was not issued by this server, or it expired. Pull again without `cursor`; re-ingesting is idempotent |
 | `unknown-project` | Forge has no inbox for `project_key` |
 | `unauthorized` | the token is missing, expired or lacks scope. The harness signs in again |
+| `forbidden` | signed in, but this account may not open the inbox for `project_key` (see "Inbox access"), or may not make that change in Jira. Not retried; the message says what would allow it. Additive (2026-10-30) |
 | `unavailable` | Jira, Confluence or TWG did not answer. Retry on the next run, not in a loop |
+
+### Inbox access
+
+An inbox follows Jira's own permissions; there is no Dowser user list, and `project_key` is a name, never a
+secret.
+
+- An inbox with a Jira project set in Dowser settings is open to every account that may **browse** that
+  project.
+- An inbox without one is open to its **creator**, the account whose first push (proposals or areas) created
+  it, until a project is set. Setting one needs Browse and Create issues there.
+- A **Jira admin** may open every inbox.
+
+Every tool that names a `project_key` checks this as the calling account, and so do the inbox, the panel, the
+byline and the Rovo agent. A push to a key that has no inbox yet creates it for the caller. Accept and merge
+write to Jira as the app, but only after checking that the caller holds Create issues (accept) or Add comments
+(merge into an issue) there. Anything else answers `forbidden`.
 
 A protocol fault (unknown method, malformed JSON-RPC) is a JSON-RPC `error`, not a tool result. When any tool
 errors, the skill says so in plain words and continues **unconnected**. A failed `dowser_verdicts_pull` also
@@ -137,7 +154,7 @@ Input: `{project_key, lens?}`.
 
 | field | type | rule |
 |---|---|---|
-| `project_key` | string | required. The inbox must exist (a push creates it), else `unknown-project` |
+| `project_key` | string | required. The inbox must exist (a push creates it), else `unknown-project`; the caller must be able to open it, else `forbidden` |
 | `lens` | string | optional. One lens id, or `all` (the default) for every lens. When a transport gives no tool name, a call with `lens` is routed here by its shape (a bare `project_key` is a pull), so send `"all"` rather than omitting it |
 
 Output:
@@ -172,10 +189,10 @@ Input:
 
 | field | type | rule |
 |---|---|---|
-| `project_key` | string | required |
+| `project_key` | string | required. 1-191 letters, digits or hyphens, starting with a letter or digit (`^[A-Za-z0-9][A-Za-z0-9-]{0,190}$`, the shape the skill derives), else `bad-input` |
 | `run_id` | string | required. The Dowser run that pushed. Forge records it per push |
-| `proposals_json` | string | required. A JSON array; each element a full `dowser-proposal/1` record (`skill/schema/dowser-proposal-1.schema.json`): identity, card, every evidence item, sizing, risk, the optional `artifacts` (supporting views), provenance and triage fields, with `status` `verified` (a first push) or `pushed` (a re-push after evidence grew). At most 50 records |
-| `repo_url` | string | optional. The repo's web URL, credentials stripped (`https://github.com/Acme/Shop`). Omitted when the repo has no `origin` |
+| `proposals_json` | string | required. A JSON array; each element a full `dowser-proposal/1` record (`skill/schema/dowser-proposal-1.schema.json`): identity, card, every evidence item, sizing, risk, the optional `artifacts` (supporting views), provenance and triage fields, with `status` `verified` (a first push) or `pushed` (a re-push after evidence grew). At most 50 records. Each record is held to the field caps below; a record over a cap is `refused` with a `why` naming the field |
+| `repo_url` | string | optional. The repo's web URL, credentials stripped (`https://github.com/Acme/Shop`): an absolute `https://` URL, or `http://` for a repo whose `origin` is an `http://` remote. Any other scheme, a URL with credentials, or one over 2000 chars is `bad-input`. Omitted when the repo has no `origin` |
 | `head_sha` | string | optional. The commit the run scanned. Forge links `code`/`doc` evidence to `<repo_url>/blob/<head_sha>/<path>#L<line>` (GitHub) or `<repo_url>/src/<head_sha>/<path>#lines-<line>` (Bitbucket), and shows the plain ref for any other host |
 
 Output: `{results: [{fp, result, external_ref?, external_url?, why?}]}`, one per input proposal, in input order.
@@ -186,6 +203,27 @@ Output: `{results: [{fp, result, external_ref?, external_url?, why?}]}`, one per
 | `updated` | an item for `(project_key, fp)` already existed. Its card was refreshed and its evidence united | required (the existing item) | omitted |
 | `merged-existing` | a person already merged this fp into another item in the inbox; no item was made | required (that surviving item) | optional |
 | `refused` | not accepted (invalid record, quota, policy) | omitted | required, one sentence |
+
+**Field caps.** Forge checks each record with the skill's own validator (`validateCandidate`,
+`FIELD_LIMITS` in `skill/scripts/lib/model.mjs`, mirrored as `maxLength`/`maxItems` in the schema), so the
+skill refuses an oversize card at `propose` before it is ever pushed. Strings count characters:
+
+| field | cap |
+|---|---|
+| `kind` | 64 |
+| `topic` | 160 |
+| `anchors` | 12 items, each at most 300 |
+| `title` | 80, one line |
+| `rationale` | 2000 |
+| `body` | 12000 |
+| `confidence_why` | 1000 |
+| `evidence` | 100 items (a record carries all its accumulated evidence) |
+| `evidence[].ref` | 500 |
+| `evidence[].quote` | 2000 |
+| `evidence[].url` | 2000, and an absolute `https://` URL: any other scheme is refused |
+| `doc_impact`, `effort.basis` | 20 items, each at most 300 |
+| `artifacts[].refs` | 100 items (the view caps are in `skill/references/cards.md`) |
+| each `provenance` string | 200 |
 
 **Idempotency.** Push is idempotent on `(project_key, fp)`. A re-push never creates a second item: it
 updates the card of the existing one, unites its evidence and returns `updated`. Evidence on the Forge side
@@ -307,7 +345,7 @@ Input: `{project_key, rules_json?}`.
 
 | field | type | rule |
 |---|---|---|
-| `project_key` | string | required. The inbox must exist (a push creates it), else `unknown-project` |
+| `project_key` | string | required. The inbox must exist (a push creates it), else `unknown-project`; the caller must be able to open it, else `forbidden` |
 | `rules_json` | string | optional. A JSON array of at most 50 offered rules. Send `"[]"` (or omit it) to only read. When a transport gives no tool name, a call with `rules_json` is routed here by its shape, so send `"[]"` rather than omitting it |
 | `rules_json[].id` | string | required, 1-64 characters of letters, digits and `. _ : -`. Unique per `project_key` |
 | `rules_json[].lens` | string | required: `opportunity`, `ux-friction`, `doc-drift` or `security-cra` |

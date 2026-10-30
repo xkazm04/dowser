@@ -19,6 +19,7 @@ top.
 | Git missing (`git --version` fails) | "Dowser needs a free program called Git to read your project's history, and this computer does not have it. Install it from git-scm.com, reopen this window, then type /dowser again." |
 | Store busy (exit 3 on a lock) | "Another Dowser scan is running on this project. Wait for it to finish, then try again." |
 | Not connected to Jira | Not a failure. Say: "Dowser is not connected to your Jira and Confluence, so it will work from the project files only. Customer requests and goals will not be included, docs in Confluence will not be checked, and proposals will stay on this computer. To connect, ask your Jira admin to install the Dowser app and add its connection to this assistant." Then continue. |
+| Jira answers `forbidden` (no access to this project's inbox) | Not a failure of the scan. Say: "Your Jira account cannot open this project's Dowser inbox, so this scan's proposals will stay on this computer. <the message Jira gave, e.g. which Jira project it follows>. Ask your Jira admin to give you access, then scan again." Then continue unconnected. |
 
 Never show a stack trace, an exit code or a raw JSON error. If a step fails for a reason not in
 this table, say what Dowser was trying to do, in one sentence, and stop: "Dowser could not

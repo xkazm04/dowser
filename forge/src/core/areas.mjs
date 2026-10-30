@@ -4,8 +4,9 @@
 // effort-vs-confidence points of open proposals.
 import { normalizeAnchor, parseRef } from '../shared/fingerprint.mjs';
 import { AREAS_MAX } from './types.mjs';
-import { parseJsonArray } from './push.mjs';
+import { PROJECT_KEY_RE, parseJsonArray } from './push.mjs';
 import { ensureInbox, needInbox, toProposal } from './store.mjs';
+import { deciderOf } from './verdicts.mjs';
 import { AppError, isIso, isObj, needStr, num, omitAbsent, sqlv } from './util.mjs';
 
 /**
@@ -47,11 +48,14 @@ export function areaProblem(a) {
  * replace is upsert-each then delete-the-rest, so an interrupted push leaves old plus new areas, never none.
  * @param {Deps} deps
  * @param {Record<string, unknown>} args
+ * @param {string} accountId  the caller; a new inbox records it as its creator
  * @returns {Promise<{stored: number}>}
  */
-export async function pushAreas(deps, args) {
+export async function pushAreas(deps, args, accountId) {
   const { db } = deps;
   const projectKey = needStr(args, 'project_key');
+  // An areas push can create the inbox too, so it takes the same project_key shape as a proposals push.
+  if (!PROJECT_KEY_RE.test(projectKey)) throw new AppError('bad-input', 'project_key must be 1-191 letters, digits or hyphens, starting with a letter or digit');
   const runId = needStr(args, 'run_id');
   const areas = parseJsonArray(args, 'areas_json', AREAS_MAX);
   const seen = new Set();
@@ -62,7 +66,7 @@ export async function pushAreas(deps, args) {
     if (seen.has(path)) throw new AppError('bad-input', `areas_json[${i}]: path ${path} appears twice`);
     seen.add(path);
   }
-  await ensureInbox(db, projectKey, { at: deps.now().toISOString() });
+  await ensureInbox(db, projectKey, { at: deps.now().toISOString(), by: deciderOf(accountId) });
   for (const raw of areas) {
     const a = /** @type {Area} */ (raw);
     const vals = [a.files, a.churn_90d, sqlv(a.authors_90d), sqlv(a.last_change), runId];

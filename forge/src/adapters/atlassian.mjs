@@ -5,10 +5,13 @@
 //  - `getAppContext()` (out/api/runtime.d.ts) gives `appAri.appId`, `environmentAri.environmentId`, `moduleKey`.
 //
 // Who calls as whom:
-//  - Accept / merge comment / project list: AS APP (design F5 - the issue is created even when the person
-//    lacks create permission in the target project, and the inbox setting is the app's choice).
-//  - Tickets / pages / goals (scan sources): AS USER, so a scan only ever sees what the signed-in person may
-//    see, and because the Teamwork Graph API is user-only. A missing user grant surfaces as `unauthorized`.
+//  - Accept / merge comment: AS APP (design F5: the issue is created by the app), but only after the dispatch
+//    door has checked the person's own CREATE_ISSUES / ADD_COMMENTS through `perms` (core/app.mjs).
+//  - Permissions (`perms`), the project list, tickets / pages / goals: AS USER, so a person only ever sees what
+//    they may see in Jira and Confluence (the Teamwork Graph API is user-only anyway). A missing user grant is
+//    rethrown as is from `perms` and the project list (a Custom UI surface lets Forge show its consent screen) and
+//    surfaces as `unauthorized` from the scan sources (an MCP caller has no consent screen).
+//  - Issue statuses and display names: AS APP (read-only, for items the person already opened).
 //
 // REST endpoints used (developer.atlassian.com/cloud/jira/platform/rest/v3, /cloud/confluence/rest/v1):
 //   GET  /rest/api/3/serverInfo                         -> baseUrl (site URL for browse and inbox links)
@@ -17,6 +20,7 @@
 //   GET  /rest/api/3/project/search?expand=issueTypes
 //   POST /rest/api/3/search/jql                         (the enhanced JQL search; /search is retired)
 //   GET  /rest/api/3/user/bulk?accountId=&accountId=    -> display names (asApp, read:jira-user)
+//   GET  /rest/api/3/mypermissions?permissions=&projectKey=|issueKey=  -> {permissions: {KEY: {havePermission}}}
 //   GET  /wiki/rest/api/content/search?cql=&expand=body.storage,version
 import { NeedsAuthenticationError, asApp, asUser, getAppContext, route } from '@forge/api';
 import { htmlToText, trimText } from '../core/adf.mjs';
@@ -28,23 +32,23 @@ import { AppError, ISSUE_KEY_RE, omitAbsent } from '../core/util.mjs';
  * @typedef {import('../core/ports.mjs').Sources} Sources
  * @typedef {import('../core/ports.mjs').Links} Links
  * @typedef {import('../core/ports.mjs').Users} Users
+ * @typedef {import('../core/ports.mjs').Perms} Perms
  * @typedef {import('../core/ports.mjs').SourceItem} SourceItem
  * @typedef {import('@forge/api').APIResponse} APIResponse
  */
 
 /**
  * The JSON of a product response, or a thrown Error naming the status (the core maps it to `unavailable`);
- * 401 becomes `unauthorized`.
+ * 401 becomes `unauthorized`. The response body stays out of the error: it can quote issue or page content,
+ * and errors reach the logs and the person.
  * @param {APIResponse} res
  * @param {string} what
  * @returns {Promise<any>}
  */
 async function json(res, what) {
   if (res.ok) return res.status === 204 ? {} : res.json();
-  let detail = '';
-  try { detail = (await res.text()).slice(0, 300); } catch { /* no body */ }
   if (res.status === 401) throw new AppError('unauthorized', `${what} refused the credentials (401); sign in again`);
-  throw new Error(`${what} answered ${res.status}${detail ? `: ${detail}` : ''}`);
+  throw new Error(`${what} answered ${res.status}`);
 }
 
 /**
@@ -60,17 +64,42 @@ async function asPerson(fn) {
   }
 }
 
-/** @type {string | undefined} */
-let siteCache;
-
-/** The site URL (`https://acme.atlassian.net`), cached for the life of the runtime. */
-export async function siteUrl() {
-  if (!siteCache) {
-    const info = await json(await asApp().requestJira(route`/rest/api/3/serverInfo`), 'Jira serverInfo');
-    siteCache = String(info.baseUrl).replace(/\/+$/, '');
-  }
-  return siteCache;
+/** The installation this invocation runs for; a warm runtime may serve more than one. */
+export function installationId() {
+  try { return getAppContext().installationAri?.installationId ?? ''; } catch { return ''; }
 }
+
+/** @type {Map<string, string>} installation id -> site URL */
+const siteCache = new Map();
+
+/** The site URL (`https://acme.atlassian.net`), cached per installation for the life of the runtime. */
+export async function siteUrl() {
+  const inst = installationId();
+  let url = inst ? siteCache.get(inst) : undefined;
+  if (!url) {
+    const info = await json(await asApp().requestJira(route`/rest/api/3/serverInfo`), 'Jira serverInfo');
+    url = String(info.baseUrl).replace(/\/+$/, '');
+    if (inst) siteCache.set(inst, url);
+  }
+  return url;
+}
+
+/** @type {Perms} */
+export const perms = {
+  async mine(keys, on) {
+    const q = new URLSearchParams({ permissions: keys.join(',') });
+    if (on?.projectKey) q.set('projectKey', on.projectKey);
+    if (on?.issueKey) q.set('issueKey', on.issueKey);
+    const res = await asUser().requestJira(route`/rest/api/3/mypermissions?${q}`);
+    /** @type {Record<string, boolean>} */
+    const out = Object.fromEntries(keys.map((k) => [k, false]));
+    // A project or issue the person cannot see (or that does not exist) answers 404: no permission at all.
+    if (res.status === 404) return out;
+    const body = await json(res, 'Jira permissions');
+    for (const k of keys) out[k] = body?.permissions?.[k]?.havePermission === true;
+    return out;
+  },
+};
 
 /** @type {Links} */
 export const links = {
@@ -108,7 +137,7 @@ export const jira = {
     const out = [];
     for (let startAt = 0; startAt < 1000;) {
       const q = new URLSearchParams({ expand: 'issueTypes', maxResults: '50', startAt: String(startAt) });
-      const page = await json(await asApp().requestJira(route`/rest/api/3/project/search?${q}`), 'Jira project search');
+      const page = await json(await asUser().requestJira(route`/rest/api/3/project/search?${q}`), 'Jira project search');
       for (const p of /** @type {any[]} */ (page.values ?? [])) {
         out.push({
           key: String(p.key), name: String(p.name),

@@ -72,7 +72,17 @@ The core runs against these ports (`ports.mjs`); the adapters map them to the pl
   reads the status name and status category (`new`, `indeterminate`, `done`) of issues, as the app.
 - `Users`: `names(accountIds)` reads display names through `/rest/api/3/user/bulk`, as the app. It is best
   effort. A failed batch or a missing name leaves the name out and never fails the call.
+- `Perms`: `mine(keys, on?)` asks Jira's `/rest/api/3/mypermissions` **as the user** whether they hold
+  BROWSE_PROJECTS, CREATE_ISSUES, ADD_COMMENTS or ADMINISTER, on one project or issue. `core/access.mjs` uses
+  it for inbox access: an inbox opens for whoever may browse its Jira project, for its creator until a
+  project is set (`inboxes.created_by`, migration v018), and for Jira admins. The dispatch door
+  (`core/app.mjs`) checks it before every handler, and checks the caller's own Create issues / Add comments
+  before accept and merge make the app write to Jira. The project list for Settings and the accept dialog is
+  also read as the user. Contract: "Inbox access" in `contracts/forge-mcp-2.md`.
 - `Sources`, `Links`.
+
+Each Custom UI module calls only its own resolver keys (`MODULE_KEYS` in `core/app.mjs`): the issue panel
+only `panel.forIssue`, the Confluence byline only `byline.forPage`, the inbox page everything else.
 
 ### The Learning tab backend (reflection)
 
@@ -112,10 +122,13 @@ Choices the data makes:
 ### Logging
 
 The dispatch door writes one JSON line to the Forge log (`forge logs`) for every tool, resolver and Rovo
-call: `{"dowser":"call","surface":"tool|resolver|rovo","key":"dowser_verdicts_pull","project_key":"...","ok":true,"ms":12}`.
+call: `{"dowser":"call","surface":"tool|resolver|rovo","key":"dowser_verdicts_pull","project":"<12 hex>","ok":true,"ms":12}`.
 A failed call carries `"ok":false,"error":"<code>"`. A failed resolver call also writes a
-`{"dowser":"resolver-error", ...}` line with the error code and message. A line never carries a payload
-body, a note, a token or an account id. `project_key` is present when the call has one.
+`{"dowser":"resolver-error", ...}` line with the key, the error code and `project`, never the message. A line
+never carries a payload body, a note, a message, a token or an account id. `project` (the first 12 hex of the
+sha256 of the project key, which names the repo) is present when the call has one. An unexpected failure is
+logged by its error name and code only, and a resolver key refused for its module writes a `module-denied`
+line.
 
 ## Install on a development site
 

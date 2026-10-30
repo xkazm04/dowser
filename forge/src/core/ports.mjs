@@ -67,9 +67,21 @@
  */
 
 /**
+ * What the signed-in person may do in Jira, AS THE USER (Jira's /mypermissions): the answer has one boolean per
+ * asked permission key (BROWSE_PROJECTS, CREATE_ISSUES, ADD_COMMENTS, ADMINISTER). `on` narrows it to one project
+ * or one issue; without `on` only global permissions (ADMINISTER) are meaningful. A project or issue the person
+ * cannot see, or that does not exist, answers every key false. It throws on a Jira failure; a missing user grant
+ * is rethrown as is, so a Custom UI surface can show Forge's consent screen.
+ * @typedef {{
+ *   mine: (keys: string[], on?: {projectKey?: string, issueKey?: string}) => Promise<Record<string, boolean>>,
+ * }} Perms
+ */
+
+/**
  * Everything a core function may need. `now` is injected so tests control time; `log` receives the dispatch
- * door's structured lines (default console.log).
- * @typedef {{db: Db, jira?: Jira, sources?: Sources, links: Links, users?: Users, now: () => Date, log?: (line: string) => void}} Deps
+ * door's structured lines (default console.log). `perms` is required wherever an inbox is read or decided
+ * (core/access.mjs): without it, only the scan-source tools work.
+ * @typedef {{db: Db, jira?: Jira, sources?: Sources, links: Links, users?: Users, perms?: Perms, now: () => Date, log?: (line: string) => void}} Deps
  */
 
 export {};
