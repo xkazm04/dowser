@@ -127,6 +127,23 @@ Fixed since (2026-10-29 check against the code): 1 (snooze and reject wait in an
 markdown), 6 (one structured log line per tool and resolver call, `forge/src/core/observe.mjs`). Still open: 3
 and 5.
 
+**Live check after the security hardening (2026-10-30, 2.12.0, browser over CDP + MCP).** Passed:
+- An MCP push to a new key created the inbox for the caller. Its first insert hit the missing `created_by` column,
+  so the app migrated itself (v018) and retried in the same call.
+- A malformed `project_key` and a `javascript:` evidence url were refused.
+- Settings set the new inbox's Jira project, and the project list was read as the user.
+- Accept created DOW-3 after the Create issues check, and merge into DOW-1 left the app's comment after the
+  Add comments check.
+- A dated snooze and a reject with a reason both reached the skill's pull, `snooze_until` included.
+- The evidence panel and the Confluence byline each worked through their single allowed resolver key.
+- The Map and Learning tabs loaded.
+
+Not checked live:
+- A second account being refused, which needs another user (unit-tested in `forge/test/access.test.mjs`).
+- The Rovo agent, because Rovo Chat was not reachable for the account.
+
+Small gap: the inbox picker's per-inbox open counts update only on the next full load, not after a decision.
+
 1. **Snooze has no confirmation and no undo**: one click moves the item. Add an undo toast (a
    verdict reversal needs a server path; today there is none) or a confirm step.
 2. **Triage history shows "Jira user 5ec6bff9..."** instead of a display name. Resolve account ids
