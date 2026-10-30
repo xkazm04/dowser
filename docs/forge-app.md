@@ -119,8 +119,13 @@ body, a note, a token or an account id. `project_key` is present when the call h
 
 ## Install on a development site
 
-You need Node 22, the Forge CLI (`npm install -g @forge/cli`), and an Atlassian Cloud developer site with
-Jira, Confluence and Rovo enabled.
+You need the Forge CLI (`npm install -g @forge/cli`), and an Atlassian Cloud developer site with Jira,
+Confluence and Rovo enabled. CLI 15 needs Node 22.23.4+ or 24.22.1+ (older releases trust compromised
+certificates); the skill itself still runs on 22.13+. On Windows ARM64 the CLI's `cloudflared` dependency
+fails its install script (Cloudflare ships no ARM64 Windows binary), so install with
+`npm install -g @forge/cli --ignore-scripts`; everything but `forge tunnel` works.
+`forge skills install --agent claude --scope user` adds Atlassian's Forge skills and the Forge and ADS
+MCP servers to Claude Code; user scope keeps them out of this repo.
 
 ```sh
 cd forge
