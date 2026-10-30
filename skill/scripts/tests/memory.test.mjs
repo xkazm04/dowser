@@ -176,11 +176,15 @@ test('rules: a 3-member cluster is offered once and only once; accepted text rea
   assert.equal(offers[0].cluster.fps.length, 3);
   assert.equal(offers[0].titles.length, 3);
   assert.equal(offerRules(db).offers.length, 0, 'never re-offered while offered');
+  // card b3b6b8b8446b3a41: an offer the runner left unanswered comes back on the next run, marked earlier
+  const again = offerRules(db);
+  assert.deepEqual(again.earlier?.map((o) => [o.id, o.earlier, o.titles?.length]), [[offers[0].id, true, 3]], 'an unanswered offer is presented again');
 
   // decline: never again, even when the cluster grows; never in context
   decideRule(db, offers[0].id, 'declined', { by: 'human:ann' });
   mk('onboarding video', 'not-our-direction');
   assert.equal(offerRules(db).offers.length, 0, 'declined cluster never re-offered');
+  assert.equal(offerRules(db).earlier?.some((o) => o.id === offers[0].id) ?? false, false, 'a declined offer never comes back as earlier');
   assert.equal(contextPack(db, { runId: run, lens }).rules.length, 0);
   assert.throws(() => decideRule(db, offers[0].id, 'accepted', { by: 'human:ann' }), (e) => /** @type {any} */ (e).detail?.current === 'declined');
 

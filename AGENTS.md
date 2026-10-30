@@ -15,7 +15,7 @@ Dowser Forge inbox in Jira when it is connected.
   - `scripts/dowser.mjs` is the single CLI and the only writer of the store. Its modules are in
     `scripts/lib/` and its tests in `scripts/tests/`.
   - `schema/dowser-proposal-2.schema.json` is the proposal wire format (scan-finding/1 fields; `-1` kept readable).
-  - `install.mjs` installs the skill: `--harness claude|codex [--scope user|project] [--dev-link] [--dry-run]`.
+  - `install.mjs` installs the skill: `--harness claude|codex [--scope user|project] [--dev-link] [--dry-run]`; `--check` compares an installed copy against the latest release tag.
 - `tools/` holds development tools: the mock Forge MCP server, and `forge-live-e2e.mjs`, which drives
   the live Forge app through a headless Claude Code run.
   `local-forge.mjs` runs the real Forge core on node:sqlite on your machine: MCP on stdio for the skill,

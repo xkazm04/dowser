@@ -183,7 +183,8 @@ subagent that returns its JSONL text. Only the main agent calls `propose`, one l
 
 For each lens, print one progress line (`<lens>: gathering (tickets 42, code)`), then:
 
-1. **Load the pack.** Read `<skill-dir>/lenses/<lens>.md`: its frontmatter (`id`, `version`,
+1. **Load the pack.** Read `<skill-dir>/lenses/<lens>.md` and its worked examples in
+   `<skill-dir>/references/examples/<lens>.md`: the pack's frontmatter (`id`, `version`,
    `kinds`, `sources`, `requires_connection`, `budget`) and its body.
 2. **Context pack.** Run `context --run <run_id> --lens <lens>`, adding `--focus` on a focused
    run. It returns `suppressed` (fingerprints never to re-propose), `near` (known items, so you
@@ -336,7 +337,9 @@ Load `references/triage.md` (statuses, moves, reason codes, budget, trust) and
    draft text and the items it came from. The runner can accept it (optionally edited:
    `rules accept <id> --by human:<name> --text "<edited>"`), or decline it
    (`rules decline <id> --by human:<name>`). Do not offer a declined rule again. `rules offer`
-   never returns it.
+   never returns it. An offer the runner left unanswered on an earlier run comes back in
+   `earlier` (marked `earlier: true`): present those after the new offers, once per run, with
+   the same accept / decline choice - an unanswered offer is a question still open, not a no.
 
 **Dowser never marks anything `accepted`.** Acceptance is a human act in Jira. If the runner
 explicitly says, while offline, "accept this one", record

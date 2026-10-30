@@ -74,7 +74,8 @@
 //   share --run <id>                       the run's kept proposals as markdown, evidence by ref only (read-only)
 //                                          -> {run_id, cards, markdown}
 //
-// Exit codes: 0 ok; 1 partial (some propose lines invalid); 2 bad input or refused move (stdout carries
+// Exit codes: 0 ok; 1 partial - part of the input was invalid, refused or skipped and the rest applied (propose,
+// ingest-push, ingest-verdicts, ingest-sources, ingest-direction, reflect ingest); 2 bad input or refused move (stdout carries
 // {"error":"refused","current":<status>,...}); 3 store or connection unavailable, or not implemented.
 
 // node:sqlite prints an ExperimentalWarning on Node 22; it is noise in an agent's transcript. Filter it before

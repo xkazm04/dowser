@@ -338,7 +338,19 @@ export function offerRules(db) {
       ins.run(id, g.lens, text, JSON.stringify(cluster), at);
       offers.push({ id, lens: g.lens, state: 'offered', text, cluster, titles: g.fps.map((fp) => titles.get(fp)), offered_at: at });
     }
-    return { offers };
+    // Offers a runner left unanswered on an earlier run are still `offered`: they come back, marked `earlier`,
+    // after the new ones (the campaign's offers were shown once and then never again). Declined and accepted
+    // rules never come back. The key is omitted when there are none.
+    const fresh = new Set(offers.map((o) => o.id));
+    const earlier = /** @type {Row[]} */ (db.prepare("SELECT * FROM rules WHERE state = 'offered' ORDER BY offered_at, id").all())
+      .filter((r) => !fresh.has(String(r.id)))
+      .map((r) => {
+        const cluster = r.cluster_json ? JSON.parse(String(r.cluster_json)) : undefined;
+        const fps = /** @type {string[]} */ (cluster?.fps ?? []);
+        const t = fps.map((fp) => /** @type {Row | undefined} */ (db.prepare('SELECT title FROM proposals WHERE fp = ?').get(fp))?.title).filter(Boolean);
+        return /** @type {Row} */ (clean({ id: r.id, lens: r.lens, state: 'offered', earlier: true, text: r.text, cluster, titles: t.length ? t : undefined, offered_at: r.offered_at }));
+      });
+    return earlier.length ? { offers, earlier } : { offers };
   });
 }
 
