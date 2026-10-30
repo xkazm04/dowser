@@ -294,7 +294,7 @@ function ruleOut(r) {
  * declined) is never offered again. Clusters of one (lens, reason) that cover the very same items are one
  * offer, named by its longest token. Returns only the offers inserted now.
  * @param {Db} db
- * @returns {{offers: Row[]}}
+ * @returns {{offers: Row[], earlier?: Row[]}}
  */
 export function offerRules(db) {
   return tx(db, () => {
