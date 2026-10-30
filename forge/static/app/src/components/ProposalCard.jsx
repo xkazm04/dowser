@@ -4,6 +4,7 @@
 import React from 'react';
 import { Lozenge, useAsync } from './ui.jsx';
 import { call } from '../api.js';
+import { safeHref } from '../safeHref.js';
 import {
   CHANGE_LABELS, EVIDENCE_LABELS, LENS_LABELS, LEVEL_LABELS, REASON_LABELS, STATUS_APPEARANCE, STATUS_LABELS, comesBack, deciderName, evidenceStrength, formatDate, plural,
 } from './labels.js';
@@ -70,7 +71,7 @@ export function EvidenceList({ evidence }) {
   return (
     <ul className="dw-evidence">
       {evidence.map((ev, i) => {
-        const href = ev.link ?? ev.url;
+        const href = safeHref(ev.link) ?? safeHref(ev.url);
         const isCode = ev.type === 'code' || ev.type === 'doc';
         return (
           <li key={`${ev.type}:${ev.ref}:${i}`}>
@@ -98,7 +99,7 @@ export function TriageHistory({ history }) {
           <Lozenge appearance={STATUS_APPEARANCE[v.status] ?? 'default'}>{STATUS_LABELS[v.status] ?? v.status}</Lozenge>{' '}
           {v.reason && <>{REASON_LABELS[v.reason] ?? v.reason} </>}
           {v.merged_into && <>into {v.merged_into} </>}
-          {v.issue_ref && (v.issue_url ? <a href={v.issue_url} target="_blank" rel="noreferrer noopener">{v.issue_ref}</a> : v.issue_ref)}
+          {v.issue_ref && (safeHref(v.issue_url) ? <a href={safeHref(v.issue_url)} target="_blank" rel="noreferrer noopener">{v.issue_ref}</a> : v.issue_ref)}
           <span className="dw-subtlest"> · {deciderName(v.decided_by, v.decided_by_name)} · {formatDate(v.decided_at)}</span>
           {v.status === 'snoozed' && v.snooze_until && <div className="dw-subtle">{comesBack(v.snooze_until)}.</div>}
           {v.note && <div className="dw-note"><span className="dw-note__k">Note</span>{v.note}</div>}
@@ -149,8 +150,8 @@ export function ProposalCard({ card, change, history, showStatus, select, action
             ? <Lozenge appearance="moved">Reopened</Lozenge>
             : <Lozenge appearance={marker === 'new' ? 'new' : 'inprogress'}>{CHANGE_LABELS[marker]}</Lozenge>)}
           {showStatus && <Lozenge appearance={STATUS_APPEARANCE[card.status] ?? 'default'}>{STATUS_LABELS[card.status] ?? card.status}</Lozenge>}
-          {card.issue_ref && (card.issue_url
-            ? <a href={card.issue_url} target="_blank" rel="noreferrer noopener">{card.issue_ref}</a>
+          {card.issue_ref && (safeHref(card.issue_url)
+            ? <a href={safeHref(card.issue_url)} target="_blank" rel="noreferrer noopener">{card.issue_ref}</a>
             : <span>{card.issue_ref}</span>)}
         </div>
         <h3 className="dw-card__title" id={titleId}>{card.title}</h3>

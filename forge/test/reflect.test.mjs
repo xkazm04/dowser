@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ME, makeDeps, pushArgs, record } from './helpers.mjs';
 import { actionName, runResolver, runRovo, runTool } from '../src/core/app.mjs';
+import { sha256 } from '../src/core/util.mjs';
 
 const PK = 'github-com-Acme-Shop';
 const OTHER = '712020:other-person';
@@ -370,8 +371,10 @@ test('the dispatch door logs one structured line per call, and an extra line per
     ['call', 'rovo', 'dowser_inbox_list', true, ''],
     ['call', 'tool', 'dowser_reflect_sync', false, 'unauthorized'],
   ]);
-  assert.equal(lines[0].project_key, PK);
-  assert.ok(!('project_key' in lines[2]));
+  assert.equal(lines[0].project, sha256(PK).slice(0, 12), 'the project key is logged hashed');
+  assert.ok(lines.every((l) => !('project_key' in l)), 'never as is: it names the repo');
+  assert.ok(!('project' in lines[2]));
+  assert.ok(lines.every((l) => !('message' in l)), 'no error messages either');
   assert.ok(lines.every((l) => l.ms === undefined || Number.isInteger(l.ms)));
   assert.ok(!d.logs.join('\n').includes('SENSITIVE'), 'payload bodies are never logged');
   assert.ok(!d.logs.join('\n').includes(ME), 'account ids are never logged');

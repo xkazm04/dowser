@@ -14,6 +14,7 @@ import { readDupRate } from './readouts.js';
 import './reflect.css';
 import './learn.css';
 import { LensDot } from '../inbox/parts.jsx';
+import { safeHref } from '../../safeHref.js';
 
 function useReflect(projectKey) {
   const [state, setState] = useState(/** @type {{status: 'loading'|'ready'|'error', data?: any, error?: any}} */ ({ status: 'loading' }));
@@ -250,7 +251,7 @@ function Candidate({ cand, onChanged }) {
       <div className="dwr-need__meta">
         <Lozenge appearance="inprogress">Rate outcome</Lozenge>
         <span className="dwr-ref">{cand.ref}</span>
-        <a href={cand.issue_url} target="_blank" rel="noreferrer noopener">{cand.issue_ref}</a>
+        {safeHref(cand.issue_url) ? <a href={safeHref(cand.issue_url)} target="_blank" rel="noreferrer noopener">{cand.issue_ref}</a> : <span>{cand.issue_ref}</span>}
         <Lozenge appearance={cand.done ? 'success' : 'default'}>{cand.issue_status}</Lozenge>
         {cand.done && <span className="dwr-need__when">Jira says Done: ready to rate</span>}
       </div>

@@ -9,6 +9,7 @@ import { Button, ErrorState, SectionMessage, SkeletonList, useAsync } from '../.
 import { LENSES, LENS_LABELS, plural } from '../../components/labels.js';
 import { LensDot } from '../inbox/parts.jsx';
 import './settings.css';
+import { safeHref } from '../../safeHref.js';
 
 export default function Settings() {
   const data = useAsync(async () => {
@@ -195,7 +196,7 @@ function InboxRow({ inbox, projects }) {
     <tr>
       <td>
         <strong>{inbox.project_key}</strong>
-        {saved.repo_url && <div className="dw-subtlest"><a href={saved.repo_url} target="_blank" rel="noreferrer noopener">{saved.repo_url}</a></div>}
+        {saved.repo_url && <div className="dw-subtlest">{safeHref(saved.repo_url) ? <a href={safeHref(saved.repo_url)} target="_blank" rel="noreferrer noopener">{saved.repo_url}</a> : saved.repo_url}</div>}
         <div className="dw-subtlest">{plural(inbox.open ?? 0, 'open proposal')}</div>
       </td>
       <td>

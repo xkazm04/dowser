@@ -1,11 +1,21 @@
 // @ts-check
 // One structured log line per tool, resolver and Rovo call, written at the dispatch door (app.mjs). A line is
-// JSON on one row: the surface, the key, the project key when the payload has one, ok or the error code, and
-// the duration. Never a payload body, a note, a token or an account id.
+// JSON on one row: the surface, the key, `project` (the first 12 hex of sha256 of the project key, when the
+// payload has one: the key names the repo, so it is never logged as is), ok or the error code, and the
+// duration. A failed resolver call adds a `resolver-error` line with the key, the error code and the hashed
+// project, never the error message. Never a payload body, a note, a message, a token or an account id.
+import { sha256 } from './util.mjs';
 
 /**
  * @typedef {import('./ports.mjs').Deps} Deps
  */
+
+/**
+ * The log form of a project key: the first 12 hex of its sha256. Lines of one project still correlate.
+ * @param {string} projectKey
+ * @returns {string}
+ */
+export const projectTag = (projectKey) => sha256(projectKey).slice(0, 12);
 
 /**
  * Writes one JSON line through the injected logger (default console.log).
@@ -30,8 +40,9 @@ export function logLine(deps, line) {
 export async function observed(deps, surface, key, payload, run) {
   const t0 = Date.now();
   const pk = payload && typeof payload === 'object' && typeof (/** @type {any} */ (payload)).project_key === 'string' ? /** @type {any} */ (payload).project_key : undefined;
+  const project = pk ? { project: projectTag(pk) } : {};
   /** @type {Record<string, unknown>} */
-  const base = { dowser: 'call', surface, key: key ?? 'unknown', ...(pk ? { project_key: pk } : {}) };
+  const base = { dowser: 'call', surface, key: key ?? 'unknown', ...project };
   /** @type {object} */
   let out;
   try {
@@ -43,7 +54,7 @@ export async function observed(deps, surface, key, payload, run) {
   const err = typeof (/** @type {any} */ (out)).error === 'string' ? /** @type {any} */ (out) : undefined;
   logLine(deps, { ...base, ok: !err, ...(err ? { error: err.error } : {}), ms: Date.now() - t0 });
   if (err && surface === 'resolver') {
-    logLine(deps, { dowser: 'resolver-error', key: key ?? 'unknown', ...(pk ? { project_key: pk } : {}), error: err.error, message: String(err.message ?? '').slice(0, 300) });
+    logLine(deps, { dowser: 'resolver-error', key: key ?? 'unknown', ...project, error: err.error });
   }
   return out;
 }

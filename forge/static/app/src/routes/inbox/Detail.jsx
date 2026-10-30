@@ -11,6 +11,7 @@ import {
   CHANGE_LABELS, EVIDENCE_LABELS, LENS_LABELS, LEVEL_LABELS, STATUS_APPEARANCE, STATUS_LABELS, comesBack, evidenceStrength, plural,
 } from '../../components/labels.js';
 import { LensDot, Meter, Pips, effortDays } from './parts.jsx';
+import { safeHref } from '../../safeHref.js';
 
 function Risk({ risk }) {
   if (!risk) return <span className="dwr-muted">Not measured</span>;
@@ -30,7 +31,7 @@ export function Evidence({ evidence }) {
   return (
     <ul className="dwr-ev">
       {evidence.map((ev, i) => {
-        const href = ev.link ?? ev.url;
+        const href = safeHref(ev.link) ?? safeHref(ev.url);
         const isCode = ev.type === 'code' || ev.type === 'doc';
         return (
           <li key={`${ev.type}:${ev.ref}:${i}`} className="dwr-ev__item">
@@ -71,8 +72,8 @@ export function Detail({ card, change, history, compact = false, titleId }) {
             ? <Lozenge appearance="moved">Reopened</Lozenge>
             : <Lozenge appearance={marker === 'new' ? 'new' : 'inprogress'}>{CHANGE_LABELS[marker]}</Lozenge>)}
           {!isOpen && <Lozenge appearance={STATUS_APPEARANCE[card.status] ?? 'default'}>{STATUS_LABELS[card.status] ?? card.status}</Lozenge>}
-          {card.issue_ref && (card.issue_url
-            ? <a href={card.issue_url} target="_blank" rel="noreferrer noopener">{card.issue_ref}</a>
+          {card.issue_ref && (safeHref(card.issue_url)
+            ? <a href={safeHref(card.issue_url)} target="_blank" rel="noreferrer noopener">{card.issue_ref}</a>
             : <span>{card.issue_ref}</span>)}
         </span>
         <h2 className="dwr-detail__title" id={titleId}>{card.title}</h2>

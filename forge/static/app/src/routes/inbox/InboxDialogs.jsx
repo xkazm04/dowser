@@ -4,6 +4,7 @@ import React from 'react';
 import { Button, Dialog } from '../../components/ui.jsx';
 import { CardDialog } from '../../components/CardDialog.jsx';
 import { AcceptDialog, MergeDialog, RejectDialog } from './dialogs.jsx';
+import { safeHref } from '../../safeHref.js';
 
 /**
  * @param {{dialog: {kind: string, refs: string[]} | null, dialogCards: any[], flat: any[], closeDialog: () => void,
@@ -21,7 +22,7 @@ export function InboxDialogs({ dialog, dialogCards, flat, closeDialog, fail, lea
           onDone={(card) => {
             const c = card ?? dialogCards[0];
             closeDialog(); leave([c], 'accepted');
-            cw.notify(<>{c.ref} accepted{c.issue_ref && <> as {c.issue_url ? <a href={c.issue_url} target="_blank" rel="noreferrer noopener">{c.issue_ref}</a> : c.issue_ref}</>}.</>);
+            cw.notify(<>{c.ref} accepted{c.issue_ref && <> as {safeHref(c.issue_url) ? <a href={safeHref(c.issue_url)} target="_blank" rel="noreferrer noopener">{c.issue_ref}</a> : c.issue_ref}</>}.</>);
           }}
         />
       )}

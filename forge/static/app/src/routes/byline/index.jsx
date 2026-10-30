@@ -9,6 +9,7 @@ import { LensBadge } from '../../components/ProposalCard.jsx';
 import { Mark } from '../../components/Brand.jsx';
 import { STATUS_APPEARANCE, STATUS_LABELS, plural } from '../../components/labels.js';
 import '../../components/viz.css';
+import { safeHref } from '../../safeHref.js';
 
 /**
  * The Dowser inbox in Jira, as an absolute URL: `<site>/jira/apps/<appId>/<environmentId>/inbox`. The app id
@@ -39,7 +40,8 @@ function whyNamed(card, pageId) {
 
 function openExternal(e, href) {
   e.preventDefault();
-  router.open(href).catch(() => window.open(href, '_blank', 'noopener'));
+  const safe = safeHref(href);
+  if (safe) router.open(safe).catch(() => window.open(safe, '_blank', 'noopener'));
 }
 
 export default function Byline({ context }) {
@@ -72,8 +74,8 @@ export default function Byline({ context }) {
                       : <span className="dw-subtlest">{card.ref}</span>}
                     <Lozenge appearance={STATUS_APPEARANCE[card.status] ?? 'default'}>{STATUS_LABELS[card.status] ?? card.status}</Lozenge>
                     <LensBadge lens={card.lens} />
-                    {card.issue_ref && (card.issue_url
-                      ? <a href={card.issue_url} target="_blank" rel="noreferrer noopener" onClick={(e) => openExternal(e, card.issue_url)}>{card.issue_ref}</a>
+                    {card.issue_ref && (safeHref(card.issue_url)
+                      ? <a href={safeHref(card.issue_url)} target="_blank" rel="noreferrer noopener" onClick={(e) => openExternal(e, card.issue_url)}>{card.issue_ref}</a>
                       : <span>{card.issue_ref}</span>)}
                   </div>
                   <span className="dw-byline__title">{card.title}</span>

@@ -3,8 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  ARTIFACT_KINDS, ARTIFACT_LIMITS, BLASTS, CONFIDENCES, FLOW_MARKS, EVIDENCE_TYPES, LENSES, REASONS, SIZES, STATUSES, TRANSITIONS,
-  canMove, decisionProblem, validateCandidate,
+  ARTIFACT_KINDS, ARTIFACT_LIMITS, BLASTS, CONFIDENCES, FIELD_LIMITS, FLOW_MARKS, EVIDENCE_TYPES, LENSES, REASONS, SIZES, STATUSES, TRANSITIONS,
+  canMove, decisionProblem, isHttpsUrl, validateCandidate,
 } from '../lib/model.mjs';
 import { candidate } from './_fixture.mjs';
 
@@ -94,4 +94,67 @@ test('the JSON Schema twin carries the same enums as model.mjs', () => {
   assert.equal(d.artifactList.maxItems, ARTIFACT_LIMITS.perCard);
   assert.deepEqual(d.flowData.properties.steps.items.properties.mark.enum, [...FLOW_MARKS]);
   assert.ok(schema.properties.artifacts && d.candidate.properties.artifacts, 'record and candidate both carry artifacts');
+  const F = FIELD_LIMITS;
+  assert.equal(d.kind.maxLength, F.kind);
+  assert.equal(d.topic.maxLength, F.topic);
+  assert.equal(d.anchors.maxItems, F.anchors);
+  assert.equal(d.anchors.items.maxLength, F.anchor);
+  assert.equal(d.rationale.maxLength, F.rationale);
+  assert.equal(d.body.maxLength, F.body);
+  assert.equal(d.confidenceWhy.maxLength, F.confidence_why);
+  assert.equal(d.evidenceList.maxItems, F.evidence);
+  assert.equal(d.evidence.properties.ref.maxLength, F.ref);
+  assert.equal(d.evidence.properties.quote.maxLength, F.quote);
+  assert.equal(d.evidence.properties.url.maxLength, F.url);
+  assert.equal(d.evidence.properties.url.pattern, '^https://');
+  assert.equal(d.stringList.maxItems, F.list);
+  assert.equal(d.stringList.items.maxLength, F.item);
+  assert.equal(d.artifactList.items.properties.refs.maxItems, F.evidence);
+  for (const k of ['lens_version', 'model', 'harness', 'run_id', 'focus']) assert.equal(d.provenance.properties[k].maxLength, F.provenance, k);
+  for (const at of [schema.properties, d.candidate.properties]) {
+    assert.equal(at.rationale.$ref, '#/$defs/rationale');
+    assert.equal(at.confidence_why.$ref, '#/$defs/confidenceWhy');
+  }
+});
+
+test('field caps: a value at the cap passes, one char or item over is refused with the field named', () => {
+  const F = FIELD_LIMITS;
+  const body = (/** @type {number} */ n) => { const b = candidate().body; return b + 'x'.repeat(n - b.length); };
+  const ev = (over = {}) => ({ type: 'ticket', ref: 'PROJ-1', ...over });
+  /** @type {[string, (n: number) => Record<string, unknown>, number, RegExp][]} */
+  const cases = [
+    ['kind', (n) => ({ kind: 'k'.repeat(n) }), F.kind, /^kind:longer than 64 chars$/],
+    ['topic', (n) => ({ topic: 't'.repeat(n) }), F.topic, /^topic:longer than 160 chars$/],
+    ['anchor', (n) => ({ anchors: ['a'.repeat(n)] }), F.anchor, /^anchors\[0\]:longer than 300 chars$/],
+    ['anchors', (n) => ({ anchors: Array.from({ length: n }, (_, i) => `src/a${i}.js`) }), F.anchors, /^anchors:at most 12 items$/],
+    ['rationale', (n) => ({ rationale: 'r'.repeat(n) }), F.rationale, /^rationale:longer than 2000 chars$/],
+    ['body', (n) => ({ body: body(n) }), F.body, /^body:longer than 12000 chars$/],
+    ['confidence_why', (n) => ({ confidence_why: 'c'.repeat(n) }), F.confidence_why, /^confidence_why:longer than 1000 chars$/],
+    ['evidence', (n) => ({ evidence: Array.from({ length: n }, (_, i) => ev({ ref: `PROJ-${i}` })) }), F.evidence, /^evidence:at most 100 items$/],
+    ['ref', (n) => ({ evidence: [ev({ ref: 'R'.repeat(n) })] }), F.ref, /^evidence\[0\]\.ref:longer than 500 chars$/],
+    ['quote', (n) => ({ evidence: [{ type: 'code', ref: 'src/a.js:1', quote: 'q'.repeat(n) }] }), F.quote, /^evidence\[0\]\.quote:longer than 2000 chars$/],
+    ['url', (n) => ({ evidence: [ev({ url: `https://x.example/${'u'.repeat(n - 18)}` })] }), F.url, /^evidence\[0\]\.url:longer than 2000 chars$/],
+    ['doc_impact', (n) => ({ doc_impact: Array.from({ length: n }, (_, i) => `docs/${i}.md`) }), F.list, /^doc_impact:at most 20 items$/],
+    ['doc_impact item', (n) => ({ doc_impact: ['d'.repeat(n)] }), F.item, /^doc_impact\[0\]:longer than 300 chars$/],
+    ['basis', (n) => ({ effort: { size: 'S', basis: Array.from({ length: n }, (_, i) => `b${i}`) } }), F.list, /^effort\.basis:at most 20 items$/],
+    ['provenance', (n) => ({ provenance: { lens_version: '1.0.0', model: 'm'.repeat(n) } }), F.provenance, /^provenance\.model:longer than 200 chars$/],
+  ];
+  for (const [name, make, cap, re] of cases) {
+    assert.equal(why(candidate(make(cap))), 'ok', `${name} at the cap passes`);
+    assert.match(why(candidate(make(cap + 1))), re, `${name} over the cap`);
+  }
+  const refs = Array.from({ length: F.evidence + 1 }, () => 'PROJ-1');
+  const view = { kind: 'flow', message: 'm', alt: 'a', refs, data: { steps: [{ label: 'a' }, { label: 'b' }] } };
+  assert.match(why(candidate({ evidence: [ev()], artifacts: [view] })), /^artifacts\[0\]\.refs:at most 100 refs$/);
+  assert.equal(validateCandidate(candidate({ body: body(F.body + 1) }), { wire: true }).ok, false, 'the wire check holds the same caps');
+});
+
+test('an evidence url must be an absolute https URL', () => {
+  const at = (/** @type {string} */ url) => why(candidate({ evidence: [{ type: 'ticket', ref: 'PROJ-1', url }] }));
+  assert.equal(at('https://acme.atlassian.net/browse/PROJ-1'), 'ok');
+  for (const bad of ['http://acme.atlassian.net/browse/PROJ-1', 'javascript:alert(1)', 'JAVASCRIPT:alert(1)', 'data:text/html,x', '/browse/PROJ-1', 'acme.atlassian.net/x', 'ftp://x.example/a']) {
+    assert.match(at(bad), /^evidence\[0\]\.url:must be an https:\/\/ URL$/, bad);
+  }
+  assert.equal(isHttpsUrl('HTTPS://X.EXAMPLE/a'), true, 'the scheme is case-insensitive');
+  assert.equal(isHttpsUrl(42), false);
 });

@@ -28,6 +28,18 @@ export const RUN_MODES = /** @type {const} */ (['full', 'incremental', 'focused'
 export const RUN_STATUSES = /** @type {const} */ (['running', 'done', 'failed']);
 export const LENS_STATES = /** @type {const} */ (['ran', 'skipped', 'partial']);
 export const TITLE_MAX = 80;
+/**
+ * Length caps on the free-text and list fields of a candidate (chars for strings, items for lists). They bound
+ * what one record may store, here and on push. Each sits well above what real scans write (measured on a
+ * 134-record campaign store, 2026-10: body 2978, rationale 416, quote 394, confidence_why 245, evidence 10 keys
+ * accumulated over 10 waves, anchors 4, anchor 62, ref 58, url 58, kind 26, topic 42, doc_impact 5 x 63,
+ * basis 4 x 62). `evidence` counts a record's accumulated evidence: an outbox record carries all of it.
+ * `list`/`item` cap `doc_impact` and `effort.basis`; `provenance` caps each provenance string.
+ */
+export const FIELD_LIMITS = Object.freeze({
+  kind: 64, topic: 160, anchors: 12, anchor: 300, rationale: 2000, body: 12000, confidence_why: 1000,
+  evidence: 100, ref: 500, quote: 2000, url: 2000, list: 20, item: 300, provenance: 200,
+});
 /** Supporting views a card may carry (`artifacts[]`): one message each, drawn from the card's own evidence. */
 export const ARTIFACT_KINDS = /** @type {const} */ (['table', 'flow', 'before-after', 'matrix']);
 export const FLOW_MARKS = /** @type {const} */ (['friction', 'failure', 'missing', 'new']);
@@ -209,6 +221,30 @@ export function bodySections(body) {
 }
 
 /** @param {unknown} v @param {number} max */
+const tooLong = (v, max) => typeof v === 'string' && v.length > max;
+/**
+ * True when `v` parses as an absolute `https:` URL.
+ * @param {unknown} v
+ */
+export function isHttpsUrl(v) {
+  if (typeof v !== 'string') return false;
+  try { return new URL(v).protocol === 'https:'; } catch { return false; }
+}
+
+/**
+ * Why an optional string list (`doc_impact`, `effort.basis`) breaks the list caps, or undefined.
+ * @param {string} at
+ * @param {unknown} v
+ * @returns {string | undefined}
+ */
+function listProblem(at, v) {
+  if (!Array.isArray(v)) return undefined;
+  if (v.length > FIELD_LIMITS.list) return `${at}:at most ${FIELD_LIMITS.list} items`;
+  const i = v.findIndex((x) => tooLong(x, FIELD_LIMITS.item));
+  return i >= 0 ? `${at}[${i}]:longer than ${FIELD_LIMITS.item} chars` : undefined;
+}
+
+/** @param {unknown} v @param {number} max */
 const short = (v, max) => str(v) && /** @type {string} */ (v).length <= max && !/[\r\n]/.test(/** @type {string} */ (v));
 /** @param {unknown} v @param {number} maxItems @param {number} maxLen */
 const shortList = (v, maxItems, maxLen) => Array.isArray(v) && v.length > 0 && v.length <= maxItems && v.every((x) => short(x, maxLen));
@@ -234,6 +270,7 @@ export function artifactsProblem(list, evidenceRefs) {
     if (!short(a.message, L.message)) return `${at}.message:one line, at most ${L.message} chars`;
     if (!str(a.alt) || /** @type {string} */ (a.alt).length > L.alt) return `${at}.alt:required, at most ${L.alt} chars`;
     if (!strList(a.refs) || /** @type {string[]} */ (a.refs).length === 0) return `${at}.refs:at least one evidence ref`;
+    if (/** @type {string[]} */ (a.refs).length > FIELD_LIMITS.evidence) return `${at}.refs:at most ${FIELD_LIMITS.evidence} refs`;
     const stray = /** @type {string[]} */ (a.refs).find((r) => !evidenceRefs.includes(r));
     if (stray) return `${at}.refs:${stray} is not in this card's evidence`;
     if (!obj(a.data)) return `${at}.data:required`;
@@ -291,8 +328,8 @@ export function artifactsProblem(list, evidenceRefs) {
 
 /**
  * Validates one candidate line (a `dowser-proposal/1` record without the store-owned triage fields).
- * Checks shape and enums, title <= 80, the five body sections, a quote on every code/doc evidence, no `null`
- * anywhere, no 0 for unmeasured numbers. It does not check `kind` against the lens's kinds (fingerprint does).
+ * Checks shape and enums, title <= 80 and the FIELD_LIMITS caps, the five body sections, a quote on every
+ * code/doc evidence, an evidence `url` that is https, no `null` anywhere, no 0 for unmeasured numbers. It does not check `kind` against the lens's kinds (fingerprint does).
  * `opts.wire` checks a pushed record instead (forge-mcp-2): code/doc evidence carries `quote` OR `quote_sha`
  * (16 lowercase hex, `quoteSha` in fingerprint.mjs), for a team that withholds source lines (`quotes=omit`).
  * `quote_sha` is an evidence key only in wire mode; every other rule is the same.
@@ -314,20 +351,31 @@ export function validateCandidate(input, opts = {}) {
   if (extra) return no(`unknown-field:${extra}`);
 
   if (!isOneOf(LENSES, o.lens)) return no(`lens:must be one of ${LENSES.join('|')}`);
+  const F = FIELD_LIMITS;
+  /** @param {string} at @param {unknown} v @param {number} max */
+  const long = (at, v, max) => (tooLong(v, max) ? `${at}:longer than ${max} chars` : undefined);
   if (!str(o.kind)) return no('kind:required');
+  const kl = long('kind', o.kind, F.kind); if (kl) return no(kl);
   if (!str(o.topic)) return no('topic:required');
+  const tl = long('topic', o.topic, F.topic); if (tl) return no(tl);
   if (!Array.isArray(o.anchors) || !o.anchors.every(str)) return no('anchors:must be an array of non-empty strings');
+  if (o.anchors.length > F.anchors) return no(`anchors:at most ${F.anchors} items`);
+  const longAnchor = o.anchors.findIndex((a) => tooLong(a, F.anchor));
+  if (longAnchor >= 0) return no(`anchors[${longAnchor}]:longer than ${F.anchor} chars`);
 
   if (!str(o.title)) return no('title:required');
   if (/** @type {string} */ (o.title).length > TITLE_MAX) return no(`title:longer than ${TITLE_MAX} chars`);
   if (/[\r\n]/.test(/** @type {string} */ (o.title))) return no('title:must be one line');
   if (!str(o.rationale)) return no('rationale:required');
+  const rl = long('rationale', o.rationale, F.rationale); if (rl) return no(rl);
   if (!str(o.body)) return no('body:required');
+  const bl = long('body', o.body, F.body); if (bl) return no(bl);
   const have = bodySections(/** @type {string} */ (o.body)).map((s) => s.toLowerCase());
   const missing = BODY_SECTIONS.filter((s) => !have.includes(s.toLowerCase()));
   if (missing.length) return no(`body:missing section(s) ${missing.map((s) => `## ${s}`).join(', ')}`);
 
   if (!Array.isArray(o.evidence) || o.evidence.length === 0) return no('evidence:at least one item required');
+  if (o.evidence.length > F.evidence) return no(`evidence:at most ${F.evidence} items`);
   for (let i = 0; i < o.evidence.length; i++) {
     const e = o.evidence[i];
     if (!obj(e)) return no(`evidence[${i}]:not an object`);
@@ -335,6 +383,8 @@ export function validateCandidate(input, opts = {}) {
     if (ex) return no(`evidence[${i}]:unknown field ${ex}`);
     if (!isOneOf(EVIDENCE_TYPES, e.type)) return no(`evidence[${i}].type:must be one of ${EVIDENCE_TYPES.join('|')}`);
     if (!str(e.ref)) return no(`evidence[${i}].ref:required`);
+    const el = long(`evidence[${i}].ref`, e.ref, F.ref) ?? long(`evidence[${i}].quote`, e.quote, F.quote) ?? long(`evidence[${i}].url`, e.url, F.url);
+    if (el) return no(el);
     if (e.quote_sha !== undefined) {
       if (typeof e.quote_sha !== 'string' || !QUOTE_SHA_RE.test(e.quote_sha)) return no(`evidence[${i}].quote_sha:must be 16 lowercase hex chars`);
       if (!isOneOf(QUOTED_TYPES, e.type)) return no(`evidence[${i}].quote_sha:only on ${QUOTED_TYPES.join('|')} evidence`);
@@ -344,6 +394,7 @@ export function validateCandidate(input, opts = {}) {
     }
     if (e.quote !== undefined && typeof e.quote !== 'string') return no(`evidence[${i}].quote:must be a string`);
     if (e.url !== undefined && !str(e.url)) return no(`evidence[${i}].url:must be a non-empty string`);
+    if (e.url !== undefined && !isHttpsUrl(e.url)) return no(`evidence[${i}].url:must be an https:// URL`);
   }
 
   if (!obj(o.effort)) return no('effort:required');
@@ -355,11 +406,14 @@ export function validateCandidate(input, opts = {}) {
   if (ef.days_high !== undefined && !posNum(ef.days_high)) return no('effort.days_high:must be > 0 (omit when unmeasured)');
   if (typeof ef.days_low === 'number' && typeof ef.days_high === 'number' && ef.days_low > ef.days_high) return no('effort:days_low > days_high');
   if (ef.basis !== undefined && !strList(ef.basis)) return no('effort.basis:must be an array of strings');
+  const efl = listProblem('effort.basis', ef.basis); if (efl) return no(efl);
 
   if (!isOneOf(CONFIDENCES, o.confidence)) return no(`confidence:must be one of ${CONFIDENCES.join('|')}`);
   if (!str(o.confidence_why)) return no('confidence_why:required');
+  const cl = long('confidence_why', o.confidence_why, F.confidence_why); if (cl) return no(cl);
 
   if (o.doc_impact !== undefined && !strList(o.doc_impact)) return no('doc_impact:must be an array of strings');
+  const dl = listProblem('doc_impact', o.doc_impact); if (dl) return no(dl);
   if (o.delivery_risk !== undefined) {
     if (!obj(o.delivery_risk)) return no('delivery_risk:must be an object');
     const dr = /** @type {Record<string, unknown>} */ (o.delivery_risk);
@@ -383,6 +437,9 @@ export function validateCandidate(input, opts = {}) {
   if (!str(pv.lens_version)) return no('provenance.lens_version:required');
   for (const k of ['model', 'harness', 'run_id', 'focus']) {
     if (pv[k] !== undefined && !str(pv[k])) return no(`provenance.${k}:must be a non-empty string`);
+  }
+  for (const k of ['lens_version', 'model', 'harness', 'run_id', 'focus']) {
+    const pl = long(`provenance.${k}`, pv[k], F.provenance); if (pl) return no(pl);
   }
   if (o.fp !== undefined && !(typeof o.fp === 'string' && /^[0-9a-f]{16}$/.test(o.fp))) return no('fp:must be 16 lowercase hex (or omitted)');
 

@@ -79,7 +79,10 @@ M = `emitted + truncated`.
 - **Card:** `title` (at most 80 chars), `rationale`, and `body`. The body is Markdown with `## Summary`,
   `## Description`, `## Flow`, `## Expected impact` and `## Evaluation`.
 - **Evidence:** `evidence[]` of `{type: code|doc|git|ticket|page|goal|dep|sarif, ref, quote?, url?}`.
-  `quote` is required for `code` and `doc`.
+  `quote` is required for `code` and `doc`. A `url` must be an absolute `https://` URL.
+- **Caps:** every free-text and list field has a length cap (`FIELD_LIMITS` in `skill/scripts/lib/model.mjs`,
+  `maxLength`/`maxItems` in the schema; the table is in `docs/contracts/forge-mcp-2.md`). A line over a cap is
+  refused with the field named, the same as `title`.
 - **Sizing:** `effort{size: XS|S|M|L|XL, days_low?, days_high?, basis?[]}`, plus `confidence`
   (`low|medium|high`) and `confidence_why`.
 - **Risk:** `doc_impact?[]` and `delivery_risk?{blast: low|medium|high, bus_factor?}`.
