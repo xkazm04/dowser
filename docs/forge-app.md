@@ -235,8 +235,11 @@ push, not a sortable table.
 
 - **Toolbar.** One row from 960px (two below): the **Inbox** picker (one repository, or all of them), the status control (default
   **Open**; every status shows its count, and the counts move as you decide), the lens filter, **Pre-triaged** (only
-  the cards the scan pre-triaged on its own, `inbox.list {pretriaged: true}`), the last push and `?` for the keyboard help. Jira's sidebar
-  carries the navigation between Inbox, Opportunity map, Learning and Settings.
+  the cards the scan pre-triaged on its own, `inbox.list {pretriaged: true}`), the last push and `?` for the keyboard help.
+  When the inbox was opened filtered to an area (a Map cell, or `?area=` in the link), an **Area: <path>** chip
+  shows; its clear button drops the filter, and picking another inbox clears it too (`inbox.list {project_key,
+  area}`; `area` needs `project_key`). Jira's sidebar carries the navigation between Inbox, Opportunity map,
+  Learning and Settings.
 - **Queue.** Each sticky heading names one push by date and time and counts its **New**, **Evidence grew**
   and **Reopened** items; the commit and run id are in its tooltip. Each row shows the title, lens, ref,
   change marker, the stored score (or **unscored**, never 0), effort size, confidence and evidence strength.
@@ -264,7 +267,9 @@ push, not a sortable table.
 
   The evidence is open: code
   and doc lines link to the scanned commit and show their quote as code; tickets, pages and goals link to their
-  source. The full write-up and the triage history follow. The decision bar stays at the bottom of the pane.
+  source. The full write-up and the triage history follow; when the history fails to load, it says "The history
+  could not load." with **Retry**, and selecting the card again also fetches it again (a failure is never
+  cached). The decision bar stays at the bottom of the pane.
   Below 900px there is no pane: the selected row opens in place.
 - **Actions.**
   - **Accept** opens a dialog with the target Jira project and issue type, filled in from the inbox
@@ -279,7 +284,10 @@ push, not a sortable table.
     highlighted row is bold. A flow becomes a numbered list, and a marked step ends with "(friction)", "(failure)",
     "(missing)" or "(new)". A before/after becomes a table with the measure on top and Today / After columns.
     A view that cannot be drawn becomes its text alternative.
-  - **Merge** picks another open or accepted proposal by ref or title, or takes a typed Jira key.
+  - **Merge** picks another open or accepted proposal by ref or title, or takes a typed Jira key. When the
+    accepted proposals fail to load, the dialog says "Accepted proposals could not load, so only open ones are
+    listed." with **Retry**; "No matching proposal." shows only for a real empty result.
+  - When the Accept dialog cannot list the Jira projects, it says so with **Retry**, which reloads both lists.
   - **Reject** takes one of six reasons: false positive, already known, not our direction, not worth it,
     wrong size, other. Other needs a note.
   - **Snooze** holds the card until its evidence grows. An optional **Until** date (a day after today) also
@@ -316,7 +324,10 @@ Forge only shows it.
 
 The same page shell as Learning and the map: a bar with the page title, then the content. Each inbox has one
 row: the repository's project key and URL, its open count, a Jira project and an issue type. **Save**
-stores them. Accept files issues there unless the Accept dialog overrides them for one proposal.
+stores them. Accept files issues there unless the Accept dialog overrides them for one proposal. The inboxes
+(`settings.get`) and the Jira projects (`jira.projects`) load separately: when Jira cannot list the projects,
+a warning with **Retry** shows above the table, the rows still render, and their selectors are disabled,
+showing the saved project or "Projects unavailable". Lens direction below works either way.
 
 Below the accept-target table, **Lens direction** lets a team steer each lens of each inbox. Every inbox lists
 the four lenses as one-line disclosures: the lens name and what is set (`Focus: ... · Leave out: ... · Spaces:
@@ -334,8 +345,9 @@ without direction.
 ### Evidence panel (on a Jira issue)
 
 On an issue that Dowser created at Accept, the **Dowser evidence** panel shows the reading-pane content in one
-column, read-only: the facts, the supporting views (stacked, one per row), the evidence trail, doc impact, delivery risk and triage history. On any other issue, it says "This issue did
-not come from Dowser."
+column, read-only: the facts, the supporting views (stacked, one per row), the evidence trail, doc impact, delivery risk and triage history. On any other issue, it says "No Dowser
+evidence you can view here." and "Either Dowser did not propose this issue, or its proposal is in a Dowser inbox
+you cannot open. A Jira admin can tell you which." The wording is true in both cases and never names the inbox.
 
 ### Theme and accessibility
 
@@ -413,7 +425,9 @@ pages, it has no tabs of its own: Jira's sidebar carries the navigation.
 - **Proposals by area and lens.** A table: one row per area (a directory the local skill measured with
   `dowser areas` and pushed with `dowser_areas_push`), one column per lens. The number in a cell is the open
   proposals in that area for that lens; accepted ones show below it. The darker the blue, the more open
-  proposals, and the number is always printed. Rows sort by open proposals, then by commits.
+  proposals, and the number is always printed. Rows sort by open proposals, then by commits. A cell with open
+  proposals is a link: it opens the inbox filtered to that area and lens (`inbox?project=&lens=&area=`), and the
+  inbox lists exactly the cell's count.
   - **Commits 90d** counts the commits that touched the area in the 90 days before the scanned commit.
   - **Authors 90d** counts distinct authors in those commits. **Bus factor 1** marks an area that only one
     person changed. "Not measured" means the area had no commits in the window, so authors were not counted.
@@ -435,5 +449,11 @@ names says "No Dowser proposals mention this page."
 ### Links into the inbox
 
 `<site>/jira/apps/<appId>/<envId>/inbox?ref=DW-12` opens the inbox focused on DW-12 (the card scrolls into
-view and takes keyboard focus). If DW-12 is not in the loaded page (decided, or further down the queue), it
-opens in a read-only card dialog instead.
+view and takes keyboard focus). If DW-12 is open, fits the current filters and sits further down the queue,
+it is placed above the loaded pages under "Linked proposal, from a later page" and selected, with **Accept**,
+**Reject**, **Snooze** and **Merge**; when **Load more** reaches its page it moves back into its push's group,
+listed once. A decided DW-12, or one in another inbox, still opens in a read-only card dialog.
+
+`inbox?project=<key>&lens=<lens>&area=<path>` opens the inbox filtered to that inbox, lens and area (any of
+the three may be left out; `area` needs `project`). The map's heat cells link this way, and the toolbar shows
+the area as a clearable **Area:** chip.

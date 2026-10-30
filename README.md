@@ -20,11 +20,25 @@ repository:
 node skill/install.mjs --harness claude              # -> ~/.claude/skills/dowser
 node skill/install.mjs --harness codex               # -> $CODEX_HOME/skills/dowser (~/.codex/skills/dowser)
 node skill/install.mjs --harness codex --dry-run     # print the plan, change nothing
+node skill/install.mjs --check --harness claude      # is a newer release out? (npm run check-update)
 ```
 
 `--scope project` installs into the current folder instead (`.claude/skills/dowser` or
 `.agents/skills/dowser`). `--dev-link` links the installed skill to this checkout, so edits apply
-at once. Exit codes: 0 ok, 2 bad arguments, 3 cannot install.
+at once. `--check [--from <git url or path>]` compares the installed copy with the newest release
+tag (see Updating). Exit codes: 0 ok (for `--check`: checked, behind or not), 2 bad arguments,
+3 cannot install (for `--check`: nothing installed, or no source to compare with), 4 `--check`
+could not list the release tags.
+
+### Updating
+
+A copy install does not follow this repository. It records what it is in `install.json` beside the
+skill (version, harness, scope, install time, and the source commit and repository). `node
+skill/install.mjs --check --harness claude` (or `npm run check-update`) lists the source's release
+tags (`vX.Y.Z`) and prints a notice when a newer one exists. It is the only network call, made only
+when you ask; no scan checks for updates. To update, `git pull` here and run the installer again
+with the same arguments. A `--dev-link` install follows the checkout, so `git pull` alone updates
+it. Security fixes go to the newest release only: see [SECURITY.md](SECURITY.md).
 
 ### First run
 

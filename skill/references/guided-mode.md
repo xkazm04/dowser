@@ -70,12 +70,24 @@ Checking security and EU Cyber Resilience Act duties: done, no proposals.
 
 - Lead with the count and what ran: "Dowser read the whole project and wrote 6 proposals. You
   kept 4, set aside 1, and 1 was the same as an existing one."
+- A headless run (`SKILL.md` section 11: nobody to ask), as its first line: "Dowser ran without
+  anyone to ask, so nothing was sorted or sent to Jira. <n> proposals wait for you; <p> of them
+  Dowser already pre-sorted." Drop the "pre-sorted" part when `pretriage` marked none. Dev form:
+  `headless: no triage, nothing pushed; <n> verified cards wait for a person (<p> pre-sorted by Dowser)`.
 - When cards went to reserve: "Showing the top 4 of 7 for opportunities. The other 3 are kept
   as 'also found': <their titles>. They go to the inbox too, folded away."
 - The top pick of a lens (its MVP): "Top pick for <lens in words>: <title>."
-- Machine pre-triage (`pretriage` marked cards): "<n> proposals of a kind you have agreed with
-  Dowser about 9 times out of 10 skipped this review and went straight to the inbox, marked as
-  pre-sorted by Dowser. You still decide each one there."
+- Machine pre-triage (`pretriage` marked cards). Give the reason that is true for each card's
+  slice (its `slice` starts with the category; `trust` shows how the level was reached), never
+  an agreement that was not measured:
+  - `technical|...` (docs and security checks, level 1 from the start): "<n> documentation and
+    security proposals that Dowser expects you to keep skipped this review and went straight to
+    the inbox, marked as pre-sorted by Dowser. Dowser does this for technical checks from the
+    start. You still decide each one there."
+  - `product|...` that earned level 1 (`trust` shows the event with its agreement): "<n>
+    proposals of a kind you have agreed with Dowser about 9 times out of 10 skipped this review
+    and went straight to the inbox, marked as pre-sorted by Dowser. You still decide each one
+    there."
 - A trust change (`trust_events` from `ingest-verdicts` or `move`): earned - "Dowser has guessed
   your decisions on <lens in words> proposals of this size right 9 times out of 10, so from now
   on it may pre-sort them for you."; lost - "You turned down a proposal Dowser had pre-sorted, so

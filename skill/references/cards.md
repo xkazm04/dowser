@@ -26,14 +26,14 @@ did not measure.
 | `confidence` | `low`, `medium` or `high`. |
 | `confidence_why` | One sentence: what makes it this strong, and what would raise it. |
 | `doc_impact` | Docs or pages that must change when it ships (repo paths or page refs). Omit the key if none; do not write `[]` for "not checked". |
-| `delivery_risk` | `{blast: low|medium|high, bus_factor?}`. Include `bus_factor` only when you counted it (below). |
+| `delivery_risk` | `{blast: low|medium|high}`. Leave `bus_factor` out: the store measures it at `verify` (below). |
 | `provenance` | `{lens_version, model, harness, focus?}`: the pack's `version`, your model id, the harness, and `focus` on a focused run. You may omit `run_id`: `propose` stamps it from `--run`, and overwrites a different one with a `note`. |
 | `impact` | 1-10, from the lens pack's "Impact" table: defects, how bad if left (10 = data loss, breach, an outage on a main path); opportunities, the value if done. Omit it only when you cannot judge it: the card is then **unscored** and ranks after every scored card. |
 | `impact_why` | One line, at most 200 characters: the reason for the number. Required with `impact`. |
-| `risk` | 1-10, the risk of **making the change** (blast radius x irreversibility), never the severity. Omit it and the store reads `delivery_risk.blast` (low 2, medium 5, high 8). |
+| `risk` | 1-10, the risk of **making the change** (blast radius x irreversibility), never the severity. Omit it and the store reads `delivery_risk.blast` (low 2, medium 5, high 8). When you set both, they agree (see "Delivery risk"). |
 | `category` | `technical` (the codebase's own quality) or `product` (what users get). Omit it for the lens default: doc-drift and security-cra `technical`, opportunity and ux-friction `product`. |
-| `predicted_verdict` | `accept`, `reject` or `defer`: what you expect the person to decide, before they see it. Read `context`'s `near` (reasons and notes) and `outcomes` (notes) first. Omit it with no precedent: the store records `defer`. |
-| `predicted_why` | At most 300 characters, naming the closest precedent ("SEC-12 already tracks it: rejected as already-known"). The store appends the precedent it found when your text does not name it. |
+| `predicted_verdict` | **Required on every card.** `accept`, `reject` or `defer`: your verdict as the lens judge, what you expect the person to decide, before they see it. Read `context`'s `near` (reasons and notes) and `outcomes` (notes) first. Having no precedent is no reason to leave it out: judge the card on its own evidence. `defer` is a verdict too (the person must weigh something the evidence cannot), never a placeholder. The store records yours as given and never replaces it; a line without one is flagged `no-predicted-verdict` and gets the precedent's decision or `defer`, which trust cannot act on. |
+| `predicted_why` | **Required with the verdict**, at most 300 characters: the reason. When `near` or `outcomes` holds a precedent, quote it by title and fp with its decision ("Closest precedent \"Rotate the mail API key\" (0e93b7a6c15d2f84) accepted: ..."). Without one, say so and give your own reason ("No similar decision in near or outcomes. A high advisory on a public path is rarely turned down."). The store appends the precedent it found when your text does not name it. |
 
 `effort` may also carry `score` (1-10); omit it and the store maps `size` (XS 1, S 2, M 4, L 7,
 XL 10). From impact, confidence, effort and risk the store computes `score` (`scan-score/1`,
@@ -129,7 +129,20 @@ decorate. A view with nothing to compare is noise, and noise counts against the 
 | `sarif` | `<file>#<ruleId>@<location>` | optional | Only from a SARIF or CycloneDX file the runner supplied. |
 
 - Quote **one line**, verbatim: copy it, do not retype it. Trim leading indentation only. Never
-  paraphrase inside `quote`.
+  paraphrase inside `quote`. `verify` looks for the quote as a whitespace-normalized substring of
+  the file (near the `:line` you give, else anywhere in it), so:
+  - **A fragment** of a long line is fine: copy a contiguous run of it, at least the part that
+    carries the claim (`const stripeKey = '` for a secret, the clause of a long sentence). Never
+    join pieces from two places with `...`.
+  - **A JSDoc or block-comment line** (` * Returns null when ...`): quote the text after the
+    ` * ` prefix, or the line with it; never two comment lines joined, because the `*` of the
+    second line sits between them in the file.
+  - **An absence** (no route, no doc, no `SECURITY.md`) has no line to quote. Do not invent one:
+    state the exact search and its empty result in Description, and quote the nearest real line
+    that shows the place (the file that would hold it, the caller that lacks it).
+  - Point `:line` at the line you quoted. `verify` reports the line it found the quote on
+    (`line`, with your hint as `claimed_line` when they differ) and flags `drift` when the hint
+    is more than 3 lines off.
 - Every claim in Description cites a ref that is present in `evidence`.
 - A count claim ("12 tickets mention it") lists at least 3 of them as evidence and states the
   query that produced the count in Description.
@@ -167,9 +180,18 @@ the estimate is a guess: drop `confidence` to `low`.
 - `blast`: `low` for one module and no shared contract; `medium` for a shared module, a public
   API or a schema with a migration; `high` for auth, payments, data deletion or a persisted
   format.
-- `bus_factor`: the number of distinct authors in the last 12 months on the anchor paths:
-  `git log --since=12.months --format=%ae -- <paths> | sort -u | wc -l`. Include it only when
-  you ran that command. Omit it otherwise.
+- `risk` and `blast` are one scale: the store reads a missing `risk` as low 2, medium 5, high 8,
+  and the packs' risk anchors (a doc or copy edit 2, a new route, step or minor bump 5, a change
+  to auth, billing, consent or a major bump 8) are those same values. A `risk` you set falls in
+  its blast's band: 1-3 `low`, 4-6 `medium`, 7-10 `high`. When they disagree, fix the one you
+  judged less carefully; never leave a `risk` 5 on a `blast` `high` card.
+- `bus_factor`: **leave it out; the store measures it.** At `verify` it counts the distinct
+  author e-mails of the non-merge commits that touched the card's anchor paths in the **90 days
+  before the run's head commit**, and writes that into `delivery_risk.bus_factor` (a measured
+  value wins over any the card carried). 90 days is the window of `dowser areas`
+  (`authors_90d`, the Map's "Authors 90d" and its bus-factor flag), so a card and the area it
+  lands in report the same count from the same git pass. With no commit in the window on the
+  anchors, the card has no bus factor (not measured, never 0).
 
 ## Rendering
 

@@ -37,7 +37,7 @@ no row is rewritten. Any version other than 0 (new), 1, 2, 3, 4, 5 or 6 is refus
 
 | table | role | keys |
 |---|---|---|
-| `runs` | one scan: `id`, `started_at`, `finished_at`, `head_sha`, `base_sha`, `mode` (`full\|incremental\|focused`), `focus`, `harness`, `model`, `status` (`running\|done\|failed`; `run start` closes a run still `running` after 24 h as `failed`), `lenses_json` | PK `id` (`r-YYYYMMDDHHMMSS-xxxx`) |
+| `runs` | one scan: `id`, `started_at`, `finished_at`, `head_sha`, `base_sha`, `mode` (`full\|incremental\|focused`), `focus`, `harness`, `model`, `status` (`running\|done\|failed`; `run start` closes a run still `running` after 24 h as `failed` and lists its id under `abandoned` in its output), `lenses_json` | PK `id` (`r-YYYYMMDDHHMMSS-xxxx`) |
 | `proposals` | the current card: identity (`lens`, `kind`, normalized `topic`, `anchors_json`), card text, `effort_json`, `confidence`, `confidence_why`, `doc_impact_json`, `delivery_risk_json`, `provenance_json`, `asserted_json` (the evidence keys the newest propose line carried; internal, not part of the record), triage fields (`status`, `reason`, `note`, `merged_into`, `external_ref`, `external_url`, `decided_by`, `decided_at`), `issue_ref`, `issue_url` (v2: the Jira issue an `accepted` verdict carried; not part of the record), `artifacts_json` (v4), `snooze_until` (v5: `YYYY-MM-DD`, set by `move --to snoozed --until` (a date after today) or by `ingest-verdicts` from a Jira snooze with a date (a past date kept, so the next `run start` wakes it); cleared by any move out of `snoozed`), the v6 scan-finding/1 columns (below, "Proposal record"), `first_run_id`, `last_run_id` | PK `fp`; `external_ref` UNIQUE where not null |
 | `trust_state` | v6: the current trust level of each slice (`<category>\|<lens>\|-\|<size>`), `window_after` (the transition id its agreement window starts after; a demotion resets it), `changed_at`, `reason`. Written only by `lib/trust.mjs` `syncTrust` | PK `slice` |
 | `trust_events` | **append-only** (v6): one row per level change `{at, slice, from_level, to_level, reason, agreement, n, item_id}` | triggers refuse UPDATE and DELETE |
@@ -45,7 +45,7 @@ no row is rewritten. Any version other than 0 (new), 1, 2, 3, 4, 5 or 6 is refus
 | `transitions` | **append-only**: `fp`, `from_status` (NULL on creation), `to_status`, `by`, `at`, `reason`, `note`, `run_id`, `evidence_seq` | `evidence_seq` = max evidence id of the fp at the move |
 | `rules` | offered and accepted prompt rules (`offered\|accepted\|declined`). `cluster_json` keeps the source fingerprints, who decided (`decided_by`: a human at the prompt, or `forge:<account>`) and, when the wording was edited, the original as `draft_text` | PK `id` |
 | `outcomes` | **append-only** (v3): how an accepted item turned out once built, as a person rated it in Forge. `fp`, `ref` (the inbox item `DW-n`), `rating` (`right|partly|wrong`), `note`, `issue_ref`, `decided_by` (`forge:<account>`), `recorded_at`. Written only by `reflect ingest`. No foreign key on `fp`: an outcome may name an item this store never saw (it is kept, and not counted in `context`) | UNIQUE (`fp`, `recorded_at`), so a replayed sync adds nothing |
-| `sources_cache` | tickets, pages and goals fetched per run; logic in WP4 | PK (`run_id`, `type`, `ref`) |
+| `sources_cache` | what a run fetched: tickets, pages and goals (`ingest-sources`), dependency advisories (`deps`) and the team's lens direction (`ingest-direction`). `verify` checks ticket, page, goal and dep refs against it. Ticket, page and goal text is dropped when the run ends; the direction rows (focus, exclude, notes, spaces) are kept as long as the store exists, until deleted (`SECURITY.md` says how) | PK (`run_id`, `type`, `ref`) |
 | `sync_state` | Forge sync bookkeeping: `verdicts_cursor`; `trust_through` (the last transition id the trust replay read); `push_seq:<fp>` (evidence id at last push); `outbox:last` (ids actually sent); `verdict:<fp>@<decided_at>` (idempotency). See `docs/contracts/forge-mcp-2.md` | PK `key` |
 
 Append-only is enforced twice. Triggers abort any UPDATE or DELETE on `evidence`, `transitions`, `outcomes` and
@@ -90,14 +90,17 @@ reading (N = `emitted`, M = `emitted + truncated`).
   (`model.mjs` `LENS_CATEGORY`) unless the judge set it, then `score` and `score_parts` with `scan-score/1`
   (`lib/scan-score.mjs`, a copy of the registry's helper). A card without `impact` is unscored: `score` absent.
 - **Prediction.** `propose` records `predicted_verdict`, `predicted_why` and `predicted_by` before anyone sees the
-  card (`lib/predict.mjs`): the judge's verdict, else the closest decided precedent's (same lens, a shared anchor or
-  two topic tokens; accepted -> accept, rejected -> reject, snoozed -> defer), else `defer`. `predicted_why` names
+  card (`lib/predict.mjs`): the judge's verdict, which every propose line must carry and the store never replaces.
+  Only a line without one (flagged `warning: no-predicted-verdict`, counted as `unpredicted`) falls back to the
+  closest decided precedent's (same lens, a shared anchor or two topic tokens; accepted -> accept, rejected ->
+  reject, snoozed -> defer), else `defer`. `predicted_why` names
   that precedent with its reason and note; `predicted_by` is `dowser-<lens>@<lens_version>:<model>` (`:memory` when
   the store derived it). Refreshed only while the card is a `candidate`, like the card text.
 - **Budget.** `verify` ends with `lib/budget.mjs` `allocateRun` over the run's verified cards: each lens's top card is
   its MVP (`mvp` 1, `mvp_rule` `top-score`), the remaining slots go by score across lenses with at most the pack's
-  `budget` (4) per lens and 16 per run (`--per-lens`, `--per-run`), and every other card is `band` `reserve`. Order:
-  score desc (unscored last), confidence, evidence count, fp. A re-verify re-allocates.
+  `budget` (4) per lens and 16 per run (`--per-lens`, `--per-run`); run slots still free after that pass go to the
+  highest-scored remaining cards of any lens, past the per-lens cap; every other card is `band` `reserve`. Order
+  (in every pass): score desc (unscored last), confidence, evidence count, fp. A re-verify re-allocates.
 - **Trust.** `lib/trust.mjs` replays the person's decisions (`human:`/`forge:` moves to accepted, rejected, snoozed
   on cards with a prediction) per slice: technical slices start at L1 (contract start capped at the ceiling), product at L0; L0 -> L1 at >= 90 % agreement over the last 20 (min 20); a person's reject
   of a card `pretriaged_by: machine:dowser` drops the slice one level and resets its window. Ceiling L1 for every
@@ -152,7 +155,8 @@ unmeasured. A missing `bus_factor` means it was not computed. A count of 0 is a 
 
 ```
 (new) --propose--> candidate --verify--> verified --triage--> rejected(reason) | snoozed | merged(into) | pushed
-                       \--verify--> dropped (note verify-failed:<ref>)          pushed --Forge--> accepted | rejected | merged | snoozed
+                       \--verify--> dropped (note verify-failed:<ref> | ref-not-ingested:<type>:<ref>)
+                                                                               pushed --Forge--> accepted | rejected | merged | snoozed
 verified --> accepted (offline acceptance; decider kind human only)
 snoozed  --> verified (unsnooze; or run start once snooze_until <= today, by skill:dowser) | candidate (resurfaced)
 rejected --> candidate (resurfaced)
@@ -234,11 +238,20 @@ A quote an earlier line carried and the newest line no longer does is stale and 
 such `code`/`doc` quote must be a whitespace-normalized substring of the file at the ref's path in the current
 working tree.
 
-- With a `:line` hint, the result is `near-line` (within ±30 lines) or `in-file` (anywhere in the file).
-- If all quotes are found, the item becomes `verified`. After the moves, `verify` allocates the run's slots
-  ("Budget, score and trust" above) and prints the result as `allocation`.
+- With a `:line` hint, the result is `near-line` (within ±30 lines) or `in-file` (anywhere in the file). Each
+  check's `line` is the line the quote was **found** on (the occurrence nearest the hint), `claimed_line` is the
+  hint when it differs, and `drift` (the distance) flags a hint more than 3 lines off.
+- If all quotes are found, the item becomes `verified`, and its bus factor is measured from git: the distinct
+  author e-mails of the non-merge commits on its anchor paths in the 90 days before the run's head commit, written
+  into `delivery_risk.bus_factor` (a measured value wins over the card's; no commit in the window keeps the card's).
+  After the moves, `verify` allocates the run's slots ("Budget, score and trust" above) and prints the result as
+  `allocation`, beside `per_lens`: `{<lens>: {emitted, verified, dropped}}` for the candidates this call checked.
 - If any quote is missing, the item becomes `dropped` with note `verify-failed:<ref>`.
-- Other evidence types are reported as `unchecked`. The agent judges them.
+- `ticket`, `page`, `goal` and `dep` refs must have been fetched by this run: each is looked up in the run's
+  `sources_cache` (written by `ingest-sources` and `deps`). A ref that is not there drops the item with note
+  `ref-not-ingested:<type>:<ref>`, so an unconnected run can never verify a card citing a ticket. When several
+  refs fail, the first in evidence order names the note.
+- Only `git` and `sarif` evidence is passed through as `unchecked`. The agent judges it.
 
 ## Areas (`areas --run <id> [--top 40]`)
 
@@ -267,6 +280,6 @@ is refused with exit 2 (`no-head`).
 | code | meaning |
 |---|---|
 | 0 | ok |
-| 1 | partial: some `propose` lines were invalid (each is reported, never dropped) |
+| 1 | partial: part of the input was invalid, refused or skipped, and the rest was applied (each item is reported, never dropped silently). `propose` (invalid lines), `ingest-push` (refused results), `ingest-verdicts` (unapplied verdicts), `ingest-sources` (skipped items), `ingest-direction` (skipped lenses) and `reflect ingest` (malformed entries) |
 | 2 | bad input, or a refused move (stdout names the current status) |
 | 3 | store or connection unavailable, or the command is not implemented yet (`{"error":"not-implemented","package":"WP2\|WP4"}`) |

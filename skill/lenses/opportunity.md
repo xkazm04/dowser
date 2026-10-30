@@ -1,6 +1,6 @@
 ---
 id: opportunity
-version: 0.3.0
+version: 0.3.1
 name: Opportunity
 kinds: [expose-capability, extend-capability, missing-capability, goal-gap, workflow-shortcut]
 sources: [code, docs, git, tickets, goals]
@@ -20,15 +20,13 @@ ask for export; an internal CSV serializer exists - expose it, about 2 days, sup
 Demand leads. The lens starts from what many users ask for and then looks for the code that
 half-serves it. A half-built capability that few people ask for is a lead, not a finding.
 
-Unconnected, the lens runs `partial` on code and docs only. It can still find built-but-hidden
-capabilities and documented promises the code does not keep. It cannot claim user demand.
-Every candidate is then `confidence: low`, and `confidence_why` says "not connected: tickets
-and goals unchecked".
+Unconnected, the lens runs `partial` on code and docs: it can find hidden capabilities and
+unkept doc promises, never claim demand. Every candidate is then `confidence: low`, and
+`confidence_why` says "not connected: tickets and goals unchecked".
 
 ## Direction
 
-`context.direction` is the team's steer from Forge Settings. Absent, everything below runs as
-written.
+`context.direction` is the team's steer from Forge Settings. Absent, run everything as written.
 
 - **focus**: run one Gather step 2 query per focus topic, before the code-led queries, and in
   steps 3-6 read the paths and symbols that match a focus term first. In Ranking, a focus topic
@@ -44,9 +42,8 @@ written.
 
 ## Gather
 
-Window: tickets created in the last 90 days, so `since` is today minus 90 days. On an
-incremental run, use the later of that date and the `since_sha` commit date. State the window
-in every demand claim.
+Window: `since` is today minus 90 days (incremental: the later of that and the `since_sha`
+commit date). State the window in every demand claim.
 
 1. **Demand sweep (connected).** Before reading code, call `dowser_sources_tickets` with
    `{query: "feature request OR please add OR would be great OR is there a way OR can you add", since, limit: 50}`
@@ -59,13 +56,11 @@ in every demand claim.
    same `since` and `limit: 50`, then ingest it. The count of a theme is the de-duplicated
    tickets across its queries whose `created_at` is inside the window; list undated tickets
    separately. A response of 50 items means "at least 50".
-   **Slow-burning demand.** Re-run a theme's query once with `since` = today minus 180 days when
-   the 90-day count is 3-9 and the theme has a mechanism in step 3, or when its tickets bunch at
-   the window's start (3 or more `created_at` in the first 14 days). Ingest it and report both
-   counts, each with its window (`6 in 90 days, 14 in 180 days`). Tier by the 90-day count;
-   the 180-day count goes in Description and in the demand table's `Tickets` cell, and it
-   moves the tier up one step only when the 90-day count is at least half of the 180-day count
-   (demand is not fading).
+   **Slow-burning demand.** Re-run a theme's query once over 180 days when the 90-day count is
+   3-9 and step 3 finds a mechanism, or when 3 or more tickets fall in the window's first 14
+   days. Ingest it; report both counts with windows (`6 in 90 days, 14 in 180 days`) in
+   Description and the table's `Tickets` cell. Tier by the 90-day count, one step up only when
+   it is at least half the 180-day count (demand is not fading).
 3. **Mechanism per theme (code).** For each demand theme, search the code for the nouns and
    verbs of the ask: `git grep -n -i -E "<theme terms>" -- ':!**/*test*'`. Record what exists:
    a full path, a helper with no caller, a flag-gated path, or nothing.
@@ -85,17 +80,14 @@ in every demand claim.
 7. **Goals (connected).** Call `dowser_sources_goals` with `{}` once, then
    `ingest-sources --run <run_id> --type goal --file <saved-response>`.
 
-When a step yields nothing, record it ("no feature flags found", "tickets query X: 0 results")
-and go on.
+A step that yields nothing is recorded ("tickets query X: 0 results") and you go on.
 
 ## Sources
 
 - Cite only the `ref` values `ingest-sources` returned this run, as `ticket` or `goal`
-  evidence with their `url`. `verify` drops a card that cites any other ref
-  (`ref-not-ingested`). A ticket you remember from another run is not evidence.
-- The ticket rows carry `components`, `labels` and `created_at` when Jira has them. They are
-  the grouping and the window. Do not invent a component for a ticket that has none: group it
-  by its ask and say so.
+  evidence with their `url`; `verify` drops any other (`ref-not-ingested`).
+- Ticket rows carry `components`, `labels` and `created_at` when Jira has them: the grouping
+  and the window. Never invent a component: group such a ticket by its ask and say so.
 - A goal row may carry `status`. A goal marked done is not a goal gap.
 - Unconnected: steps 1, 2 and 7 are skipped, the lens is `partial: tickets and goals
   unavailable (H2, H3, H4, H5 demand unchecked)`.
@@ -116,8 +108,7 @@ and go on.
 - **H5 Manual workaround:** tickets or docs describe users doing by hand what one existing call
   could do (copy-paste between screens, "ask support to run X"). Kind: `workflow-shortcut`.
 
-Report every hypothesis with what it was pointed at. H3, H4 and H5 are unchecked when
-unconnected, and the lens report says so.
+Report every hypothesis with what it was pointed at (unconnected: as Sources says).
 
 ## Ranking
 
@@ -133,9 +124,8 @@ Rank in this order, and never by how finished the code is:
 
 A half-built, flag-gated capability with weak demand loses to a strong theme the code serves
 in part. Name the losers in the lens report: `ranked <topic> (<n> tickets) over <topic> (<n>)`.
-Write every candidate that has evidence: the store keeps the budget's 4 ranked slots by score
-(the lens's top card is its MVP) and files the rest in `reserve`, named in the summary. The
-order above reaches the store through `impact`.
+Write every evidenced candidate: the store ranks by score (top card = MVP), the rest go to
+`reserve`. The order above reaches the store through `impact`.
 
 ## Impact, risk and the predicted verdict
 
@@ -153,10 +143,10 @@ Add 1 when the theme serves an ingested goal or the direction notes' outcome (at
 readiness never raises impact: it lowers `effort`. `risk` is the risk of making the change
 (exposing an internal call behind a flag 2, a new public route 5, a change to billing or auth 8);
 omit it and the store reads `delivery_risk.blast`. `category` is `product` (the default for this
-lens). Before writing a card, read `context`'s `near` (with each reason and note) and `outcomes`
-(with notes): set `predicted_verdict` and a `predicted_why` that names the closest precedent
-("an export card was accepted and rated right"). With no precedent, omit both; the store
-records `defer`.
+lens). Every card carries your `predicted_verdict` (`accept`, `reject` or `defer`) and a
+`predicted_why`, after reading `context`'s `near` (reasons, notes) and `outcomes` (notes). With
+a precedent, quote it ("an export card was accepted and rated right"); without one, give your
+own reason (`references/cards.md`).
 
 ## Evidence rules
 
@@ -174,16 +164,12 @@ records `defer`.
 
 Attach a view only when it does a job the body cannot (`references/cards.md` "Artifacts").
 
-**Check before `propose`, once per demand card:** count the tickets in its Description and the
-groups it names. 8 or more tickets, or 2 or more groups: the card carries a demand table. A card
-that meets the trigger without one is incomplete; add it, or say in the lens report why the
-numbers do not hold. Fewer: no view.
-
-- **Demand table** (`table`). Attach when the demand claim spans 2 or more groups or 8 or more
-  tickets. Columns: `Component or label`, `Tickets (<window>)`, `Cited`, `Code today`; one row
-  per group, an `All` row last, `highlight` on the group the first delivery serves. Every count
-  also appears in Description. `refs`: the cited ticket refs and the code ref. One group of
-  fewer than 8 tickets fits in one Description line: no view.
+- **Demand table** (`table`). **Check before `propose`, once per demand card:** 8 or more
+  tickets, or 2 or more groups, in its Description: the card carries one, or the lens report says
+  why the numbers do not hold. Fewer: no view. Columns: `Component or label`, `Tickets
+  (<window>)`, `Cited`, `Code today`; one row per group, an `All` row last, `highlight` on the
+  group the first delivery serves. Every count also appears in Description. `refs`: the cited
+  ticket refs and the code ref.
 - **Goal-fit matrix** (`matrix`). Attach to a goal-gap card when 2 or more of the goal's
   outcomes were checked against 3 or more signals, or to any card weighed against 2 or more
   ingested goals. Rows: outcomes or goals. Columns: the signals checked (`Code path`, `Flag`,
@@ -199,14 +185,8 @@ names, no adjectives. Reuse a `near` item's topic when it is the same capability
 
 ## Examples
 
-A demand table (12 tickets in 3 groups), a goal-fit matrix (H4), and a card with no view (one
-group of 7 tickets). Each line passes `validateCandidate`.
-
-```jsonl
-{"lens":"opportunity","kind":"expose-capability","topic":"csv-export-reports","anchors":["src/export/csv.ts#toCsv","src/routes/reports.ts"],"title":"Export for reports that already have a CSV writer","rationale":"Twelve tickets in 90 days ask to export reports to a spreadsheet, most from the Reports area. A CSV writer already exists but only an internal job uses it. Exposing it serves the self-serve reporting goal.","body":"## Summary\nAdd a CSV download to the reports page using the existing CSV writer.\n\n## Description\nThe CSV writer exists (`src/export/csv.ts:41`) and is called only by the nightly audit job. The reports route has no export action (`src/routes/reports.ts:8`). The queries `feature request OR please add` and `export OR csv OR spreadsheet OR download`, since 2026-07-30 (90 days), returned 12 export tickets: component Reports 7 (SUP-118, SUP-131, SUP-140), component Billing 3 (SUP-152), label export with no component 2. Goal G-7 names self-serve reporting. Done means a Download CSV action on every report.\n\n## Flow\n- add a GET /reports/:id/export.csv route that calls toCsv\n- add a Download CSV button to the report header\n- test: a report with 3 rows exports 3 data lines plus a header\n\n## Expected impact\nCustomers export without asking support; export tickets should stop arriving. Large reports could time out if streamed naively.\n\n## Evaluation\nClaim: user - customers can export any report themselves\nBefore: 12 tickets in 90 days ask for export; 0 routes call toCsv\nAfter: 1 route calls toCsv; new export tickets per month taken from the same query\nMethod: count - ticket query plus git grep for toCsv callers\nFalsified if: the tickets ask for a format CSV cannot carry, such as charts","evidence":[{"type":"code","ref":"src/export/csv.ts:41","quote":"export function toCsv(rows: Row[]): string {"},{"type":"code","ref":"src/routes/reports.ts:8","quote":"router.get('/reports/:id', showReport);"},{"type":"ticket","ref":"SUP-118","url":"https://example.atlassian.net/browse/SUP-118"},{"type":"ticket","ref":"SUP-131","url":"https://example.atlassian.net/browse/SUP-131"},{"type":"ticket","ref":"SUP-140","url":"https://example.atlassian.net/browse/SUP-140"},{"type":"ticket","ref":"SUP-152","url":"https://example.atlassian.net/browse/SUP-152"},{"type":"goal","ref":"G-7","url":"https://example.atlassian.net/goals/G-7"}],"effort":{"size":"M","days_low":2,"days_high":4,"basis":["src/export/csv.ts#toCsv","src/routes/reports.ts"]},"confidence":"high","confidence_why":"Twelve tickets across two components, a goal and the code agree; a sample export on real report data would raise it further.","doc_impact":["docs/reports.md"],"delivery_risk":{"blast":"low","bus_factor":1},"artifacts":[{"kind":"table","message":"7 of 12 export asks in 90 days come from Reports, where a CSV writer exists","alt":"Table of export tickets created in the last 90 days, grouped by Jira component: Reports 7, Billing 3, label export without a component 2, all 12. The code has a CSV writer, toCsv, and no route that calls it.","refs":["SUP-118","SUP-131","SUP-140","SUP-152","src/export/csv.ts:41"],"data":{"columns":["Component or label","Tickets (90 days)","Cited","Code today"],"rows":[["Reports","7","SUP-118, SUP-131, SUP-140","toCsv, no route"],["Billing","3","SUP-152","toCsv, no route"],["label: export","2","none","toCsv, no route"],["All","12","4","1 writer, 0 routes"]],"highlight":[0]}}],"provenance":{"lens_version":"0.2.1","model":"<model id>","harness":"claude-code"}}
-{"lens":"opportunity","kind":"goal-gap","topic":"retention-nudges-new-accounts","anchors":["src/jobs/scheduler.ts","src/notify/digest.ts"],"title":"No work serves the first-30-days retention goal","rationale":"Goal G-4 commits to keeping new accounts active in their first month. None of its three outcomes has a code path, a flag or a recent change behind it. The scheduler and a digest stub are where the work would start.","body":"## Summary\nStart the first-30-days retention goal with a trial-end reminder on the existing scheduler.\n\n## Description\nGoal G-4 (active) names three outcomes: an onboarding checklist, a trial-end reminder and a weekly usage digest. `git grep -n -i -E \"onboarding|checklist|trial.?end|reminder\" -- ':!**/*test*'` returned nothing; `git log --since=90.days` touches none of these. The only trace is a stub (`src/notify/digest.ts:3`). The daily scheduler (`src/jobs/scheduler.ts:15`) can carry a reminder job. Done means one outcome ships and the goal has a code path.\n\n## Flow\n- add a trial-end reminder job to the daily scheduler\n- send it three days before the trial ends\n- test: an account 3 days from trial end gets one reminder\n\n## Expected impact\nThe goal gets its first delivered outcome; trial accounts are reminded before they lapse. A reminder sent to converted accounts would annoy them, so the job checks the plan.\n\n## Evaluation\nClaim: goal - G-4 has at least one outcome with a code path\nBefore: 0 of 3 outcomes have a code path, flag or commit in 90 days\nAfter: 1 of 3 outcomes has a code path\nMethod: count - the same git grep and git log per outcome\nFalsified if: another service outside this repo already sends these reminders","evidence":[{"type":"goal","ref":"G-4","url":"https://example.atlassian.net/goals/G-4"},{"type":"code","ref":"src/jobs/scheduler.ts:15","quote":"scheduler.every('1d', runDailyJobs);"},{"type":"code","ref":"src/notify/digest.ts:3","quote":"// TODO: weekly usage digest"}],"effort":{"size":"M","days_low":2,"days_high":4,"basis":["src/jobs/scheduler.ts","src/notify/digest.ts"]},"confidence":"medium","confidence_why":"The goal and the empty searches agree; another service could send reminders, which only the goal owner can rule out.","delivery_risk":{"blast":"low"},"artifacts":[{"kind":"matrix","message":"None of goal G-4's three outcomes has code, a flag or a commit in 90 days","alt":"Matrix of goal G-4's three outcomes against three signals: code path, feature flag and commits in the last 90 days. Onboarding checklist and trial-end reminder show none for all three. Weekly usage digest has a TODO stub in code, no flag and no commits.","refs":["G-4","src/notify/digest.ts:3"],"data":{"rows":["Onboarding checklist","Trial-end reminder","Weekly usage digest"],"columns":["Code path","Flag","Commits 90d"],"cells":[[{"v":"none","level":0},{"v":"none","level":0},{"v":"none","level":0}],[{"v":"none","level":0},{"v":"none","level":0},{"v":"none","level":0}],[{"v":"TODO stub","level":1},{"v":"none","level":0},{"v":"none","level":0}]]}}],"provenance":{"lens_version":"0.2.1","model":"<model id>","harness":"claude-code"}}
-{"lens":"opportunity","kind":"workflow-shortcut","topic":"bulk-invite-users","anchors":["src/users/invite.ts#inviteUser","src/admin/users-page.tsx"],"title":"Invite a whole team at once instead of one person at a time","rationale":"Admins invite people one by one and ask support to load lists. The invite function already loops safely over addresses in the signup job. A bulk form saves admins minutes per new team.","body":"## Summary\nLet admins paste a list of emails on the users page and invite them in one action.\n\n## Description\n`inviteUser` handles one address (`src/users/invite.ts:22`); the signup job already calls it in a loop with rate limiting. The users page offers only a single email field (`src/admin/users-page.tsx:57`). The query `workaround OR manually OR ask support`, since 2026-07-30 (90 days), returned 7 tickets, all component Admin, asking support to add lists of users (SUP-201, SUP-207, SUP-219). Done means a paste box that invites up to 100 addresses and reports failures per address.\n\n## Flow\n- reuse the signup job's loop as an inviteMany helper\n- add a paste box and a result list to the users page\n- test: 3 valid and 1 invalid address yield 3 invites and 1 named error\n\n## Expected impact\nAdmins onboard a team in one step; support stops loading lists by hand. A large paste could hit the email rate limit, so the existing limiter must stay in the path.\n\n## Evaluation\nClaim: user - admins invite a team in one action\nBefore: 1 address per action; 7 support tickets in 90 days for manual list loads\nAfter: up to 100 addresses per action; manual-load tickets from the same query\nMethod: count - ticket query plus reading the users page\nFalsified if: most list loads come from an SSO directory sync this would not replace","evidence":[{"type":"code","ref":"src/users/invite.ts:22","quote":"export async function inviteUser(email: string, role: Role) {"},{"type":"code","ref":"src/admin/users-page.tsx:57","quote":"<input type=\"email\" name=\"invite\" />"},{"type":"ticket","ref":"SUP-201","url":"https://example.atlassian.net/browse/SUP-201"},{"type":"ticket","ref":"SUP-207","url":"https://example.atlassian.net/browse/SUP-207"},{"type":"ticket","ref":"SUP-219","url":"https://example.atlassian.net/browse/SUP-219"}],"effort":{"size":"S","days_low":1,"days_high":2,"basis":["src/users/invite.ts#inviteUser","src/jobs/signup.ts","src/admin/users-page.tsx"]},"confidence":"medium","confidence_why":"Medium demand in one component and the code agree, but no goal names onboarding speed; an admin interview would raise it.","delivery_risk":{"blast":"low"},"provenance":{"lens_version":"0.2.1","model":"<model id>","harness":"claude-code"}}
-```
+Read `<skill-dir>/references/examples/opportunity.md` before the first card (a demand table, a
+goal-fit matrix, a card with no view). In the jsonl each card is one line.
 
 ## No finding
 

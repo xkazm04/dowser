@@ -29,7 +29,7 @@ budget: 4
 | `sources` | A subset of `code`, `docs`, `git`, `tickets`, `pages`, `goals`, `deps`, `sarif`. |
 | `optional_sources` | Sources whose absence does **not** make the lens partial (for example `sarif`, which only exists if the runner supplies it). Defaults to `[]`. |
 | `requires_connection` | `true` when the lens's central hypotheses need Jira or Confluence data. Unconnected, it still runs, as `partial`, with `confidence: low` on every candidate. |
-| `budget` | Ranked proposals per lens per run: the store's slot allocation at `verify` keeps at most this many `ranked` (the rest go to `reserve`, still pushed). 4 for every pack; `verify --per-lens` overrides it for one run. Not learned. |
+| `budget` | Ranked proposals per lens in the first pass of the store's slot allocation at `verify`; run slots (16) still free after that pass go to the best remaining cards of any lens, so a lens can end with more. The rest go to `reserve`, still pushed. 4 for every pack; `verify --per-lens` overrides it for one run. Not learned. |
 
 Frontmatter is ASCII. Keep values on one line, because the parser reads a small YAML subset.
 
@@ -54,14 +54,20 @@ Sources map to evidence types: `docs` -> `doc`, `deps` -> `dep`. The others keep
    pointed at something. The run's lens report names the hypotheses checked.
 4. **Evidence rules**: what each kind must cite, beyond `references/cards.md`.
 5. **Topic naming**: how to build the stable `topic` slug.
-6. **Examples**: two or more candidate lines, as a `jsonl` code block: one per supporting view
-   the pack maps, plus one with no view. Each must pass `propose`'s validation (title 80
-   characters or fewer, five body sections, quotes on code and doc evidence, `artifacts`
-   within the contract).
+6. **Examples**: a short section that names `references/examples/<id>.md` and tells the agent
+   to read it before the first card. That file holds two or more complete cards, one per
+   supporting view the pack maps plus one with no view, each in its own `json` block with one
+   field per line (in the jsonl a card is one line). Each must pass `propose`'s validation
+   (title 80 characters or fewer, five body sections, quotes on code and doc evidence,
+   `artifacts` within the contract: at most 6 table columns) and carry every field the store
+   scores and predicts by: `impact` and `impact_why` from the pack's Impact table, `risk` in its
+   `blast` band, `predicted_verdict` and `predicted_why` (show one quoting a precedent and one
+   with the judge's own reason), and `provenance.lens_version` equal to the pack's `version`.
 7. **No finding**: the exact form of a lens report with zero proposals.
 
-Keep a pack under 200 lines. Long background belongs in a separate `references/` file that the
-pack names.
+Keep a pack under 200 lines, and every line of a pack or examples file under 2,000 characters
+(agents' file readers cut longer lines, so a one-line card in a pack is read half-way). Long
+background belongs in a separate `references/` file that the pack names.
 
 ## Versioning
 
@@ -78,18 +84,21 @@ history out of the pack itself: the agent reads the pack on every scan, and the 
 
 ## Forking a lens for a team
 
-1. Copy the pack: `lenses/ux-friction.md` -> `lenses/ux-friction-acme.md`.
-2. Set a new `id` with a suffix: `ux-friction-acme`. A fork is a different lens: its proposals
-   and fingerprints are separate from the original's.
-3. Reset `version` to `0.1.0` in the fork, or bump the original's version if you are editing in
-   place rather than forking.
-4. Change kinds, hypotheses or gather steps. Keep the seven body sections.
-5. Add the fork to the skill's lens order in `SKILL.md` section 5, and pass it to `propose` with
-   `--kinds <fork-id>=<its kinds>`.
+The store and the CLI accept only the four built-in lens ids: `propose --kinds <lens>=...`
+refuses any other (`--kinds: unknown lens <id>`, exit 2), and `context --lens` and the pack
+loader do the same. So today a team forks **in place**:
 
-The store's lens enum in v0.1 names the four built-in lenses. Registering a fork's `id` with
-the store is a planned addition. Until it lands, fork by editing a built-in pack in place, with
-a version bump.
+1. Edit the built-in pack (`lenses/ux-friction.md`) in your installed copy or your own clone.
+   Keep its `id`: the id goes into every proposal's `lens` and fingerprint.
+2. Bump its `version` (patch for wording and gather steps, minor for a new kind; see
+   Versioning) so every card records which pack wrote it, and add a changelog line.
+3. Change hypotheses, gather steps or kinds. Keep the seven body sections. A kind you add must
+   also be passed to `propose`: `--kinds ux-friction=<the pack's full kinds list>`.
+4. Re-measure it ("Measuring a lens") before the team relies on it.
+
+A fork under its own id (`ux-friction-acme`, with proposals and fingerprints separate from the
+original's) needs the id registered with the store, the CLI and the Forge app. That is a
+planned addition, not something a pack edit can do.
 
 ## How accepted rules attach
 
@@ -132,7 +141,13 @@ number and not an impression.
   tokens.
 - **The numbers.** A card counts for the one expected item its anchors land on most strongly.
   The headline is `recall_at_budget`: seeded items found over the smaller of the seeded count
-  and the pack's budget, so 1 means every card was spent on a real finding. Read it with
+  and the pack's budget. It counts **every card that survived `verify`, reserve included**
+  (`tools/lens-eval.mjs` passes all survivors, with no band filter). Since packs write every
+  candidate and the store files the extras in `reserve`, a 1 means the lens found that many
+  seeded items somewhere in its cards, not that its 4 ranked cards were the right ones: a lens
+  can reach 1 through reserve cards while its ranked band is weak. Until the tool scores the
+  ranked band on its own, check the ranked cards by hand (`show <fp>` gives each card's `band`), and
+  read the number with
   `priority1_found` of `priority1_total` (a lens that fills its budget with minor findings
   scores well on recall and badly here) and `focus_found` of `focus_total` (whether the team's
   focus moved the choice). `recall` is seeded items found over all seeded items; with more

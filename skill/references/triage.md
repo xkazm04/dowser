@@ -9,8 +9,8 @@ status it expects to move from. A move that is illegal, or that comes from a sta
 | From | To | Who | How |
 | --- | --- | --- | --- |
 | (new) | `candidate` | script | `propose` |
-| `candidate` | `verified` | script | `verify`: every code and doc quote was found |
-| `candidate` | `dropped` | script | `verify`: a quote was missing; note `verify-failed:<ref>` |
+| `candidate` | `verified` | script | `verify`: every code and doc quote was found, and every ticket, page, goal and dep ref was fetched this run |
+| `candidate` | `dropped` | script | `verify`: a quote was missing (note `verify-failed:<ref>`), or a ticket, page, goal or dep ref was not fetched this run (note `ref-not-ingested:<type>:<ref>`) |
 | `verified` | `rejected` | human | `move --to rejected --reason <code>` (pre-triage) |
 | `verified` | `snoozed` | human | `move --to snoozed [--until YYYY-MM-DD]` |
 | `verified` | `merged` | human, or agent for a same-work duplicate | `move --to merged --into <fp>` |
@@ -119,15 +119,19 @@ token, `rules offer` drafts a rule, for example:
   overwritten. A Forge decision is recorded as decided by `forge:<account>`.
 - Only accepted rules reach a lens's `context` pack. There they bind like the pack's own
   rules. A declined cluster is never offered again.
-- Rules change **what** a lens proposes and **how**, never how many. The budget stays 4 ranked
-  per lens and 16 per run, enforced by the store at `verify` (the rest is filed in `reserve`).
+- Rules change **what** a lens proposes and **how**, never how many. The budget stays 16 ranked
+  per run, at most 4 per lens in the first pass (free run slots then go to the best remaining
+  cards of any lens), enforced by the store at `verify` (the rest is filed in `reserve`).
 
 ## Budget, MVP and reserve
 
 `verify` ends by allocating the run's verified cards (`lib/budget.mjs`): (1) each lens with a
 verified card gets one ranked slot, its **MVP** (its top card by score); (2) the remaining slots
 go by `score` across lenses, at most the pack's `budget` (4) per lens and 16 per run
-(`--per-lens`, `--per-run` override them); (3) every other verified card is `band: reserve`.
+(`--per-lens`, `--per-run` override them); (3) run slots still free after that pass go to the
+highest-scored remaining cards of **any** lens, past the per-lens cap (a run where one lens found
+most of the work still fills its 16); (4) every other verified card is `band: reserve`. Order in
+every pass: score desc, then confidence (high, medium, low), then evidence count, then fp.
 Reserve cards are stored, pushed and shown collapsed in the inbox as "N in reserve"; nothing
 verified is lost. Unscored cards (no `impact`) rank after every scored card. `run finish` writes
 the allocation into the lens record (`ranked`, `reserve`, `reserve_titles`) and `status` prints
@@ -135,10 +139,15 @@ the allocation into the lens record (`ranked`, `reserve`, `reserve_titles`) and 
 
 ## Predicted verdicts and trust
 
-Every card carries a `predicted_verdict` recorded at `propose`, before anyone sees it: yours
-(written from `context`'s `near` reasons and notes and the `outcomes` notes), else the closest
-decided precedent's, else `defer`. `predicted_why` names that precedent. Nothing acts on it at
-level 0: it is measured.
+Every card carries a `predicted_verdict` recorded at `propose`, before anyone sees it: the lens
+judge's own `accept`, `reject` or `defer`, with its reason in `predicted_why` (written from
+`context`'s `near` reasons and notes and the `outcomes` notes; required on every line,
+`references/cards.md`). The store keeps that verdict as given; a precedent, when one exists, is
+quoted in `predicted_why`, and the store appends it when the judge's text does not name it. No
+precedent is no reason for `defer`: on a fresh store the judge still judges. A line without a
+verdict is flagged (`warning: no-predicted-verdict`) and falls back to the precedent's decision,
+else `defer`; re-propose it with the judge's verdict. Nothing acts on it at level 0: it is
+measured.
 
 Trust is kept per **slice** `<category>|<lens>|-|<size>` (`lib/trust.mjs`), from the person's
 decisions only (`human:` and `forge:` moves to accepted, rejected or snoozed):

@@ -1,6 +1,6 @@
 ---
 id: doc-drift
-version: 0.3.0
+version: 0.3.1
 name: Doc drift
 kinds: [contradicted-by-code, removed-still-documented, undocumented-change, stale-example, missing-doc]
 sources: [code, docs, git, pages]
@@ -60,8 +60,9 @@ Confluence pages were reachable.
 
 ## Gather
 
-1. **In-repo docs.** `git ls-files "*.md" "*.mdx" "*.rst" "*.adoc" "docs/**" "README*" "CHANGELOG*" "openapi*.{yaml,yml,json}"`.
-   Tag each doc with a reader-harm tier now (see "Choosing under the budget").
+1. **In-repo docs.** `git ls-files "*.md" "*.mdx" "*.rst" "*.adoc" "docs/**" "README*" "CHANGELOG*" "openapi*.{yaml,yml,json}" ':!*fixtures/*' ':!*tests/*' ':!*test/*'`.
+   Test and fixture folders are sample input, not docs (a fixture's README describes a fake
+   product). Tag each doc with a reader-harm tier now (see "Choosing under the budget").
 2. **Claims that can be checked.** In each doc, collect statements that name a concrete thing:
    commands and flags (lines in code fences starting with `$`, `npm`, `npx`, `curl`, the
    product's CLI name), endpoints (`GET /`, `POST /`), config keys and env vars (`[A-Z][A-Z0-9_]{3,}`),
@@ -91,8 +92,7 @@ Confluence pages were reachable.
    - **Override.** A config file, env default or deployment manifest sets the documented value.
    - **Generated or vendored doc.** Fix the generator or skip it.
    A lead that a check clears is not proposed; count it in the report under `cleared`.
-
-Record steps that found nothing and go on.
+   Record steps that found nothing and go on.
 
 ## Hypotheses
 
@@ -111,8 +111,8 @@ Record steps that found nothing and go on.
 ## Choosing under the budget
 
 Rank every surviving candidate by **reader harm**, then **certainty**, and write each one: the
-store keeps the 4 ranked slots by score (the lens's top card is its MVP) and files the rest in
-`reserve`. Reader harm reaches the store through `impact`, certainty through `confidence`.
+store ranks by score (4 per lens first, top card = MVP; free run slots go to the best of any
+lens) and files the rest in `reserve`. Harm reaches it as `impact`, certainty as `confidence`.
 
 - **Reader harm.** Tier 1: the first-run path - README install and quickstart, getting started,
   auth setup, the first example a new user copies. Tier 2: reference read in daily work -
@@ -127,8 +127,8 @@ store keeps the 4 ranked slots by score (the lens's top card is its MVP) and fil
 - **One card per doc subject.** Claims on the same documented thing with one fix (one table of
   defaults, one example) are one card with a row each in the view. Distinct subjects are
   distinct cards, even in one file.
-- Candidates past 4 go to `reserve` (the store decides, by score); the run summary names them
-  in its "top 4 of M" line.
+- Never cut a candidate yourself: the store decides ranked or `reserve`, and the run summary
+  names the reserve in its "top N of M" line.
 
 ## Impact, risk and the predicted verdict
 
@@ -144,10 +144,10 @@ one line ("first-run: step 3 fails with an unknown flag"):
 Certainty sets `confidence`, not impact: `sure` is medium or high, `likely` is low. `risk` is the
 risk of making the change (a doc edit 2; a doc edit that needs a code or release change 5);
 omit it and the store reads `delivery_risk.blast`. `category` is `technical` (the default for
-this lens). Before writing a card, read `context`'s `near` (with each reason and note) and
-`outcomes` (with notes): set `predicted_verdict` and a `predicted_why` that names the closest
-precedent ("typo-level fixes were rejected as not-worth-it"). With no precedent, omit both; the
-store records `defer`.
+this lens). Every card carries your `predicted_verdict` (`accept`, `reject` or `defer`) and a
+`predicted_why`, after reading `context`'s `near` (reasons, notes) and `outcomes` (notes). With
+a precedent, quote it ("typo-level fixes were rejected as not-worth-it"); without one, give
+your own reason (`references/cards.md`).
 
 ## Evidence rules
 
@@ -164,9 +164,8 @@ store records `defer`.
 
 ## Artifacts
 
-One view kind serves this lens: the **"doc says / code does" table** (`table`). It shows the two
-sides of the contradiction next to each other, each with its place, so triage can check the
-claim without opening files.
+One view serves this lens: the **"doc says / code does" table** (`table`), both sides of the
+contradiction with their places, so triage can check the claim without opening files.
 
 - **Attach** to every `contradicted-by-code` and `stale-example` card, and to a
   `removed-still-documented` card when two or more docs or pages still name the ghost.
@@ -187,13 +186,8 @@ same topic when the same doc subject drifts again.
 
 ## Examples
 
-The first line is an H2 with one doc line, so it carries no view. The second is an H1 with three
-places, so it carries the table.
-
-```jsonl
-{"lens":"doc-drift","kind":"removed-still-documented","topic":"api-auth-v1-docs","anchors":["docs/api/authentication.md","src/auth/index.ts"],"title":"API guide still teaches the login method that was removed in March","rationale":"The API guide tells integrators to sign requests with v1 API keys. That path was removed and only OAuth tokens work now. New integrators follow the guide and fail on their first call.","body":"## Summary\nRewrite the API authentication guide for OAuth tokens and remove the v1 key instructions.\n\n## Description\nThe guide says to send `X-Api-Key` (`docs/api/authentication.md:12`). The auth module now only reads bearer tokens (`src/auth/index.ts:19`); `git grep -n X-Api-Key -- ':!docs/**'` returns nothing, and commit 4be91c2 removed `apiKeyAuth`. Checks: no alias or fallback header in `src/auth/`, the guide is not version-scoped. Done means the guide shows the OAuth flow with a working curl example.\n\n## Flow\n- integrator reads the API guide\n- sends X-Api-Key as documented\n- server answers 401 with no hint about OAuth\n\n## Expected impact\nIntegrators succeed on the first call; auth-related support questions drop. Low risk: docs only.\n\n## Evaluation\nClaim: docs - the guide matches the only auth path the code accepts\nBefore: 1 documented header the code never reads; 0 OAuth examples in the guide\nAfter: 0 documented headers the code does not read; 1 working OAuth example\nMethod: count - grep for the documented header outside docs, plus the removal commit\nFalsified if: a gateway in front of the service still accepts X-Api-Key","evidence":[{"type":"doc","ref":"docs/api/authentication.md:12","quote":"Send your key in the `X-Api-Key` header with every request."},{"type":"code","ref":"src/auth/index.ts:19","quote":"const token = req.headers.authorization?.replace('Bearer ', '');"},{"type":"git","ref":"4be91c2","quote":"remove apiKeyAuth (v1)"}],"effort":{"size":"XS","days_low":0.25,"days_high":0.5,"basis":["docs/api/authentication.md"]},"confidence":"high","confidence_why":"Sure, tier 1: the doc line, the code line and the removal commit agree, and no fallback reads the old header.","doc_impact":["docs/api/authentication.md","README.md"],"delivery_risk":{"blast":"low"},"provenance":{"lens_version":"0.2.0","model":"<model id>","harness":"claude-code"}}
-{"lens":"doc-drift","kind":"contradicted-by-code","topic":"env-max-upload-default-docs","anchors":["docs/configuration.md","src/config/limits.ts#MAX_UPLOAD_MB"],"title":"Configuration guide and admin page state the wrong upload size limit","rationale":"The guide and the Confluence admin page say uploads default to 50 MB, but the code caps them at 10 MB. Admins plan around the wrong number and users hit a limit nobody told them about.","body":"## Summary\nCorrect the documented default for MAX_UPLOAD_MB from 50 to 10 in both places, or decide which number is intended.\n\n## Description\n`docs/configuration.md:44` and Confluence page 48213 (Admin guide, edited 2026-02-03) document a 50 MB default. `src/config/limits.ts:7` sets 10, since commit 91d0a7e (`lower upload cap`, 2026-03-11). Checks: no override in `config/` or the deployment manifests, the guide is not version-scoped. Done means doc, page and code state one number, and the doc says how to raise it.\n\n## Flow\n- admin reads the configuration guide and leaves the default\n- user uploads a 30 MB file\n- upload fails at 10 MB, which no doc mentions\n\n## Expected impact\nAdmins set the limit knowingly; fewer surprise upload failures. If 50 was the intended value, the fix is in code and the blast radius grows.\n\n## Evaluation\nClaim: docs - documented default equals the code default\nBefore: doc 50 MB, page 50 MB, code 10 MB\nAfter: all three state the same value\nMethod: quote - the three lines read, plus the commit that changed the code\nFalsified if: a deployment config overrides the code default to 50 everywhere","evidence":[{"type":"doc","ref":"docs/configuration.md:44","quote":"| `MAX_UPLOAD_MB` | `50` | Largest accepted upload. |"},{"type":"page","ref":"48213","quote":"Uploads are limited to 50 MB unless MAX_UPLOAD_MB is set.","url":"https://acme.atlassian.net/wiki/spaces/ADM/pages/48213"},{"type":"code","ref":"src/config/limits.ts:7","quote":"export const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB ?? 10);"},{"type":"git","ref":"91d0a7e","quote":"lower upload cap"}],"artifacts":[{"kind":"table","message":"The guide and the admin page say 50 MB; the code enforces 10 MB","alt":"Table of three places that state the MAX_UPLOAD_MB default: the configuration guide says 50 MB, Confluence page 48213 says 50 MB, src/config/limits.ts sets 10 MB since commit 91d0a7e.","refs":["docs/configuration.md:44","48213","src/config/limits.ts:7","91d0a7e"],"data":{"columns":["Side","Place","Says"],"rows":[["doc","docs/configuration.md:44","50 MB default"],["page","Admin guide (48213)","50 MB default"],["code","src/config/limits.ts:7","10 MB default"],["git","91d0a7e","lowered to 10 MB"]],"highlight":[0,1]}}],"effort":{"size":"XS","days_low":0.25,"days_high":0.5,"basis":["docs/configuration.md","src/config/limits.ts#MAX_UPLOAD_MB"]},"confidence":"high","confidence_why":"Sure, tier 2: all values are quoted verbatim and no override was found; the page predates the code change.","doc_impact":["docs/configuration.md","Confluence 48213 Admin guide"],"delivery_risk":{"blast":"low","bus_factor":2},"provenance":{"lens_version":"0.2.0","model":"<model id>","harness":"claude-code"}}
-```
+Read `<skill-dir>/references/examples/doc-drift.md` before the first card (an H2 with no view,
+an H1 with the table). In the jsonl each card is one line.
 
 ## No finding
 

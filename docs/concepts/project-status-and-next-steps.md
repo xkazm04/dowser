@@ -20,11 +20,14 @@ Dowser runs as two halves joined by one contract:
   is its executable spec for tests; `tools/forge-live-e2e.mjs` drives the live app.
 - **The finding contract** `scan-finding/1` (`docs/contracts/scan-finding-1.md`, shared with the
   registry's scan-sweep and lens-scan): cards carry impact, a stored `scan-score/1` score with its
-  breakdown, a budget enforced in code at `verify` (MVP per lens, 4 ranked per lens, 16 per run, the
-  rest in reserve), a predicted verdict quoting the closest precedent, and per-slice trust (earned L1
-  lets the store pre-triage; ceiling L1, acceptance stays human). Records are `dowser-proposal/2`;
-  store v6; Forge SQL v019-v023. Open: `tools/lens-eval.mjs` still scores every emitted card, so its
-  `recall_at_budget` should be re-read against the ranked band, and the 0.3.0 packs are unmeasured.
+  breakdown, a budget enforced in code at `verify` (MVP per lens, 4 ranked per lens in the first
+  pass, then free slots of the 16 per run to the best remaining cards of any lens, the rest in
+  reserve), the lens judge's predicted verdict with its reason (quoting the closest precedent when
+  there is one), and per-slice trust (technical slices start at L1, product slices earn it; the
+  store pre-triages at L1; ceiling L1, acceptance stays human). Records are `dowser-proposal/2`;
+  store v6; Forge SQL v019-v023. Open: `tools/lens-eval.mjs` still scores every surviving card,
+  reserve included, so its `recall_at_budget` is read against the ranked band by hand
+  (`references/lens-authoring.md`), and the 0.3.1 packs are unmeasured.
 
 Gates on `master`: root `npm run typecheck` clean and `npm test` green; `npm run forge:typecheck`
 clean, `npm run forge:test` green, `npm run forge:check-shared` clean, `npm run forge:build-ui` green
@@ -32,8 +35,9 @@ clean, `npm run forge:test` green, `npm run forge:check-shared` clean, `npm run 
 the changed screen rendered and exercised in the fixture UI (`npm --prefix forge/static/app run dev:fixture`):
 `forge:typecheck` does not cover `static/app`, and a green build does not catch a runtime error.
 
-A ten-wave hardening campaign, in which Dowser scans itself and the agent plays the team, is under way:
-`docs/evals/campaign/README.md` (protocol) and the newest `wave-NN.md` (where it stands).
+The ten-wave hardening campaign, in which Dowser scanned itself and the agent played the team, is
+finished (2026-10-29/30): `docs/evals/campaign/REPORT.md` is its final report, `README.md` beside it
+the protocol and `wave-01.md` to `wave-10.md` the waves.
 
 ## Reconciliation against the original plan
 
@@ -46,7 +50,7 @@ each planned item to what exists.
 | Triage inbox (Jira global page) | Done, live-verified | Run-diff groups, Accept / Merge / Reject / Snooze, deep link `?ref=DW-n`, pages of 50 |
 | Evidence panel (Jira issue panel) | Done, live-verified | Opened from the issue's "View app actions" menu as "Dowser evidence" |
 | Doc impact (Confluence) | Done, live-verified | Byline item on every page; lists proposals whose evidence or `doc_impact` names the page |
-| Opportunity map | Done, live-verified | Lens x area heat table, churn / authors / bus-factor flag, effort vs confidence plot |
+| Opportunity map | Done, live-verified | Lens x area heat table (each non-empty cell links to the inbox filtered by area and lens; the link is fixture-verified, not yet live), churn / authors / bus-factor flag, effort vs confidence plot |
 | Coding-agent tools (`rovo:mcp` + skill.md) | Done, live-verified | Claude Code connected over OAuth; push, pull and areas round trip proven |
 | Rovo agent + actions + rovo:skill | Built, NOT tested live | `dowser-agent` can list, explain and record verdicts (`via:rovo`) |
 | Teamwork Graph goals (read) | Built, BLOCKED | Needs Atlassian to allowlist the app id; the tool answers `unavailable` until then |
@@ -196,7 +200,6 @@ bonus tracks, then polish.
 ## Open follow-ups carried from the design sparks
 
 - Byline count in the byline title via `dynamicProperties` (today the count shows only in the popup).
-- Map cells link to the inbox filtered by area and lens.
 - Error codes `not-found` / `conflict` in the contract (additive, so still forge-mcp-2).
 - Share the lens kind lists with Forge so a push checks kind-in-lens.
 - `rules offer` should also return pending unanswered offers; `similar` tuning (local skill).
