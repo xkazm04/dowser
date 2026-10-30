@@ -27,7 +27,7 @@ hitl-approval (a gate on anything visible outside the system; severity ladder).
 | `predicted_verdict` | `accept` \| `reject` \| `defer` | the model's verdict, recorded BEFORE any human sees the item (shadow mode). |
 | `predicted_why` | string <=300 | names the precedent it leaned on when one exists. |
 | `predicted_by` | string | `<skill>@<version>:<model>`. |
-| `proof` | object | when a change was built: `{metric, method, unit, before, after, verdict: better|not-better|inconclusive, control: red|absent, base_sha, head_sha}`. |
+| `proof` | object | when a change was built: `{metric, method, unit, before, after, verdict: better|not-better|inconclusive, control: red|absent, control_value, base_sha, head_sha}`. `control_value` (the instrument's reading on the seeded control) is required when `control = red` - without it a red control is an unverifiable claim. |
 
 **Absent-value rule.** Unknown is never `0` and never `""`. JSON wire: omit the key. SQL: `NULL`.
 A finding missing `impact` or `effort` has no `score`, ranks after every scored finding, and shows
