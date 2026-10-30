@@ -935,8 +935,8 @@
       "title": "Dowser for Jira - operations runbook",
       "url": "https://dowser-beta.atlassian.net/wiki/spaces/DOW/pages/14",
       "space": "DOW",
-      "updated_at": "2026-10-28T11:00:00Z",
-      "body": "Local development without a Jira site: `npm run local:forge` starts the real core on node:sqlite, then `npm run local:ui` serves the Custom UI against it.\n\nGates before a deploy: `npm run forge:typecheck`, `npm run forge:test`, `npm run forge:check-shared`, then `npm run forge:build-ui`.\n\nThe shared modules in forge/src/shared are copies of the skill's model and fingerprint modules; after editing either, run `npm --prefix forge run sync-shared`."
+      "updated_at": "2026-10-30T23:30:00Z",
+      "body": "Local development without a Jira site: `npm run local:forge` starts the real core on node:sqlite, then `npm run local:ui` serves the Custom UI against it.\n\nGates before a deploy: `npm run forge:typecheck`, `npm run forge:test`, `npm run forge:check-shared`, then `npm run forge:build-ui`, and for a changed screen a render of it in the fixture UI (`npm --prefix forge/static/app run dev:fixture`), exercising what changed.\n\nThe shared modules in forge/src/shared are copies of the skill's model and fingerprint modules; after editing either, run `npm --prefix forge run sync-shared`."
     }
   ],
   "goals": [

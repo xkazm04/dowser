@@ -21,7 +21,9 @@ Dowser runs as two halves joined by one contract:
 
 Gates on `master`: root `npm run typecheck` clean and `npm test` green; `npm run forge:typecheck`
 clean, `npm run forge:test` green, `npm run forge:check-shared` clean, `npm run forge:build-ui` green
-(test counts change every wave; `node tools/quality-snapshot.mjs` prints the current ones).
+(test counts change every wave; `node tools/quality-snapshot.mjs` prints the current ones)). A change under `forge/static/app/` also needs
+the changed screen rendered and exercised in the fixture UI (`npm --prefix forge/static/app run dev:fixture`):
+`forge:typecheck` does not cover `static/app`, and a green build does not catch a runtime error.
 
 A ten-wave hardening campaign, in which Dowser scans itself and the agent plays the team, is under way:
 `docs/evals/campaign/README.md` (protocol) and the newest `wave-NN.md` (where it stands).
