@@ -11,8 +11,41 @@ we will do about it.
 
 ## Supported versions
 
-Dowser is pre-release (0.x). Only the latest commit on `master` receives security fixes. Support periods for
-released versions will be stated here when the first release is tagged.
+Dowser is pre-release (0.x). A release is a `vMAJOR.MINOR.PATCH` git tag; its version is the `version:` of
+`skill/SKILL.md`, and the root `package.json` carries the same number. Security fixes land on `master` and
+ship in the next release; only the newest release receives them, so an older 0.x install is fixed by
+updating. Until the first release is tagged, only the latest commit on `master` receives security fixes. A
+support period for 1.x will be stated here before 1.0 is tagged.
+
+## Keeping an installed copy up to date
+
+`node skill/install.mjs` copies the skill into the harness folder, and the copy does not change when the
+repository does. Each copy records what it was installed from in `install.json` beside its `SKILL.md`:
+the version, the source commit, whether the skill folder had uncommitted changes, and the repository's
+`origin` URL with any credentials removed. A `--dev-link` install is a link to the checkout and records
+nothing; it follows whatever the checkout holds.
+
+To find out whether a newer release exists, run from a Dowser checkout:
+
+```
+node skill/install.mjs --check --harness claude      # or codex; add --scope project for a project install
+```
+
+It reads the installed copy's version and lists the release tags of the repository it came from
+(`git ls-remote --tags`; `--from <url or path>` names another one). When a newer release exists it says so
+and how to update: `git pull` in the checkout, then run the installer again with the same arguments. This
+is the only network call the installer makes, and it runs only when you ask for it; neither a scan nor
+`dowser.mjs` checks for updates.
+
+## Software bill of materials
+
+`npm run sbom` (`tools/sbom.mjs`) writes one CycloneDX JSON file per shipped lockfile for a release: the
+skill (zero runtime dependencies, so its SBOM names the component alone), the Forge app backend and the
+Forge inbox UI. It runs the `npm sbom` built into npm from the committed lockfiles, runtime dependencies
+only, and refuses a lockfile with uncommitted changes. The files are named
+`dowser-<skill|forge|forge-ui>-v<version>.cdx.json` and are attached to the release. When npm reports a
+dependency tree problem (a peer range the installed version does not meet), the SBOM is still written and
+the problem is listed in the tool's output.
 
 ## What Dowser handles
 
@@ -29,6 +62,11 @@ released versions will be stated here when the first release is tagged.
   by the first scan of the project that starts more than a day after it, so it can stay longer when no scan
   follows; their refs, titles and links stay, because cards cite
   them. The agent's work files (candidate lists, saved tool responses) go in the OS temp folder.
+- The lens direction a team sets in the Forge app's Settings (per lens: focus and exclude lists, free-text
+  notes and, for doc drift, the Confluence spaces to search) is pulled at the start of each scan and stored
+  on that run in the same local file. Unlike ticket, page and goal text it is not dropped when the run
+  ends: every run keeps the direction it scanned with, for as long as the local store exists. Delete
+  `~/.dowser/projects/<project-key>/` to remove it.
 - Dependency auditing runs `npm audit`, `osv-scanner` or `pip-audit` only when they are already installed.
   Dowser never installs them. They send the project's package names and versions to their advisory
   services (the npm registry, osv.dev, PyPI); `pip-audit` resolves a requirements file in a temporary

@@ -1,6 +1,6 @@
 {
   "name": "dowser",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Dowser local-scan skill: evidence-backed, fingerprinted backlog proposals from a checked-out repo.",
   "type": "module",
@@ -15,7 +15,9 @@
     "forge:check-shared": "npm --prefix forge run check-shared",
     "forge:build-ui": "npm --prefix forge run build:ui",
     "local:forge": "node tools/local-forge.mjs --http 4710",
-    "local:ui": "npm --prefix forge/static/app run dev:local"
+    "local:ui": "npm --prefix forge/static/app run dev:local",
+    "sbom": "node tools/sbom.mjs",
+    "check-update": "node skill/install.mjs --check --harness claude"
   },
   "devDependencies": {
     "@types/node": "~26.6.5",
