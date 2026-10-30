@@ -3,11 +3,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ME, makeDeps, pushArgs, record } from './helpers.mjs';
-import { actionName, answer, isNoTable, runResolver, runRovo, runTool } from '../src/core/app.mjs';
+import { actionName, answer, isSchemaBehind, runResolver, runRovo, runTool } from '../src/core/app.mjs';
 import { GRACE_MS } from '../src/core/verdicts.mjs';
 import { areaOf } from '../src/core/areas.mjs';
 import { codeLink } from '../src/core/cards.mjs';
 import { adfToText, htmlToText } from '../src/core/adf.mjs';
+import { DatabaseSync } from 'node:sqlite';
+import { MIGRATIONS } from '../src/sql/migrations.mjs';
 
 const PK = 'github-com-Acme-Shop';
 
@@ -387,9 +389,22 @@ test('a missing table escapes answer() so the entry point migrates: node:sqlite 
   const forge = Object.assign(new Error('Unknown SQL execution error'), {
     code: 'SQL_EXECUTION_ERROR', context: { debug: { code: 'ER_NO_SUCH_TABLE', errno: 1146, message: "Table 'x.rules' doesn't exist" } },
   });
-  assert.equal(isNoTable(forge), true);
-  assert.equal(isNoTable(new Error('no such table: rules')), true);
-  assert.equal(isNoTable(new Error('Unknown SQL execution error')), false);
+  assert.equal(isSchemaBehind(forge), true);
+  assert.equal(isSchemaBehind(new Error('no such table: rules')), true);
+  assert.equal(isSchemaBehind(new Error('Unknown SQL execution error')), false);
   await assert.rejects(answer(async () => { throw forge; }), forge);
   assert.equal(/** @type {any} */ (await answer(async () => { throw new Error('boom'); })).error, 'unavailable');
+});
+
+test('a missing column also migrates: a minor deploy fires no upgrade event, so v016/v017 arrive this way', async () => {
+  const forge = Object.assign(new Error('Unknown SQL execution error'), {
+    code: 'SQL_EXECUTION_ERROR', context: { debug: { code: 'ER_BAD_FIELD_ERROR', errno: 1054, message: "Unknown column 'snooze_until' in 'field list'" } },
+  });
+  assert.equal(isSchemaBehind(forge), true);
+  assert.equal(isSchemaBehind(new Error('no such column: snooze_until')), true);
+  await assert.rejects(answer(async () => { throw forge; }), forge);
+  // The real path: a schema with every migration but the column ones, then a read that selects the column.
+  const db = new DatabaseSync(':memory:');
+  for (const m of MIGRATIONS) if (!/snooze_until/.test(m.name)) db.exec(m.statement);
+  assert.throws(() => db.prepare('SELECT snooze_until FROM proposals').all(), (e) => isSchemaBehind(e));
 });

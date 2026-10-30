@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ME, makeDeps, pushArgs, record } from './helpers.mjs';
-import { actionName, isNoTable, runResolver, runTool } from '../src/core/app.mjs';
+import { actionName, isSchemaBehind, runResolver, runTool } from '../src/core/app.mjs';
 import { MIGRATIONS } from '../src/sql/migrations.mjs';
 
 const PK = 'github-com-Acme-Shop';
@@ -100,8 +100,8 @@ test('dowser_direction_get returns what Settings saved; lens narrows it; routed 
 test('directions table: a missing table is reported as such, and the migration makes the next call work', async () => {
   const d = await seeded();
   d.db.raw.exec('DROP TABLE directions');
-  await assert.rejects(() => res(d, 'direction.get', { project_key: PK }), (e) => isNoTable(e), 'escapes answer() so index.js migrates and retries');
-  await assert.rejects(() => res(d, 'direction.set', { project_key: PK, lens: 'opportunity', focus: ['x'] }), (e) => isNoTable(e));
+  await assert.rejects(() => res(d, 'direction.get', { project_key: PK }), (e) => isSchemaBehind(e), 'escapes answer() so index.js migrates and retries');
+  await assert.rejects(() => res(d, 'direction.set', { project_key: PK, lens: 'opportunity', focus: ['x'] }), (e) => isSchemaBehind(e));
   const m = MIGRATIONS.find((x) => x.name === 'v015_directions');
   assert.ok(m);
   d.db.raw.exec(m.statement);

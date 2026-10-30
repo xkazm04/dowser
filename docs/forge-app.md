@@ -146,7 +146,7 @@ The skill matches the name with or without it.
 
 The install fires `avi:forge:installed:app`, and the `migrate` function creates the tables. Forge sends
 `avi:forge:upgraded:app` only for a major version. If a later deploy adds a migration in a minor version,
-the first call that hits a missing table runs the migrations once and retries. Logs: `forge logs`.
+the first call that hits a missing table or column runs the migrations once and retries. Logs: `forge logs`.
 
 ## Connect an external MCP client
 

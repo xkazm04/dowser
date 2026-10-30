@@ -4,7 +4,7 @@
 // The keys and shapes are the contract in src/core/types.mjs and docs/contracts/forge-mcp-2.md.
 import ResolverPkg from '@forge/resolver';
 import { getAppContext } from '@forge/api';
-import { actionName, isNoTable, runResolver, runRovo, runTool } from './core/app.mjs';
+import { actionName, isSchemaBehind, runResolver, runRovo, runTool } from './core/app.mjs';
 import { forgeDb, runMigrations } from './adapters/forge-sql.mjs';
 import { jira, links, sources, users } from './adapters/atlassian.mjs';
 
@@ -31,7 +31,7 @@ async function withSchema(fn) {
   try {
     return await fn();
   } catch (e) {
-    if (migrated || !isNoTable(e)) throw e;
+    if (migrated || !isSchemaBehind(e)) throw e;
     migrated = true;
     await runMigrations();
     return fn();
