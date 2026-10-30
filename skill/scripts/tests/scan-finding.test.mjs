@@ -92,8 +92,11 @@ test('budget in code: each lens its MVP, then by score up to the caps; the rest 
     const band = (/** @type {string} */ fp) => /** @type {any} */ (getProposal(s.db, fp));
     assert.deepEqual([band(sec[0]).band, band(sec[0]).mvp, band(sec[0]).mvp_rule], ['ranked', true, 'top-score']);
     assert.deepEqual([band(sec[1]).band, 'mvp' in band(sec[1])], ['reserve', false]);
-    const narrow = allocateRun(s.db, s.run, { perLens: 2 });
+    const narrow = allocateRun(s.db, s.run, { perLens: 2, perRun: 3 });
     assert.deepEqual([narrow.per_lens['security-cra'].ranked, narrow.per_lens['security-cra'].reserve], [2, 4], '--per-lens overrides the pack budget');
+    const free = allocateRun(s.db, s.run, { perLens: 2 });
+    assert.deepEqual([free.ranked, free.per_lens['security-cra'].ranked, free.per_lens['security-cra'].reserve], [7, 6, 0], 'free run slots go past the per-lens cap');
+    allocateRun(s.db, s.run, { perLens: 2, perRun: 3 });
     assert.equal(proposalRecord(s.db, sec[5]).band, 'reserve', 'a re-allocation rewrites the band; the record carries it');
     const fin = /** @type {any} */ (runFinish(s.db, { runId: s.run, lenses: { 'security-cra': { state: 'ran' }, 'doc-drift': { state: 'ran' } } }));
     assert.deepEqual([fin.lenses['security-cra'].ranked, fin.lenses['security-cra'].reserve], [2, 4]);

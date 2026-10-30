@@ -62,7 +62,7 @@ export function exportOffers(db, projectKey) {
     }).filter((t) => t !== undefined);
     return clean({ id: r.id, lens: r.lens, text: r.text, titles: titles.length ? titles : undefined, offered_at: r.offered_at });
   });
-  const trust = trustReport(db, { sync: false, maxEvents: TRUST_EVENTS_MAX });
+  const trust = trustReport(db, { sync: false, maxEvents: TRUST_EVENTS_MAX, cards: false });
   return /** @type {Row} */ (clean({
     project_key: projectKey, rules_json: offers.length ? JSON.stringify(offers) : undefined,
     trust_json: trust.slices.length || trust.events.length ? JSON.stringify(trust) : undefined,

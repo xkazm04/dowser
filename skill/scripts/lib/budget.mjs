@@ -2,9 +2,11 @@
 // The run's budget, enforced in code (scan-finding/1 "Coverage: every lens, nothing paid-for discarded"). Every
 // verified card the run touched is allocated a slot: (1) each lens with a verified card gets one ranked slot, its
 // MVP (its top card); (2) the remaining slots go by score across lenses, at most `perLens` ranked per lens and
-// `perRun` in all; (3) everything else verified is `band: reserve` - stored, pushed and shown collapsed, never lost.
-// Order inside a lens and across lenses: score desc (unscored after every scored card), confidence, evidence
-// count, fp. verifyRun calls allocateRun after every verify, so a re-verify re-allocates; the result is the same
+// `perRun` in all; (3) run slots still free after that pass go to the best remaining cards of ANY lens, past the
+// per-lens cap (operator decision 2026-10-30: the self-scan ranked 14 of 16 while 5 verified doc-drift cards sat in
+// reserve); (4) everything else verified is `band: reserve` - stored, pushed and shown collapsed, never lost.
+// Order (the tie-break) inside a lens, across lenses and for the free slots: score desc (unscored after every
+// scored card), then confidence (high, medium, low), then evidence count desc, then fp asc. verifyRun calls allocateRun after every verify, so a re-verify re-allocates; the result is the same
 // for the same cards. Imports store-core.mjs only (runs.mjs imports it; the lens packs' `budget` comes in as `capOf`).
 import { DowserError, LENSES } from './model.mjs';
 import { tx } from './store-core.mjs';
@@ -28,8 +30,9 @@ export const byRank = (a, b) => {
 
 /**
  * Allocates the run's verified cards to `ranked` / `reserve` and marks each lens's MVP (mvp_rule `top-score`).
- * The per-lens cap is `perLens` when given, else `capOf(lens)` (the lens pack's `budget`), else PER_LENS; `perRun`
- * is the run cap. Returns per lens the ranked and reserve counts and the MVP, and the reserve cards by title (the
+ * The per-lens cap is `perLens` when given, else `capOf(lens)` (the lens pack's `budget`), else PER_LENS; it bounds
+ * the first pass only. `perRun` is the run cap: slots it leaves free after that pass go to the best held-back cards
+ * of any lens (byRank), so a lens's `ranked` may exceed its `cap`. Returns per lens the ranked and reserve counts and the MVP, and the reserve cards by title (the
  * run summary prints them).
  * @param {Db} db
  * @param {string} runId
@@ -60,6 +63,15 @@ export function allocateRun(db, runId, { perLens, perRun = PER_RUN, capOf } = {}
   for (const r of rows) {
     if (slot.has(String(r.fp))) continue;
     if (used < perRun && ranked[r.lens] < cap[r.lens]) {
+      ranked[r.lens]++;
+      used++;
+      slot.set(String(r.fp), { band: 'ranked', mvp: false });
+    }
+  }
+  // free run slots: the best cards the per-lens cap held back, from any lens (rows are already in byRank order)
+  for (const r of rows) {
+    if (slot.has(String(r.fp))) continue;
+    if (used < perRun) {
       ranked[r.lens]++;
       used++;
       slot.set(String(r.fp), { band: 'ranked', mvp: false });

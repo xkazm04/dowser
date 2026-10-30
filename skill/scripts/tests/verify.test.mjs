@@ -32,8 +32,8 @@ test('findQuote: whitespace-normalized, near the line or anywhere in the file', 
   lines[79] = 'const   token =\r\n   readSecret();';
   writeFiles(repo, { 'src/b.js': lines.join('\n'), 'doc/x.md': 'hello' });
   assert.deepEqual(findQuote(repo, 'src/b.js:80', 'const token = readSecret();'), { found: 'near-line', line: 80 });
-  assert.deepEqual(findQuote(repo, 'src/b.js:10', 'const token = readSecret();'), { found: 'in-file', line: 10 });
-  assert.deepEqual(findQuote(repo, 'src/b.js', 'const token = readSecret();'), { found: 'in-file' });
+  assert.deepEqual(findQuote(repo, 'src/b.js:10', 'const token = readSecret();'), { found: 'in-file', line: 80, claimed_line: 10, drift: 70 });
+  assert.deepEqual(findQuote(repo, 'src/b.js', 'const token = readSecret();'), { found: 'in-file', line: 80 });
   assert.equal(findQuote(repo, 'src/b.js:80', 'nope').why, 'quote-not-found');
   assert.equal(findQuote(repo, 'src/missing.js', 'x').why, 'file-missing');
   assert.equal(findQuote(repo, '../outside.js', 'x').why, 'path-outside-repo');

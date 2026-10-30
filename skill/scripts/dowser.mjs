@@ -8,25 +8,33 @@
 //   node dowser.mjs <command> [--repo <path>] [flags]          (--repo defaults to the cwd)
 //   init                                   create the store -> {db, project_key, repo, user_version}
 //   run start --mode full|incremental|focused [--harness h] [--model m] [--focus goal:..|area:..]
-//                                          -> {run_id, mode, base_sha?, head_sha?, fallback?, woke?, db}  (base_sha = last
-//                                          done run's head; incremental with that head gone from history -> full;
-//                                          woke = snoozed fps whose --until date passed, now verified)
+//                                          -> {run_id, mode, base_sha?, head_sha?, fallback?, woke?, abandoned?, db}
+//                                          (base_sha = last done run's head; incremental with that head gone from
+//                                          history -> full; woke = snoozed fps whose --until date passed, now
+//                                          verified; abandoned = run ids left running over a day, now closed failed)
 //   run finish --run <id> --lenses <json | @file> [--status done|failed]
 //                                          lenses: {<lens>: {state: ran|skipped|partial, reason?, emitted?,
 //                                          verified?, dropped?, truncated?}}
 //   propose --run <id> --file <jsonl> --kinds <lens>=<k1,k2> [--kinds ...]
 //                                          JSONL out, one line per input line: {line, result, fp?, ...} where
 //                                          result is created | evidence-grew | suppressed | duplicate |
-//                                          invalid:<why>; then one {summary} line
+//                                          invalid:<why>; a line without predicted_verdict adds warning:
+//                                          no-predicted-verdict; then one {summary} line (unpredicted: n when any)
 //   verify --run <id> [--per-lens n] [--per-run n]
 //                                          re-check code/doc quotes -> verified | dropped (verify-failed:<ref>);
-//                                          then allocate the run's verified cards: each lens's MVP, then by score,
-//                                          at most the pack budget (4) per lens and 16 per run -> band ranked; the
-//                                          rest band reserve (stored and pushed, never dropped) -> allocation
+//                                          a ticket/page/goal/dep ref this run did not ingest -> dropped
+//                                          (ref-not-ingested:<type>:<ref>); each check gives the line the quote was
+//                                          found on (claimed_line when the hint differs, drift when > 3 lines);
+//                                          bus_factor measured from git (anchor paths, 90 days before head);
+//                                          per_lens {emitted, verified, dropped}; then allocate the verified
+//                                          cards: each lens's MVP, then by score up to the pack budget (4) per
+//                                          lens, then free run slots (16 per run) to the best reserve of any lens
+//                                          -> band ranked; the rest band reserve (stored, pushed) -> allocation
 //   pretriage --run <id>                   the L1 gate: mark verified ranked cards predicted `accept` in slices at
 //                                          trust level 1 pretriaged_by machine:dowser -> {pretriaged, for_person}
 //   trust [--slice <key>]                  per-slice trust -> {slices: [{slice, level, ceiling, start, n,
-//                                          agreement?, changed_at?, reason?}], events: [...]} (append-only events)
+//                                          agreement?, changed_at?, reason?}], events: [...]} (append-only events);
+//                                          every slice with history or with a card, a new one at its start level
 //   move <fp> --to <status> --by <kind:name> [--from s] [--reason code] [--note t] [--into fp] [--run id]
 //                                          [--until YYYY-MM-DD]  (only with --to snoozed; a date after today)
 //   status [--runs n]                      counts by status and lens, last runs, "top N of M" truncation
@@ -211,7 +219,7 @@ export const COMMANDS = {
       const db = ctx.open();
       const r = store.runStart(db, { mode: /** @type {string} */ (opt(a, 'mode', true)), harness: opt(a, 'harness'), model: opt(a, 'model'), focus: opt(a, 'focus'), headSha: headSha(ctx.root),
         hasCommit: (sha) => hasCommit(ctx.root, sha) });
-      return { out: store.clean({ run_id: r.id, mode: r.mode, focus: r.focus, base_sha: r.base_sha, head_sha: r.head_sha, fallback: r.fallback, woke: r.woke, db: ctx.dbFile() }) };
+      return { out: store.clean({ run_id: r.id, mode: r.mode, focus: r.focus, base_sha: r.base_sha, head_sha: r.head_sha, fallback: r.fallback, woke: r.woke, abandoned: r.abandoned, db: ctx.dbFile() }) };
     }
     if (sub === 'finish') {
       const db = ctx.open();
@@ -234,6 +242,7 @@ export const COMMANDS = {
     const lines = [];
     /** @type {Record<string, number>} */
     const counts = { lines: 0, created: 0, 'evidence-grew': 0, suppressed: 0, duplicate: 0, invalid: 0 };
+    let unpredicted = 0;
     text.split(/\r?\n/).forEach((raw, i) => {
       if (!raw.trim()) return;
       counts.lines++;
@@ -246,9 +255,10 @@ export const COMMANDS = {
       }
       const r = store.propose(db, runId, obj, { kinds });
       counts[r.result.startsWith('invalid:') ? 'invalid' : r.result]++;
+      if (r.warning === 'no-predicted-verdict') unpredicted++;
       lines.push({ line: i + 1, ...r });
     });
-    lines.push({ summary: counts });
+    lines.push({ summary: unpredicted ? { ...counts, unpredicted } : counts });
     return { code: counts.invalid > 0 ? 1 : 0, lines };
   },
 

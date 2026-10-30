@@ -130,20 +130,32 @@ export function levelOf(db, slice) {
 }
 
 /**
- * `trust [--slice <key>]`: syncs, then reports every slice with history - `{slice, level, ceiling, start, n,
- * agreement?, changed_at?, reason?}` (n and agreement over the slice's current window) - and every trust event,
- * oldest first. `slice` limits both to one slice, reported at its start level even with no history. `sync: false`
- * reads without replaying (reflect export stays read-only; ingest-verdicts and move have synced already).
- * `events` keeps the newest `maxEvents` when given.
+ * The slices of every proposal that is not dropped (the slices `pretriage` can meet), sorted.
  * @param {Db} db
- * @param {{slice?: string, sync?: boolean, maxEvents?: number}} [o]
+ * @returns {string[]}
+ */
+function cardSlices(db) {
+  return [...new Set(/** @type {Row[]} */ (db.prepare("SELECT lens, category, effort_json FROM proposals WHERE status <> 'dropped'").all())
+    .map((r) => sliceKey({ category: r.category ?? undefined, lens: String(r.lens), effort: JSON.parse(String(r.effort_json)) })))].sort();
+}
+
+/**
+ * `trust [--slice <key>]`: syncs, then reports every slice with history or with a card (a card-only slice at its
+ * start level, as `pretriage` sees it) - `{slice, level, ceiling, start, n, agreement?, changed_at?, reason?}` (n
+ * and agreement over the slice's current window) - and every trust event, oldest first. `slice` limits both to one
+ * slice, reported at its start level even with no history. `sync: false`
+ * reads without replaying (reflect export stays read-only; ingest-verdicts and move have synced already).
+ * `events` keeps the newest `maxEvents` when given. `cards: false` lists only slices with history (reflect export:
+ * `trust_json` on the Forge seam keeps its shape and content).
+ * @param {Db} db
+ * @param {{slice?: string, sync?: boolean, maxEvents?: number, cards?: boolean}} [o]
  * @returns {{slices: Row[], events: Row[]}}
  */
-export function trustReport(db, { slice, sync = true, maxEvents } = {}) {
+export function trustReport(db, { slice, sync = true, maxEvents, cards = true } = {}) {
   if (sync) syncTrust(db);
   const all = decisions(db);
   const states = /** @type {Row[]} */ (db.prepare('SELECT * FROM trust_state ORDER BY slice').all());
-  const keys = slice !== undefined ? [slice] : states.map((s) => String(s.slice));
+  const keys = slice !== undefined ? [slice] : [...new Set([...states.map((s) => String(s.slice)), ...(cards ? cardSlices(db) : [])])].sort();
   const slices = keys.map((k) => {
     const st = states.find((s) => s.slice === k);
     const s = windowStats(all.filter((d) => d.slice === k), Number(st?.window_after ?? 0), Number.MAX_SAFE_INTEGER);

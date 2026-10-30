@@ -155,6 +155,9 @@ export { resurfaces } from './model.mjs';
  *    keys it stays dropped. Any other status: `evidence-grew` when a new key landed, else `duplicate`.
  *  - `provenance.run_id` is stamped from `runId`; a different one on the line is overwritten and noted.
  *  - an invalid candidate: `invalid:<why>`; nothing is written.
+ *  - a line without `predicted_verdict` (the lens worker's verdict is mandatory, SKILL.md section 5 step 6) is
+ *    still taken, with `warning: 'no-predicted-verdict'` on its result; a re-propose without one keeps the judge's
+ *    verdict an earlier line of the same fp recorded (only a store-derived `:memory` prediction is recomputed).
  * Card text is refreshed only while the item is a `candidate` (a verified/pushed card is what a person saw).
  * @param {Db} db
  * @param {string} runId
@@ -179,6 +182,11 @@ export function propose(db, runId, input, { kinds }) {
   const provenance = clean({ ...c.provenance, run_id: runId, model: c.provenance.model ?? run.model, harness: c.provenance.harness ?? run.harness, focus: c.provenance.focus ?? run.focus });
   const anchors = [...new Set(c.anchors.map(normalizeAnchor).filter(Boolean))].sort();
   const s = scoreOf(c);
+  const judged = c.predicted_verdict === undefined
+    ? /** @type {Row | undefined} */ (db.prepare("SELECT predicted_verdict, predicted_why, predicted_by FROM proposals WHERE fp = ? AND predicted_verdict IS NOT NULL AND predicted_by NOT LIKE '%:memory'").get(fp))
+    : undefined;
+  /** @param {ProposeResult} r @returns {ProposeResult} */
+  const flag = (r) => (c.predicted_verdict === undefined ? { ...r, warning: 'no-predicted-verdict' } : r);
   const card = {
     title: c.title, rationale: c.rationale, body: c.body, effort_json: json(s.effort), confidence: c.confidence,
     confidence_why: c.confidence_why, doc_impact_json: json(c.doc_impact), delivery_risk_json: json(c.delivery_risk),
@@ -186,13 +194,16 @@ export function propose(db, runId, input, { kinds }) {
     impact: sql(c.impact), impact_why: sql(c.impact_why), risk: sql(s.risk), category: s.category,
     score: sql(s.score), score_parts_json: json(s.score_parts),
     // shadow mode: the prediction is recorded now, before any person sees the card
-    ...predictionOf(c, closestPrecedent(db, { fp, lens: c.lens, topic: normalizeTopic(c.topic), anchors }), provenance?.model),
+    // a re-propose without a verdict keeps the judge's earlier one: the store's `defer` never overwrites it
+    ...(judged
+      ? { predicted_verdict: String(judged.predicted_verdict), predicted_why: sql(judged.predicted_why), predicted_by: String(judged.predicted_by) }
+      : predictionOf(c, closestPrecedent(db, { fp, lens: c.lens, topic: normalizeTopic(c.topic), anchors }), provenance?.model)),
   };
   const SCORED = ['impact', 'impact_why', 'risk', 'category', 'score', 'score_parts_json', 'predicted_verdict', 'predicted_why', 'predicted_by'];
   /** @type {(import('node:sqlite').SQLInputValue)[]} */
   const scored = SCORED.map((k) => /** @type {any} */ (card)[k]);
 
-  return tx(db, () => {
+  return flag(tx(db, () => {
     const at = now();
     const existing = /** @type {Row | undefined} */ (db.prepare('SELECT status FROM proposals WHERE fp = ?').get(fp));
     const addEvidence = () => {
@@ -249,7 +260,7 @@ export function propose(db, runId, input, { kinds }) {
     }
     if (status === 'candidate') refreshCard();
     return /** @type {ProposeResult} */ (clean({ result: added > 0 ? 'evidence-grew' : 'duplicate', fp, added, status, note }));
-  });
+  }));
 }
 
 /**

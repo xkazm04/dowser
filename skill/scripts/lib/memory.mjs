@@ -171,9 +171,12 @@ export function contextPack(db, { runId, lens, focus, lensDir }) {
 
 /**
  * The near tier of the fingerprint (D3): items of the same lens that share at least one normalized anchor or
- * at least two topic tokens with `fp`, plus items of ANOTHER lens that share at least one normalized anchor (those
- * carry `lens` and `cross_lens: true`: one lens's card can be the union of another lens's cards on the same code),
- * any status except `dropped`. Each hit states its overlap. The agent judges whether a hit is the same work;
+ * at least two topic tokens with `fp`, plus items of ANOTHER lens that share at least one normalized SYMBOL anchor
+ * (`path#symbol`; those carry `lens` and `cross_lens: true`: one lens's card can be the union of another lens's
+ * cards on the same code), any status except `dropped`. Noise the self-scan showed is left out: a shared whole-file
+ * anchor (`SKILL.md`, `dowser.mjs`) never makes a cross-lens hit, and GENERIC_TOKENS (`docs`, `md`, `lens`, ...)
+ * never count as shared topic tokens. A same-lens hit on a whole-file anchor alone still counts, ranked below a
+ * symbol-anchor hit. Each hit states its overlap. The agent judges whether a hit is the same work;
  * nothing is merged here.
  * @param {Db} db
  * @param {string} fp
@@ -183,7 +186,7 @@ export function similar(db, fp) {
   const self = /** @type {Row | undefined} */ (db.prepare('SELECT fp, lens, topic, anchors_json, title, status FROM proposals WHERE fp = ?').get(fp));
   if (!self) throw new DowserError(`proposal ${fp} does not exist`, 2, { error: 'not-found', fp });
   const anchors = new Set(/** @type {string[]} */ (parsed(self, 'anchors_json')));
-  const tokens = new Set(topicTokens(String(self.topic)));
+  const tokens = new Set(topicTokens(String(self.topic)).filter((t) => !GENERIC_TOKENS.has(t)));
   /** @type {Row[]} */
   const hits = [];
   for (const r of /** @type {Row[]} */ (db.prepare(
@@ -193,7 +196,7 @@ export function similar(db, fp) {
     const theirAnchors = /** @type {string[]} */ (parsed(r, 'anchors_json'));
     const sharedAnchors = theirAnchors.filter((a) => anchors.has(a));
     const sharedTokens = topicTokens(String(r.topic)).filter((t) => tokens.has(t));
-    if (cross ? sharedAnchors.length < 1 : sharedAnchors.length < 1 && sharedTokens.length < 2) continue;
+    if (cross ? !sharedAnchors.some(isSymbolAnchor) : sharedAnchors.length < 1 && sharedTokens.length < 2) continue;
     hits.push(/** @type {Row} */ (clean({
       fp: r.fp, lens: cross ? r.lens : undefined, cross_lens: cross ? true : undefined,
       title: r.title, topic: r.topic, anchors: theirAnchors, status: r.status, reason: r.reason,
@@ -205,8 +208,23 @@ export function similar(db, fp) {
   return { fp, lens: self.lens, title: self.title, topic: self.topic, similar: hits };
 }
 
-/** Same-lens hits first; inside each, anchors weigh more than wording. @param {Row} h */
-const score = (h) => (h.cross_lens ? 0 : 1000) + (h.overlap.anchors?.length ?? 0) * 10 + (h.overlap.topic_tokens?.length ?? 0);
+/**
+ * Topic tokens that name a document type or Dowser's own vocabulary, not a topic: two cards sharing only these are
+ * not near each other (doc-drift topics all end in `-docs`).
+ */
+export const GENERIC_TOKENS = new Set(['docs', 'doc', 'md', 'mjs', 'js', 'ts', 'json', 'yml', 'yaml', 'readme', 'file', 'files', 'code', 'page', 'pages', 'lens', 'lenses', 'skill']);
+/** @param {string} a a normalized anchor */
+const isSymbolAnchor = (a) => a.includes('#');
+
+/**
+ * Same-lens hits first; inside each, a symbol anchor weighs more than a whole-file anchor, which weighs more than
+ * wording. @param {Row} h
+ */
+const score = (h) => {
+  const a = /** @type {string[]} */ (h.overlap.anchors ?? []);
+  const sym = a.filter(isSymbolAnchor).length;
+  return (h.cross_lens ? 0 : 1000) + sym * 10 + (a.length - sym) * 3 + (h.overlap.topic_tokens?.length ?? 0);
+};
 
 // ------------------------------------------------------------------------------------------- show / list
 

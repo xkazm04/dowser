@@ -68,7 +68,8 @@ test('init -> run start -> propose -> verify -> move -> status, nothing written 
   assert.match(prop.lines[1].result, /^invalid:title:/);
   assert.match(prop.lines[2].result, /^invalid:json/);
   assert.equal(prop.lines[2].line, 4, 'line numbers count the blank line');
-  assert.deepEqual(prop.lines[3].summary, { lines: 3, created: 1, 'evidence-grew': 0, suppressed: 0, duplicate: 0, invalid: 2 });
+  assert.equal(prop.lines[0].warning, 'no-predicted-verdict', 'the lens worker left its verdict out');
+  assert.deepEqual(prop.lines[3].summary, { lines: 3, created: 1, 'evidence-grew': 0, suppressed: 0, duplicate: 0, invalid: 2, unpredicted: 1 });
   const fp = prop.lines[0].fp;
 
   const noKinds = cli('propose', '--run', run, '--file', file);

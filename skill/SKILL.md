@@ -50,9 +50,14 @@ a failed step.
 
 A focused scan is **partial** by definition. Its summary says so and never says "all clear".
 
+- `mode: dev` or `mode: guided` (with or without a goal or area): this run's mode, used without
+  asking and without storing it. A run with nobody to answer follows section 11.
+
 ## 1. Mode - dev or guided
 
-Run `prefs get mode verbosity`. If `mode` is absent, ask the runner once:
+Run `prefs get mode verbosity`. A `mode:` argument wins for this run. Headless (section 11),
+never ask: use the argument, else the stored `mode`, else `dev`. If `mode` is absent, ask the
+runner once:
 
 > How should Dowser talk to you? **Developer** (dense, file and line inline) or **Guided**
 > (plain language, evidence behind "show evidence")?
@@ -225,9 +230,16 @@ For each lens, print one progress line (`<lens>: gathering (tickets 42, code)`),
    it lands as `evidence-grew` and not as a re-worded duplicate. `propose` itself answers
    `suppressed` for a fingerprint the memory holds back. Give every card `impact` and
    `impact_why` from the pack's "Impact" table, and `risk` when you can judge the change's risk
-   (`references/cards.md`). Then predict: from `near` (reasons, notes) and the `outcomes` notes,
-   set `predicted_verdict` and a `predicted_why` naming the closest precedent; with none, omit
-   both. Never write `score`, `band` or `mvp`: the store computes them.
+   (`references/cards.md`). Then predict, on **every** line: `predicted_verdict` is your own
+   verdict as the judge (`accept`, `reject` or `defer`), required even on a fresh store with no
+   precedent at all. Judge it from the evidence, the pack's rules, `near` (reasons, notes) and the
+   `outcomes` notes; `predicted_why` says why in one line and names the closest precedent when
+   `near` has one. A precedent informs your verdict and is quoted; it never replaces it. `defer`
+   means you cannot tell, not "no history yet". A line without a verdict still lands, but
+   `propose` flags it (`warning: no-predicted-verdict`, `unpredicted` in the summary) and the
+   store falls back to the precedent's decision, else `defer`, which no slice's trust can act
+   on: re-propose such a line with your verdict. Never write `score`, `band`, `mvp` or
+   `delivery_risk.bus_factor`: the store computes them.
 7. **Budget: write every card, the store ranks.** Write every candidate the pack says to write.
    Do not cut to 4: `verify` allocates the slots in code (section 6) and files the rest in
    reserve, so nothing you verified is lost and nothing is cut by hand.
@@ -253,11 +265,23 @@ carry a reason.
    it with `verify-failed:<ref>`; a ref the run did not ingest drops it with
    `ref-not-ingested:<type>:<ref>` (an unconnected run ingests no tickets, pages or goals, so such
    a card never verifies). `git` and `sarif` evidence passes unchecked; the output says so. Print
-   per lens: `<lens>: emitted <n>, verified <v>, dropped <d>`.
+   per lens, from its `per_lens` (`{lens: {emitted, verified, dropped}}`, the candidates this call
+   checked): `<lens>: emitted <n>, verified <v>, dropped <d>`.
+   Each quote check gives `line`, the line the quote was **found** on; `claimed_line` is your hint
+   when it differs, and `drift` flags a hint more than 3 lines off. Cite the found line from then
+   on (a re-propose of the card uses it); a drift is not shown to the runner.
+   For every verified card with `delivery_risk`, `verify` measures `bus_factor` from git: the
+   distinct authors of the commits that touched the card's anchor paths in the 90 days before the
+   run's head commit, the same window as the areas map. The measured value replaces the card's
+   (`bus_factor: {value, source: git-90d, claimed?}` in the result); when no commit in the window
+   touched the anchors it keeps the card's (`source: card`).
    Then `verify` allocates the run's verified cards and prints `allocation`: each lens's MVP
-   (its top card by score) first, then by score across lenses, at most 4 ranked per lens and 16
-   per run (`--per-lens`, `--per-run` override them when the runner asks); every other verified
-   card is `band: reserve`, kept and pushed, never dropped. Print per lens:
+   (its top card by score) first, then by score across lenses, at most 4 ranked per lens; run
+   slots still free after that (16 per run) go to the highest-scored remaining cards of **any**
+   lens, past the per-lens cap. The order everywhere is score (highest first; unscored last),
+   then confidence (high, medium, low), then evidence count, then fp. `--per-lens` and
+   `--per-run` override the caps when the runner asks. Every other verified card is
+   `band: reserve`, kept and pushed, never dropped. Print per lens:
    `<lens>: ranked <r>, reserve <s>, MVP <title> (score <n>)`; an unscored MVP says `unscored`.
    Guided: "Summary wording" in `references/guided-mode.md` (top pick, also found).
 2. For each dropped item, look at why. If you mis-copied a line, fix the quote in a new
@@ -387,6 +411,32 @@ stored evidence does not answer the question, say so and offer a new scan. To fi
 use the card list printed in this session. In a later session, ask the runner which card they
 mean, by its title or its Jira link.
 
+## 11. Headless - no runner
+
+A run is headless when nobody can answer a question: a non-interactive harness call
+(`claude -p`, `codex exec`), a scheduled or CI job, or a runner who said "don't ask me anything".
+It runs the same pipeline up to the point where a person would decide, and stops there.
+
+1. **Mode from the arguments** (section 1): `mode:`, else the stored `mode`, else `dev`. Never
+   ask, and never `prefs set` an answer nobody gave.
+2. **Preflight, verdict pull, start, lenses, verify** (sections 2 to 6 step 2) as usual. A
+   preflight failure stops before `run start`, so no run is opened. Skip section 6 step 3: a
+   merge is shown to a runner in triage, so headless leaves both cards as they are.
+3. **Pre-triage, then stop.** Run `pretriage --run <run_id>` (section 7 step 0) and nothing
+   else from section 7: no dialog, no `rules offer`, no `move` by `human:` - "keep the rest" is
+   the default for every card. Skip section 8: nothing is pushed. The verified cards stay
+   `verified` and go out with the next connected run's outbox, where a person triages them.
+4. **Always `run finish`** (section 9 step 1) with every lens's state, reason and counts. When a
+   step after `run start` fails, still finish: `run finish --run <run_id> --lenses <the states
+   so far> --status failed`, with each lens not reached as `skipped` with that reason. A run is
+   never left open: an open run is closed as `abandoned` a day later and its fetched text is
+   dropped.
+5. **Summary** (section 9 step 2) in the run's mode, opened with one line saying it was headless.
+   Dev: `headless: no triage, nothing pushed; <n> verified cards wait for a person
+   (<p> pre-sorted by Dowser)`. Guided: "Dowser ran without anyone to ask, so nothing was
+   sorted or sent to Jira. <n> proposals wait for you; <p> of them Dowser already pre-sorted."
+   Drop the "pre-sorted" part when `pretriage` marked none.
+
 ## Invariants
 
 - **Never edit, stage, commit or push the scanned repo.** No file is created inside it: no work
@@ -403,9 +453,10 @@ mean, by its title or its Jira link.
   never `null`.
 - **Every claim quotes its evidence.** `code` and `doc` evidence quotes a line verbatim, and
   `verify` re-reads it. A proposal without evidence is not written.
-- **Budget is enforced in code and disclosed.** `verify` allocates 4 ranked per lens and 16 per
-  run (each lens's MVP first, then by score); the rest is kept in reserve, never cut, and the
-  summary says "top N of M" with the reserve titles.
+- **Budget is enforced in code and disclosed.** `verify` allocates 16 ranked per run: each
+  lens's MVP first, then by score up to 4 per lens, then any free run slot to the best remaining
+  card of any lens; the rest is kept in reserve, never cut, and the summary says "top N of M"
+  with the reserve titles.
 - **Exit code asserted on every script call.**
 
 ## References
