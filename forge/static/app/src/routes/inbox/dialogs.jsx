@@ -20,9 +20,12 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
 
+  // Retry (on the warning) loads both again; a fresh attempt shows the spinner.
   useEffect(() => {
     let live = true;
+    setMeta(null);
     Promise.allSettled([call('settings.get'), call('jira.projects')]).then(([s, p]) => {
       if (!live) return;
       const inbox = s.status === 'fulfilled' ? (s.value.inboxes ?? []).find((i) => i.project_key === card.project_key) : undefined;
@@ -33,7 +36,7 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
       if (inbox?.issue_type_id) setIssueType(inbox.issue_type_id);
     });
     return () => { live = false; };
-  }, [card.project_key]);
+  }, [card.project_key, attempt]);
 
   const types = meta?.projects?.find((p) => p.key === project)?.issue_types ?? [];
   const preview = issuePreview(card);
@@ -69,7 +72,10 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
       {!meta && <p><Spinner label="Loading Jira projects" /> Loading Jira projects…</p>}
       {meta?.error && (
         <SectionMessage appearance="warning">
-          <p>{meta.error} {hasDefault ? 'Accepting uses the inbox default target.' : 'Set a default target in Settings, or retry.'}</p>
+          <p>
+            {meta.error} {hasDefault ? 'Accepting uses the inbox default target.' : 'Set a default target in Settings, or retry.'}
+            {' '}<Button compact onClick={() => setAttempt((n) => n + 1)}>Retry</Button>
+          </p>
         </SectionMessage>
       )}
       {meta?.projects && (
@@ -139,7 +145,9 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
  * @param {{card: any, openCards: any[], onClose: () => void, onDone: (card: any) => void, onFailed: (ref: string, message: string) => void, onBeforeSubmit?: () => void}} props
  */
 export function MergeDialog({ card, openCards, onClose, onDone, onFailed, onBeforeSubmit }) {
-  const [accepted, setAccepted] = useState(/** @type {any[] | null} */ (null));
+  // null while loading, 'error' when the accepted proposals could not load (then only open ones are listed)
+  const [accepted, setAccepted] = useState(/** @type {any[] | null | 'error'} */ (null));
+  const [attempt, setAttempt] = useState(0);
   const [query, setQuery] = useState('');
   const [picked, setPicked] = useState('');
   const [jiraKey, setJiraKey] = useState('');
@@ -148,15 +156,17 @@ export function MergeDialog({ card, openCards, onClose, onDone, onFailed, onBefo
 
   useEffect(() => {
     let live = true;
+    setAccepted(null);
     call('inbox.list', { project_key: card.project_key, status: 'accepted' }).then(
       (res) => { if (live) setAccepted((res.groups ?? []).flatMap((g) => g.items ?? [])); },
-      () => { if (live) setAccepted([]); },
+      () => { if (live) setAccepted('error'); },
     );
     return () => { live = false; };
-  }, [card.project_key]);
+  }, [card.project_key, attempt]);
+  const acceptedList = Array.isArray(accepted) ? accepted : [];
 
   const candidates = useMemo(() => {
-    const all = [...openCards.filter((c) => c.project_key === card.project_key), ...(accepted ?? [])]
+    const all = [...openCards.filter((c) => c.project_key === card.project_key), ...acceptedList]
       .filter((c, i, arr) => c.ref !== card.ref && arr.findIndex((o) => o.ref === c.ref) === i);
     const q = query.trim().toLowerCase();
     return q ? all.filter((c) => c.ref.toLowerCase().includes(q) || c.title.toLowerCase().includes(q)) : all;
@@ -194,7 +204,13 @@ export function MergeDialog({ card, openCards, onClose, onDone, onFailed, onBefo
       </div>
       <fieldset className="dw-radio-list" aria-label="Merge into" style={{ maxHeight: 200, overflow: 'auto' }} disabled={Boolean(key)}>
         {accepted === null && <span><Spinner label="Loading accepted proposals" /> Loading…</span>}
-        {accepted !== null && candidates.length === 0 && <span className="dw-subtle">No matching proposal.</span>}
+        {accepted === 'error' && (
+          <span role="alert" className="dw-subtle">
+            Accepted proposals could not load, so only open ones are listed.{' '}
+            <Button compact onClick={() => setAttempt((n) => n + 1)}>Retry</Button>
+          </span>
+        )}
+        {Array.isArray(accepted) && candidates.length === 0 && <span className="dw-subtle">No matching proposal.</span>}
         {candidates.map((c) => (
           <label key={c.ref} className="dw-radio">
             <input type="radio" name="dw-merge-into" value={c.ref} checked={picked === c.ref} onChange={() => setPicked(c.ref)} />

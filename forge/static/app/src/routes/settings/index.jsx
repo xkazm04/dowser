@@ -3,6 +3,8 @@
 // Below it, Lens direction: per inbox, one disclosure per lens with what the lens should focus on, leave out,
 // the team's notes and (Doc drift only) the Confluence spaces to search. The scan reads it when it starts
 // (`dowser_direction_get`); `direction.get` / `direction.set` here.
+// The inbox list and the Jira project list load apart: when Jira will not list projects, the inboxes and Lens
+// direction still show, the target selectors say they are unavailable, and a Retry sits beside them.
 import React, { useState } from 'react';
 import { call } from '../../api.js';
 import { Button, ErrorState, SectionMessage, SkeletonList, useAsync } from '../../components/ui.jsx';
@@ -12,10 +14,8 @@ import './settings.css';
 import { safeHref } from '../../safeHref.js';
 
 export default function Settings() {
-  const data = useAsync(async () => {
-    const [settings, jira] = await Promise.all([call('settings.get'), call('jira.projects')]);
-    return { inboxes: settings.inboxes ?? [], projects: jira.projects ?? [] };
-  }, []);
+  const data = useAsync(async () => ({ inboxes: (await call('settings.get')).inboxes ?? [] }), []);
+  const jira = useAsync(async () => (await call('jira.projects')).projects ?? [], []);
 
   return (
     <main className="dwr-page dwr-page--narrow">
@@ -37,6 +37,14 @@ export default function Settings() {
         <section className="dwr-secs" aria-labelledby="dw-set-h">
         <div className="dwr-sec">
         <h2 className="dwr-sec__h" id="dw-set-h">Accept target per inbox</h2>
+        {jira.status === 'error' && (
+          <SectionMessage appearance="warning" title="Jira projects could not load.">
+            <p>
+              {String(jira.error?.message ?? 'Jira did not list projects.')} The saved targets below still apply to Accept; choosing a
+              new one waits until Jira lists projects. <Button compact onClick={jira.reload}>Retry</Button>
+            </p>
+          </SectionMessage>
+        )}
         <div className="dw-scroll">
         <table className="dw-table dwr-settings">
           <thead>
@@ -44,7 +52,7 @@ export default function Settings() {
           </thead>
           <tbody>
             {data.data.inboxes.map((inbox) => (
-              <InboxRow key={inbox.project_key} inbox={inbox} projects={data.data.projects} />
+              <InboxRow key={inbox.project_key} inbox={inbox} projects={jira.status === 'ready' ? jira.data : undefined} loading={jira.status === 'loading'} />
             ))}
           </tbody>
         </table>
@@ -171,12 +179,14 @@ function LensEditor({ inbox, lens, initial, idBase }) {
   );
 }
 
-function InboxRow({ inbox, projects }) {
+/** @param {{inbox: any, projects: any[] | undefined, loading: boolean}} props  `projects` undefined: not listed (yet). */
+function InboxRow({ inbox, projects, loading }) {
   const [saved, setSaved] = useState(inbox);
   const [project, setProject] = useState(inbox.jira_project_key ?? '');
   const [issueType, setIssueType] = useState(inbox.issue_type_id ?? '');
   const [state, setState] = useState(/** @type {'idle'|'saving'|'saved'|string} */ ('idle'));
-  const types = projects.find((p) => p.key === project)?.issue_types ?? [];
+  const types = projects?.find((p) => p.key === project)?.issue_types ?? [];
+  const listed = Boolean(projects);
   const dirty = project !== (saved.jira_project_key ?? '') || issueType !== (saved.issue_type_id ?? '');
   const id = `dw-set-${inbox.project_key.replace(/[^A-Za-z0-9_-]/g, '_')}`;
 
@@ -201,20 +211,20 @@ function InboxRow({ inbox, projects }) {
       </td>
       <td>
         <label className="dw-visually-hidden" htmlFor={`${id}-p`}>Jira project for {inbox.project_key}</label>
-        <select id={`${id}-p`} className="dw-select" value={project} onChange={(e) => { setProject(e.target.value); setIssueType(''); setState('idle'); }}>
-          <option value="">Choose a project</option>
-          {projects.map((p) => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
+        <select id={`${id}-p`} className="dw-select" value={project} disabled={!listed} onChange={(e) => { setProject(e.target.value); setIssueType(''); setState('idle'); }}>
+          <option value="">{listed ? 'Choose a project' : loading ? 'Loading projects…' : (saved.jira_project_key ?? 'Projects unavailable')}</option>
+          {(projects ?? []).map((p) => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
         </select>
       </td>
       <td>
         <label className="dw-visually-hidden" htmlFor={`${id}-t`}>Issue type for {inbox.project_key}</label>
-        <select id={`${id}-t`} className="dw-select" value={issueType} onChange={(e) => { setIssueType(e.target.value); setState('idle'); }} disabled={!project}>
-          <option value="">Choose an issue type</option>
+        <select id={`${id}-t`} className="dw-select" value={issueType} onChange={(e) => { setIssueType(e.target.value); setState('idle'); }} disabled={!project || !listed}>
+          <option value="">{listed ? 'Choose an issue type' : (saved.issue_type_id ? `Saved type ${saved.issue_type_id}` : 'Unavailable')}</option>
           {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
       </td>
       <td>
-        <Button appearance="primary" onClick={save} disabled={!dirty || !project || !issueType} busy={state === 'saving'}>Save</Button>
+        <Button appearance="primary" onClick={save} disabled={!listed || !dirty || !project || !issueType} busy={state === 'saving'}>Save</Button>
         <div aria-live="polite" className="dw-subtlest">
           {state === 'saved' && 'Saved.'}
           {failed && <span role="alert" style={{ color: 'var(--ds-text-danger, #AE2E24)' }}>{state}</span>}

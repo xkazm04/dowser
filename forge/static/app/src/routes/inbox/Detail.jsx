@@ -4,7 +4,7 @@
 // disclosure and the triage history. Used by the reading pane, the narrow accordion and the 360px issue panel.
 // Every fact is printed, "not measured" included: the pane is the expanded view.
 import React from 'react';
-import { Lozenge } from '../../components/ui.jsx';
+import { Button, Lozenge } from '../../components/ui.jsx';
 import { Markdown } from '../../components/Markdown.jsx';
 import { TriageHistory } from '../../components/ProposalCard.jsx';
 import { Artifacts } from '../../components/Artifact.jsx';
@@ -53,10 +53,11 @@ export function Evidence({ evidence }) {
 
 /**
  * @param {{
- *   card: any, change?: 'new'|'grew'|'reopened', history?: any[] | 'loading', compact?: boolean, titleId?: string,
+ *   card: any, change?: 'new'|'grew'|'reopened', history?: any[] | 'loading' | 'error', onHistoryRetry?: () => void, compact?: boolean,
+ *   titleId?: string,
  * }} props
  */
-export function Detail({ card, change, history, compact = false, titleId }) {
+export function Detail({ card, change, history, onHistoryRetry, compact = false, titleId }) {
   const isOpen = card.status === 'open';
   const marker = isOpen ? (card.reopened ? 'reopened' : change) : undefined;
   const strength = evidenceStrength(card);
@@ -154,7 +155,11 @@ export function Detail({ card, change, history, compact = false, titleId }) {
       {(history === 'loading' || history === 'error' || hasHistory || (!isOpen && Array.isArray(history))) && (
         <section className="dwr-section" aria-label="Triage history">
           <h3 className="dwr-h3">Triage history</h3>
-          {history === 'loading' ? <p className="dwr-muted">Loading...</p> : history === 'error' ? <p className="dwr-muted" role="alert">The history could not load.</p> : <TriageHistory history={history} />}
+          {history === 'loading' ? <p className="dwr-muted">Loading...</p> : history === 'error' ? (
+            <p className="dwr-muted" role="alert">
+              The history could not load.{onHistoryRetry && <> <Button compact onClick={onHistoryRetry}>Retry</Button></>}
+            </p>
+          ) : <TriageHistory history={history} />}
         </section>
       )}
     </article>

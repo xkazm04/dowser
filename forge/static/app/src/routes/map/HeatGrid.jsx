@@ -1,6 +1,8 @@
 // Heat grid: areas x lenses as a real <table>. The cell's number is the open proposals in that area for that
 // lens (the colour only repeats it); accepted ones are the secondary count. Area annotations: commits and
 // authors in the last 90 days, with a single-author flag. Absent authors read "Not measured", never 0.
+// A cell with open proposals is a link: the inbox filtered to that area and lens (`cellUrl`), listing exactly the
+// cards the cell counts (the backend filters with the mapping map.data counts with).
 import React from 'react';
 import { Lozenge } from '../../components/ui.jsx';
 import { LENSES, LENS_LABELS, formatDate, plural } from '../../components/labels.js';
@@ -8,8 +10,11 @@ import { heatLevel, heatRows, singleAuthor } from './model.js';
 
 const SHORT = { opportunity: 'Opportunity', 'ux-friction': 'UX friction', 'doc-drift': 'Doc drift', 'security-cra': 'Security' };
 
-/** @param {{areas: any[]}} props */
-export function HeatGrid({ areas }) {
+/**
+ * @param {{areas: any[], cellUrl?: (area: string, lens: string) => string | undefined, onCell?: (url: string) => void}} props
+ *   `cellUrl` builds the inbox link of a cell; `onCell` follows it in the app (a plain click), the href stays for a new tab.
+ */
+export function HeatGrid({ areas, cellUrl, onCell }) {
   const rows = heatRows(areas);
   const max = Math.max(0, ...rows.flatMap((r) => LENSES.map((l) => r.byLens[l].open)));
   return (
@@ -45,7 +50,8 @@ export function HeatGrid({ areas }) {
                         ? <><span aria-hidden="true">·</span><span className="dw-visually-hidden">none</span></>
                         : (
                           <>
-                            <span className="dw-heat__n">{c.open}<span className="dw-visually-hidden"> open</span></span>
+                            <CellCount n={c.open} url={c.open > 0 ? cellUrl?.(area.path, l) : undefined} onCell={onCell}
+                              label={`Open the ${c.open} open ${LENS_LABELS[l]} proposals in ${area.path === '.' ? 'the repo root' : area.path}`} />
                             {c.accepted > 0 && <span className="dw-heat__acc">{c.accepted} accepted</span>}
                           </>
                         )}
@@ -83,6 +89,20 @@ export function HeatGrid({ areas }) {
         ))}
       </div>
     </div>
+  );
+}
+
+/** A cell's open count: a link to the filtered inbox when there is one. */
+function CellCount({ n, url, onCell, label }) {
+  const inner = <>{n}<span className="dw-visually-hidden"> open</span></>;
+  if (!url) return <span className="dw-heat__n">{inner}</span>;
+  return (
+    <a
+      className="dw-heat__link" href={url} aria-label={label} title={label}
+      onClick={(e) => { if (onCell && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) { e.preventDefault(); onCell(url); } }}
+    >
+      <span className="dw-heat__n">{inner}</span>
+    </a>
   );
 }
 

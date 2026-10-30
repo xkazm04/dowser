@@ -77,6 +77,16 @@
 }
 :root .dwr-filter { height: 32px; background: var(--ds-background-neutral, #0515240F); white-space: nowrap; }
 :root .dwr-filter[aria-pressed="true"] { background: var(--ds-background-selected, #E9F2FE); color: var(--ds-text-selected, #1868DB); box-shadow: inset 0 0 0 1px var(--ds-border-selected, #1868DB); }
+:root .dwr-chip {
+  display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 4px 0 10px; border-radius: 4px; white-space: nowrap; max-width: 260px;
+  background: var(--ds-background-selected, #E9F2FE); color: var(--ds-text-selected, #1868DB); box-shadow: inset 0 0 0 1px var(--ds-border-selected, #1868DB);
+}
+:root .dwr-chip > span { overflow: hidden; text-overflow: ellipsis; }
+:root .dwr-chip code { font-size: 12px; }
+:root .dwr-chip__x {
+  font: inherit; font-size: 16px; line-height: 1; width: 24px; height: 24px; border: 0; border-radius: 4px; cursor: pointer; background: none; color: inherit;
+}
+:root .dwr-chip__x:hover { background: var(--ds-background-selected-hovered, #CFE1FD); }
 :root .dwr-seg__n { font-variant-numeric: tabular-nums; font-weight: 653; color: var(--ds-text-selected, #1868DB); }
 :root .dwr-runline { margin: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; font-size: 12px; line-height: 16px; color: var(--ds-text-subtle, #505258); font-variant-numeric: tabular-nums; }
 :root .dwr-iconbtn {

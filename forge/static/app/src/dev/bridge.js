@@ -6,7 +6,11 @@
 //   #inbox (default) | #settings | #map | #panel (accepted issue SHOP-101) | #panel-none (not from Dowser)
 //   &ref=DW-n             deep link: the inbox focuses that card (or opens it when it is not on the page)
 //   #byline (Confluence page 90211, two proposals)   &page=<id> another page (48213: one; 1: none)
+//   &project=&lens=&area=  deep link: the inbox opens filtered (the map's heat cells link this way)
 //   &fail=<resolver key>  that key answers {error, message}     &empty  no proposals at all
+//   &failonce=<key>       that key fails only while the page loads (its first second; React's dev StrictMode calls
+//                         twice), so a later Retry succeeds
+//   <key>:<status>        in fail / failonce: only calls with that status (inbox.list:accepted = the Merge dialog's list)
 //   &slow                 every call takes 1.5 s (to see skeletons)
 //   #reflect              the Learning tab (`reflect.data`; github.com/acme/shop has data and trust, billing is empty)
 //   The latest push of the shop inbox shows the scan-finding/1 order: three MVPs pinned, a ranked card, two in reserve;
@@ -41,6 +45,18 @@ function summary(i) {
   return { ...i, open: by_status.open, by_status };
 }
 function err(error, message) { return { error, message }; }
+/** The areas a card counts in: the longest area prefix of each anchor path and code/doc evidence path. */
+function areasOf(c, paths) {
+  const touched = [...(c.anchors ?? []).map((a) => String(a).split('#')[0]),
+    ...(c.evidence ?? []).filter((e) => e.type === 'code' || e.type === 'doc').map((e) => String(e.ref).replace(/#.*$/, '').replace(/:\d+(?:[-:]\d+)?$/, ''))];
+  const out = new Set();
+  for (const p of touched) {
+    let best;
+    for (const a of paths) if ((p === a || p.startsWith(`${a}/`)) && (!best || a.length > best.length)) best = a;
+    if (best) out.add(best);
+  }
+  return out;
+}
 /**
  * The order inside a push group, as forge/src/core/cards.mjs ORDER: MVPs first, ranked before reserve, the stored
  * score desc with unscored cards after every scored one, then confidence desc (the fixture's array order breaks ties).
@@ -65,11 +81,13 @@ function decide(ref, status, extra = {}) {
 }
 
 const handlers = {
-  'inbox.list'({ project_key, status, lens, cursor, pretriaged }) {
+  'inbox.list'({ project_key, status, lens, area, cursor, pretriaged }) {
     if (params().has('empty')) return { inboxes: [], groups: [] };
     if (pretriaged !== undefined && typeof pretriaged !== 'boolean') throw err('bad-input', 'pretriaged must be true or false');
+    if (area !== undefined && !project_key) throw err('bad-input', 'area needs project_key: areas belong to one inbox');
+    const paths = area !== undefined ? (AREAS[project_key] ?? []).map((a) => a.path) : [];
     const pick = cards.filter((c) => (!project_key || c.project_key === project_key) && (!status || c.status === status) && (!lens || c.lens === lens)
-      && (!pretriaged || c.pretriaged_by));
+      && (!pretriaged || c.pretriaged_by) && (area === undefined || (paths.includes(area) && areasOf(c, paths).has(area))));
     const ordered = [...PUSHES].sort((a, b) => b.at.localeCompare(a.at))
       .flatMap((p) => pick.filter((c) => GROUP_OF[c.ref] === p.run_id).sort(policy).map((c) => [p, c]));
     const start = cursor ? Number(cursor) : 0;
@@ -162,7 +180,20 @@ const handlers = {
         if (c.delivery_risk?.blast) p.blast = c.delivery_risk.blast;
         return p;
       });
-    return { areas: AREAS[project_key] ?? [], points };
+    // The counts come from the cards, by the same mapping the area filter uses (as forge/src/core/areas.mjs), so a
+    // cell's number is what its inbox link lists.
+    const list = AREAS[project_key] ?? [];
+    const paths = list.map((a) => a.path);
+    const areas = list.map((a) => {
+      const by = {};
+      for (const c of cards) {
+        if (c.project_key !== project_key || (c.status !== 'open' && c.status !== 'accepted') || !areasOf(c, paths).has(a.path)) continue;
+        const n = (by[c.lens] ??= { lens: c.lens, open: 0, accepted: 0 });
+        n[c.status] += 1;
+      }
+      return { ...a, proposals: Object.values(by).sort((x, y) => x.lens.localeCompare(y.lens)) };
+    });
+    return { areas, points };
   },
   'reflect.data'({ project_key }) {
     if (!project_key) throw err('bad-input', 'project_key is required.');
@@ -197,9 +228,18 @@ const handlers = {
   },
 };
 
+/** `&fail=` fails every matching call, `&failonce=` those of the page's first second; `key:status` matches one status. */
+const LOADED_AT = Date.now();
+function fails(key, payload) {
+  const match = (spec) => spec === key || (payload?.status && spec === `${key}:${payload.status}`);
+  if (match(params().get('fail'))) return true;
+  const once = params().get('failonce');
+  return Boolean(once && match(once) && Date.now() - LOADED_AT < 1000);
+}
+
 export async function invoke(key, payload = {}) {
   await new Promise((r) => setTimeout(r, params().has('slow') ? 1500 : 150));
-  if (params().get('fail') === key) return err('unavailable', `The ${key} resolver is unavailable (fixture).`);
+  if (fails(key, payload)) return err('unavailable', `The ${key} resolver is unavailable (fixture).`);
   const h = handlers[key];
   if (!h) return err('bad-input', `Unknown resolver ${key}.`);
   try {
@@ -208,6 +248,15 @@ export async function invoke(key, payload = {}) {
     if (e && typeof e === 'object' && 'error' in e) return e;
     throw e;
   }
+}
+
+/** The deep-link part of a query (`?ref=&project=&lens=&area=`, as components/deeplink.js reads it), or ''. */
+const LINK_KEYS = ['ref', 'project', 'lens', 'area'];
+function linkQuery(q) {
+  const out = new URLSearchParams();
+  for (const k of LINK_KEYS) if (q.has(k)) out.set(k, q.get(k));
+  const s = out.toString();
+  return s ? `?${s}` : '';
 }
 
 export const view = {
@@ -223,7 +272,7 @@ export const view = {
         extension: { type: 'confluence:contentBylineItem', content: { id: params().get('page') ?? '90211', type: 'page' }, space: { key: 'OPS' } },
       };
     }
-    return { ...base, localId: `${base.localId}dowser-inbox`, moduleKey: 'dowser-inbox', extension: { type: 'jira:globalPage', location: `https://acme.atlassian.net/jira/apps/dev/dowser/${s}${params().has('ref') ? `?ref=${params().get('ref')}` : ''}` } };
+    return { ...base, localId: `${base.localId}dowser-inbox`, moduleKey: 'dowser-inbox', extension: { type: 'jira:globalPage', location: `https://acme.atlassian.net/jira/apps/dev/dowser/${s}${linkQuery(params())}` } };
   },
   theme: { enable: async () => { await setGlobalTheme({ colorMode: /** @type {any} */ (params().get('mode') ?? 'auto') }); } },
 };
@@ -233,8 +282,7 @@ export const router = {
     // In-app navigation: the last path segment is the route, which the fixture carries in the hash.
     const u = new URL(to);
     const route = u.pathname.split('/').filter(Boolean).pop() ?? 'inbox';
-    const ref = u.searchParams.get('ref');
-    location.hash = ref ? `${route}&ref=${ref}` : route;
+    location.hash = `${route}${linkQuery(u.searchParams).replace(/^\?/, '&')}`;
   },
   open: async (to) => { console.info('[fixture] router.open', to); },
   reload: async () => location.reload(),

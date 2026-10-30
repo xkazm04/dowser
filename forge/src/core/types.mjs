@@ -141,7 +141,7 @@ export const PAGE_SIZE = 50;
 /**
  * Resolver contract (invoke key -> payload -> result). Every resolver answers `{error, message}` on failure.
  * @typedef {{
- *   'inbox.list': [{project_key?: string, status?: InboxStatus, lens?: string, cursor?: string, pretriaged?: boolean}, {inboxes: InboxSummary[], groups: InboxGroup[], next?: string}],
+ *   'inbox.list': [{project_key?: string, status?: InboxStatus, lens?: string, area?: string, cursor?: string, pretriaged?: boolean}, {inboxes: InboxSummary[], groups: InboxGroup[], next?: string}],
  *   'proposal.get': [{ref: string}, {card: Card, history: HistoryRow[]}],
  *   'verdict.accept': [{ref: string, jira_project_key?: string, issue_type_id?: string, note?: string}, {card: Card}],
  *   'verdict.reject': [{refs: string[], reason: string, note?: string}, {cards: Card[]}],

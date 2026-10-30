@@ -180,6 +180,15 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
   assert.equal(inbox.groups[0].run_id, run1);
   assert.equal(inbox.groups[0].items.length, 5);
   assert.deepEqual((await invoke('jira.projects')).projects.map((/** @type {any} */ p) => p.key), ['DOW']);
+  // the map -> inbox link: over the areas the skill pushed, each map cell's open count is what inbox.list?area lists
+  const map = await invoke('map.data', { project_key: projectKey });
+  assert.ok(map.areas.length > 0, 'the skill pushed areas');
+  for (const a of map.areas) {
+    for (const c of a.proposals) {
+      const cell = await invoke('inbox.list', { project_key: projectKey, lens: c.lens, area: a.path });
+      assert.equal(cell.groups.flatMap((/** @type {any} */ g) => g.items).length, c.open, `${a.path} x ${c.lens}`);
+    }
+  }
   // the seam: a card's supporting view reaches the inbox card through outbox and the real core
   const cardA = (await invoke('proposal.get', { ref: ref[fpA] })).card;
   assert.equal(cardA.artifacts?.[0]?.kind, 'table');
@@ -309,7 +318,7 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
     impact: 1 + (i % 10), impact_why: 'A reader runs the wrong command', predicted_verdict: 'reject', predicted_why: 'cosmetic doc drift; the team rejects these',
   }));
   assert.equal(proposeFile(run3, 'run3.jsonl', drift).length, 20);
-  const v3 = cli('verify', '--run', run3);
+  const v3 = cli('verify', '--run', run3, '--per-run', '4'); // a run budget of 4 keeps 16 of the 20 in reserve (free slots fill by score)
   assert.equal(v3.code, 0, v3.stdout);
   assert.deepEqual([v3.out.allocation.per_lens['doc-drift'].ranked, v3.out.allocation.per_lens['doc-drift'].reserve], [4, 16]);
   const ob3 = cli('outbox', '--run', run3);

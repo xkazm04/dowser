@@ -2,6 +2,7 @@
 // The card the Custom UI and the Rovo agent read: the stored proposal record plus inbox state and its evidence
 // with links (F2). Read-side queries: the inbox (F8 run-diff groups), one card, the panel, the byline.
 import { parseRef } from '../shared/fingerprint.mjs';
+import { areasOfProposal } from './areas.mjs';
 import { withNames } from './names.mjs';
 import { evidenceOf, findProposal, getInbox, listInboxRows, toProposal } from './store.mjs';
 import { AppError, omitAbsent } from './util.mjs';
@@ -161,9 +162,10 @@ const ORDER = `ORDER BY last_push_at DESC, last_run_id,
  * created, grew or reopened them; policy order inside a group. Pages of PAGE_SIZE items; `next` is an opaque
  * offset cursor. A group can continue on the next page under the same `run_id`. `visible` (core/access.mjs)
  * limits the items and the summaries to those inboxes; the dispatch door always passes it. `pretriaged: true`
- * keeps only the cards the skill's L1 trust gate pre-triaged (`pretriaged_by` set).
+ * keeps only the cards the skill's L1 trust gate pre-triaged (`pretriaged_by` set). `area` (with `project_key`) keeps
+ * the cards that count in that map area (`inArea`), so a map cell links to exactly what it counts.
  * @param {Db} db
- * @param {{project_key?: string, status?: string, lens?: string, cursor?: string, pretriaged?: boolean, visible?: string[]}} q
+ * @param {{project_key?: string, status?: string, lens?: string, area?: string, cursor?: string, pretriaged?: boolean, visible?: string[]}} q
  * @returns {Promise<{inboxes: InboxSummary[], groups: InboxGroup[], next?: string}>}
  */
 export async function listInbox(db, q) {
@@ -183,7 +185,10 @@ export async function listInbox(db, q) {
     where.push(`project_key IN (${q.visible.map(() => '?').join(', ')})`);
     params.push(...q.visible);
   }
-  const rows = await db.query(`SELECT * FROM proposals WHERE ${where.join(' AND ')} ${ORDER} LIMIT ${PAGE_SIZE + 1} OFFSET ${offset}`, params);
+  const rows = q.area === undefined
+    ? await db.query(`SELECT * FROM proposals WHERE ${where.join(' AND ')} ${ORDER} LIMIT ${PAGE_SIZE + 1} OFFSET ${offset}`, params)
+    : (await inArea(db, q.project_key ?? '', q.area, await db.query(`SELECT * FROM proposals WHERE ${where.join(' AND ')} ${ORDER}`, params)))
+      .slice(offset, offset + PAGE_SIZE + 1);
   const page = rows.slice(0, PAGE_SIZE).map(toProposal);
   const repos = new Map((await listInboxRows(db)).map((i) => [i.project_key, i.repo_url]));
   /** @type {InboxGroup[]} */
@@ -200,6 +205,23 @@ export async function listInbox(db, q) {
     g.items.push(card);
   }
   return omitAbsent({ inboxes: await inboxSummaries(db, q.visible), groups, next: rows.length > PAGE_SIZE ? String(offset + PAGE_SIZE) : undefined });
+}
+
+/**
+ * The rows that count in `area` of the inbox, by the mapping `map.data` counts with (core/areas.mjs), order kept.
+ * An area path the inbox has not pushed keeps nothing. The area filter pages in memory: an inbox holds hundreds
+ * of proposals, not millions, and the mapping (longest area prefix of each touched path) is not SQL.
+ * @param {Db} db @param {string} projectKey @param {string} area @param {Row[]} rows
+ */
+async function inArea(db, projectKey, area, rows) {
+  const areaPaths = (await db.query('SELECT path FROM areas WHERE project_key = ?', [projectKey])).map((r) => String(r.path));
+  if (!areaPaths.includes(area)) return [];
+  const out = [];
+  for (const r of rows) {
+    const p = toProposal(r);
+    if (areasOfProposal(p.record, await evidenceOf(db, p.id), areaPaths).has(area)) out.push(r);
+  }
+  return out;
 }
 
 /**

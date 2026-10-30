@@ -5,14 +5,14 @@ import { SnoozeStep } from './dialogs.jsx';
 import { Detail } from './Detail.jsx';
 import { Kbd } from './parts.jsx';
 
-export function ReadingPane({ current, currentChange, history, paneScroll, snoozeFor, errors, actions }) {
+export function ReadingPane({ current, currentChange, history, onHistoryRetry, paneScroll, snoozeFor, errors, actions }) {
   return (
     <section className="dwr-pane" aria-label="Selected proposal">
       {current ? (
         <>
           <div className="dwr-pane__scroll" ref={paneScroll}>
             <div className="dwr-pane__in">
-              <Detail card={current} change={currentChange} history={history} titleId={`dwr-t-${current.ref}`} />
+              <Detail card={current} change={currentChange} history={history} onHistoryRetry={onHistoryRetry} titleId={`dwr-t-${current.ref}`} />
             </div>
           </div>
           <Decide card={current} snoozing={snoozeFor === current.ref} error={errors[current.ref]} actions={actions} />

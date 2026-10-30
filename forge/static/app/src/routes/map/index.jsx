@@ -1,6 +1,7 @@
 // Opportunity map (global page tab "Opportunity map"): where proposals, churn and bus factor concentrate in one
 // inbox. (a) a heat grid of areas x lenses; (b) effort vs confidence of the open proposals. A dot opens its
-// card in a modal (`proposal.get`); "Open in the inbox" goes to the inbox tab focused on it (`inbox?ref=DW-n`).
+// card in a modal (`proposal.get`); "Open in the inbox" goes to the inbox tab focused on it (`inbox?ref=DW-n`). A heat
+// cell with open proposals goes to the inbox filtered to its area and lens (`inbox?project=&lens=&area=`).
 import React, { useEffect, useState } from 'react';
 import { router } from '@forge/bridge';
 import { call } from '../../api.js';
@@ -53,7 +54,13 @@ export default function MapView({ context }) {
           <p>{EMPTY}</p>
         </SectionMessage>
       )}
-      {projectKey && <MapBody key={projectKey} projectKey={projectKey} onOpen={setOpenRef} />}
+      {projectKey && (
+        <MapBody
+          key={projectKey} projectKey={projectKey} onOpen={setOpenRef}
+          cellUrl={(area, lens) => inboxUrl(context?.extension?.location, undefined, { project_key: projectKey, lens, area })}
+          onCell={(to) => { router.navigate(to).catch(() => {}); }}
+        />
+      )}
 
       {openRef && (
         <CardDialog
@@ -68,7 +75,7 @@ export default function MapView({ context }) {
   );
 }
 
-function MapBody({ projectKey, onOpen }) {
+function MapBody({ projectKey, onOpen, cellUrl, onCell }) {
   const data = useAsync(() => call('map.data', { project_key: projectKey }), [projectKey]);
   if (data.status === 'loading') return <SkeletonList count={3} label="Loading the map" />;
   if (data.status === 'error') return <ErrorState what="The map" error={data.error} onRetry={data.reload} />;
@@ -84,7 +91,7 @@ function MapBody({ projectKey, onOpen }) {
         <p className="dwr-sec__hint">{plural(areas.length, 'area')}</p>
         {areas.length === 0
           ? <SectionMessage role="status"><p>{EMPTY}</p></SectionMessage>
-          : <HeatGrid areas={areas} />}
+          : <HeatGrid areas={areas} cellUrl={cellUrl} onCell={onCell} />}
       </section>
       <section className="dwr-sec" aria-labelledby="dw-map-ec">
         <h2 className="dwr-sec__h" id="dw-map-ec">Effort vs confidence</h2>

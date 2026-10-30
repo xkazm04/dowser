@@ -114,6 +114,24 @@ export function pathsOf(record, evidence) {
 }
 
 /**
+ * The areas a proposal counts in: the area of every path it touches (`pathsOf`, code/doc evidence only), once
+ * each. `map.data` counts with it and `inbox.list`'s `area` filter lists with it, so a map cell's count is the
+ * number of cards its inbox link shows.
+ * @param {Record<string, any>} record
+ * @param {{type: string, ref: string}[]} evidence
+ * @param {string[]} areaPaths
+ * @returns {Set<string>}
+ */
+export function areasOfProposal(record, evidence, areaPaths) {
+  const out = new Set();
+  for (const x of pathsOf(record, evidence)) {
+    const a = areaOf(x, areaPaths);
+    if (a !== undefined) out.add(a);
+  }
+  return out;
+}
+
+/**
  * `map.data`: every area with per-lens open/accepted counts (a proposal counts once per area), and the
  * effort-vs-confidence points of the open proposals.
  * @param {Db} db
@@ -142,7 +160,7 @@ export async function mapData(db, projectKey) {
   }
   for (const r of rows) {
     const p = toProposal(r);
-    const hit = new Set(pathsOf(p.record, evBy.get(p.id) ?? []).map((x) => areaOf(x, areaPaths)).filter((x) => x !== undefined));
+    const hit = areasOfProposal(p.record, evBy.get(p.id) ?? [], areaPaths);
     for (const area of hit) {
       const byLens = /** @type {Map<string, {open: number, accepted: number}>} */ (counts.get(/** @type {string} */ (area)));
       const c = byLens.get(p.lens) ?? { open: 0, accepted: 0 };

@@ -186,7 +186,10 @@ export const RESOLVERS = {
     const project = optStr(p, 'project_key');
     if (project) await acc.inbox(project);
     if (p.pretriaged !== undefined && typeof p.pretriaged !== 'boolean') throw new AppError('bad-input', 'pretriaged must be true or false');
-    return listInbox(d.db, { project_key: project, status: optStr(p, 'status'), lens: optStr(p, 'lens'), cursor: optStr(p, 'cursor'), pretriaged: p.pretriaged === true || undefined, visible: await acc.visibleKeys() });
+    const area = optStr(p, 'area');
+    if (p.area !== undefined && !area) throw new AppError('bad-input', 'area must be a non-empty area path');
+    if (area && !project) throw new AppError('bad-input', 'area needs project_key: areas belong to one inbox');
+    return listInbox(d.db, { project_key: project, status: optStr(p, 'status'), lens: optStr(p, 'lens'), area, cursor: optStr(p, 'cursor'), pretriaged: p.pretriaged === true || undefined, visible: await acc.visibleKeys() });
   },
   'proposal.get': async (d, p, _, __, acc) => { await acc.proposal(needStr(p, 'ref')); return getProposal(d, needStr(p, 'ref')); },
   'verdict.accept': async (d, p, id, via, acc) => {

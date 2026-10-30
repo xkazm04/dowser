@@ -16,7 +16,7 @@ export const BULK = ' bulk';
 const CHANGE_SHORT = { new: 'New', grew: 'Grew', reopened: 'Reopened' };
 
 export function InboxList({
-  visible, leaving, selected, selectedVisible, byRef, focusRef, wide, expanded, history, errors, snoozeFor, setSnoozeFor,
+  visible, leaving, selected, selectedVisible, byRef, focusRef, wide, expanded, history, onHistoryRetry, errors, snoozeFor, setSnoozeFor,
   setSelected, actions, open, deferSnooze, toggle, select, rowEls, next, moreState, loadMore,
 }) {
   return (
@@ -36,7 +36,7 @@ export function InboxList({
           >
             {!wide && card.ref === focusRef && expanded && !leaving.has(card.ref) && (
               <div className="dwr-inline">
-                <Detail card={card} change={changeOf(card, g)} history={history} titleId={`dwr-t-${card.ref}`} />
+                <Detail card={card} change={changeOf(card, g)} history={history} onHistoryRetry={onHistoryRetry} titleId={`dwr-t-${card.ref}`} />
                 <Decide card={card} snoozing={snoozeFor === card.ref} error={errors[card.ref]} actions={actions} sticky />
               </div>
             )}
@@ -105,8 +105,8 @@ function GroupHead({ group, leaving }) {
   for (const c of group.items) if (c.status === 'open' && !leaving.has(c.ref)) counts[changeOf(c, group)] += 1;
   const bits = Object.entries(counts).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${CHANGE_LABELS[k].toLowerCase()}`);
   return (
-    <h2 className="dwr-group__head" id={`dwr-g-${group.run_id}`} title={group.head_sha ? `Scanned at ${group.head_sha.slice(0, 7)}, run ${group.run_id}` : `Run ${group.run_id}`}>
-      <span>Push of {shortWhen(group.at)}</span>
+    <h2 className="dwr-group__head" id={`dwr-g-${group.run_id}`} title={group.linked ? 'The proposal the link points to. It moves into its push when Load more reaches that page.' : group.head_sha ? `Scanned at ${group.head_sha.slice(0, 7)}, run ${group.run_id}` : `Run ${group.run_id}`}>
+      <span>{group.linked ? 'Linked proposal, from a later page' : `Push of ${shortWhen(group.at)}`}</span>
       {bits.length > 0 && <span className="dwr-group__counts">{bits.join(' · ')}</span>}
     </h2>
   );

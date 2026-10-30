@@ -17,6 +17,9 @@
 .dw-heat__cell--3 { background: var(--ds-background-accent-blue-subtle, #669DF1); }
 .dw-heat__cell--4 { background: var(--ds-background-accent-blue-bolder, #1558BC); color: var(--ds-text-inverse, #FFFFFF); }
 .dw-heat__n { font-weight: 653; font-size: 14px; line-height: 18px; display: block; }
+.dw-heat__link { display: block; color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; border-radius: 3px; }
+.dw-heat__link:hover { text-decoration-thickness: 2px; }
+.dw-heat__link:focus-visible { outline: 2px solid var(--ds-border-focused, #4688EC); outline-offset: 2px; }
 .dw-heat__acc { font-size: 11px; line-height: 14px; display: block; color: inherit; opacity: .85; }
 .dw-heat__cell--0 .dw-heat__acc, .dw-heat__cell--1 .dw-heat__acc, .dw-heat__cell--2 .dw-heat__acc { color: var(--ds-text-subtle, #505258); opacity: 1; }
 .dw-heat__num { text-align: right; white-space: nowrap; }
