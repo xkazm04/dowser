@@ -13,6 +13,7 @@ only what a scan needs. Rules for recording a version (fixture score, hand-verif
 
 - 0.3.0 - scan-finding/1: `impact` from the demand tier (strong 8, medium 6, weak 4, none 2; +1 for goal fit), `risk` and the predicted verdict quoting the closest precedent; every evidenced candidate is written (the store allocates the 4 slots by score, MVP first, the rest in reserve). Not measured yet (lens-eval scores recall at budget on what the store ranks, a rerun is owed).
 - 0.3.1 - self-scan fixes (run r-20261030165443-0385): worked examples moved to `references/examples/opportunity.md`, one field per line (the one-line cards ran to 3,500 characters and file readers cut lines at 2,000), each with `impact`/`impact_why`, `risk` in its `blast` band and the judge's predicted verdict (13 of 13 examples across the packs scored, 0 before); the predicted verdict is always the judge's, precedent quoted when there is one; pack under 200 lines (219). Not measured yet.
+- 0.3.2 - category rule (self-scan cycle 2, run r-20261030232731-01c7: the opportunity fork labelled both cards `technical` and they skipped the person in a fresh L1 slice): `category` stays `product`; the store clamps a `technical` label back (`clamped` on the propose line). Wording only, fingerprints unchanged. Not measured yet.
 
 ## ux-friction (UX friction and wellbeing)
 
@@ -21,6 +22,7 @@ only what a scan needs. Rules for recording a version (fixture score, hand-verif
 
 - 0.3.0 - scan-finding/1: `impact` from tier x reach (blocked 9/7, pressured 7/5, slowed 4/3), `risk` and the predicted verdict quoting the closest precedent; every surviving candidate is written (the store allocates the 4 slots by score, MVP first, the rest in reserve). Not measured yet.
 - 0.3.1 - self-scan fixes: the Impact table gains an "error branch of a core path" row (blocked 8, pressured 6, slowed 4, under 10 tickets; the checkout-decline example now scores it); worked examples moved to `references/examples/ux-friction.md` with `impact`, `risk` and the judge's predicted verdict (one `reject` quoting a precedent); the predicted verdict is always the judge's; pack under 200 lines (210). Not measured yet.
+- 0.3.2 - category rule (self-scan cycle 2, run r-20261030232731-01c7: the opportunity fork labelled both cards `technical` and they skipped the person in a fresh L1 slice): `category` stays `product`; the store clamps a `technical` label back (`clamped` on the propose line). Wording only, fingerprints unchanged. Not measured yet.
 
 ## doc-drift (Doc drift)
 
@@ -30,6 +32,7 @@ only what a scan needs. Rules for recording a version (fixture score, hand-verif
 
 - 0.3.0 - scan-finding/1: `impact` from reader harm (tier 1 8/6, tier 2 6/4, tier 3 3/2 for fails/misleads; certainty goes to confidence), `risk` and the predicted verdict quoting the closest precedent; past 4 goes to the store's reserve. Not measured yet.
 - 0.3.1 - self-scan fixes: gather step 1 excludes test and fixture folders (the self-scan read a fixture's README as a product doc); worked examples moved to `references/examples/doc-drift.md` with `impact`, `risk` and the judge's predicted verdict; the predicted verdict is always the judge's; the store's free-slot pass named (a lens can rank past 4); pack under 200 lines (205). Not measured yet.
+- 0.3.2 - category rule (self-scan cycle 2): a card may move `technical` -> `product` when users feel it, never the reverse (the store clamps product-lens cards). Wording only, fingerprints unchanged. Not measured yet.
 
 ## security-cra (Security and CRA)
 
@@ -40,3 +43,4 @@ only what a scan needs. Rules for recording a version (fixture score, hand-verif
 - 0.2.3 - off-focus candidates fill slots the focused ones leave empty (dogfood wave 3: a high advisory sat in the summary with all 4 slots free).
 - 0.3.0 - scan-finding/1: `impact` from rank x exposure class (live secret 10, critical/high at E3 9, H2 at E3 8, H4 shipping 7, E2 6, E1 5, H6 5, H5 / moderate at E3 4; focus +1), `risk` of the change and the predicted verdict quoting the closest precedent; ranks 1-5 are all written and the store allocates the 4 slots by score (MVP first, the rest in reserve). Not measured yet.
 - 0.3.1 - self-scan fixes: gather step 6 narrowed (no bare `exec(`, which in JS is mostly `RegExp.exec`; SQL only with concatenation or interpolation on a SQL keyword line; tests, fixtures and Markdown excluded); the dependency table has six columns (the H1 example's seven failed `propose`'s 6-column cap; Package carries the version); worked examples moved to `references/examples/security-cra.md` with `impact`, `risk` in its `blast` band and the judge's predicted verdict; the predicted verdict is always the judge's; pack under 200 lines (214). Not measured yet.
+- 0.3.2 - category rule (self-scan cycle 2): a card may move `technical` -> `product` when users feel it, never the reverse (the store clamps product-lens cards). Wording only, fingerprints unchanged. Not measured yet.

@@ -1,6 +1,6 @@
 # Doc drift - worked example cards
 
-The cards the `doc-drift` pack (`lenses/doc-drift.md`, 0.3.1) points to. They are spread over
+The cards the `doc-drift` pack (`lenses/doc-drift.md`, 0.3.2) points to. They are spread over
 several lines here, one field per line, so each line stays readable; in
 `<work>/doc-drift.jsonl` every card is **one line** (`JSON.stringify` of the object). Each one
 passes `propose`'s validation and is scored by the store.
@@ -29,7 +29,7 @@ carries the "doc says / code does" table, and its prediction quotes the closest 
   "risk": 2,
   "predicted_verdict": "accept",
   "predicted_why": "No similar decision in near or outcomes. A sure tier-1 drift with both sides quoted and the removal commit found; nothing suggests the team would turn it down.",
-  "provenance": {"lens_version":"0.3.1","model":"<model id>","harness":"claude-code"}
+  "provenance": {"lens_version":"0.3.2","model":"<model id>","harness":"claude-code"}
 }
 ```
 
@@ -54,6 +54,6 @@ carries the "doc says / code does" table, and its prediction quotes the closest 
   "predicted_verdict": "accept",
   "predicted_why": "Closest precedent \"Configuration guide states the wrong request timeout\" (5d0c2a7e91b3f468) accepted: a wrong default in the same guide was taken as a doc fix.",
   "artifacts": [{"kind":"table","message":"The guide and the admin page say 50 MB; the code enforces 10 MB","alt":"Table of three places that state the MAX_UPLOAD_MB default: the configuration guide says 50 MB, Confluence page 48213 says 50 MB, src/config/limits.ts sets 10 MB since commit 91d0a7e.","refs":["docs/configuration.md:44","48213","src/config/limits.ts:7","91d0a7e"],"data":{"columns":["Side","Place","Says"],"rows":[["doc","docs/configuration.md:44","50 MB default"],["page","Admin guide (48213)","50 MB default"],["code","src/config/limits.ts:7","10 MB default"],["git","91d0a7e","lowered to 10 MB"]],"highlight":[0,1]}}],
-  "provenance": {"lens_version":"0.3.1","model":"<model id>","harness":"claude-code"}
+  "provenance": {"lens_version":"0.3.2","model":"<model id>","harness":"claude-code"}
 }
 ```

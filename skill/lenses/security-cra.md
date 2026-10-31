@@ -1,6 +1,6 @@
 ---
 id: security-cra
-version: 0.3.1
+version: 0.3.2
 name: Security and CRA
 kinds: [vulnerable-dependency, risky-pattern, secret-exposure, vulnerability-handling-gap, sbom-gap, update-mechanism-gap]
 sources: [code, docs, git, deps, sarif]
@@ -142,7 +142,7 @@ line ("critical advisory, E3: the upload route decodes with it"):
 
 `risk` is the risk of making the change, not the severity: a patch bump with tests is 2, a
 minor bump or a new release step 5, a major bump or a changed auth flow 8. Omit it and the store
-reads `delivery_risk.blast`. `category` is `technical` (the default for this lens). Every card
+reads `delivery_risk.blast`. `category` is `technical` (the default for this lens); set `product` when the fix changes what users get (a consent or account flow). Every card
 carries your `predicted_verdict` (`accept`, `reject` or `defer`) and a `predicted_why`, after
 reading `context`'s `near` (reasons, notes) and `outcomes` (notes). With a precedent, quote it
 ("SEC-12 already tracks it: rejected as already-known"); without one, give your own reason.

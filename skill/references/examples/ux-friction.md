@@ -1,6 +1,6 @@
 # UX friction and wellbeing - worked example cards
 
-The cards the `ux-friction` pack (`lenses/ux-friction.md`, 0.3.1) points to. They are spread
+The cards the `ux-friction` pack (`lenses/ux-friction.md`, 0.3.2) points to. They are spread
 over several lines here, one field per line, so each line stays readable; in
 `<work>/ux-friction.jsonl` every card is **one line** (`JSON.stringify` of the object). Each one
 passes `propose`'s validation and is scored by the store.
@@ -30,7 +30,7 @@ sits in the band of its `blast` (`references/cards.md` "Delivery risk").
   "predicted_verdict": "accept",
   "predicted_why": "Closest precedent \"Let people retry a failed address lookup in checkout\" (c2e8a51f7d94b036) accepted: a retry card on this screen was kept.",
   "artifacts": [{"kind":"flow","message":"A decline clears the form and offers no next step","alt":"Flow of four checkout steps: enter address and card, submit, card declined, form cleared with a generic message. The last step is marked as the failure.","refs":["src/checkout/PaymentStep.tsx:88","src/checkout/messages.ts:14"],"data":{"steps":[{"label":"Enter address and card"},{"label":"Submit payment"},{"label":"Card declined"},{"label":"Form cleared, generic message","mark":"failure"}]}}],
-  "provenance": {"lens_version":"0.3.1","model":"<model id>","harness":"codex"}
+  "provenance": {"lens_version":"0.3.2","model":"<model id>","harness":"codex"}
 }
 ```
 
@@ -54,7 +54,7 @@ sits in the band of its `blast` (`references/cards.md` "Delivery risk").
   "predicted_verdict": "defer",
   "predicted_why": "No similar decision in near or outcomes. Shortening the exit trades against retention numbers; the team weighs that, not the evidence.",
   "artifacts": [{"kind":"before-after","message":"Cancelling drops from 4 steps to 1, with no pre-ticked offer","alt":"Before and after of the steps to cancel a subscription. Before: reason survey, discount offer, pause offer pre-ticked, confirm. After: one confirm page with an optional offer. Signup is one step.","refs":["src/account/CancelFlow.tsx:31","src/account/CancelFlow.tsx:64","src/account/SignupFlow.tsx:20"],"data":{"measure":"steps to cancel","before":["Reason survey","Discount offer","Pause offer, pre-ticked","Confirm"],"after":["Confirm, optional un-ticked offer"]}}],
-  "provenance": {"lens_version":"0.3.1","model":"<model id>","harness":"codex"}
+  "provenance": {"lens_version":"0.3.2","model":"<model id>","harness":"codex"}
 }
 ```
 
@@ -78,7 +78,7 @@ sits in the band of its `blast` (`references/cards.md` "Delivery risk").
   "predicted_verdict": "accept",
   "predicted_why": "No similar decision in near or outcomes. A control that blocks payment for keyboard users, fixed in markup, is rarely turned down.",
   "artifacts": [{"kind":"table","message":"The pay control cannot be reached by keyboard; the postcode input has no label","alt":"Table of two accessibility failures in checkout. Postcode input without a label fails 1.3.1 and 4.1.2. Pay control as a div with a click handler fails 2.1.1.","refs":["src/checkout/AddressForm.tsx:42","src/checkout/PaymentStep.tsx:120"],"data":{"columns":["Criterion","Site","Fails because"],"rows":[["1.3.1, 4.1.2","AddressForm.tsx:42","placeholder, no label"],["2.1.1","PaymentStep.tsx:120","div with onClick, not focusable"]],"highlight":[1]}}],
-  "provenance": {"lens_version":"0.3.1","model":"<model id>","harness":"codex"}
+  "provenance": {"lens_version":"0.3.2","model":"<model id>","harness":"codex"}
 }
 ```
 
@@ -101,6 +101,6 @@ sits in the band of its `blast` (`references/cards.md` "Delivery risk").
   "risk": 2,
   "predicted_verdict": "reject",
   "predicted_why": "Closest precedent \"Rename the Archive button to match what it does\" (9f4d16e2b07ac853) rejected as not-worth-it: one-label copy fixes were turned down.",
-  "provenance": {"lens_version":"0.3.1","model":"<model id>","harness":"codex"}
+  "provenance": {"lens_version":"0.3.2","model":"<model id>","harness":"codex"}
 }
 ```

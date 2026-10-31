@@ -3,7 +3,8 @@
 ## Reporting a vulnerability
 
 Report security problems privately through GitHub: open the repository's **Security** tab and choose
-**Report a vulnerability**. Do not open a public issue for a security problem.
+**Report a vulnerability** (private vulnerability reporting is enabled on the repository). Do not open a
+public issue for a security problem.
 
 Please include what is affected (the skill, its scripts, or the Dowser for Jira Forge app), the version or
 commit, and the steps that show the problem. We acknowledge a report within 5 working days and tell you what
@@ -14,8 +15,9 @@ we will do about it.
 Dowser is pre-release (0.x). A release is a `vMAJOR.MINOR.PATCH` git tag; its version is the `version:` of
 `skill/SKILL.md`, and the root `package.json` carries the same number. Security fixes land on `master` and
 ship in the next release; only the newest release receives them, so an older 0.x install is fixed by
-updating. Until the first release is tagged, only the latest commit on `master` receives security fixes. A
-support period for 1.x will be stated here before 1.0 is tagged.
+updating. The first release is `v0.2.0`; each release is published on the repository's GitHub Releases page
+with its bill of materials attached (below). A support period for 1.x will be stated here before 1.0 is
+tagged.
 
 ## Keeping an installed copy up to date
 
@@ -46,6 +48,20 @@ only, and refuses a lockfile with uncommitted changes. The files are named
 `dowser-<skill|forge|forge-ui>-v<version>.cdx.json` and are attached to the release. When npm reports a
 dependency tree problem (a peer range the installed version does not meet), the SBOM is still written and
 the problem is listed in the tool's output.
+
+### Cutting a release
+
+The SBOM is part of the release step, not a follow-up. From a clean checkout of the commit to release, with
+`version:` in `skill/SKILL.md` and `package.json` both set to `X.Y.Z`:
+
+```
+git tag vX.Y.Z && git push origin vX.Y.Z
+npm run sbom                      # prints {release, out, files}; out defaults to <OS temp>/dowser-sbom-vX.Y.Z
+gh release create vX.Y.Z --title "Dowser X.Y.Z" --notes "<what changed>" <out>/*.cdx.json
+```
+
+`gh release view vX.Y.Z` then lists the three `.cdx.json` files. A tag without a published release carrying
+them is an unfinished release. `v0.2.0` was published this way.
 
 ## What Dowser handles
 

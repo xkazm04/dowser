@@ -1,6 +1,6 @@
 ---
 id: doc-drift
-version: 0.3.1
+version: 0.3.2
 name: Doc drift
 kinds: [contradicted-by-code, removed-still-documented, undocumented-change, stale-example, missing-doc]
 sources: [code, docs, git, pages]
@@ -144,7 +144,7 @@ one line ("first-run: step 3 fails with an unknown flag"):
 Certainty sets `confidence`, not impact: `sure` is medium or high, `likely` is low. `risk` is the
 risk of making the change (a doc edit 2; a doc edit that needs a code or release change 5);
 omit it and the store reads `delivery_risk.blast`. `category` is `technical` (the default for
-this lens). Every card carries your `predicted_verdict` (`accept`, `reject` or `defer`) and a
+this lens); set `product` when the drift misleads users about what the product does (a technical card may move to product, never the reverse). Every card carries your `predicted_verdict` (`accept`, `reject` or `defer`) and a
 `predicted_why`, after reading `context`'s `near` (reasons, notes) and `outcomes` (notes). With
 a precedent, quote it ("typo-level fixes were rejected as not-worth-it"); without one, give
 your own reason (`references/cards.md`).

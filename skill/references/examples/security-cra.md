@@ -1,6 +1,6 @@
 # Security and CRA - worked example cards
 
-The cards the `security-cra` pack (`lenses/security-cra.md`, 0.3.1) points to. They are spread
+The cards the `security-cra` pack (`lenses/security-cra.md`, 0.3.2) points to. They are spread
 over several lines here, one field per line, so each line stays readable; in
 `<work>/security-cra.jsonl` every card is **one line** (`JSON.stringify` of the object). Each
 one passes `propose`'s validation and is scored by the store.
@@ -30,7 +30,7 @@ store reads its `blast` `high` as 8. The H3 quote stops before the value, as gat
   "predicted_verdict": "accept",
   "predicted_why": "No similar decision in near or outcomes. A high advisory on an unauthenticated upload path with a fixed version available is rarely turned down.",
   "artifacts": [{"kind":"table","message":"One parser bump clears both advisories on the invoice upload path","alt":"Table of 2 dependency advisories: fast-xml-kit 3.2.1 high and xml-entities 1.0.4 moderate, both runtime, both reached from invoice upload.","refs":["package-lock.json#fast-xml-kit@3.2.1","package-lock.json#xml-entities@1.0.4"],"data":{"columns":["Package","Advisory","Severity","Fixed in","Scope","Reached from"],"rows":[["fast-xml-kit 3.2.1","GHSA-4x5v-9q2m-hw3c","high","3.4.0","runtime","invoice upload"],["xml-entities 1.0.4","GHSA-7c2f-pp8r-jm5w","moderate","1.0.6","runtime via fast-xml-kit","invoice upload"]],"highlight":[0,1]}}],
-  "provenance": {"lens_version":"0.3.1","model":"<model id>","harness":"claude-code"}
+  "provenance": {"lens_version":"0.3.2","model":"<model id>","harness":"claude-code"}
 }
 ```
 
@@ -55,7 +55,7 @@ store reads its `blast` `high` as 8. The H3 quote stops before the value, as gat
   "predicted_verdict": "defer",
   "predicted_why": "Closest precedent \"Add an SBOM step to the release workflow\" (7be2c9d04f1a3e65) snoozed: CRA items waited for the compliance owner.",
   "artifacts": [{"kind":"matrix","message":"Two of four practices are missing, and disclosure is the one tied to reporting from 2026","alt":"Matrix of 4 CRA-related practices by status, where found and date: disclosure missing (2026-09-11), SBOM missing (2027-12-11), versioned releases in place, dependency updates in place.","refs":["README.md:9",".github/workflows/release.yml:3",".github/dependabot.yml:1"],"data":{"rows":["Vulnerability disclosure","SBOM for releases","Security update path","Dependency updates"],"columns":["Status","Found","Applies from"],"cells":[[{"v":"missing","level":3},{"v":"no SECURITY.md or security.txt"},{"v":"reporting 2026-09-11"}],[{"v":"missing","level":3},{"v":"no sbom step in .github"},{"v":"2027-12-11"}],[{"v":"in place","level":0},{"v":"release.yml tag trigger"},{"v":"2027-12-11"}],[{"v":"in place","level":0},{"v":"dependabot.yml"},{"v":"2027-12-11"}]]}}],
-  "provenance": {"lens_version":"0.3.1","model":"<model id>","harness":"claude-code"}
+  "provenance": {"lens_version":"0.3.2","model":"<model id>","harness":"claude-code"}
 }
 ```
 
@@ -79,7 +79,7 @@ store reads its `blast` `high` as 8. The H3 quote stops before the value, as gat
   "predicted_verdict": "accept",
   "predicted_why": "No similar decision in near or outcomes. An injectable query on a public URL with a one-query fix is the kind of card a team takes.",
   "artifacts": [{"kind":"flow","message":"The URL parameter reaches string-built SQL in three hops with no check","alt":"Flow of 3 steps: report route reads the customer parameter, buildReport passes it on, ordersFor concatenates it into SQL (marked failure).","refs":["src/routes/reports.ts:14","src/reports/build.ts:8","src/reports/query.ts:31"],"data":{"steps":[{"label":"GET /reports reads customer"},{"label":"buildReport passes it on"},{"label":"ordersFor concatenates SQL","mark":"failure"}]}}],
-  "provenance": {"lens_version":"0.3.1","model":"<model id>","harness":"claude-code"}
+  "provenance": {"lens_version":"0.3.2","model":"<model id>","harness":"claude-code"}
 }
 ```
 
@@ -101,6 +101,6 @@ store reads its `blast` `high` as 8. The H3 quote stops before the value, as gat
   "impact_why": "Rank 1: a live-format payment key in a deployed config file.",
   "predicted_verdict": "accept",
   "predicted_why": "Closest precedent \"Rotate the mail API key committed in staging config\" (0e93b7a6c15d2f84) accepted: committed live keys were rotated.",
-  "provenance": {"lens_version":"0.3.1","model":"<model id>","harness":"claude-code"}
+  "provenance": {"lens_version":"0.3.2","model":"<model id>","harness":"claude-code"}
 }
 ```

@@ -1,6 +1,6 @@
 # Opportunity - worked example cards
 
-The cards the `opportunity` pack (`lenses/opportunity.md`, 0.3.1) points to. They are spread over
+The cards the `opportunity` pack (`lenses/opportunity.md`, 0.3.2) points to. They are spread over
 several lines here, one field per line, so each line stays readable; in
 `<work>/opportunity.jsonl` every card is **one line** (`JSON.stringify` of the object). Each one
 passes `propose`'s validation and is scored by the store.
@@ -31,7 +31,7 @@ card sets `risk` 5 for a new public route, so its `blast` is `medium` to match; 
   "predicted_verdict": "accept",
   "predicted_why": "Closest precedent \"Export for invoices that already have a PDF writer\" (a41f07c3d2e95b18) accepted: exposing an existing writer was taken when demand was strong.",
   "artifacts": [{"kind":"table","message":"7 of 12 export asks in 90 days come from Reports, where a CSV writer exists","alt":"Table of export tickets created in the last 90 days, grouped by Jira component: Reports 7, Billing 3, label export without a component 2, all 12. The code has a CSV writer, toCsv, and no route that calls it.","refs":["SUP-118","SUP-131","SUP-140","SUP-152","src/export/csv.ts:41"],"data":{"columns":["Component or label","Tickets (90 days)","Cited","Code today"],"rows":[["Reports","7","SUP-118, SUP-131, SUP-140","toCsv, no route"],["Billing","3","SUP-152","toCsv, no route"],["label: export","2","none","toCsv, no route"],["All","12","4","1 writer, 0 routes"]],"highlight":[0]}}],
-  "provenance": {"lens_version":"0.3.1","model":"<model id>","harness":"claude-code"}
+  "provenance": {"lens_version":"0.3.2","model":"<model id>","harness":"claude-code"}
 }
 ```
 
@@ -54,7 +54,7 @@ card sets `risk` 5 for a new public route, so its `blast` is `medium` to match; 
   "predicted_verdict": "defer",
   "predicted_why": "No similar decision in near or outcomes. The goal is active, but which outcome to serve first is a product call the evidence cannot make.",
   "artifacts": [{"kind":"matrix","message":"None of goal G-4's three outcomes has code, a flag or a commit in 90 days","alt":"Matrix of goal G-4's three outcomes against three signals: code path, feature flag and commits in the last 90 days. Onboarding checklist and trial-end reminder show none for all three. Weekly usage digest has a TODO stub in code, no flag and no commits.","refs":["G-4","src/notify/digest.ts:3"],"data":{"rows":["Onboarding checklist","Trial-end reminder","Weekly usage digest"],"columns":["Code path","Flag","Commits 90d"],"cells":[[{"v":"none","level":0},{"v":"none","level":0},{"v":"none","level":0}],[{"v":"none","level":0},{"v":"none","level":0},{"v":"none","level":0}],[{"v":"TODO stub","level":1},{"v":"none","level":0},{"v":"none","level":0}]]}}],
-  "provenance": {"lens_version":"0.3.1","model":"<model id>","harness":"claude-code"}
+  "provenance": {"lens_version":"0.3.2","model":"<model id>","harness":"claude-code"}
 }
 ```
 
@@ -77,6 +77,6 @@ card sets `risk` 5 for a new public route, so its `blast` is `medium` to match; 
   "risk": 2,
   "predicted_verdict": "accept",
   "predicted_why": "No similar decision in near or outcomes. The mechanism exists and the demand is measured; a small admin shortcut is the kind of card teams keep.",
-  "provenance": {"lens_version":"0.3.1","model":"<model id>","harness":"claude-code"}
+  "provenance": {"lens_version":"0.3.2","model":"<model id>","harness":"claude-code"}
 }
 ```

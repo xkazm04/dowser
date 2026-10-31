@@ -12,6 +12,7 @@ import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { candidate, gitRepo, listFiles, removeDir, tempDir } from './_fixture.mjs';
+import { callTool as mockTool, emptyBackend } from '../../../tools/mock-forge-mcp.mjs';
 
 const CLI = fileURLToPath(new URL('../dowser.mjs', import.meta.url));
 const SERVER = fileURLToPath(new URL('../../../tools/local-forge.mjs', import.meta.url));
@@ -383,4 +384,54 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
   assert.deepEqual([slice.level, slice.ceiling, slice.start], [0, 1, 1], 'a technical slice starts at L1 and a reversal took it to L0');
   assert.deepEqual(rd3.trust.events.filter((/** @type {any} */ e) => e.slice === SLICE).map((/** @type {any} */ e) => [e.from, e.to]), [[1, 0]]);
   assert.deepEqual(listFiles(repo), filesBefore, 'nothing written inside the repo');
+});
+
+test('kind-in-lens at the seam: outbox --kinds sends lens_kinds_json, the real core refuses a kind its lens lacks', async () => {
+  const projectKey = cli('init').out.project_key;
+  const run = cli('run', 'start', '--mode', 'full', '--harness', 'claude-code', '--model', 'm').out.run_id;
+  // A malformed card: proposed under a wider kind list than the pack the runner pushes with (a drifted fork or an
+  // edited pack). The well-formed card in the same push still lands.
+  writeFileSync(join(work, 'kinds.jsonl'), [
+    candidate({ lens: 'opportunity', kind: 'made-up', topic: 'kind check made up', anchors: ['src/export.js#made'], title: 'A card of a made-up kind', evidence: [EXPORT] }),
+    candidate({ lens: 'opportunity', kind: 'gap', topic: 'kind check fine', anchors: ['src/export.js#fine'], title: 'A card of a known kind', evidence: [EXPORT] }),
+  ].map((l) => JSON.stringify(l)).join('\n') + '\n');
+  const p = cli('propose', '--run', run, '--file', join(work, 'kinds.jsonl'), '--kinds', 'opportunity=gap,made-up');
+  assert.equal(p.code, 0, p.stdout + p.stderr);
+  const [fpBad, fpOk] = p.lines.filter((/** @type {any} */ l) => l.fp).map((/** @type {any} */ l) => l.fp);
+  assert.equal(cli('verify', '--run', run).code, 0);
+
+  const ob = cli('outbox', '--run', run, '--kinds', 'opportunity=gap', '--kinds', 'doc-drift=stale');
+  assert.equal(ob.code, 0, ob.stderr);
+  const sent = JSON.parse(ob.out.proposals_json).map((/** @type {any} */ r) => r.fp);
+  assert.ok(sent.includes(fpBad) && sent.includes(fpOk));
+  assert.deepEqual(JSON.parse(ob.out.lens_kinds_json), { opportunity: ['gap'] }, 'only the lenses this push carries');
+  assert.equal(cli('outbox', '--run', run).out.lens_kinds_json, undefined, 'no --kinds: the key is omitted (absent = omitted)');
+
+  const pushed = await tool('dowser_proposals_push', ob.out);
+  /** @type {Record<string, any>} */
+  const by = Object.fromEntries(pushed.results.map((/** @type {any} */ r) => [r.fp, r]));
+  assert.equal(by[fpOk].result, 'created');
+  assert.deepEqual([by[fpBad].result, by[fpBad].why], ['refused', 'kind "made-up" is not one of opportunity\'s kinds (gap)']);
+  const ip = cli('ingest-push', '--file', save('push-kinds.json', pushed));
+  assert.deepEqual(ip.out.results.filter((/** @type {any} */ r) => r.fp === fpBad).map((/** @type {any} */ r) => [r.outcome, r.status]), [['refused', 'verified']],
+    'the refused card stays verified locally, reported with the refusal');
+  const inbox = (await invoke('inbox.list', { project_key: projectKey })).groups.flatMap((/** @type {any} */ g) => g.items).map((/** @type {any} */ i) => i.fp);
+  assert.ok(inbox.includes(fpOk) && !inbox.includes(fpBad), 'the inbox holds only kinds its lens defines');
+
+  // any MCP client: a hand-made push with a lens the kinds do not declare, and a malformed lens_kinds_json
+  const rec = JSON.parse(ob.out.proposals_json).find((/** @type {any} */ r) => r.fp === fpBad);
+  const other = await tool('dowser_proposals_push', { project_key: projectKey, run_id: run, proposals_json: JSON.stringify([rec]), lens_kinds_json: JSON.stringify({ 'doc-drift': ['stale'] }) });
+  assert.deepEqual([other.results[0].result, other.results[0].why], ['refused', 'the push declares no kinds for lens opportunity (lens_kinds_json)']);
+  const bad = await rpc('tools/call', { name: 'dowser_proposals_push', arguments: { project_key: projectKey, run_id: run, proposals_json: '[]', lens_kinds_json: '{"opportunity": []}' } });
+  assert.equal(bad.result.isError, true);
+  assert.match(bad.result.content[0].text, /bad-input.*lens_kinds_json|lens_kinds_json.*bad-input/s);
+
+  // the test double answers as the real core does: same results, same refusal wording, same bad-input
+  const b = emptyBackend();
+  const mock = mockTool(b, 'dowser_proposals_push', ob.out);
+  assert.deepEqual(mock.results.map((/** @type {any} */ r) => [r.fp, r.result, r.why]), pushed.results.map((/** @type {any} */ r) => [r.fp, r.result, r.why]));
+  assert.deepEqual(mockTool(b, 'dowser_proposals_push', { project_key: projectKey, run_id: run, proposals_json: JSON.stringify([rec]), lens_kinds_json: JSON.stringify({ 'doc-drift': ['stale'] }) }).results[0].why,
+    other.results[0].why);
+  assert.throws(() => mockTool(b, 'dowser_proposals_push', { project_key: projectKey, run_id: run, proposals_json: '[]', lens_kinds_json: '{"opportunity": []}' }),
+    (/** @type {any} */ e) => e.code === 'bad-input' && /lens_kinds_json/.test(e.message));
 });

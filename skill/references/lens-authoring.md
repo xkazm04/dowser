@@ -141,13 +141,12 @@ number and not an impression.
   tokens.
 - **The numbers.** A card counts for the one expected item its anchors land on most strongly.
   The headline is `recall_at_budget`: seeded items found over the smaller of the seeded count
-  and the pack's budget. It counts **every card that survived `verify`, reserve included**
-  (`tools/lens-eval.mjs` passes all survivors, with no band filter). Since packs write every
-  candidate and the store files the extras in `reserve`, a 1 means the lens found that many
-  seeded items somewhere in its cards, not that its 4 ranked cards were the right ones: a lens
-  can reach 1 through reserve cards while its ranked band is weak. Until the tool scores the
-  ranked band on its own, check the ranked cards by hand (`show <fp>` gives each card's `band`), and
-  read the number with
+  and the pack's budget (capped at 1), counted over the cards the store **ranked**
+  (`band: ranked`; the row says `budget_scope: ranked`). Packs write every candidate and the store
+  files the extras in `reserve`, so a seeded item found only in reserve does not count here; it
+  is listed under `reserve_hits` and still counts in `recall`. Rows without `budget_scope`
+  (written before 2026-10-31) counted every survivor, reserve included: do not compare them with ranked-band
+  rows. Read the number with
   `priority1_found` of `priority1_total` (a lens that fills its budget with minor findings
   scores well on recall and badly here) and `focus_found` of `focus_total` (whether the team's
   focus moved the choice). `recall` is seeded items found over all seeded items; with more

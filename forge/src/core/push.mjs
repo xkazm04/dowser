@@ -2,6 +2,7 @@
 // `dowser_proposals_push` (forge-mcp-2): validate every record, file it in the project's inbox idempotently on
 // (project_key, fp), unite evidence by evidence key, reopen snoozed/rejected items on growth (F3), and record
 // the push. Reuses the shared skill modules: `validateCandidate`, `fingerprint`, `resurfaces`, STORE_OWNED.
+// The optional `lens_kinds_json` carries the pusher's lens kind lists; with it, a kind its lens lacks is refused.
 import { fingerprint } from '../shared/fingerprint.mjs';
 import { STORE_OWNED, resurfaces, validateCandidate } from '../shared/model.mjs';
 import { PUSH_MAX } from './types.mjs';
@@ -59,12 +60,49 @@ export function parseJsonArray(args, key, max) {
   return v;
 }
 
+/** `lens_kinds_json` caps: lenses, kinds per lens, chars per lens or kind name, bytes of the whole string. */
+export const LENS_KINDS_MAX = { lenses: 16, kinds: 50, name: 64, bytes: 64 * 1024 };
+
+/**
+ * Parses the optional `lens_kinds_json` input: a JSON object `{<lens>: [<kind>, ...]}`, the closed kind lists of
+ * the pusher's lens packs (the skill's `outbox --kinds`). Absent or empty -> undefined (an older skill: kind
+ * membership is not checked). Any other shape is `bad-input` for the whole call.
+ * @param {Record<string, unknown>} args
+ * @returns {Record<string, string[]> | undefined}
+ */
+export function parseLensKinds(args) {
+  const raw = args.lens_kinds_json;
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const shape = 'lens_kinds_json must be a JSON object of lens -> non-empty array of kind names, as a string';
+  if (typeof raw !== 'string') throw new AppError('bad-input', shape);
+  if (Buffer.byteLength(raw, 'utf8') > LENS_KINDS_MAX.bytes) throw new AppError('bad-input', 'lens_kinds_json is larger than 64 KB');
+  /** @type {unknown} */
+  let v;
+  try { v = JSON.parse(raw); } catch (e) { throw new AppError('bad-input', `lens_kinds_json is not valid JSON (${/** @type {Error} */ (e).message})`); }
+  if (!isObj(v)) throw new AppError('bad-input', shape);
+  const entries = Object.entries(v);
+  if (entries.length === 0 || entries.length > LENS_KINDS_MAX.lenses) throw new AppError('bad-input', `lens_kinds_json declares 1-${LENS_KINDS_MAX.lenses} lenses`);
+  const name = (/** @type {unknown} */ s) => typeof s === 'string' && s.trim().length > 0 && s.length <= LENS_KINDS_MAX.name;
+  /** @type {Record<string, string[]>} */
+  const out = {};
+  for (const [lens, kinds] of entries) {
+    if (!name(lens) || !Array.isArray(kinds) || kinds.length === 0 || kinds.length > LENS_KINDS_MAX.kinds || !kinds.every(name)) {
+      throw new AppError('bad-input', `lens_kinds_json.${lens.slice(0, LENS_KINDS_MAX.name)}: ${LENS_KINDS_MAX.kinds} kind names at most, each 1-${LENS_KINDS_MAX.name} chars, at least one`);
+    }
+    out[lens] = /** @type {string[]} */ (kinds);
+  }
+  return out;
+}
+
 /**
  * Checks one pushed record. Returns the candidate (store-owned fields removed) or why it is refused.
+ * With `lensKinds` (the push's `lens_kinds_json`), the record's kind must be one of its lens's kinds, as the
+ * skill's `propose` requires locally; a lens the push declares no kinds for is refused too.
  * @param {unknown} raw
+ * @param {Record<string, string[]>} [lensKinds]
  * @returns {{ok: true, fp: string, record: Record<string, any>} | {ok: false, fp: string, why: string}}
  */
-export function checkRecord(raw) {
+export function checkRecord(raw, lensKinds) {
   const fpIn = isObj(raw) && typeof raw.fp === 'string' ? raw.fp : '';
   if (!isObj(raw)) return { ok: false, fp: fpIn, why: 'not a dowser-proposal/1 record (not an object)' };
   if (!PUSHABLE.includes(raw.status)) return { ok: false, fp: fpIn, why: `status must be verified or pushed, not ${JSON.stringify(raw.status)}` };
@@ -74,11 +112,17 @@ export function checkRecord(raw) {
   if (typeof cand.fp !== 'string' || !cand.fp) return { ok: false, fp: fpIn, why: 'fp is required' };
   const v = validateCandidate(cand, { wire: true });
   if (!v.ok) return { ok: false, fp: fpIn, why: `invalid record: ${v.why}` };
-  // The lens's closed kind list lives in the skill's lens packs, not here; recompute with the record's own kind.
-  // That checks the identity hash (lens|kind|topic|anchors) without re-checking kind membership.
+  // The lens's closed kind list lives in the skill's lens packs, not here: the push carries it (`lens_kinds_json`),
+  // and the fingerprint then checks kind membership as the skill does. A push without it (an older skill) is
+  // recomputed with the record's own kind: the identity hash (lens|kind|topic|anchors) without membership.
+  if (lensKinds && !Object.hasOwn(lensKinds, cand.lens)) {
+    return { ok: false, fp: fpIn, why: `the push declares no kinds for lens ${String(cand.lens)} (lens_kinds_json)` };
+  }
+  const kinds = lensKinds ? lensKinds[cand.lens] : [cand.kind];
+  if (!kinds.includes(cand.kind)) return { ok: false, fp: fpIn, why: `kind ${JSON.stringify(cand.kind)} is not one of ${cand.lens}'s kinds (${kinds.join(',')})` };
   /** @type {string} */
   let fp;
-  try { fp = fingerprint({ lens: cand.lens, kind: cand.kind, topic: cand.topic, anchors: cand.anchors }, [cand.kind]); } catch (e) {
+  try { fp = fingerprint({ lens: cand.lens, kind: cand.kind, topic: cand.topic, anchors: cand.anchors }, kinds); } catch (e) {
     return { ok: false, fp: fpIn, why: `fingerprint: ${/** @type {Error} */ (e).message}` };
   }
   if (fp !== cand.fp) return { ok: false, fp: fpIn, why: `fp ${cand.fp} does not match its identity (lens, kind, topic, anchors hash to ${fp})` };
@@ -121,6 +165,7 @@ export async function pushProposals(deps, args, accountId) {
   if (repoUrl && /\/\/[^/]*@/.test(repoUrl)) throw new AppError('bad-input', 'repo_url must not carry credentials');
   if (repoUrl && !webRepoUrl(repoUrl)) throw new AppError('bad-input', `repo_url must be an https:// (or http://) URL of at most ${REPO_URL_MAX} chars`);
   const records = parseJsonArray(args, 'proposals_json', PUSH_MAX);
+  const lensKinds = parseLensKinds(args);
   const at = deps.now().toISOString();
   await ensureInbox(db, projectKey, { repoUrl, at, by: deciderOf(accountId) });
 
@@ -129,7 +174,7 @@ export async function pushProposals(deps, args, accountId) {
   let created = 0;
   let updated = 0;
   for (const raw of records) {
-    const c = checkRecord(raw);
+    const c = checkRecord(raw, lensKinds);
     if (!c.ok) { results.push({ fp: c.fp, result: 'refused', why: c.why }); continue; }
     const r = await fileOne(deps, { projectKey, runId, headSha, at, fp: c.fp, record: c.record });
     if (r.result === 'created') created++;

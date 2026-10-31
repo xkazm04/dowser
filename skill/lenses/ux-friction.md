@@ -1,6 +1,6 @@
 ---
 id: ux-friction
-version: 0.3.1
+version: 0.3.2
 name: UX friction and wellbeing
 kinds: [dead-end, unrecoverable-error, dark-pattern, accessibility-gap, missing-feedback, confusing-copy]
 sources: [code, docs, git, tickets]
@@ -137,7 +137,7 @@ Set `impact` (1-10) from the tier and the reach, with `impact_why` naming both i
 
 `risk` is the risk of making the change (copy or a message 2, a new step or state 5, a change to
 payment or consent flows 8); omit it and the store reads `delivery_risk.blast`. `category` is
-`product` (the default for this lens). Every card carries your `predicted_verdict` (`accept`,
+`product`, this lens's default, and stays so: the store clamps a `technical` label back to `product` (`clamped` on the propose line), so no UX card skips the person's gate. Every card carries your `predicted_verdict` (`accept`,
 `reject` or `defer`) and a `predicted_why`, after reading `context`'s `near` (reasons, notes) and
 `outcomes` (notes). With a precedent, quote it ("a retry card on this screen was accepted");
 without one, give your own reason (`references/cards.md`).

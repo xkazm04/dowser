@@ -17,10 +17,12 @@
 // like a decoy hit. It is out of scope, so it is not counted in `seeded`. One marked `focus_by_direction` is the
 // one the direction's focus should pull into the budget.
 //
-// Numbers. recall = found / seeded; recall_at_budget = found / min(seeded, budget), so a lens that proposes at most
-// `budget` cards can reach 1 on a fixture that seeds more findings than that - it is judged on choosing well;
-// priority1_found / priority1_total counts the seeded items of `priority: 1` (the ones a good choice never leaves
-// out). precision = matched / emitted, where an emission assigned to no expected item counts against precision as
+// Numbers. recall = found / seeded over every survivor; recall_at_budget = found / min(seeded, budget), capped at 1,
+// so a lens that proposes at most `budget` cards can reach 1 on a fixture that seeds more findings than that - it is
+// judged on choosing well; priority1_found / priority1_total counts the seeded items of `priority: 1` (the ones a
+// good choice never leaves out). When the emission carries the store's `band`, recall_at_budget, priority1_found and
+// focus_found count only `band: ranked` cards (`budget_scope: ranked`; `all` without bands), and a seeded item found
+// only in reserve is listed under `reserve_hits`. precision = matched / emitted, where an emission assigned to no expected item counts against precision as
 // unverified and is listed under `unmatched` for the hand check; one assigned to a decoy is a decoy hit, one
 // assigned to an excluded item a direction violation. Absent, never 0: `recall` when nothing is seeded,
 // `recall_at_budget` also when no budget was given, `priority1_*` and `focus_*` when the fixture has none,
@@ -33,7 +35,7 @@ import { normalizeAnchor } from './fingerprint.mjs';
  *   must?: true, decoy?: true, priority?: 1 | 2 | 3, excluded_by_direction?: true, focus_by_direction?: true,
  *   why: string}} Expected
  * @typedef {{lens: string, kind?: string, title?: string, anchors?: string[], evidence?: {ref: string}[],
- *   artifacts?: unknown}} Emitted
+ *   artifacts?: unknown, band?: string}} Emitted
  * @typedef {{
  *   lens: string, seeded: number, found: number, recall?: number, budget?: number, recall_at_budget?: number,
  *   priority1_found?: number, priority1_total?: number, focus_found?: number, focus_total?: number,
@@ -41,7 +43,7 @@ import { normalizeAnchor } from './fingerprint.mjs';
  *   emitted: number, matched: number, precision?: number, decoy_hits: number, direction_violations: number,
  *   artifacts_total: number, artifacts_valid: number, verify_dropped?: number,
  *   missed?: string[], path_only?: string[], decoys?: string[], violations?: string[], unmatched?: string[],
- *   artifact_problems?: string[]
+ *   artifact_problems?: string[], reserve_hits?: string[], budget_scope?: 'ranked' | 'all'
  * }} Score
  */
 
@@ -92,6 +94,21 @@ export function expectedFor(expected, lens) {
   return /** @type {Expected[]} */ (list).filter((e) => e && e.lens === lens);
 }
 
+/**
+ * The eval loop's emission from `show` outputs (tools/lens-eval.mjs): every card verify kept (not `dropped`, not
+ * `merged`), with its `band` when the store allocated one, and the count verify dropped.
+ * @param {any[]} shown  `dowser.mjs show <fp>` outputs ({card, evidence})
+ * @returns {{emitted: Emitted[], dropped: number}}
+ */
+export function emittedOf(shown) {
+  const survivors = shown.filter((s) => !['dropped', 'merged'].includes(s.card.status));
+  return {
+    dropped: shown.filter((s) => s.card.status === 'dropped').length,
+    emitted: survivors.map((s) => ({ lens: s.card.lens, kind: s.card.kind, title: s.card.title, anchors: s.card.anchors, evidence: s.evidence,
+      ...(s.card.artifacts !== undefined ? { artifacts: s.card.artifacts } : {}), ...(s.card.band !== undefined ? { band: s.card.band } : {}) })),
+  };
+}
+
 /** Lexicographic comparison of two equal-length number tuples. @param {number[]} a @param {number[]} b */
 const cmp = (a, b) => {
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i];
@@ -132,6 +149,10 @@ export function scoreLens({ expected, emitted, lens, verify_dropped, budget }) {
 
   /** @type {Map<string, {exact: boolean, kind: boolean}>} */
   const hits = new Map();
+  // the store's band: when the emission carries one, the budget numbers count only the ranked cards
+  const banded = mine.some((c) => c.band !== undefined);
+  /** @type {Set<string>} */
+  const rankedHits = new Set();
   /** @type {Set<string>} */
   const decoyHit = new Set();
   /** @type {Set<string>} */
@@ -154,6 +175,7 @@ export function scoreLens({ expected, emitted, lens, verify_dropped, budget }) {
       matched++;
       const prev = hits.get(a.item.id) ?? { exact: false, kind: false };
       hits.set(a.item.id, { exact: prev.exact || a.exact, kind: prev.kind || (a.item.kind !== undefined && c.kind === a.item.kind) });
+      if (!banded || c.band === 'ranked') rankedHits.add(a.item.id);
     }
     // Artifacts: a list-level problem (not an array, over the per-card cap) voids every artifact on the card;
     // otherwise each artifact is judged alone against the card's own evidence refs.
@@ -187,11 +209,17 @@ export function scoreLens({ expected, emitted, lens, verify_dropped, budget }) {
   };
   if (seeded.length) out.recall = ratio(hits.size, seeded.length);
   if (budget !== undefined) out.budget = budget;
-  if (budget !== undefined && budget > 0 && seeded.length) out.recall_at_budget = ratio(hits.size, Math.min(seeded.length, budget));
+  if (budget !== undefined && budget > 0 && seeded.length) {
+    // capped at 1: free run slots can rank a lens past its budget
+    out.recall_at_budget = Math.min(1, ratio(rankedHits.size, Math.min(seeded.length, budget)));
+    out.budget_scope = banded ? 'ranked' : 'all';
+  }
   const p1 = seeded.filter((s) => s.priority === 1);
-  if (p1.length) { out.priority1_found = p1.filter((s) => hits.has(s.id)).length; out.priority1_total = p1.length; }
+  if (p1.length) { out.priority1_found = p1.filter((s) => rankedHits.has(s.id)).length; out.priority1_total = p1.length; }
   const focus = seeded.filter((s) => s.focus_by_direction);
-  if (focus.length) { out.focus_found = focus.filter((s) => hits.has(s.id)).length; out.focus_total = focus.length; }
+  if (focus.length) { out.focus_found = focus.filter((s) => rankedHits.has(s.id)).length; out.focus_total = focus.length; }
+  const reserveOnly = [...hits.keys()].filter((id) => !rankedHits.has(id));
+  if (reserveOnly.length) out.reserve_hits = reserveOnly;
   if (mine.length) out.precision = ratio(matched, mine.length);
   if (verify_dropped !== undefined) out.verify_dropped = verify_dropped;
   const missed = seeded.filter((s) => !hits.has(s.id)).map((s) => s.id);

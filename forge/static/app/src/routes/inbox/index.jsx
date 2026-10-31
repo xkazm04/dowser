@@ -144,7 +144,8 @@ export default function Inbox({ context }) {
 
       {load.status === 'loading' && <LoadingBody wide={wide} />}
       {load.status === 'error' && <div className="dwr-state"><ErrorState what="The inbox" error={load.error} onRetry={data.reload} /></div>}
-      {ready && !hasRows && !next && <div className="dwr-state"><EmptyState status={data.status} lens={data.lens} lastPush={data.lastPush} tally={tally} /></div>}
+      {ready && !hasRows && !next && <div className="dwr-state"><EmptyState status={data.status} lens={data.lens} lastPush={data.lastPush} tally={tally}
+        area={data.projectKey ? data.area : ''} onClearArea={() => data.setArea('')} pretriaged={data.pretriaged} onClearPretriaged={() => data.setPretriaged(false)} /></div>}
 
       {ready && (hasRows || next) && (
         <div className="dwr-body">

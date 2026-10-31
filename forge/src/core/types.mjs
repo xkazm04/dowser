@@ -57,7 +57,7 @@ export const PAGE_SIZE = 50;
  * @typedef {{query: string, space?: string}} PagesInput
  * @typedef {{ref: string, title: string, url: string, body: string, created_at?: string, updated_at?: string, labels?: string[], components?: string[], status?: string}} SourceItem
  * @typedef {{items: SourceItem[]}} SourcesOutput
- * @typedef {{project_key: string, run_id: string, proposals_json: string, repo_url?: string, head_sha?: string}} PushInput
+ * @typedef {{project_key: string, run_id: string, proposals_json: string, repo_url?: string, head_sha?: string, lens_kinds_json?: string}} PushInput
  * @typedef {{fp: string, result: PushResult, external_ref?: string, external_url?: string, why?: string}} PushResultRow
  * @typedef {{results: PushResultRow[]}} PushOutput
  * @typedef {{project_key: string, cursor?: string}} PullInput

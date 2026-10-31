@@ -111,6 +111,10 @@ token, `rules offer` drafts a rule, for example:
 > Do not propose ux-friction items about onboarding (rejected 3x as not-our-direction)
 
 - Present each new offer **once**, with its draft text and the titles it came from.
+- An offer the runner left unanswered on an earlier run is still `offered`: `rules offer` returns
+  it again under `earlier` (each marked `earlier: true`). Present those after the new offers, once
+  per run, with the same accept or decline choice. An unanswered offer is an open question, not a
+  no; only `rules decline` closes it.
 - The runner accepts (`rules accept <id> --by human:<name>`, optionally with
   `--text "<edited wording>"`) or declines (`rules decline <id> --by human:<name>`).
 - When Dowser for Jira is connected, an offered rule is also sent to Forge (`reflect export`,
@@ -143,14 +147,21 @@ Every card carries a `predicted_verdict` recorded at `propose`, before anyone se
 judge's own `accept`, `reject` or `defer`, with its reason in `predicted_why` (written from
 `context`'s `near` reasons and notes and the `outcomes` notes; required on every line,
 `references/cards.md`). The store keeps that verdict as given; a precedent, when one exists, is
-quoted in `predicted_why`, and the store appends it when the judge's text does not name it. No
+quoted in `predicted_why`. When the judge's text names no precedent at all (no fp, not the found
+one's title), the store appends the one it found: as `closest precedent` when its decision
+matches the verdict, as `counter-precedent` when it contradicts it. A precedent the judge named
+is kept as written. No
 precedent is no reason for `defer`: on a fresh store the judge still judges. A line without a
 verdict is flagged (`warning: no-predicted-verdict`) and falls back to the precedent's decision,
 else `defer`; re-propose it with the judge's verdict. Nothing acts on it at level 0: it is
 measured.
 
 Trust is kept per **slice** `<category>|<lens>|-|<size>` (`lib/trust.mjs`), from the person's
-decisions only (`human:` and `forge:` moves to accepted, rejected or snoozed):
+decisions only (`human:` and `forge:` moves to accepted, rejected or snoozed). A card's category
+is its lens pack's default (opportunity and ux-friction `product`, doc-drift and security-cra
+`technical`); the judge may move a card `technical` -> `product`, never `product` -> `technical`.
+`propose` stores a product lens's card as `product` whatever the line says and reports
+`clamped`, so a relabel never lands a product card in a technical slice that skips the person.
 
 - A `technical` slice starts at **L1** (the contract's L2 start capped by Dowser's ceiling: technical items default to automation); a `product` slice starts at **L0** and reaches **L1** when its predicted verdicts agreed with the
   person's on at least 90 % of its last 20 decisions (at least 20). Dowser's ceiling is L1:
@@ -168,8 +179,10 @@ decisions only (`human:` and `forge:` moves to accepted, rejected or snoozed):
 ## Exemplars
 
 The last 5 `accepted` items per lens, local or pulled from Jira, arrive in `context` as
-`exemplars`. Use them as the bar: match their evidence depth, their sizing honesty and their
-title style. Do not copy their topics, and do not propose variants of them. An accepted item is
+`exemplars` (with their fp). Every accepted item, up to 20 per lens, is also in `near` with its
+fp, topic and anchors, so a re-found accepted item reuses its topic and a prediction quotes it. Use them as the bar: match their evidence depth, their sizing honesty and their
+title style. Do not propose re-worded variants of them; the same work reuses the accepted item's
+`topic` and `anchors` from `near`. An accepted item is
 already decided.
 
 ## What the runner sees per card

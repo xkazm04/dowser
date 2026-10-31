@@ -50,7 +50,7 @@ export const CHURN_DAYS = 90;
 /**
  * @typedef {import('./store.mjs').Db} Db
  * @typedef {import('./store.mjs').Row} Row
- * @typedef {{project_key: string, run_id: string, proposals_json: string, repo_url?: string, head_sha?: string, more?: true}} OutboxArgs
+ * @typedef {{project_key: string, run_id: string, proposals_json: string, repo_url?: string, head_sha?: string, lens_kinds_json?: string, more?: true}} OutboxArgs
  */
 
 // ------------------------------------------------------------------------------------------------ sync_state
@@ -122,11 +122,13 @@ export function proposalRecord(db, fp) {
  * `quotes` is the runner's `quotes` preference, which the CLI reads and passes (default `send`): `omit` sends each
  * code/doc quote as `quote_sha` (its `quoteSha`) instead of the line.
  * The store is untouched either way; `verify` and ask-why keep the stored quotes.
+ * `lensKinds` (the CLI's `--kinds`, the lens packs' closed kind lists) is sent as `lens_kinds_json`, narrowed to
+ * the lenses of the records sent; Forge then refuses a record whose kind its lens lacks. Absent -> key omitted.
  * @param {Db} db
- * @param {{projectKey: string, runId: string, repoUrl?: string, limit?: number, quotes?: 'send' | 'omit'}} o
+ * @param {{projectKey: string, runId: string, repoUrl?: string, limit?: number, quotes?: 'send' | 'omit', lensKinds?: Record<string, string[]>}} o
  * @returns {OutboxArgs}
  */
-export function outbox(db, { projectKey, runId, repoUrl, limit = PUSH_MAX, quotes }) {
+export function outbox(db, { projectKey, runId, repoUrl, limit = PUSH_MAX, quotes, lensKinds }) {
   const run = store.getRun(db, runId);
   if (!run) throw new DowserError(`run ${runId} does not exist`, 2);
   const omit = quotes === 'omit';
@@ -149,9 +151,18 @@ export function outbox(db, { projectKey, runId, repoUrl, limit = PUSH_MAX, quote
       seqs[fp] = seq;
     }
     setState(db, 'outbox:last', JSON.stringify({ run_id: runId, at: store.now(), seqs }));
+    // Narrowed to the lenses sent. A sent lens --kinds does not name stays out, so Forge refuses its records and
+    // names the lens; when no sent lens is named, the whole map goes (Forge never gets an empty one).
+    /** @type {string | undefined} */
+    let kindsJson;
+    if (lensKinds && proposals.length) {
+      const named = [...new Set(proposals.map((p) => String(p.lens)))].filter((l) => Object.hasOwn(lensKinds, l));
+      kindsJson = JSON.stringify(named.length ? Object.fromEntries(named.map((l) => [l, lensKinds[l]])) : lensKinds);
+    }
     return /** @type {OutboxArgs} */ (store.clean({
       project_key: projectKey, run_id: runId, proposals_json: JSON.stringify(proposals),
-      repo_url: repoUrl, head_sha: typeof run.head_sha === 'string' ? run.head_sha : undefined, more: more || undefined,
+      repo_url: repoUrl, head_sha: typeof run.head_sha === 'string' ? run.head_sha : undefined, lens_kinds_json: kindsJson,
+      more: more || undefined,
     }));
   });
 }

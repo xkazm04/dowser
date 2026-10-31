@@ -33,7 +33,7 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LENSES, isOneOf } from '../skill/scripts/lib/model.mjs';
 import { dowserHome } from '../skill/scripts/lib/paths.mjs';
-import { scoreLens } from '../skill/scripts/lib/score.mjs';
+import { emittedOf, scoreLens } from '../skill/scripts/lib/score.mjs';
 import { callTool, seeded } from './mock-forge-mcp.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -282,7 +282,7 @@ try {
         `DOWSER_HOME=${q(w.home)}${o.lens === 'security-cra' ? ` PATH=${q(bin)}:$PATH` : ''} ${CLAUDE} ${args.map(q).join(' ')} > ${q(join(work, 'claude.json'))}`,
         `node ${q(CLI)} list --lens ${o.lens} --repo ${q(w.repo)}   (DOWSER_HOME=${q(w.home)}), then show <fp> for each`,
         `score the cards that survived verify against ${q(join(FIXTURE, '_expected.json'))} (skill/scripts/lib/score.mjs)`,
-        `append {ts, lens, lens_version, recall?, precision?, decoy_hits, artifacts_valid, artifacts_total, verify_dropped, n, budget?, recall_at_budget?, priority1_found?, priority1_total?, focus_found?, focus_total?, direction_violations} to ${q(o.evals)}`,
+        `append {ts, lens, lens_version, recall?, precision?, decoy_hits, artifacts_valid, artifacts_total, verify_dropped, n, budget?, recall_at_budget?, budget_scope?, priority1_found?, priority1_total?, focus_found?, focus_total?, reserve_hits?, direction_violations} to ${q(o.evals)}`,
       ],
       warnings: existsSync(userSkill) ? [`a user-scope dowser skill exists at ${userSkill}; the scan may load it instead of the project-scope copy`] : [],
       kept: o.keep,
@@ -301,10 +301,8 @@ try {
     } else {
       const { proposals } = cli(w, 'list', '--lens', o.lens);
       const shown = proposals.map((/** @type {{fp: string}} */ p) => cli(w, 'show', p.fp));
-      const survivors = shown.filter((/** @type {any} */ s) => !['dropped', 'merged'].includes(s.card.status));
-      const dropped = shown.filter((/** @type {any} */ s) => s.card.status === 'dropped').length;
-      const emitted = survivors.map((/** @type {any} */ s) => ({ lens: s.card.lens, kind: s.card.kind, title: s.card.title, anchors: s.card.anchors,
-        evidence: s.evidence, ...(s.card.artifacts !== undefined ? { artifacts: s.card.artifacts } : {}) }));
+      // survivors carry the store's band, so recall_at_budget measures the ranked cards (budget_scope: ranked)
+      const { emitted, dropped } = emittedOf(shown);
       const expected = JSON.parse(readFileSync(join(FIXTURE, '_expected.json'), 'utf8'));
       const score = scoreLens({ expected, emitted, lens: o.lens, verify_dropped: dropped, budget });
       /** @type {Record<string, unknown>} */
@@ -314,8 +312,8 @@ try {
       Object.assign(row, { decoy_hits: score.decoy_hits, artifacts_valid: score.artifacts_valid, artifacts_total: score.artifacts_total,
         verify_dropped: dropped, n: score.emitted });
       if (o.model) row.model = o.model;
-      // added with fixture_version 2; older rows simply lack them
-      for (const k of /** @type {const} */ (['budget', 'recall_at_budget', 'priority1_found', 'priority1_total', 'focus_found', 'focus_total'])) {
+      // added with fixture_version 2 (budget_scope and reserve_hits later: a row without budget_scope scored every survivor); older rows simply lack them
+      for (const k of /** @type {const} */ (['budget', 'recall_at_budget', 'budget_scope', 'priority1_found', 'priority1_total', 'focus_found', 'focus_total', 'reserve_hits'])) {
         if (score[k] !== undefined) row[k] = score[k];
       }
       row.direction_violations = score.direction_violations;

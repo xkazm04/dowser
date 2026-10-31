@@ -26,11 +26,13 @@ import { clean, evidenceOf, getProposal, getRun, now, transitionsOf, tx } from '
 /** Where the lens packs live: `skill/lenses/`. */
 export const LENS_DIR = fileURLToPath(new URL('../../lenses/', import.meta.url));
 
-/** Statuses `near` shows: open items plus the ones a human held back. */
+/** Statuses `near` shows under NEAR_CAP: open items plus the ones a human held back (accepted ones have their own cap). */
 const NEAR_STATUSES = ['candidate', 'verified', 'pushed', 'snoozed', 'rejected'];
 /** Statuses whose fingerprints `propose` holds back (or that are folded into another item). */
 const SUPPRESSED_STATUSES = ['rejected', 'snoozed', 'merged'];
 export const NEAR_CAP = 40;
+/** Accepted items `near` lists per lens (newest decision first), on top of the NEAR_CAP open and held-back ones. */
+export const ACCEPTED_NEAR_CAP = 20;
 export const EXEMPLAR_CAP = 5;
 /** Outcome notes `context` carries per lens (newest first), and the length a note is clipped to there. */
 export const OUTCOME_NOTES_CAP = 5;
@@ -115,8 +117,11 @@ const parsed = (r, k) => (r[k] === null || r[k] === undefined ? undefined : JSON
 
 /**
  * The context pack for one lens in one run: what the lens must not re-propose, what it already knows, the
- * runner's accepted rules and the accepted exemplars, plus the pack's version, kinds and budget. `near` rows carry
- * the person's `reason` and `note` (clipped to NOTE_CAP) when the item has them. `outcomes` counts how the lens's
+ * runner's accepted rules and the accepted exemplars, plus the pack's version, kinds and budget. `near` lists the
+ * open and held-back items (up to NEAR_CAP), then the accepted ones (up to ACCEPTED_NEAR_CAP, newest decision
+ * first), each with fp, title, topic, anchors and status, so a lens reuses a known item's topic and quotes it by fp.
+ * `near` rows carry the person's `reason` and `note` (clipped to NOTE_CAP) when the item has them; `exemplars`
+ * carry their fp. `outcomes` counts how the lens's
  * accepted items fared once built ({right, partly, wrong}, latest rating per item) and carries up to
  * OUTCOME_NOTES_CAP of their notes (`notes: [{title, rating, note}]`, newest first, omitted when none); `outcomes`
  * is omitted when none was recorded.
@@ -144,15 +149,27 @@ export function contextPack(db, { runId, lens, focus, lensDir }) {
     fp: r.fp, title: r.title, topic: r.topic, anchors: parsed(r, 'anchors_json'), status: r.status,
     reason: r.reason, note: typeof r.note === 'string' ? clip(r.note, NOTE_CAP) : undefined,
   })));
+  // accepted items are known items too: without them a lens re-words decided work into a "new" proposal and cannot
+  // quote an accepted precedent by fp (self-scan cycle 2: 9 accepted doc-drift items, 0 in near). Own cap, so a long
+  // accepted history never pushes the open and held-back items out.
+  for (const r of /** @type {Row[]} */ (db.prepare(
+    `SELECT fp, title, topic, anchors_json, status, note FROM proposals WHERE lens = ? AND status = 'accepted'
+     ORDER BY decided_at DESC, updated_at DESC, fp LIMIT ?`,
+  ).all(lens, ACCEPTED_NEAR_CAP))) {
+    near.push(/** @type {Row} */ (clean({
+      fp: r.fp, title: r.title, topic: r.topic, anchors: parsed(r, 'anchors_json'), status: r.status,
+      note: typeof r.note === 'string' ? clip(r.note, NOTE_CAP) : undefined,
+    })));
+  }
 
-  const rules = /** @type {Row[]} */ (db.prepare("SELECT id, text FROM rules WHERE lens = ? AND state = 'accepted' ORDER BY decided_at, id").all(lens))
+  const rules =/** @type {Row[]} */ (db.prepare("SELECT id, text FROM rules WHERE lens = ? AND state = 'accepted' ORDER BY decided_at, id").all(lens))
     .map((r) => ({ id: String(r.id), text: String(r.text) }));
 
   const exemplars = /** @type {Row[]} */ (db.prepare(
     `SELECT p.fp, p.title, p.rationale, p.effort_json FROM proposals p WHERE p.lens = ? AND p.status = 'accepted'
      ORDER BY p.decided_at DESC, (SELECT MAX(t.id) FROM transitions t WHERE t.fp = p.fp) DESC LIMIT ?`,
   ).all(lens, EXEMPLAR_CAP)).map((r) => ({
-    title: r.title, rationale: r.rationale, effort: parsed(r, 'effort_json'),
+    fp: r.fp, title: r.title, rationale: r.rationale, effort: parsed(r, 'effort_json'),
     evidence_types: /** @type {Row[]} */ (db.prepare('SELECT DISTINCT type FROM evidence WHERE fp = ? ORDER BY type').all(r.fp)).map((e) => String(e.type)),
   }));
 

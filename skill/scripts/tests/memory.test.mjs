@@ -97,7 +97,9 @@ test('exemplars: the 5 newest accepted of the lens, with effort and evidence typ
   assert.deepEqual(c.exemplars.map((/** @type {any} */ e) => e.title), ['Exemplar 6', 'Exemplar 5', 'Exemplar 4', 'Exemplar 3', 'Exemplar 2']);
   assert.deepEqual(c.exemplars[0].evidence_types, ['doc', 'ticket']);
   assert.equal(c.exemplars[0].effort.size, 'S');
-  assert.ok(!c.near.some((/** @type {any} */ n) => fps.includes(n.fp)), 'accepted items are exemplars, not near');
+  assert.deepEqual(c.near.filter((/** @type {any} */ n) => n.status === 'accepted').map((/** @type {any} */ n) => n.fp).sort(), [...fps].sort(),
+    'accepted items are in near too (fp, topic, anchors), so a lens can reuse their topic and quote them');
+  assert.equal(c.exemplars[0].fp, fps[6], 'an exemplar carries its fp');
 });
 
 test('similar: an anchor overlap with different wording, or 2+ topic tokens; dropped excluded; another lens only on a shared anchor', () => {

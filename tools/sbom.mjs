@@ -14,7 +14,8 @@
  *   forge-ui  <root>/forge/static/app/package-lock.json the inbox UI bundled into the Forge app
  * Files: <out>/dowser-<target>-v<version>.cdx.json, where version is skill/SKILL.md's `version:`, which
  * must equal the root package.json version (one version number per release). Default --out:
- * <OS temp>/dowser-sbom-v<version>; attach the files to the release.
+ * <OS temp>/dowser-sbom-v<version>; attach the files to the release: `gh release create v<version> ... <out>/*.cdx.json`
+ * (SECURITY.md "Cutting a release").
  *
  * A lockfile or package.json with uncommitted changes (or a root that is not a git checkout) is refused:
  * an SBOM from a lockfile nobody committed misstates the release. --allow-dirty overrides it for a trial.

@@ -57,7 +57,11 @@ answer. It checks the environment, then runs four lenses: Opportunity, UX fricti
 wellbeing, Doc drift, and Security and CRA. It re-checks every quoted line of evidence against
 the code, scores every proposal and shows you the top 16 (each lens's top pick first); the rest
 are kept in reserve, never thrown away. You keep, reject (with a reason), snooze or merge
-each one. When the Dowser Forge app is connected, the proposals you kept go to the Dowser inbox
+each one, except the cards Dowser pre-sorts: where its predictions have earned trust (technical
+findings such as doc drift and security start there), a ranked card it expects you to accept
+skips this dialog and goes to the inbox marked "machine pre-triaged". Dowser names those cards
+when it skips them, and you still accept, reject or snooze each one in Jira; Dowser never
+accepts anything itself. When the Dowser Forge app is connected, the proposals you kept go to the Dowser inbox
 in Jira, and the decisions made there come back into Dowser's memory before the next scan.
 
 Without the Forge connection Dowser still runs, on code and docs only. It tells you which lenses

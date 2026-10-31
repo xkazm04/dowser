@@ -158,6 +158,8 @@ export { resurfaces } from './model.mjs';
  *  - a line without `predicted_verdict` (the lens worker's verdict is mandatory, SKILL.md section 5 step 6) is
  *    still taken, with `warning: 'no-predicted-verdict'` on its result; a re-propose without one keeps the judge's
  *    verdict an earlier line of the same fp recorded (only a store-derived `:memory` prediction is recomputed).
+ *  - a `category` the lens may not set (product -> technical, predict.mjs categoryOf) is stored as the lens default
+ *    and reported as `clamped: {category: {asked, stored}}` on the result.
  * Card text is refreshed only while the item is a `candidate` (a verified/pushed card is what a person saw).
  * @param {Db} db
  * @param {string} runId
@@ -186,7 +188,11 @@ export function propose(db, runId, input, { kinds }) {
     ? /** @type {Row | undefined} */ (db.prepare("SELECT predicted_verdict, predicted_why, predicted_by FROM proposals WHERE fp = ? AND predicted_verdict IS NOT NULL AND predicted_by NOT LIKE '%:memory'").get(fp))
     : undefined;
   /** @param {ProposeResult} r @returns {ProposeResult} */
-  const flag = (r) => (c.predicted_verdict === undefined ? { ...r, warning: 'no-predicted-verdict' } : r);
+  const flag = (r) => {
+    const w = c.predicted_verdict === undefined ? { ...r, warning: /** @type {const} */ ('no-predicted-verdict') } : r;
+    // an asked category the lens may not have is reported on every line that carried it, invalid ones excepted
+    return s.clamped && !String(w.result).startsWith('invalid:') ? { ...w, clamped: { category: s.clamped } } : w;
+  };
   const card = {
     title: c.title, rationale: c.rationale, body: c.body, effort_json: json(s.effort), confidence: c.confidence,
     confidence_why: c.confidence_why, doc_impact_json: json(c.doc_impact), delivery_risk_json: json(c.delivery_risk),

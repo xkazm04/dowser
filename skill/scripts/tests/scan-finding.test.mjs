@@ -73,7 +73,7 @@ test('predict: the closest decided precedent is quoted with its reason and note;
     assert.equal(derived.predicted_by, 'dowser-security-cra@1.0.0:memory');
     const judged = /** @type {any} */ (getProposal(s.db, String(s.prop({ topic: 'password reset token', anchors: ['src/auth.js#login', 'src/reset.js'], predicted_verdict: 'accept', predicted_why: 'reset is new work' }).fp)));
     assert.equal(judged.predicted_verdict, 'accept');
-    assert.match(judged.predicted_why, /^reset is new work \[closest precedent "Plaintext compare"/);
+    assert.match(judged.predicted_why, /^reset is new work \[counter-precedent "Plaintext compare"/, 'a rejected precedent on a predicted accept is labelled the counter-precedent');
     assert.equal(judged.predicted_by, 'dowser-security-cra@1.0.0:m', 'the run model is the predictor');
     const alone = /** @type {any} */ (getProposal(s.db, String(s.prop({ lens: 'doc-drift', kind: 'stale', topic: 'readme port', anchors: ['README.md'] }).fp)));
     assert.deepEqual([alone.predicted_verdict, alone.predicted_why], ['defer', 'no recorded decision on similar work; a person decides']);

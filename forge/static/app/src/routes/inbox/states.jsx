@@ -1,6 +1,6 @@
 // The inbox states other than the list: the loading skeleton and the empty view (which names the last push).
 import React from 'react';
-import { SectionMessage } from '../../components/ui.jsx';
+import { Button, SectionMessage } from '../../components/ui.jsx';
 import { EmptyArt } from '../../components/Brand.jsx';
 import { LENS_LABELS, STATUS_LABELS, formatDate, plural } from '../../components/labels.js';
 
@@ -26,9 +26,41 @@ export function LoadingBody({ wide }) {
   );
 }
 
-/** The healthiest state is empty, and when the person got it there it says so. */
-export function EmptyState({ status, lens, lastPush, tally }) {
+/**
+ * The filters that narrow the list but not the inbox (a map cell's area, the machine pre-triaged switch), as the
+ * words the empty view uses. Empty when neither is on.
+ */
+export function narrowingFilters({ area = '', pretriaged = false }) {
+  const out = [];
+  if (area) out.push({ key: 'area', words: <>in <code>{area === '.' ? '(repo root)' : area}</code></>, clear: 'Show every area' });
+  if (pretriaged) out.push({ key: 'pretriaged', words: <>pre-triaged by the scan</>, clear: 'Show all, not only pre-triaged' });
+  return out;
+}
+
+/**
+ * The healthiest state is empty, and when the person got it there it says so. Under an area or pre-triaged
+ * filter an empty list says nothing about the inbox: the view names the filter and offers to clear it, and never
+ * says every proposal is decided.
+ */
+export function EmptyState({ status, lens, lastPush, tally, area = '', pretriaged = false, onClearArea, onClearPretriaged }) {
   const what = `${STATUS_LABELS[status].toLowerCase()} proposals${lens ? ` for ${LENS_LABELS[lens]}` : ''}`;
+  const filters = narrowingFilters({ area, pretriaged });
+  if (filters.length > 0) {
+    const clear = { area: onClearArea, pretriaged: onClearPretriaged };
+    return (
+      <SectionMessage appearance="information" title={`No ${what} in this filtered view.`} role="status">
+        <p>
+          The list shows only proposals {filters.map((f, i) => <React.Fragment key={f.key}>{i > 0 && ' and '}{f.words}</React.Fragment>)}.
+          {' '}Other {STATUS_LABELS[status].toLowerCase()} proposals may still wait outside this filter.
+        </p>
+        <p style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {filters.filter((f) => clear[f.key]).map((f) => (
+            <Button key={f.key} compact onClick={clear[f.key]}>{f.clear}</Button>
+          ))}
+        </p>
+      </SectionMessage>
+    );
+  }
   const lastLine = (
     <>
       {lastPush === undefined && <p className="dwr-muted">Checking the last push...</p>}

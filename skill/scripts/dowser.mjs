@@ -19,7 +19,10 @@
 //                                          JSONL out, one line per input line: {line, result, fp?, ...} where
 //                                          result is created | evidence-grew | suppressed | duplicate |
 //                                          invalid:<why>; a line without predicted_verdict adds warning:
-//                                          no-predicted-verdict; then one {summary} line (unpredicted: n when any)
+//                                          no-predicted-verdict; a category the lens may not set (product lens ->
+//                                          technical) is stored as the lens default and adds clamped:
+//                                          {category: {asked, stored}}; then one {summary} line (unpredicted: n,
+//                                          clamped: n when any)
 //   verify --run <id> [--per-lens n] [--per-run n]
 //                                          re-check code/doc quotes -> verified | dropped (verify-failed:<ref>);
 //                                          a ticket/page/goal/dep ref this run did not ingest -> dropped
@@ -38,10 +41,12 @@
 //   move <fp> --to <status> --by <kind:name> [--from s] [--reason code] [--note t] [--into fp] [--run id]
 //                                          [--until YYYY-MM-DD]  (only with --to snoozed; a date after today)
 //   status [--runs n]                      counts by status and lens, last runs, "top N of M" truncation
-//   context --run <id> --lens <l> [--focus f]  -> {lens, lens_version, kinds, budget, suppressed, near, rules,
+//   context --run <id> --lens <l> [--focus f]  -> {lens, lens_version, kinds, budget, suppressed, near (open and
+//                                          held-back items, then up to 20 accepted ones, each with fp, topic, anchors), rules,
 //                                          exemplars, outcomes?: {right, partly, wrong}, since_sha?, focus?, direction?}
-//   similar <fp>                           same-lens items sharing an anchor or 2+ topic tokens, and other-lens items
-//                                          sharing an anchor (cross_lens: true), with the overlap
+//   similar <fp>                           same-lens items sharing an anchor or 2+ topic tokens (generic words such
+//                                          as docs, md, lens ignored), and other-lens items sharing a SYMBOL anchor
+//                                          path#symbol (cross_lens: true; a shared whole file never counts), with the overlap
 //   show <fp>                              ask-why: the card, every evidence row, every transition (no rescan)
 //   list [--lens l] [--status s] [--title substring]  -> {proposals: [{fp, lens, status, title, decided_at?,
 //                                          snooze_until?}]}
@@ -56,9 +61,12 @@
 //                                          outcomes_seen}; idempotent
 //   prefs get [key ...] | prefs set key=value ...   ~/.dowser/user.json (mode dev|guided, verbosity short|full,
 //                                          quotes send|omit)
-//   outbox --run <id>                      -> {project_key, run_id, proposals_json, repo_url?, head_sha?, more?}:
-//                                          the dowser_proposals_push arguments (verified, not pushed yet; pushed
-//                                          items whose evidence grew), at most 50; `more: true` = run it again
+//   outbox --run <id> [--kinds <lens>=<k1,k2> ...]
+//                                          -> {project_key, run_id, proposals_json, repo_url?, head_sha?,
+//                                          lens_kinds_json?, more?}: the dowser_proposals_push arguments (verified,
+//                                          not pushed yet; pushed items whose evidence grew), at most 50; `more:
+//                                          true` = run it again; --kinds (as at propose) lets Forge refuse a kind
+//                                          its lens lacks
 //   ingest-push --file <json>              apply a dowser_proposals_push response -> pushed | merged | refused
 //   ingest-verdicts --file <json>          apply a dowser_verdicts_pull response (CAS, idempotent), keep cursor;
 //                                          an accepted verdict records issue_ref/issue_url
@@ -244,6 +252,7 @@ export const COMMANDS = {
     /** @type {Record<string, number>} */
     const counts = { lines: 0, created: 0, 'evidence-grew': 0, suppressed: 0, duplicate: 0, invalid: 0 };
     let unpredicted = 0;
+    let clamped = 0;
     text.split(/\r?\n/).forEach((raw, i) => {
       if (!raw.trim()) return;
       counts.lines++;
@@ -257,9 +266,10 @@ export const COMMANDS = {
       const r = store.propose(db, runId, obj, { kinds });
       counts[r.result.startsWith('invalid:') ? 'invalid' : r.result]++;
       if (r.warning === 'no-predicted-verdict') unpredicted++;
+      if (r.clamped) clamped++;
       lines.push({ line: i + 1, ...r });
     });
-    lines.push({ summary: unpredicted ? { ...counts, unpredicted } : counts });
+    lines.push({ summary: { ...counts, ...(unpredicted ? { unpredicted } : {}), ...(clamped ? { clamped } : {}) } });
     return { code: counts.invalid > 0 ? 1 : 0, lines };
   },
 
@@ -349,7 +359,9 @@ export const COMMANDS = {
   outbox(a, ctx) {
     const origin = originUrl(ctx.root);
     const quotes = memory.readPrefs(ctx.root).quotes === 'omit' ? 'omit' : 'send';
-    return { out: syncLib.outbox(ctx.open(), { projectKey: projectKey(ctx.root), runId: /** @type {string} */ (opt(a, 'run', true)), repoUrl: origin ? webUrl(origin) : undefined, quotes }) };
+    // --kinds as at propose (the lens packs' kinds): sent as lens_kinds_json, so Forge checks kind-in-lens too
+    const lensKinds = a.kinds === undefined ? undefined : parseKinds(a);
+    return { out: syncLib.outbox(ctx.open(), { projectKey: projectKey(ctx.root), runId: /** @type {string} */ (opt(a, 'run', true)), repoUrl: origin ? webUrl(origin) : undefined, quotes, lensKinds }) };
   },
   'ingest-push'(a, ctx) {
     const doc = syncLib.readResponse(/** @type {string} */ (opt(a, 'file', true)));

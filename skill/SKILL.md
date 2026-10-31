@@ -187,10 +187,12 @@ For each lens, print one progress line (`<lens>: gathering (tickets 42, code)`),
    `<skill-dir>/references/examples/<lens>.md`: the pack's frontmatter (`id`, `version`,
    `kinds`, `sources`, `requires_connection`, `budget`) and its body.
 2. **Context pack.** Run `context --run <run_id> --lens <lens>`, adding `--focus` on a focused
-   run. It returns `suppressed` (fingerprints never to re-propose), `near` (known items, so you
-   do not re-word one into a "new" proposal; a held-back one carries the person's `reason` and
-   `note`), `rules` (accepted runner rules for this lens, which bind like the pack's own rules),
-   `exemplars` (accepted proposals as the bar to match), `outcomes` (`{right, partly, wrong}`:
+   run. It returns `suppressed` (fingerprints never to re-propose), `near` (known items with fp,
+   title, topic, anchors and status, so you do not re-word one into a "new" proposal: open and
+   held-back items, up to 40, then accepted ones, up to 20, newest decision first; a held-back
+   one carries the person's `reason` and `note`), `rules` (accepted runner rules for this lens,
+   which bind like the pack's own rules), `exemplars` (the 5 newest accepted proposals, with fp,
+   as the bar to match), `outcomes` (`{right, partly, wrong}`:
    how this lens's accepted items fared once built, with up to 5 of the people's `notes`; absent
    when none was rated), `budget` and `since_sha`. Many `wrong` or `partly` outcomes mean the
    lens's accepted patterns did not deliver: propose fewer of that kind and say what makes this
@@ -231,11 +233,17 @@ For each lens, print one progress line (`<lens>: gathering (tickets 42, code)`),
    it lands as `evidence-grew` and not as a re-worded duplicate. `propose` itself answers
    `suppressed` for a fingerprint the memory holds back. Give every card `impact` and
    `impact_why` from the pack's "Impact" table, and `risk` when you can judge the change's risk
-   (`references/cards.md`). Then predict, on **every** line: `predicted_verdict` is your own
+   (`references/cards.md`). Leave `category` out for the lens default; you may move a
+   `technical` card to `product`, never a `product` lens's card to `technical` (the store
+   stores the lens default and reports `clamped` on the line: category picks the trust slice,
+   and a relabel must not skip the person). Then predict, on **every** line: `predicted_verdict` is your own
    verdict as the judge (`accept`, `reject` or `defer`), required even on a fresh store with no
    precedent at all. Judge it from the evidence, the pack's rules, `near` (reasons, notes) and the
    `outcomes` notes; `predicted_why` says why in one line and names the closest precedent when
-   `near` has one. A precedent informs your verdict and is quoted; it never replaces it. `defer`
+   `near` has one. A precedent informs your verdict and is quoted; it never replaces it. When
+   your text names no precedent (no fp, not the found one's title), the store appends the one
+   it found, as `closest precedent` when its decision matches your verdict and as
+   `counter-precedent` when it contradicts it; a precedent you named is kept as written. `defer`
    means you cannot tell, not "no history yet". A line without a verdict still lands, but
    `propose` flags it (`warning: no-predicted-verdict`, `unpredicted` in the summary) and the
    store falls back to the precedent's decision, else `defer`, which no slice's trust can act
@@ -288,8 +296,10 @@ carry a reason.
 2. For each dropped item, look at why. If you mis-copied a line, fix the quote in a new
    candidate line, re-propose it and re-verify it once. Do not loop.
 3. For each verified item, run `similar <fp>`. It lists same-lens hits, and hits from **another
-   lens** that share an anchor (`cross_lens: true`: one lens's card can be the union of another
-   lens's cards on the same code). For each hit, judge whether the two describe the
+   lens** that share a symbol anchor `path#symbol` (`cross_lens: true`: one lens's card can be
+   the union of another lens's cards on the same code). A shared whole-file anchor never makes a
+   cross-lens hit, and generic topic words (`docs`, `md`, `lens`) never count as shared, so a
+   quiet `similar` is not a missed union card. For each hit, judge whether the two describe the
    **same work** (same capability or defect, same place). Wording overlap alone does not count.
    - Same work, and the hit is open (`candidate`, `verified`, `pushed`) or `accepted`:
      `move <fp> --to merged --into <hit fp> --by agent:<harness>`. Tell the runner in the
@@ -348,8 +358,11 @@ or from "looks good".
 
 ## 8. Push (connected only)
 
-1. Run `outbox --run <run_id>`. It prints the tool arguments
-   `{project_key, run_id, proposals_json, repo_url?, head_sha?, more?}`. `proposals_json` holds
+1. Run `outbox --run <run_id> --kinds <lens>=<k1,k2,...>`, with one `--kinds` for EVERY lens pack -
+   all four, not only the lenses this run used (a re-pushed card from another lens is refused when its
+   lens is undeclared); the kinds are each pack's frontmatter `kinds`, as for `propose`. It prints the
+   tool arguments `{project_key, run_id, proposals_json, repo_url?, head_sha?, lens_kinds_json?, more?}`,
+   and Forge refuses any record whose kind its lens does not have. `proposals_json` holds
    the verified, un-rejected items that were not pushed yet, plus pushed items whose evidence
    grew, at most 50 per call.
 2. If `proposals_json` is `"[]"`, skip to step 6.

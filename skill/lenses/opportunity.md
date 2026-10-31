@@ -1,6 +1,6 @@
 ---
 id: opportunity
-version: 0.3.1
+version: 0.3.2
 name: Opportunity
 kinds: [expose-capability, extend-capability, missing-capability, goal-gap, workflow-shortcut]
 sources: [code, docs, git, tickets, goals]
@@ -142,8 +142,8 @@ count and the window in one line ("strong: 14 tickets in 90 days, 3 components")
 Add 1 when the theme serves an ingested goal or the direction notes' outcome (at most 9). Code
 readiness never raises impact: it lowers `effort`. `risk` is the risk of making the change
 (exposing an internal call behind a flag 2, a new public route 5, a change to billing or auth 8);
-omit it and the store reads `delivery_risk.blast`. `category` is `product` (the default for this
-lens). Every card carries your `predicted_verdict` (`accept`, `reject` or `defer`) and a
+omit it and the store reads `delivery_risk.blast`. `category` is `product`, this lens's default, and
+stays so: the store clamps a `technical` label back to `product` (`clamped` on the propose line), so no opportunity card skips the person's gate. Every card carries your `predicted_verdict` (`accept`, `reject` or `defer`) and a
 `predicted_why`, after reading `context`'s `near` (reasons, notes) and `outcomes` (notes). With
 a precedent, quote it ("an export card was accepted and rated right"); without one, give your
 own reason (`references/cards.md`).

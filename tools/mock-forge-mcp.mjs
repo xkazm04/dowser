@@ -114,7 +114,7 @@ export const TOOLS = [
   { name: 'dowser_sources_goals', description: 'List the team goals (TWG). Returns {items:[{ref,title,url,body,status?}]}.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'dowser_proposals_push', description: 'File dowser-proposal/2 (or /1) records (proposals_json, a JSON array of at most 50) in the Dowser inbox; idempotent on (project_key, fp). Returns {results:[{fp,result,external_ref?,external_url?,why?}]}.',
-    inputSchema: { type: 'object', properties: { project_key: S, run_id: S, proposals_json: S, repo_url: S, head_sha: S }, required: ['project_key', 'run_id', 'proposals_json'], additionalProperties: false } },
+    inputSchema: { type: 'object', properties: { project_key: S, run_id: S, proposals_json: S, repo_url: S, head_sha: S, lens_kinds_json: S }, required: ['project_key', 'run_id', 'proposals_json'], additionalProperties: false } },
   { name: 'dowser_verdicts_pull', description: 'Verdicts decided in the inbox since the cursor. Returns {verdicts:[...], cursor}.',
     inputSchema: { type: 'object', properties: { project_key: S, cursor: S }, required: ['project_key'], additionalProperties: false } },
   { name: 'dowser_areas_push', description: 'Replace the project\'s area stats (areas_json, a JSON array of at most 200 {path,files,churn_90d,authors_90d?,last_change?}). Returns {stored}.',
@@ -191,6 +191,26 @@ function jsonArray(v, name, max) {
   if (!Array.isArray(doc)) throw new ToolError('bad-input', `${name} must hold a JSON array`);
   if (doc.length > max) throw new ToolError('bad-input', `${name} holds ${doc.length} items; at most ${max}`);
   return doc;
+}
+
+/**
+ * The optional `lens_kinds_json` push input: `{<lens>: [<kind>, ...]}`, or undefined when absent. Any other shape
+ * throws `bad-input` (Forge push.mjs parseLensKinds).
+ * @param {unknown} v
+ * @returns {Record<string, string[]> | undefined}
+ */
+function lensKindsOf(v) {
+  if (v === undefined || v === '') return undefined;
+  const shape = 'lens_kinds_json must be a JSON object of lens -> non-empty array of kind names, as a string';
+  if (typeof v !== 'string') throw new ToolError('bad-input', shape);
+  /** @type {unknown} */
+  let doc;
+  try { doc = JSON.parse(v); } catch (e) { throw new ToolError('bad-input', `lens_kinds_json is not valid JSON (${/** @type {Error} */ (e).message})`); }
+  if (!isObj(doc) || Object.keys(doc).length === 0) throw new ToolError('bad-input', shape);
+  for (const [lens, kinds] of Object.entries(doc)) {
+    if (!Array.isArray(kinds) || kinds.length === 0 || !kinds.every(str)) throw new ToolError('bad-input', `lens_kinds_json.${lens}: a non-empty array of kind names`);
+  }
+  return /** @type {Record<string, string[]>} */ (doc);
 }
 
 /**
@@ -276,12 +296,18 @@ function dowserProposalsPush(b, args) {
   if (!str(args.run_id)) throw new ToolError('bad-input', 'run_id is required');
   for (const k of ['repo_url', 'head_sha']) if (args[k] !== undefined && !str(args[k])) throw new ToolError('bad-input', `${k} is a non-empty string (omit it when absent)`);
   const records = jsonArray(args.proposals_json, 'proposals_json', PUSH_MAX);
+  const lensKinds = lensKindsOf(args.lens_kinds_json);
   const p = project(b, args.project_key);
   const results = records.map((raw) => {
     const r = isObj(raw) ? raw : {};
     if (!str(r.fp)) return { fp: '', result: 'refused', why: 'missing fp' };
     if (!str(r.title) || !Array.isArray(r.evidence) || r.evidence.length === 0) return { fp: r.fp, result: 'refused', why: 'not a dowser-proposal/1 record (title and evidence are required)' };
     if (r.status !== 'verified' && r.status !== 'pushed') return { fp: r.fp, result: 'refused', why: `only verified or pushed records are filed, not ${String(r.status)}` };
+    // kind-in-lens, as Forge checks it (push.mjs checkRecord): only when the push carries lens_kinds_json
+    if (lensKinds && !Object.hasOwn(lensKinds, String(r.lens))) return { fp: r.fp, result: 'refused', why: `the push declares no kinds for lens ${String(r.lens)} (lens_kinds_json)` };
+    if (lensKinds && !lensKinds[String(r.lens)].includes(String(r.kind))) {
+      return { fp: r.fp, result: 'refused', why: `kind ${JSON.stringify(r.kind)} is not one of ${String(r.lens)}'s kinds (${lensKinds[String(r.lens)].join(',')})` };
+    }
     const existing = p.items[r.fp];
     if (existing) {
       existing.record = r;

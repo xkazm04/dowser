@@ -25,9 +25,9 @@ Dowser runs as two halves joined by one contract:
   reserve), the lens judge's predicted verdict with its reason (quoting the closest precedent when
   there is one), and per-slice trust (technical slices start at L1, product slices earn it; the
   store pre-triages at L1; ceiling L1, acceptance stays human). Records are `dowser-proposal/2`;
-  store v6; Forge SQL v019-v023. Open: `tools/lens-eval.mjs` still scores every surviving card,
-  reserve included, so its `recall_at_budget` is read against the ranked band by hand
-  (`references/lens-authoring.md`), and the 0.3.1 packs are unmeasured.
+  store v6; Forge SQL v019-v023. `tools/lens-eval.mjs` scores `recall_at_budget` on the ranked band
+  (`budget_scope: ranked`, reserve-only finds under `reserve_hits`). Open: the 0.3.2 packs are
+  unmeasured.
 
 Gates on `master`: root `npm run typecheck` clean and `npm test` green; `npm run forge:typecheck`
 clean, `npm run forge:test` green, `npm run forge:check-shared` clean, `npm run forge:build-ui` green
@@ -201,8 +201,6 @@ bonus tracks, then polish.
 
 - Byline count in the byline title via `dynamicProperties` (today the count shows only in the popup).
 - Error codes `not-found` / `conflict` in the contract (additive, so still forge-mcp-2).
-- Share the lens kind lists with Forge so a push checks kind-in-lens.
-- `rules offer` should also return pending unanswered offers; `similar` tuning (local skill).
 
 ## Where things are
 

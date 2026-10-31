@@ -266,7 +266,7 @@ PRAGMA user_version = 6;
  * @typedef {import('./model.mjs').Proposal} Proposal
  * @typedef {{refs: number, types: string[]}} EvidenceSnapshot
  * @typedef {'created' | 'evidence-grew' | 'suppressed' | 'duplicate'} ProposeOutcome
- * @typedef {{result: ProposeOutcome | `invalid:${string}`, fp?: string, added?: number, resurfaced?: {from: string, rule: string}, status?: string, note?: string, warning?: 'no-predicted-verdict'}} ProposeResult
+ * @typedef {{result: ProposeOutcome | `invalid:${string}`, fp?: string, added?: number, resurfaced?: {from: string, rule: string}, status?: string, note?: string, warning?: 'no-predicted-verdict', clamped?: {category: {asked: string, stored: string}}}} ProposeResult
  * @typedef {{state: 'ran'|'skipped'|'partial', reason?: string, emitted?: number, verified?: number, dropped?: number, truncated?: number,
  *   ranked?: number, reserve?: number, reserve_titles?: string[]}} LensRecord
  *   ranked / reserve / reserve_titles are the store's slot allocation (run finish writes them; the agent does not).

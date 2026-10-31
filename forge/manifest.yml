@@ -65,6 +65,7 @@ modules:
         proposals_json: { title: Proposals, type: string, required: true, description: JSON array of dowser-proposal/2 (or /1) records, at most 50. }
         repo_url: { title: Repo URL, type: string, required: false, description: The repo web URL without credentials. }
         head_sha: { title: Head commit, type: string, required: false, description: The commit the run scanned. }
+        lens_kinds_json: { title: Lens kinds, type: string, required: false, description: "JSON object of lens to its closed kind list, from the lens packs. When sent, a proposal whose kind its lens lacks is refused." }
     - key: dowser_verdicts_pull
       name: Pull verdicts
       function: mcp

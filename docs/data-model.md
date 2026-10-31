@@ -60,7 +60,8 @@ reads the payloads.
 - `reflect export` prints `{project_key, rules_json?, trust_json?, more?}`, the tool's arguments: `trust_json` is the
   per-slice trust (`trust` below) with its newest 50 events, omitted when no slice has history; the rules in state `offered`,
   oldest first, at most 50, each `{id, lens, text, titles?, offered_at}` with at most 10 titles. It writes nothing. It
-  does not create offers (`rules offer` does, once, in the triage dialog), so run `rules offer` first. `rules_json` is
+  does not create offers (`rules offer` does, in the triage dialog; it also returns the offers still `offered` from earlier runs under
+  `earlier`, each marked `earlier: true`), so run `rules offer` first. `rules_json` is
   omitted when nothing is offered; the call is still made, because decisions and outcomes come back in its answer.
   `more: true` means over 50 are offered; the agent does not pass it on.
 - `reflect ingest --file <json>` applies the answer `{rules, outcomes}` and prints
@@ -72,7 +73,9 @@ reads the payloads.
   outcomes, `outcomes_added` the new ones.
 - `context` gains `outcomes: {right, partly, wrong, notes?}` per lens: the latest rating of each of the lens's items
   that has one, and up to 5 of those ratings' notes (`{title, rating, note}`, newest first, each clipped to 300
-  characters). It is omitted when the lens has none. `near` rows carry the person's `reason` and `note` (clipped). `show <fp>` lists the item's outcome rows (omitted when none).
+  characters). It is omitted when the lens has none. `near` holds the open and held-back items (`candidate`, `verified`, `pushed`, `snoozed`, `rejected`; at most 40) and
+  then the accepted ones (at most 20, newest decision first), each with `fp`, `title`, `topic`, `anchors` and `status`;
+  `near` rows carry the person's `reason` and `note` (clipped). `exemplars` (the 5 newest accepted) carry their `fp`. `show <fp>` lists the item's outcome rows (omitted when none).
   `status` is unchanged.
 - A verdict `note` on an `accepted` or `snoozed` verdict is stored on the transition and on the card, like any other.
 
@@ -87,14 +90,18 @@ reading (N = `emitted`, M = `emitted + truncated`).
 
 - **Score.** `propose` fills `effort.score` from `size` (XS 1, S 2, M 4, L 7, XL 10) unless the judge set it, `risk`
   from `delivery_risk.blast` (low 2, medium 5, high 8) unless the judge set it, `category` from the lens
-  (`model.mjs` `LENS_CATEGORY`) unless the judge set it, then `score` and `score_parts` with `scan-score/1`
+  (`model.mjs` `LENS_CATEGORY`; the judge may move a `technical` card to `product`, never a product lens's card to
+  `technical`: `predict.mjs` `categoryOf` stores the lens default and the result carries `clamped: {category: {asked,
+  stored}}`, counted as `clamped` in the summary), then `score` and `score_parts` with `scan-score/1`
   (`lib/scan-score.mjs`, a copy of the registry's helper). A card without `impact` is unscored: `score` absent.
 - **Prediction.** `propose` records `predicted_verdict`, `predicted_why` and `predicted_by` before anyone sees the
   card (`lib/predict.mjs`): the judge's verdict, which every propose line must carry and the store never replaces.
   Only a line without one (flagged `warning: no-predicted-verdict`, counted as `unpredicted`) falls back to the
   closest decided precedent's (same lens, a shared anchor or two topic tokens; accepted -> accept, rejected ->
   reject, snoozed -> defer), else `defer`. `predicted_why` names
-  that precedent with its reason and note; `predicted_by` is `dowser-<lens>@<lens_version>:<model>` (`:memory` when
+  that precedent with its reason and note. The judge's own `predicted_why` gets it appended only when the text names
+  no precedent (no 16-hex fp, not the found one's title), labelled `closest precedent` when its decision matches the
+  verdict and `counter-precedent` when it contradicts it; `predicted_by` is `dowser-<lens>@<lens_version>:<model>` (`:memory` when
   the store derived it). Refreshed only while the card is a `candidate`, like the card text.
 - **Budget.** `verify` ends with `lib/budget.mjs` `allocateRun` over the run's verified cards: each lens's top card is
   its MVP (`mvp` 1, `mvp_rule` `top-score`), the remaining slots go by score across lenses with at most the pack's
@@ -201,8 +208,10 @@ fp = sha256(lens | kind | normTopic | sortedUniqueNormAnchors.join(',')).hex[0:1
   fragments are stripped, and `#symbol` is kept.
 - Title and body wording never enter the fingerprint.
 
-The near tier (`similar`, merge judgement) is WP2's: same-lens items sharing an anchor or two topic tokens, and
-other-lens items sharing an anchor (`cross_lens: true`).
+The near tier (`similar`, merge judgement) is WP2's: same-lens items sharing an anchor or two topic tokens (the
+generic words in `GENERIC_TOKENS`, such as `docs`, `md`, `lens`, never count as shared tokens), and other-lens items
+sharing a **symbol** anchor `path#symbol` (`cross_lens: true`); a shared whole-file anchor (`SKILL.md`) never makes a
+cross-lens hit.
 
 ## propose outcomes
 

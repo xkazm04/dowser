@@ -88,6 +88,7 @@
 }
 :root .dwr-chip__x:hover { background: var(--ds-background-selected-hovered, #CFE1FD); }
 :root .dwr-seg__n { font-variant-numeric: tabular-nums; font-weight: 653; color: var(--ds-text-selected, #1868DB); }
+:root .dwr-seg__note { white-space: nowrap; font-size: 12px; line-height: 16px; }
 :root .dwr-runline { margin: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; font-size: 12px; line-height: 16px; color: var(--ds-text-subtle, #505258); font-variant-numeric: tabular-nums; }
 :root .dwr-iconbtn {
   font: inherit; font-weight: 653; width: 32px; height: 32px; border: 0; border-radius: 4px; cursor: pointer; background: none; color: var(--ds-text-subtle, #505258);

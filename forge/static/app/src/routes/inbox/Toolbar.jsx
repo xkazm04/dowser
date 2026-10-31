@@ -23,6 +23,9 @@ function summarise(inboxes, projectKey, status, decided) {
 
 export function Toolbar({ inboxes, decided, projectKey, onProject, status, onStatus, lens, onLens, area = '', onClearArea, pretriaged = false, onPretriaged, onHelp }) {
   const { by, last, count } = summarise(inboxes, projectKey, status, decided);
+  // The counts are per inbox: a lens, area or pre-triaged filter narrows the list, not them. Say so while one is on.
+  const narrowed = Boolean(lens || (area && projectKey) || pretriaged);
+  const countTitle = narrowed ? 'Whole inbox: the lens, area and pre-triaged filters do not change this count' : undefined;
   return (
     <header className="dwr-toolbar">
       <span className="dwr-toolbar__mark"><Mark size={16} /></span>
@@ -35,13 +38,14 @@ export function Toolbar({ inboxes, decided, projectKey, onProject, status, onSta
           </select>
         </label>
       )}
-      <div className="dwr-seg" role="group" aria-label="Filter by status">
+      <div className="dwr-seg" role="group" aria-label={narrowed ? 'Filter by status (counts are whole-inbox totals)' : 'Filter by status'}>
         {STATUSES.map((s) => (
           <button key={s} type="button" className="dwr-seg__btn" aria-pressed={status === s} onClick={() => onStatus(s)}>
-            {STATUS_LABELS[s]}{inboxes.length > 0 && by[s] !== undefined && <span className="dwr-seg__n">{by[s]}</span>}
+            {STATUS_LABELS[s]}{inboxes.length > 0 && by[s] !== undefined && <span className="dwr-seg__n" title={countTitle}>{by[s]}</span>}
           </button>
         ))}
       </div>
+      {narrowed && inboxes.length > 0 && <span className="dwr-muted dwr-seg__note">Counts: whole inbox</span>}
       <label className="dwr-field">
         <span className="dwr-visually-hidden">Lens</span>
         <select className="dwr-select" value={lens} onChange={(e) => onLens(e.target.value)} aria-label="Filter by lens">

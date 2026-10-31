@@ -145,7 +145,7 @@ Answer from `show <fp>` only, in this order, in plain words:
 | "Where does it say that?" | evidence quotes, as plain sentences with their location |
 | "How big is it?" | effort size, days and basis, in words ("about 2 to 4 days, mostly in the reports area") |
 | "Why is this one first?" | its worth (impact and its reason), how sure, the size and the risk, in words: "Worth 7 of 10 because 14 customers asked, sure, a few days, low risk". Never the formula. |
-| "What did Dowser expect me to say?" | `predicted_verdict` and `predicted_why`, as "Dowser guessed you would <accept/turn down/put off> it, because <the precedent in words>". |
+| "What did Dowser expect me to say?" | `predicted_verdict` and `predicted_why`, as "Dowser guessed you would <accept/turn down/put off> it, because <the precedent in words>". A `counter-precedent` is said as "even though <its title> was <turned down/put off> before". |
 | "Didn't we reject this?" | transitions: who decided what, and when |
 | "Is this still true?" | Say that the stored evidence is from <date>, and offer a new scan. Do not rescan unasked. |
 
