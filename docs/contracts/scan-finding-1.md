@@ -12,7 +12,7 @@ hitl-approval (a gate on anything visible outside the system; severity ladder).
 | Key | Type | Meaning |
 |---|---|---|
 | `lens` | string | the dimension that found it (lens id). Never collapsed into a source/origin. |
-| `category` | `technical` \| `product` | technical = the codebase's own quality (bugs, perf, reliability, security, debt, docs drift, a11y); product = what users get (features, UX direction, copy, pricing). Decides the autonomy start level, so in Dowser a card's category is its lens pack's default and a judge may move it technical -> product, never product -> technical (the store clamps the latter and reports `clamped`). |
+| `category` | `technical` \| `product` | technical = the codebase's own quality (bugs, perf, reliability, security, debt, docs drift, a11y); product = what users get (features, UX direction, copy, pricing). Decides the autonomy start level. **A finding's category is its lens's declared default; a judge may move it technical -> product, never product -> technical** - the store clamps a product lens's finding to `product` and reports it clamped, so relabelling cannot skip the human gate. |
 | `impact` | int 1-10 | defects: how bad if left (10 = data loss, breach, outage on a main path); opportunities: value if done. |
 | `impact_why` | string <=200 | the one-line reason for the number. |
 | `confidence` | `low` \| `medium` \| `high` | high = quoted evidence re-read in the current tree AND reproduced or measured; medium = quoted evidence re-read; low = inference. |
