@@ -45,7 +45,8 @@
  *   listProjects: () => Promise<{key: string, name: string, issue_types: {id: string, name: string}[]}[]>,
  *   issueStatuses: (keys: string[]) => Promise<Record<string, {name: string, category: 'new' | 'indeterminate' | 'done'}>>,
  * }} Jira
- *  `issueStatuses` answers only the keys Jira returned (a missing key is unreadable or gone); it throws on failure.
+ *  `issueStatuses` reads as the calling user and answers only the keys Jira returned (a missing key is one the user
+ *  cannot browse, or gone); it throws on failure.
  *  `labels` (createIssue) is set only on an issue from the sample inbox (`dowser-sample`).
  */
 

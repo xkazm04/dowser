@@ -161,13 +161,15 @@ export const jira = {
     }
     return out;
   },
+  // Read AS THE USER: the Learning tab must not show the status of an issue in a project the viewer cannot browse
+  // (an accept may target any project the accepter could create in). A key the user cannot see is simply absent.
   async issueStatuses(keys) {
     /** @type {Record<string, {name: string, category: 'new' | 'indeterminate' | 'done'}>} */
     const out = {};
     const valid = [...new Set(keys)].filter((k) => ISSUE_KEY_RE.test(k));
     for (let i = 0; i < valid.length; i += 50) {
       const chunk = valid.slice(i, i + 50);
-      const res = await asApp().requestJira(route`/rest/api/3/search/jql`, {
+      const res = await asUser().requestJira(route`/rest/api/3/search/jql`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ jql: `key in (${chunk.join(',')})`, maxResults: chunk.length, fields: ['status'] }),
