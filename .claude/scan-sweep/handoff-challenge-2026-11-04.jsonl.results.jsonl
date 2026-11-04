@@ -1,0 +1,4 @@
+{"title":"Decide by precedent: prediction on each row, lanes, bulk reject, reason preset","outcome":"queued","id":"mw2ht76r-16vg21"}
+{"title":"run status re-implements outbox pending selection; one shared selector","outcome":"queued","id":"mw2ht76t-ic9c75"}
+{"title":"bylineForPage still reads cards one at a time after the set-based store","outcome":"queued","id":"mw2ht76t-bb41uw"}
+{"title":"Rebuild context-map.json: forge-app names apps/forge/, 14 of 274 files mapped","outcome":"queued","id":"mw2ht76t-alyzgi"}

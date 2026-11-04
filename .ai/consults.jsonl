@@ -5,3 +5,4 @@
 {"ts":"2026-10-28T21:38:01Z","bundle":"software-engineering","subjects":["codebase-scanning"],"techniques":["rule-precision-discipline","verify-after-generate","evidence-scoping"],"deviations":0}
 {"ts":"2026-10-28T21:38:01Z","bundle":"technical-writing","subjects":["figures-and-tables"],"techniques":["one-message-per-figure","label-length-figure-text","designed-comparison-tables","captions-name-their-sources","text-alternative-for-figures"],"deviations":0}
 {"ts":"2026-11-04T17:20:00Z","bundle":"software-engineering","subjects":["demo-data-plane"],"techniques":["fake-surface-honesty-contract","mixed-plane-coexistence"],"deviations":0}
+{"ts":"2026-11-04T19:11:02Z","bundle":"software-engineering","subjects":["migrations","triage-queues"],"techniques":["transactional-ddl","bulk-triage"],"deviations":1}
