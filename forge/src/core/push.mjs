@@ -7,7 +7,10 @@ import { fingerprint } from '../shared/fingerprint.mjs';
 import { STORE_OWNED, resurfaces, validateCandidate } from '../shared/model.mjs';
 import { PUSH_MAX } from './types.mjs';
 import { DuplicateKey, AppError, isObj, needStr, optStr, sqlv } from './util.mjs';
-import { ensureInbox, getByFp, nextCounter, refuseSampleKey, uniteEvidence } from './store.mjs';
+import {
+  EVIDENCE_COLS, ekeysOfMany, ensureInbox, evidenceRows, getByFp, insertMany, nextCounter, nextCounterBlock, proposalRowsByFp, refuseSampleKey,
+  toProposal, uniteEvidence,
+} from './store.mjs';
 import { deciderOf } from './verdicts.mjs';
 
 /**
@@ -16,6 +19,7 @@ import { deciderOf } from './verdicts.mjs';
  * @typedef {import('./types.mjs').PushResultRow} PushResultRow
  * @typedef {import('./types.mjs').PushOutput} PushOutput
  * @typedef {import('./store.mjs').ProposalRow} ProposalRow
+ * @typedef {import('./ports.mjs').Row} Row
  */
 
 /** Parsed `_json` inputs are capped at 4 MB (contract "JSON-string inputs"). */
@@ -173,17 +177,17 @@ export async function pushProposals(deps, args, accountId, o = {}) {
   await ensureInbox(db, projectKey, { repoUrl, at, by: deciderOf(accountId) });
 
   /** @type {PushResultRow[]} */
-  const results = [];
-  let created = 0;
-  let updated = 0;
-  for (const raw of records) {
+  const results = new Array(records.length);
+  /** @type {FileJob[]} */
+  const jobs = [];
+  for (const [i, raw] of records.entries()) {
     const c = checkRecord(raw, lensKinds);
-    if (!c.ok) { results.push({ fp: c.fp, result: 'refused', why: c.why }); continue; }
-    const r = await fileOne(deps, { projectKey, runId, headSha, at, fp: c.fp, record: c.record });
-    if (r.result === 'created') created++;
-    if (r.result === 'updated') updated++;
-    results.push(r);
+    if (!c.ok) results[i] = { fp: c.fp, result: 'refused', why: c.why };
+    else jobs.push({ i, o: { projectKey, runId, headSha, at, fp: c.fp, record: c.record } });
   }
+  await fileAll(deps, jobs, results);
+  const created = results.filter((r) => r.result === 'created').length;
+  const updated = results.filter((r) => r.result === 'updated').length;
   // scanned_at only on a sample push, so a scan's push never depends on the v025 column.
   const extra = o.scannedAt ? { col: ', scanned_at', mark: ', ?', vals: [o.scannedAt] } : { col: '', mark: '', vals: [] };
   await db.exec(`INSERT INTO pushes (id, project_key, run_id, head_sha, repo_url, at, created, updated${extra.col}) VALUES (?, ?, ?, ?, ?, ?, ?, ?${extra.mark})`,
@@ -192,9 +196,127 @@ export async function pushProposals(deps, args, accountId, o = {}) {
 }
 
 /**
+ * @typedef {{projectKey: string, runId: string, headSha?: string, at: string, fp: string, record: Record<string, any>}} FileOpts
+ * @typedef {{i: number, o: FileOpts}} FileJob  `i` = the record's position in the push (its result's position)
+ * @typedef {{added: number, count: number, types: string[]}} Union
+ */
+
+/** The proposals columns a new item is inserted with (`fileAll`), in order. */
+const PROPOSAL_COLS = ['id', 'ref', 'project_key', 'fp', 'status', 'lens', 'title', 'confidence', 'record_json', 'evidence_count', 'evidence_types',
+  'first_run_id', 'last_run_id', 'first_seen', 'last_push_at', 'reopened', 'change_kind', 'score', 'band', 'mvp', 'pretriaged_by'];
+
+/**
+ * Files the valid records of one push as sets, with the answers and rows the per-record path (`fileOne`) gives:
+ * one IN read of the fps the inbox holds; for the new ones one block of DW numbers (counter CAS value -> value + n),
+ * multi-row INSERTs of the proposals (counts set from their own evidence) and of their evidence; for the held ones
+ * one key read, multi-row INSERTs of the new evidence, one count read where rows were added, and an UPDATE only for
+ * a card that changed. A new fp a concurrent push filed first makes its chunk fall back row by row
+ * (store.mjs `insertMany`); that record is then updated as an existing one, its DW number burnt. A second record
+ * of an fp already in this push is filed after the rest, by `fileOne`, as the per-record path would.
+ * @param {Deps} deps
+ * @param {FileJob[]} jobs
+ * @param {PushResultRow[]} results  written at each job's `i`
+ */
+async function fileAll(deps, jobs, results) {
+  const { db, links } = deps;
+  if (jobs.length === 0) return;
+  const { projectKey } = jobs[0].o;
+  /** @type {Set<string>} */
+  const fps = new Set();
+  /** @type {FileJob[]} */
+  const firsts = [];
+  /** @type {FileJob[]} */
+  const repeats = [];
+  for (const j of jobs) {
+    if (fps.has(j.o.fp)) repeats.push(j);
+    else { fps.add(j.o.fp); firsts.push(j); }
+  }
+  const stored = await proposalRowsByFp(db, projectKey, [...fps]);
+  /** @type {{j: FileJob, p: ProposalRow}[]} */
+  const lost = [];
+
+  const fresh = firsts.filter((j) => !stored.has(j.o.fp));
+  if (fresh.length > 0) {
+    const first = await nextCounterBlock(db, 'ref', fresh.length);
+    const plans = fresh.map((j, k) => ({ j, n: first + k, ev: evidenceRows(first + k, j.o.record.evidence, new Set(), j.o) }));
+    const filed = await insertMany(db, 'proposals', PROPOSAL_COLS, plans.map(({ j: { o }, n, ev }) => [
+      n, `DW-${n}`, o.projectKey, o.fp, 'open', o.record.lens, o.record.title, o.record.confidence, storedRecord(o.record),
+      ev.rows.length, [...new Set(ev.types)].sort().join(','), o.runId, o.runId, o.at, o.at, 0, 'new', ...rankCols(o.record),
+    ]));
+    await insertMany(db, 'evidence', EVIDENCE_COLS, plans.filter((_, k) => filed[k]).flatMap((pl) => pl.ev.rows));
+    for (const [k, { j, n }] of plans.entries()) {
+      if (filed[k]) {
+        results[j.i] = { fp: j.o.fp, result: 'created', external_ref: `DW-${n}`, external_url: await links.inboxUrl(`DW-${n}`) };
+        continue;
+      }
+      // A concurrent push filed the same fp first (UNIQUE (project_key, fp)); the DW number is burnt. Update it.
+      const p = await getByFp(db, projectKey, j.o.fp);
+      if (!p) throw new DuplicateKey(`DW-${n} could not be filed and no proposal holds fp ${j.o.fp}`);
+      lost.push({ j, p });
+    }
+  }
+
+  const held = firsts.flatMap((j) => {
+    const row = stored.get(j.o.fp);
+    return row ? [{ j, row, p: toProposal(row) }] : [];
+  });
+  if (held.length > 0) {
+    const before = await ekeysOfMany(db, held.map(({ p }) => p));
+    const plans = held.map((h) => ({ ...h, ev: evidenceRows(h.p.id, h.j.o.record.evidence, /** @type {any} */ (before.get(h.p.id)).keys, h.j.o), added: 0 }));
+    const ok = await insertMany(db, 'evidence', EVIDENCE_COLS, plans.flatMap((pl) => pl.ev.rows));
+    let at = 0;
+    for (const pl of plans) {
+      pl.added = ok.slice(at, at + pl.ev.rows.length).filter(Boolean).length;
+      at += pl.ev.rows.length;
+    }
+    // The union's size and types: re-read where rows were tried (a concurrent push may have added some), else as read.
+    const tried = plans.filter((pl) => pl.ev.rows.length > 0);
+    const after = tried.length > 0 ? await ekeysOfMany(db, tried.map((pl) => ({ id: pl.p.id, evidence_count: pl.p.evidence_count + pl.ev.rows.length }))) : new Map();
+    for (const pl of plans) {
+      const k = /** @type {{types: Set<string>, count: number}} */ (after.get(pl.p.id) ?? before.get(pl.p.id));
+      /** @type {Union} */
+      const u = { added: pl.added, count: k.count, types: [...k.types].sort() };
+      await refresh(db, pl.p, pl.j.o, u, pl.row);
+      results[pl.j.i] = await settle(deps, pl.p, pl.j.o, u);
+    }
+  }
+
+  for (const { j, p } of lost) results[j.i] = await updateOne(deps, p, j.o);
+  for (const j of repeats) results[j.i] = await fileOne(deps, j.o);
+}
+
+/** A stored or bound value, compared as text (a driver may answer a number as a string). @param {unknown} v */
+const same = (v) => (v === null || v === undefined ? '\u0000' : String(v));
+
+/**
+ * Refreshes the card of a held item: the stored copies of the record and the union's counts; the item moves to
+ * this push's group only when its evidence grew (F8 run diff). With `row` (the stored row as read), an item that
+ * neither grew nor changed is not written: the UPDATE would rewrite every value with itself.
+ * @param {Db} db
+ * @param {ProposalRow} p
+ * @param {FileOpts} o
+ * @param {Union} u
+ * @param {Row} [row]
+ */
+async function refresh(db, p, o, u, row) {
+  const grew = u.added > 0;
+  const values = [o.record.lens, o.record.title, o.record.confidence, storedRecord(o.record), u.count, u.types.join(','), ...rankCols(o.record)];
+  if (!grew && row) {
+    const now = [row.lens, row.title, row.confidence, row.record_json, row.evidence_count, row.evidence_types, row.score, row.band, row.mvp, row.pretriaged_by];
+    if (values.every((v, i) => same(v) === same(now[i]))) return;
+  }
+  await db.exec(
+    `UPDATE proposals SET lens = ?, title = ?, confidence = ?, record_json = ?, evidence_count = ?, evidence_types = ?,
+      score = ?, band = ?, mvp = ?, pretriaged_by = ?
+      ${grew ? ", last_run_id = ?, last_push_at = ?, change_kind = 'grew'" : ''} WHERE id = ?`,
+    [...values, ...(grew ? [o.runId, o.at] : []), p.id],
+  );
+}
+
+/**
  * Files one valid record: create, or update + unite + maybe reopen, or redirect to the surviving item.
  * @param {Deps} deps
- * @param {{projectKey: string, runId: string, headSha?: string, at: string, fp: string, record: Record<string, any>}} o
+ * @param {FileOpts} o
  * @returns {Promise<PushResultRow>}
  */
 async function fileOne(deps, o) {
@@ -226,22 +348,27 @@ async function fileOne(deps, o) {
 /**
  * @param {Deps} deps
  * @param {ProposalRow} p
- * @param {{runId: string, headSha?: string, at: string, fp: string, record: Record<string, any>}} o
+ * @param {FileOpts} o
  * @returns {Promise<PushResultRow>}
  */
 async function updateOne(deps, p, o) {
-  const { db, links } = deps;
-  const u = await uniteEvidence(db, p.id, o.record.evidence, { runId: o.runId, headSha: o.headSha, at: o.at });
-  const grew = u.added > 0;
-  // The card is refreshed; the item moves to this push's group only when its evidence grew (F8 run diff).
-  await db.exec(
-    `UPDATE proposals SET lens = ?, title = ?, confidence = ?, record_json = ?, evidence_count = ?, evidence_types = ?,
-      score = ?, band = ?, mvp = ?, pretriaged_by = ?
-      ${grew ? ", last_run_id = ?, last_push_at = ?, change_kind = 'grew'" : ''} WHERE id = ?`,
-    [o.record.lens, o.record.title, o.record.confidence, storedRecord(o.record), u.count, u.types.join(','), ...rankCols(o.record),
-      ...(grew ? [o.runId, o.at] : []), p.id],
-  );
+  const u = await uniteEvidence(deps.db, p.id, o.record.evidence, { runId: o.runId, headSha: o.headSha, at: o.at });
+  await refresh(deps.db, p, o, u);
+  return settle(deps, p, o, u);
+}
 
+/**
+ * What a held item answers after its evidence was united and its card refreshed: the survivor of a merge, or
+ * itself, reopened first when a dated snooze is due or its growth resurfaces it (F3).
+ * @param {Deps} deps
+ * @param {ProposalRow} p  the item as it was before this push
+ * @param {FileOpts} o
+ * @param {Union} u
+ * @returns {Promise<PushResultRow>}
+ */
+async function settle(deps, p, o, u) {
+  const { db, links } = deps;
+  const grew = u.added > 0;
   if (p.status === 'merged') {
     // A person folded this fp into another item. Into an inbox item: answer that survivor. Into a Jira issue
     // there is no surviving inbox item, so the item answers as itself (`updated`); its `merged` verdict reaches

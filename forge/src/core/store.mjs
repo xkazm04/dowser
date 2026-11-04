@@ -32,11 +32,26 @@ const CAS_TRIES = 20;
  * @returns {Promise<number>}
  */
 export async function nextCounter(db, name) {
+  return nextCounterBlock(db, name, 1);
+}
+
+/**
+ * Issues the next `n` values of counter `name` at once: one compare-and-set `value -> value + n` (two statements
+ * however large the block) answering the first; the caller owns `first .. first + n - 1`. Two concurrent callers
+ * get disjoint blocks. A value issued and then not used (a push that lost an fp race) is burnt, as with
+ * `nextCounter`.
+ * @param {Db} db
+ * @param {string} name
+ * @param {number} n  1 or more
+ * @returns {Promise<number>}
+ */
+export async function nextCounterBlock(db, name, n) {
+  if (!Number.isInteger(n) || n < 1) throw new AppError('bad-input', `a counter block holds 1 or more values, not ${n}`);
   for (let i = 0; i < CAS_TRIES; i++) {
     const rows = await db.query('SELECT value FROM counters WHERE name = ?', [name]);
     if (rows.length === 0) {
       try {
-        await db.exec('INSERT INTO counters (name, value) VALUES (?, ?)', [name, 1]);
+        await db.exec('INSERT INTO counters (name, value) VALUES (?, ?)', [name, n]);
         return 1;
       } catch (e) {
         if (!(e instanceof DuplicateKey)) throw e;
@@ -44,11 +59,121 @@ export async function nextCounter(db, name) {
       }
     }
     const v = Number(rows[0].value);
-    const r = await db.exec('UPDATE counters SET value = ? WHERE name = ? AND value = ?', [v + 1, name, v]);
+    const r = await db.exec('UPDATE counters SET value = ? WHERE name = ? AND value = ?', [v + n, name, v]);
     if (r.affectedRows === 1) return v + 1;
   }
   throw new AppError('unavailable', `could not allocate the next ${name}; try again`);
 }
+
+// ------------------------------------------------------------------------------------------- set statements
+//
+// Every statement is one Forge SQL request (30-60 ms), so bulk work is a few multi-row statements, not one per row.
+// `INSERT ... VALUES (...), (...)` and `IN (...)` are plain SQL in both TiDB and SQLite. A request carries at most
+// 1 MiB and an answer at most 4 MiB (Forge SQL limits), so writes are chunked by size and parameter count, and
+// evidence reads by the rows they may answer.
+
+/**
+ * Bytes of SQL plus bound values one statement may carry: half of Forge SQL's 1 MiB request, leaving room for the
+ * JSON escaping of the request body (a quoted line of code can grow when escaped).
+ */
+export const STATEMENT_BYTES_MAX = 512 * 1024;
+/** Bound parameters per statement: far under TiDB's 65535 and SQLite's 32766. */
+export const STATEMENT_PARAMS_MAX = 5000;
+/**
+ * Evidence rows one full read may answer: a row is at most ~5 KB (ref 500, quote 2000, url 2000 chars, plus keys),
+ * so 500 rows stay well under Forge SQL's 4 MiB response. A key-only or ref-only read has far smaller rows.
+ */
+export const EVIDENCE_READ_ROWS = 500;
+
+/** @param {unknown} v */
+const valueBytes = (v) => (typeof v === 'string' ? Buffer.byteLength(v, 'utf8') : 8);
+
+/**
+ * Inserts `rows` (each the values of `cols`, in order) in as few multi-row INSERTs as the byte and parameter caps
+ * allow. A chunk that hits a UNIQUE / PRIMARY KEY duplicate is retried row by row (one statement is atomic in TiDB
+ * and SQLite alike: the failed chunk wrote nothing), so a row a concurrent writer filed first answers `false` and
+ * every other row lands. Any other error is thrown.
+ * @param {Db} db
+ * @param {string} table
+ * @param {string[]} cols
+ * @param {unknown[][]} rows
+ * @returns {Promise<boolean[]>}  per row: inserted (true) or a duplicate (false)
+ */
+export async function insertMany(db, table, cols, rows) {
+  /** @type {boolean[]} */
+  const out = rows.map(() => false);
+  const head = `INSERT INTO ${table} (${cols.join(', ')}) VALUES `;
+  const tuple = `(${cols.map(() => '?').join(', ')})`;
+  /** @param {number} from @param {number} to */
+  const run = async (from, to) => {
+    if (to - from > 1) {
+      try {
+        await db.exec(head + rows.slice(from, to).map(() => tuple).join(', '), rows.slice(from, to).flat());
+        for (let i = from; i < to; i++) out[i] = true;
+        return;
+      } catch (e) {
+        if (!(e instanceof DuplicateKey)) throw e;
+      }
+    }
+    for (let i = from; i < to; i++) {
+      try {
+        await db.exec(head + tuple, rows[i]);
+        out[i] = true;
+      } catch (e) {
+        if (!(e instanceof DuplicateKey)) throw e;
+      }
+    }
+  };
+  const headBytes = Buffer.byteLength(head, 'utf8');
+  let from = 0;
+  let bytes = headBytes;
+  for (let i = 0; i < rows.length; i++) {
+    const rowBytes = tuple.length + 2 + rows[i].reduce((/** @type {number} */ n, v) => n + valueBytes(v), 0);
+    if (i > from && (bytes + rowBytes > STATEMENT_BYTES_MAX || (i - from + 1) * cols.length > STATEMENT_PARAMS_MAX)) {
+      await run(from, i);
+      from = i;
+      bytes = headBytes;
+    }
+    bytes += rowBytes;
+  }
+  if (from < rows.length) await run(from, rows.length);
+  return out;
+}
+
+/**
+ * Splits `items` into IN-list chunks of at most STATEMENT_PARAMS_MAX - `reserve` values and, with `weight`, at
+ * most `budget` weight each (a chunk always holds at least one item).
+ * @template T
+ * @param {T[]} items
+ * @param {{reserve?: number, weight?: (t: T) => number, budget?: number}} [o]
+ * @returns {T[][]}
+ */
+export function inChunks(items, { reserve = 0, weight, budget = Infinity } = {}) {
+  /** @type {T[][]} */
+  const out = [];
+  /** @type {T[]} */
+  let cur = [];
+  let w = 0;
+  for (const t of items) {
+    const tw = weight ? Math.max(1, weight(t)) : 1;
+    if (cur.length > 0 && (cur.length >= STATEMENT_PARAMS_MAX - reserve || w + tw > budget)) { out.push(cur); cur = []; w = 0; }
+    cur.push(t);
+    w += tw;
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+
+/** `?, ?, ...` for an IN list of `n` values. @param {number} n */
+const marks = (n) => Array.from({ length: n }, () => '?').join(', ');
+
+/**
+ * The proposals of `ps` once each, by id (an IN list asks each id once).
+ * @template {{id: number}} T
+ * @param {T[]} ps
+ * @returns {T[]}
+ */
+const uniqueById = (ps) => [...new Map(ps.map((p) => [p.id, p])).values()];
 
 /**
  * The last value counter `name` issued, or 0 when it never issued one.
@@ -186,6 +311,22 @@ export async function getByFp(db, projectKey, fp) {
 }
 
 /**
+ * The stored rows (as read, not mapped) of the fps of one inbox, in one IN read per STATEMENT_PARAMS_MAX fps.
+ * @param {Db} db
+ * @param {string} projectKey
+ * @param {string[]} fps
+ * @returns {Promise<Map<string, Row>>}  fp -> row; an fp the inbox does not hold is absent
+ */
+export async function proposalRowsByFp(db, projectKey, fps) {
+  /** @type {Map<string, Row>} */
+  const out = new Map();
+  for (const chunk of inChunks([...new Set(fps)], { reserve: 1 })) {
+    for (const r of await db.query(`SELECT * FROM proposals WHERE project_key = ? AND fp IN (${marks(chunk.length)})`, [projectKey, ...chunk])) out.set(String(r.fp), r);
+  }
+  return out;
+}
+
+/**
  * A proposal by inbox ref (`DW-12`) or by fingerprint (any project; an fp in two projects is ambiguous).
  * @param {Db} db
  * @param {string} ref
@@ -235,26 +376,93 @@ export async function evidenceOf(db, proposalId) {
  */
 export async function uniteEvidence(db, proposalId, items, { runId, headSha, at, fresh = false }) {
   const have = new Set(fresh ? [] : (await db.query('SELECT ekey_hash FROM evidence WHERE proposal_id = ?', [proposalId])).map((r) => String(r.ekey_hash)));
-  /** @type {Set<string>} */
-  const types = new Set();
-  let added = 0;
+  const plan = evidenceRows(proposalId, items, have, { runId, headSha, at });
+  const added = (await insertMany(db, 'evidence', EVIDENCE_COLS, plan.rows)).filter(Boolean).length;
+  if (fresh) return { added, count: plan.rows.length, types: [...new Set(plan.types)].sort() };
+  const rows = await db.query('SELECT type FROM evidence WHERE proposal_id = ?', [proposalId]);
+  return { added, count: rows.length, types: [...new Set(rows.map((r) => String(r.type)))].sort() };
+}
+
+/**
+ * Every evidence row of each proposal, oldest first (as `evidenceOf`), in IN reads of at most EVIDENCE_READ_ROWS
+ * rows by the proposals' `evidence_count`.
+ * @param {Db} db
+ * @param {{id: number, evidence_count?: number}[]} proposals
+ * @returns {Promise<Map<number, EvidenceRow[]>>}  every asked id is present (an empty list when it has none)
+ */
+export async function evidenceOfMany(db, proposals) {
+  /** @type {Map<number, EvidenceRow[]>} */
+  const out = new Map(proposals.map((p) => [p.id, []]));
+  for (const chunk of inChunks(uniqueById(proposals), { weight: (p) => p.evidence_count ?? 1, budget: EVIDENCE_READ_ROWS })) {
+    const rows = await db.query(`SELECT * FROM evidence WHERE proposal_id IN (${marks(chunk.length)}) ORDER BY proposal_id, added_at, pos`, chunk.map((p) => p.id));
+    for (const r of rows) out.get(Number(r.proposal_id))?.push(toEvidence(r));
+  }
+  return out;
+}
+
+/**
+ * The evidence `{type, ref}` of each proposal, oldest first: what the area mapping reads (areas.mjs), without the
+ * quotes and urls, so one read answers many more proposals.
+ * @param {Db} db
+ * @param {{id: number, evidence_count?: number}[]} proposals
+ * @returns {Promise<Map<number, {type: string, ref: string}[]>>}
+ */
+export async function evidenceRefsOfMany(db, proposals) {
+  /** @type {Map<number, {type: string, ref: string}[]>} */
+  const out = new Map(proposals.map((p) => [p.id, []]));
+  for (const chunk of inChunks(uniqueById(proposals), { weight: (p) => p.evidence_count ?? 1, budget: EVIDENCE_READ_ROWS * 8 })) {
+    const rows = await db.query(`SELECT proposal_id, type, ref FROM evidence WHERE proposal_id IN (${marks(chunk.length)}) ORDER BY proposal_id, added_at, pos`, chunk.map((p) => p.id));
+    for (const r of rows) out.get(Number(r.proposal_id))?.push({ type: String(r.type), ref: String(r.ref) });
+  }
+  return out;
+}
+
+/**
+ * The evidence keys (ekey_hash) and types each proposal holds, in key-only IN reads.
+ * @param {Db} db
+ * @param {{id: number, evidence_count?: number}[]} proposals
+ * @returns {Promise<Map<number, {keys: Set<string>, types: Set<string>, count: number}>>}  every asked id present
+ */
+export async function ekeysOfMany(db, proposals) {
+  /** @type {Map<number, {keys: Set<string>, types: Set<string>, count: number}>} */
+  const out = new Map(proposals.map((p) => [p.id, { keys: new Set(), types: new Set(), count: 0 }]));
+  for (const chunk of inChunks(uniqueById(proposals), { weight: (p) => p.evidence_count ?? 1, budget: EVIDENCE_READ_ROWS * 40 })) {
+    for (const r of await db.query(`SELECT proposal_id, ekey_hash, type FROM evidence WHERE proposal_id IN (${marks(chunk.length)})`, chunk.map((p) => p.id))) {
+      const k = out.get(Number(r.proposal_id));
+      if (!k) continue;
+      k.keys.add(String(r.ekey_hash));
+      k.types.add(String(r.type));
+      k.count++;
+    }
+  }
+  return out;
+}
+
+/** The evidence table's columns, in the order `evidenceRows` writes them. */
+export const EVIDENCE_COLS = ['proposal_id', 'ekey_hash', 'ekey', 'type', 'ref', 'quote', 'url', 'head_sha', 'added_run_id', 'added_at', 'pos'];
+
+/**
+ * The rows `items` add to a proposal holding the keys `have`: one per evidence key not held yet; the first item of
+ * a key wins and keeps its position in `items` (`pos`). Pure.
+ * @param {number} proposalId
+ * @param {{type: string, ref: string, quote?: string, url?: string}[]} items
+ * @param {Set<string>} have  ekey hashes the proposal holds
+ * @param {{runId: string, headSha?: string, at: string}} o
+ * @returns {{rows: unknown[][], types: string[]}}  rows in EVIDENCE_COLS order, and the type of each
+ */
+export function evidenceRows(proposalId, items, have, { runId, headSha, at }) {
+  const seen = new Set(have);
+  /** @type {unknown[][]} */
+  const rows = [];
+  /** @type {string[]} */
+  const types = [];
   for (const [pos, e] of items.entries()) {
     const ekey = evidenceKey(e).key;
     const h = sha256(`${e.type}\n${ekey}`);
-    if (have.has(h)) continue;
-    types.add(e.type);
-    try {
-      await db.exec(
-        'INSERT INTO evidence (proposal_id, ekey_hash, ekey, type, ref, quote, url, head_sha, added_run_id, added_at, pos) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [proposalId, h, ekey, e.type, e.ref, sqlv(e.quote), sqlv(e.url), sqlv(headSha), runId, at, pos],
-      );
-      added++;
-    } catch (err) {
-      if (!(err instanceof DuplicateKey)) throw err;
-    }
-    have.add(h);
+    if (seen.has(h)) continue;
+    seen.add(h);
+    rows.push([proposalId, h, ekey, e.type, e.ref, sqlv(e.quote), sqlv(e.url), sqlv(headSha), runId, at, pos]);
+    types.push(e.type);
   }
-  if (fresh) return { added, count: have.size, types: [...types].sort() };
-  const rows = await db.query('SELECT type FROM evidence WHERE proposal_id = ?', [proposalId]);
-  return { added, count: rows.length, types: [...new Set(rows.map((r) => String(r.type)))].sort() };
+  return { rows, types };
 }

@@ -14,6 +14,11 @@
 // (`UPDATE ... WHERE status = ?` + affectedRows), ids come from a CAS counter, inserts are check-then-insert
 // guarded by UNIQUE, and a decision whose verdict row did not land is repaired from the decision stamp on the
 // proposal row before every pull (verdicts.mjs `repairVerdicts`).
+//
+// Sets. Because every statement is a request (30-60 ms on Forge SQL), bulk work is set-based (store.mjs): IN reads,
+// multi-row `INSERT ... VALUES (...), (...)` chunked under the request caps, and DW numbers in blocks by one CAS.
+// A single statement is atomic in TiDB and SQLite alike, so a multi-row INSERT that hits a duplicate wrote nothing
+// and is retried row by row: the check-then-insert and CAS guarantees above hold unchanged.
 
 /**
  * @typedef {Record<string, any>} Row
