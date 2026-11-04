@@ -195,15 +195,22 @@ export const COMMANDS = {
     subs: {
       start: {
         flags: { mode: { arg: 'full|incremental|focused', required: true }, harness: { arg: '<h>' }, model: { arg: '<m>' }, focus: { arg: 'goal:..|area:..' } },
-        help: '-> {run_id, mode, base_sha?, head_sha?, fallback?, woke?, abandoned?, db} (base_sha = last done run\'s head; ' +
+        help: '-> {run_id, mode, base_sha?, head_sha?, fallback?, woke?, abandoned?, open_runs?, db} (base_sha = last done run\'s head; ' +
           'incremental with that head gone from history -> full; woke = snoozed fps whose --until date passed, now verified; ' +
-          'abandoned = run ids left running over a day, now closed failed)',
+          'abandoned = run ids left running over a day, now closed failed; open_runs = run ids still running under a day, left open)',
         run(a, ctx) {
           const db = ctx.open();
           const r = store.runStart(db, { mode: req(a, 'mode'), harness: opt(a, 'harness'), model: opt(a, 'model'), focus: opt(a, 'focus'), headSha: headSha(ctx.root),
             hasCommit: (sha) => hasCommit(ctx.root, sha) });
-          return { out: store.clean({ run_id: r.id, mode: r.mode, focus: r.focus, base_sha: r.base_sha, head_sha: r.head_sha, fallback: r.fallback, woke: r.woke, abandoned: r.abandoned, db: ctx.dbFile() }) };
+          return { out: store.clean({ run_id: r.id, mode: r.mode, focus: r.focus, base_sha: r.base_sha, head_sha: r.head_sha, fallback: r.fallback, woke: r.woke, abandoned: r.abandoned, open_runs: r.open_runs, db: ctx.dbFile() }) };
         },
+      },
+      status: {
+        flags: { run: RUN_FLAG },
+        help: 'where a run stands, read-only -> {run_id, status, mode, started_at, finished_at?, lenses?, stages: {direction?, ' +
+          'sources?, proposed?, not_reached?, verify?: pending | {state: done, verified, dropped}, pretriage?, push?: {pending?, pushed?}}, ' +
+          'next: [CLI lines]} (push.pending = what outbox would send now, store-wide; next is [] once the run ended)',
+        run(a, ctx) { return { out: store.runProgress(ctx.open(), req(a, 'run')) }; },
       },
       finish: {
         flags: { run: RUN_FLAG, lenses: { arg: '<json | @file>', required: true }, status: { arg: 'done|failed' } },
@@ -307,7 +314,7 @@ export const COMMANDS = {
 
   status: {
     flags: { runs: { arg: '<n>' } },
-    help: 'counts by status and lens, last runs (default 5), "top N of M" truncation',
+    help: 'counts by status and lens, last runs (default 5), "top N of M" truncation, open?: [{run_id, started_at, next}] (runs still running)',
     run(a, ctx) {
       const db = ctx.open();
       const n = opt(a, 'runs');
