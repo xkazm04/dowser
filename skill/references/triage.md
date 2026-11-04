@@ -145,6 +145,10 @@ token, `rules offer` drafts a rule, for example:
   overwritten. A Forge decision is recorded as decided by `forge:<account>`.
 - Only accepted rules reach a lens's `context` pack. There they bind like the pack's own
   rules. A declined cluster is never offered again.
+- When the runner asks which rules Dowser follows, run `rules list` (add `--lens <id>` for one
+  lens): every rule with its state (`offered`, `accepted`, `declined`), its wording, the
+  rejections it came from, and when it was offered and decided. Answer from that, not from
+  memory of earlier runs.
 - Rules change **what** a lens proposes and **how**, never how many. The budget stays 16 ranked
   per run, at most 4 per lens in the first pass (free run slots then go to the best remaining
   cards of any lens), enforced by the store at `verify` (the rest is filed in `reserve`).
