@@ -128,6 +128,15 @@ export function fakeJira() {
       return out;
     },
     async listProjects() { return [{ key: 'SHOP', name: 'Shop', issue_types: [{ id: '10001', name: 'Story' }] }]; },
+    /** `true` makes setIssueProperty throw. */
+    failProp: false,
+    /** issue key -> property key -> value, as setIssueProperty wrote it. @type {Record<string, Record<string, unknown>>} */
+    properties: {},
+    /** @param {string} issueKey @param {string} key @param {unknown} value */
+    async setIssueProperty(issueKey, key, value) {
+      if (j.failProp) throw new Error('Jira answered 503');
+      (j.properties[issueKey] ??= {})[key] = value;
+    },
   };
   return j;
 }

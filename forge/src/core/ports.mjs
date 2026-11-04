@@ -44,10 +44,13 @@
  *   addComment: (issueKey: string, body: AdfDoc) => Promise<void>,
  *   listProjects: () => Promise<{key: string, name: string, issue_types: {id: string, name: string}[]}[]>,
  *   issueStatuses: (keys: string[]) => Promise<Record<string, {name: string, category: 'new' | 'indeterminate' | 'done'}>>,
+ *   setIssueProperty?: (issueKey: string, key: string, value: Record<string, string | number>) => Promise<void>,
  * }} Jira
  *  `issueStatuses` reads as the calling user and answers only the keys Jira returned (a missing key is one the user
  *  cannot browse, or gone); it throws on failure.
  *  `labels` (createIssue) is set only on an issue from the sample inbox (`dowser-sample`).
+ *  `setIssueProperty` writes an issue entity property as the app (core/issue-property.mjs); optional, so a
+ *  port without it simply writes none.
  */
 
 /**

@@ -185,6 +185,23 @@ modules:
         function: resolver
       title: Dowser
 
+  jira:entityProperty:
+    # The issue property core/issue-property.mjs writes on accept and on a merge into a Jira key; JQL reads it
+    # by alias, e.g. dowserLens = "security-cra" AND dowserBand = "ranked" ORDER BY dowserScore DESC.
+    - key: dowser-issue-property
+      entityType: issue
+      propertyKey: dowser
+      values:
+        - { path: ref, type: string, searchAlias: dowserRef }
+        - { path: lens, type: string, searchAlias: dowserLens }
+        - { path: kind, type: string, searchAlias: dowserKind }
+        - { path: confidence, type: string, searchAlias: dowserConfidence }
+        - { path: category, type: string, searchAlias: dowserCategory }
+        - { path: impact, type: number, searchAlias: dowserImpact }
+        - { path: score, type: number, searchAlias: dowserScore }
+        - { path: band, type: string, searchAlias: dowserBand }
+        - { path: mvp, type: string, searchAlias: dowserMvp }
+        - { path: via, type: string, searchAlias: dowserVia }
   trigger:
     - key: dowser-migrate
       function: migrate

@@ -10,6 +10,7 @@
 import { REASONS, decisionProblem, isOneOf } from '../shared/model.mjs';
 import { issueDescription, mergeComment } from './adf.mjs';
 import { cardOf, toVerdict } from './cards.mjs';
+import { writeIssueProperty } from './issue-property.mjs';
 import { counterValue, findProposal, isSampleKey, needInbox, nextCounter, toProposal } from './store.mjs';
 import { NOTE_MAX, REF_RE, SAMPLE_LABEL, VERDICT_STATUSES } from './types.mjs';
 import { AppError, DuplicateKey, FP_RE, ISSUE_KEY_RE, needStr, optStr, sqlv, str } from './util.mjs';
@@ -188,6 +189,7 @@ export async function accept(deps, args, who) {
   }
   try {
     const after = await decide(deps, p, { to: 'accepted', note, issue_ref: issue.key, issue_url: issue.url, claim }, who);
+    await writeIssueProperty(deps, after, issue.key, 'accepted'); // best effort: logged, backfilled daily
     return { card: await cardOf(db, after) };
   } catch (e) {
     if (e instanceof AppError) throw new AppError(e.code, `${e.message}. Jira issue ${issue.key} was created; link or delete it by hand`);
@@ -305,7 +307,9 @@ export async function merge(deps, args, who) {
     } catch (e) {
       throw new AppError('unavailable', `Jira did not take the comment on ${into} (${/** @type {Error} */ (e).message}); ${p.ref} stays open`);
     }
-    return { card: await cardOf(db, await decide(deps, p, { to: 'merged', merged_into: into }, who)) };
+    const after = await decide(deps, p, { to: 'merged', merged_into: into }, who);
+    await writeIssueProperty(deps, after, into, 'merged'); // best effort: logged, backfilled daily
+    return { card: await cardOf(db, after) };
   }
   const target = await findProposal(db, into);
   if (target.id === p.id) throw new AppError('bad-input', 'an item cannot be merged into itself');

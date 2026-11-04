@@ -236,4 +236,7 @@ export const MIGRATIONS = Object.freeze([
   // The sample inbox's scan time (core/sample.mjs): when the scan the sample replays ran, set only on the pushes
   // `sample.load` writes; NULL on every scan push (its `at` is the scan's own push time).
   { name: 'v025_pushes_scanned_at', statement: 'ALTER TABLE pushes ADD COLUMN scanned_at VARCHAR(32)' },
+  // When the Jira issue property `dowser` last landed for an accepted or Jira-merged item (core/issue-property.mjs);
+  // NULL = not yet written, which the daily backfill picks up.
+  { name: 'v026_proposals_issue_prop_at', statement: 'ALTER TABLE proposals ADD COLUMN issue_prop_at VARCHAR(32)' },
 ]);

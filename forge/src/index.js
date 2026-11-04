@@ -6,6 +6,7 @@ import ResolverPkg from '@forge/resolver';
 import { getAppContext } from '@forge/api';
 import { actionName, isConsent, isSchemaBehind, resolverAllowed, runResolver, runRovo, runTool } from './core/app.mjs';
 import { forgeDb, runMigrations } from './adapters/forge-sql.mjs';
+import { backfillIssueProperties } from './core/issue-property.mjs';
 import { installationId, jira, links, perms, sources, users } from './adapters/atlassian.mjs';
 
 // @forge/resolver is CommonJS: tsc (nodenext) sees module.exports, the Forge bundler sees the class.
@@ -140,7 +141,8 @@ export async function rovo(payload, context) {
 }
 
 /**
- * Forge SQL migrations, run on install and upgrade (trigger dowser-migrate).
+ * Forge SQL migrations, run on install and upgrade (trigger dowser-migrate) and daily (dowser-migrate-daily),
+ * then the Jira issue-property backfill (core/issue-property.mjs): best effort, logged, never fails the trigger.
  * @param {unknown} _event
  * @returns {Promise<void>}
  */
@@ -148,4 +150,10 @@ export async function migrate(_event) {
   const ran = await runMigrations();
   migrated.add(installationId());
   console.log(`dowser: migrations ran: ${ran.length ? ran.join(', ') : 'none (up to date)'}`);
+  try {
+    const b = await backfillIssueProperties(deps());
+    if (b.written || b.failed) console.log(JSON.stringify({ dowser: 'issue-property-backfill', ...b }));
+  } catch (e) {
+    console.error(`dowser: issue-property backfill failed (${String(/** @type {any} */ (e)?.message ?? e).slice(0, 200)})`);
+  }
 }

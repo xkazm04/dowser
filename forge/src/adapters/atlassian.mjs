@@ -161,6 +161,13 @@ export const jira = {
     }
     return out;
   },
+  async setIssueProperty(issueKey, key, value) {
+    if (!ISSUE_KEY_RE.test(issueKey)) throw new Error(`not an issue key: ${issueKey}`);
+    const res = await asApp().requestJira(route`/rest/api/3/issue/${issueKey}/properties/${key}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(value),
+    });
+    if (!res.ok) throw new Error(`Jira set issue property on ${issueKey} answered ${res.status}`);
+  },
   // Read AS THE USER: the Learning tab must not show the status of an issue in a project the viewer cannot browse
   // (an accept may target any project the accepter could create in). A key the user cannot see is simply absent.
   async issueStatuses(keys) {

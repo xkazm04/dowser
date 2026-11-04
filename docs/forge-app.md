@@ -19,7 +19,9 @@ Graph goals to the skill as scan sources.
 | `jira:globalPage` | `dowser-inbox` | `resolver` | The inbox, the opportunity map, the Learning tab (route `reflect`) and settings (Custom UI) |
 | `jira:issuePanel` | `dowser-evidence` | `resolver` | The evidence trail on an accepted issue |
 | `confluence:contentBylineItem` | `dowser-doc-impact` | `resolver` | The proposals that cite or affect a page |
+| `jira:entityProperty` | `dowser-issue-property` | - | Indexes the `dowser` issue property for JQL (see "Dowser facts in JQL") |
 | `trigger` | `dowser-migrate` | `migrate` | Forge SQL migrations on install and upgrade |
+| `scheduledTrigger` | `dowser-migrate-daily` | `migrate` | Daily migrations, then the issue-property backfill (at most 50 items a day) |
 | `sql` | `main` | - | The Forge SQL database (MySQL dialect, TiDB) |
 
 ### Code layout (design F7)
@@ -418,6 +420,25 @@ On an issue that Dowser created at Accept, the **Dowser evidence** panel shows t
 column, read-only: the facts, the supporting views (stacked, one per row), the evidence trail, doc impact, delivery risk and triage history. On any other issue, it says "No Dowser
 evidence you can view here." and "Either Dowser did not propose this issue, or its proposal is in a Dowser inbox
 you cannot open. A Jira admin can tell you which." The wording is true in both cases and never names the inbox.
+
+### Dowser facts in JQL
+
+Accept, and a merge into an existing Jira issue, write the issue property `dowser` as the app
+(`core/issue-property.mjs`): `ref`, `fp`, `lens`, `kind`, `confidence`, `category`, `impact`, `score`,
+`band`, `mvp` (`yes`/`no`) and `via` (`accepted`/`merged`). A fact the card does not carry is left out. The
+`jira:entityProperty` module indexes each field under a `dowser*` alias:
+
+```text
+dowserLens = "security-cra" AND statusCategory != Done
+dowserBand = "ranked" ORDER BY dowserScore DESC
+dowserMvp = "yes" AND project = SHOP
+dowserVia = "merged"
+```
+
+The write is best effort: the decision is the record, a failed write is logged (`what: issue property`), and the
+daily trigger writes what is missing (`issue_prop_at`, migration v026). A merge into an issue that an accepted card
+created does not overwrite that card's property. Jira re-indexes a new module's fields only for properties written
+after the deploy; the backfill covers the items decided before it.
 
 ### Theme and accessibility
 
