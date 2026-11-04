@@ -40,8 +40,10 @@ Run both before you hand back work:
 ## Rules
 
 - Plain ESM `.mjs` with `// @ts-check` and JSDoc. Zero runtime dependencies. Node 22.13 or newer (`node:sqlite`).
-- **Never write into a scanned repository.** Memory lives in `~/.dowser/` (`DOWSER_HOME` in
-  tests). Work files go in the OS temp folder.
+- **A scan never writes into the scanned repository.** Memory lives in `~/.dowser/` (`DOWSER_HOME` in
+  tests). Work files go in the OS temp folder. Build mode (`SKILL.md` section 12, `/dowser build DW-n`)
+  is the one exception: it edits the repo for one accepted item because the runner asked, and never
+  commits, pushes or merges on its own.
 - Store writes go through `skill/scripts/dowser.mjs` only. Every status move is
   compare-and-set. `evidence` and `transitions` are append-only.
 - Absent values: omit the key. Never write `null`, and never write `0` for something unmeasured.

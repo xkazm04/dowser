@@ -191,8 +191,9 @@ is its lens pack's default (opportunity and ux-friction `product`, doc-drift and
 
 - A `technical` slice starts at **L1** (the contract's L2 start capped by Dowser's ceiling: technical items default to automation); a `product` slice starts at **L0** and reaches **L1** when its predicted verdicts agreed with the
   person's on at least 90 % of its last 20 decisions (at least 20). Dowser's ceiling is L1:
-  it never writes into the repo, and a Jira issue leaves the system, so nothing is ever built
-  or accepted by the machine.
+  a scan never writes into the repo, and a Jira issue leaves the system, so nothing is ever built
+  or accepted by the machine. Build mode (SKILL.md section 12) builds only what a person
+  accepted, when a person asks for it.
 - At L1, `pretriage --run <id>` marks the slice's ranked cards predicted `accept`
   `pretriaged_by: machine:dowser`. They skip the runner's pre-triage and go to the inbox marked
   "machine pre-triaged". No status moves: the person still accepts, rejects or snoozes each in

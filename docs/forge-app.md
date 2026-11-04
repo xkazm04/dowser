@@ -11,8 +11,8 @@ Graph goals to the skill as scan sources.
 
 | Manifest module | Key | Function | What it does |
 |---|---|---|---|
-| `rovo:mcp` | `dowser-mcp` | `mcp` | The nine forge-mcp-2 tools, for Claude Code and Codex CLI |
-| `action` (x9) | `dowser_sources_tickets`, `dowser_sources_pages`, `dowser_sources_goals`, `dowser_proposals_push`, `dowser_verdicts_pull`, `dowser_areas_push`, `dowser_reflect_sync`, `dowser_direction_get`, `dowser_memory_pull` | `mcp` | The tools themselves. `rovo:mcp` lists them |
+| `rovo:mcp` | `dowser-mcp` | `mcp` | The twelve forge-mcp-2 tools, for Claude Code and Codex CLI |
+| `action` (x12) | `dowser_sources_tickets`, `dowser_sources_pages`, `dowser_sources_goals`, `dowser_proposals_push`, `dowser_verdicts_pull`, `dowser_areas_push`, `dowser_reflect_sync`, `dowser_direction_get`, `dowser_memory_pull`, `dowser_work_list`, `dowser_work_get`, `dowser_work_report` | `mcp` | The tools themselves. `rovo:mcp` lists them |
 | `action` (x3) | `dowser_inbox_list`, `dowser_proposal_explain`, `dowser_verdict_record` | `rovo` | The Rovo agent's actions |
 | `rovo:agent` | `dowser-agent` | - | Lists and explains proposals, and records verdicts for the person chatting with it |
 | `rovo:skill` | `dowser-skill` | - | The read actions as a skill for other agents |
@@ -498,7 +498,7 @@ file (WAL and a busy timeout), so a push over MCP shows in the UI on reload.
 
 | Flag | Meaning |
 | --- | --- |
-| `--stdio` | MCP server (JSON-RPC 2.0, newline-delimited) with the nine forge-mcp-2 tools; logs go to stderr |
+| `--stdio` | MCP server (JSON-RPC 2.0, newline-delimited) with the twelve forge-mcp-2 tools; logs go to stderr |
 | `--http <port>` | `POST /invoke {key, payload, module?}` -> the resolver result (`via` is `panel` for module `dowser-evidence`); `0` picks a free port |
 | `--db <file>` | the SQLite file; refused inside this repository |
 | `--seed <file>` | `{tickets?, pages?, goals?, projects?: [{key, name, issue_types}], users?: {<id>: <name>}}` |

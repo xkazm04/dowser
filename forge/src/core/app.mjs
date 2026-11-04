@@ -9,6 +9,7 @@ import { observed, recordCall } from './observe.mjs';
 import { loadSample, removeSample, setupStatus } from './sample.mjs';
 import { outcomeRecord, reflectData, reflectSync, ruleDecide } from './reflect.mjs';
 import { memoryPull } from './memory.mjs';
+import { workGet, workList, workReport } from './work.mjs';
 import { sourcesGoals, sourcesPages, sourcesTickets } from './sources.mjs';
 import { directionGet, directionSet, directionTool } from './direction.mjs';
 import { getInbox, isSampleKey } from './store.mjs';
@@ -46,9 +47,10 @@ export function isSchemaBehind(e) {
   return SCHEMA_BEHIND_RE.test(`${String(err?.message ?? err)} ${String(debug?.message ?? '')}`);
 }
 
-/** The nine forge-mcp-2 tools (reflect_sync, direction_get and memory_pull are additive to the original six). */
+/** The twelve forge-mcp-2 tools (reflect_sync, direction_get, memory_pull and the three work tools are additive to the original six). */
 export const TOOL_NAMES = /** @type {const} */ (['dowser_sources_tickets', 'dowser_sources_pages', 'dowser_sources_goals',
-  'dowser_proposals_push', 'dowser_verdicts_pull', 'dowser_areas_push', 'dowser_reflect_sync', 'dowser_direction_get', 'dowser_memory_pull']);
+  'dowser_proposals_push', 'dowser_verdicts_pull', 'dowser_areas_push', 'dowser_reflect_sync', 'dowser_direction_get', 'dowser_memory_pull',
+  'dowser_work_list', 'dowser_work_get', 'dowser_work_report']);
 /** The Rovo agent actions (dowser_sources_goals is shared with the MCP tools). */
 export const ROVO_ACTIONS = /** @type {const} */ (['dowser_inbox_list', 'dowser_proposal_explain', 'dowser_verdict_record']);
 
@@ -121,6 +123,14 @@ const TOOLS = {
   dowser_reflect_sync: async (d, a, _, acc) => { await openProject(acc, a); return reflectSync(d, a); },
   dowser_direction_get: async (d, a, _, acc) => { await openProject(acc, a); return directionTool(d, a); },
   dowser_memory_pull: async (d, a, _, acc) => { await openProject(acc, a); return memoryPull(d, a); },
+  // the work queue (core/work.mjs): the inbox's access rule, and a report comments only where the caller may
+  dowser_work_list: async (d, a, _, acc) => { await openProject(acc, a); return workList(d, a); },
+  dowser_work_get: async (d, a, _, acc) => { await acc.proposal(needStr(a, 'ref')); return workGet(d, a); },
+  dowser_work_report: async (d, a, id, acc) => {
+    const p = await acc.proposal(needStr(a, 'ref'));
+    if (p.issue_ref) await needJira(acc, 'ADD_COMMENTS', { issueKey: p.issue_ref });
+    return workReport(d, a, deciderOf(id));
+  },
 };
 
 /** @param {string} accountId @param {Via} via */
@@ -424,6 +434,8 @@ export function actionName(surface, candidates, payload) {
     if (has(payload, 'rules_json')) return 'dowser_reflect_sync';
     if (has(payload, 'lens')) return 'dowser_direction_get';
     if (has(payload, 'after')) return 'dowser_memory_pull';
+    if (has(payload, 'queue')) return 'dowser_work_list';
+    if (has(payload, 'ref')) return has(payload, 'status') ? 'dowser_work_report' : 'dowser_work_get';
     if (has(payload, 'query')) return has(payload, 'limit') ? 'dowser_sources_tickets' : 'dowser_sources_pages';
     if (has(payload, 'project_key')) return 'dowser_verdicts_pull';
     return 'dowser_sources_goals';

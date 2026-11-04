@@ -1,8 +1,8 @@
 # Forge MCP contract, version 2 (`forge-mcp-2`)
 
 This is the seam between the Dowser local skill and the Dowser Forge app (`forge/`). The Forge app
-implements these nine tools on its `rovo:mcp` server (the original six plus `dowser_reflect_sync`,
-`dowser_direction_get` and `dowser_memory_pull`, added without a version change). `tools/mock-forge-mcp.mjs` implements the same tools locally, so the skill can be
+implements these twelve tools on its `rovo:mcp` server (the original six plus `dowser_reflect_sync`,
+`dowser_direction_get`, `dowser_memory_pull` and the three work-queue tools, added without a version change). `tools/mock-forge-mcp.mjs` implements the same tools locally, so the skill can be
 tested without a Jira site.
 
 **What changed from `forge-mcp-1`.** Version 1 was never deployed, so version 2 replaces it rather than
@@ -433,6 +433,31 @@ Output:
 
 The skill checks every item before storing it (the fingerprint must match the record) and leaves an fp it already
 holds alone: local memory wins.
+
+## The work queue: `dowser_work_list`, `dowser_work_get`, `dowser_work_report`
+
+A person's Accept makes an item **work**. These tools let any coding agent connected to the server pick that work
+up and report on it (the skill's build mode, `SKILL.md` section 12). Only accepted items are work: an open,
+rejected, snoozed or merged item is `bad-input`. The inbox access rule applies to every call.
+
+`dowser_work_list` - input `{project_key, queue}`, `queue` `open` (leaves out items Jira reports delivered or
+abandoned, from issue events) or `all`; anything else is `bad-input`. Output `{items, more?}`: at most 50, oldest
+decision first, each `{ref, fp, title, lens, score?, issue_ref, issue_url, decided_at, delivery?, code_state?,
+work_status?}` (`work_status` = the newest report).
+
+`dowser_work_get` - input `{ref}` (inbox ref or fp). Output `{card, issue_ref, issue_url, done_when?}`: `card` as
+the inbox shows it (body, evidence with links to the scanned commit); `done_when` one line per quoted `code`/`doc`
+evidence, `<ref> no longer contains: <quote>` - what the skill's `delivery` re-check verifies on the next scan.
+
+`dowser_work_report` - input `{ref, status, note?, url?}`: `status` `started`, `pr_open`, `done` or `blocked`;
+`note` at most 2000 characters; `url` an `https` link (a pull request, a build), anything else `bad-input`. The
+caller must be allowed to comment on the item's Jira issue (`forbidden` otherwise). The report is left as a comment
+on the issue, then appended to `work_reports` (v028); when Jira refuses the comment the answer is `unavailable` and
+nothing is recorded. Output `{report: {ref, issue_ref, status, note?, url?, by, at}}`. A report never changes the
+item's status: delivery is what Jira and the code say.
+
+Routing by shape (a transport that gives no tool name): `queue` -> work_list; `ref` with `status` -> work_report;
+`ref` alone -> work_get.
 
 ## Versioning
 

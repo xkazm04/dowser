@@ -31,6 +31,9 @@ modules:
         - dowser_reflect_sync
         - dowser_direction_get
         - dowser_memory_pull
+        - dowser_work_list
+        - dowser_work_get
+        - dowser_work_report
 
   action:
     - key: dowser_sources_tickets
@@ -83,6 +86,31 @@ modules:
       inputs:
         project_key: { title: Project key, type: string, required: true, description: The key Dowser derives from the repo origin. }
         after: { title: After, type: string, required: true, description: Send 0 for the first page, then the cursor the previous page returned. }
+    - key: dowser_work_list
+      name: List accepted work
+      function: mcp
+      actionVerb: GET
+      description: The inbox's accepted items, oldest decision first, with their Jira issue and latest work status. queue open leaves out what Jira reports delivered or abandoned.
+      inputs:
+        project_key: { title: Project key, type: string, required: true, description: The key Dowser derives from the repo origin. }
+        queue: { title: Queue, type: string, required: true, description: open for work not yet delivered, or all. }
+    - key: dowser_work_get
+      name: Get a work brief
+      function: mcp
+      actionVerb: GET
+      description: One accepted item's brief - the card with its evidence linked to the scanned commit, its Jira issue, and done_when, the quoted lines that must be gone.
+      inputs:
+        ref: { title: Inbox ref, type: string, required: true, description: The inbox item (DW-12) or its fingerprint. }
+    - key: dowser_work_report
+      name: Report work progress
+      function: mcp
+      actionVerb: CREATE
+      description: Record progress on an accepted item - started, pr_open, done or blocked - and leave it as a comment on its Jira issue.
+      inputs:
+        ref: { title: Inbox ref, type: string, required: true, description: The inbox item (DW-12) or its fingerprint. }
+        status: { title: Status, type: string, required: true, description: started, pr_open, done or blocked. }
+        note: { title: Note, type: string, required: false, description: At most 2000 characters. }
+        url: { title: Link, type: string, required: false, description: An https link to the pull request or build. }
     - key: dowser_areas_push
       name: Push areas
       function: mcp

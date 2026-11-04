@@ -1,6 +1,6 @@
 ---
 name: dowser
-description: "Use when someone types /dowser, asks what the product should build next, or wants evidence-backed backlog proposals from the repository they have checked out. /dowser [goal: <text> | area: <path or feature>] scans the current git repo through four lens packs - Opportunity, UX friction and wellbeing, Doc drift, Security and CRA - and produces verified, fingerprinted backlog proposals, each a card with title, rationale, quoted evidence, impact, effort range, confidence, doc impact and delivery risk, scored and ranked by the store (16 ranked per run, each lens's top pick first, the rest kept in reserve). The runner pre-triages the cards (keep, reject with a reason, snooze, merge); survivors go to the Dowser inbox in Jira when the Dowser Forge tools are connected. Triage verdicts feed a per-project memory outside the repo, so later scans skip what was rejected and follow accepted rules. Two modes: dev (dense, evidence inline) and guided (plain language, for product people). Never edits the scanned repo."
+description: "Use when someone types /dowser, asks what the product should build next, or wants evidence-backed backlog proposals from the repository they have checked out. /dowser [goal: <text> | area: <path or feature>] scans the current git repo through four lens packs - Opportunity, UX friction and wellbeing, Doc drift, Security and CRA - and produces verified, fingerprinted backlog proposals, each a card with title, rationale, quoted evidence, impact, effort range, confidence, doc impact and delivery risk, scored and ranked by the store (16 ranked per run, each lens's top pick first, the rest kept in reserve). The runner pre-triages the cards (keep, reject with a reason, snooze, merge); survivors go to the Dowser inbox in Jira when the Dowser Forge tools are connected. Triage verdicts feed a per-project memory outside the repo, so later scans skip what was rejected and follow accepted rules. Two modes: dev (dense, evidence inline) and guided (plain language, for product people). A scan never edits the repo; /dowser build DW-n implements one accepted item when the runner asks for it."
 argument-hint: "[goal: <text> | area: <path>]"
 category: workflow
 memory: user
@@ -50,6 +50,8 @@ a failed step.
 
 A focused scan is **partial** by definition. Its summary says so and never says "all clear".
 
+- `build: DW-n` (or `build` alone): not a scan. Implement one item a person accepted in Jira,
+  section 12. This is the only form that edits the repository.
 - `mode: dev` or `mode: guided` (with or without a goal or area): this run's mode, used without
   asking and without storing it. A run with nobody to answer follows section 11.
 
@@ -499,10 +501,42 @@ It runs the same pipeline up to the point where a person would decide, and stops
    sorted or sent to Jira. <n> proposals wait for you; <p> of them Dowser already pre-sorted."
    Drop the "pre-sorted" part when `pretriage` marked none.
 
+## 12. Build mode - implement accepted work
+
+`/dowser build DW-n` (or `build` with no ref) is the hand-off from a person's Accept to a coding
+agent. It needs `dowser_work_list`, `dowser_work_get` and `dowser_work_report` in your tool list
+(any of them missing: say "build mode needs the Dowser work tools" and stop). It edits the
+repository only because the runner asked for this item by name.
+
+1. **Pick the item.** With no ref, call `dowser_work_list` with `{project_key, queue: "open"}` and
+   show the list (ref, title, Jira key, work status); the runner picks one. Never pick for them.
+2. **Read the brief.** Call `dowser_work_get` with `{ref}`. It returns the card (body, evidence
+   linked to the commit it was verified at), its Jira issue, and `done_when`: the quoted lines
+   that must be gone. Read the card's Flow and Expected impact; they are the plan.
+3. **Say you started.** `dowser_work_report` with `{ref, status: "started"}`. It leaves a
+   comment on the Jira issue.
+4. **Implement** on a branch the runner names, or `dowser/<ref>` if they do not care. Keep to
+   the card's scope; a change the card did not ask for is a new card, not part of this one. Run
+   the repository's own tests and gates. Show the runner the diff before any commit, and commit
+   only when they say so. Never push or open a pull request unless they ask.
+5. **Check it against the card.** Every `done_when` line must now be false (the quoted line is
+   gone from that file). Say which ones hold and which do not.
+6. **Report.** `dowser_work_report` with `pr_open` (and `url`) when a pull request exists,
+   `done` when the change is merged, `blocked` with a `note` when it cannot be finished. The
+   next scan's `delivery` step re-checks the quotes at the new commit, and the Learning tab
+   shows the result: that, not this report, is how the team learns it was delivered.
+
+A headless run (section 11) never enters build mode: there is nobody to show the diff to.
+Build mode never accepts, rejects or edits a card. If the work shows the card was wrong, say so
+and suggest the runner rejects or rates it in Jira.
+
 ## Invariants
 
-- **Never edit, stage, commit or push the scanned repo.** No file is created inside it: no work
-  files, no caches, no notes. Dowser reads it and runs read-only git commands only.
+- **A scan never edits, stages, commits or pushes the repo.** No file is created inside it: no
+  work files, no caches, no notes. A scan reads it and runs read-only git commands only. The one
+  exception is build mode (section 12), which the runner starts by name for one accepted item;
+  even then Dowser never commits, pushes or merges on its own, and never touches `~/.dowser`
+  outside `dowser.mjs`.
 - **The agent never writes the store directly.** All memory goes through `dowser.mjs`. Never
   open the database file, run SQL, or hand-edit `~/.dowser`.
 - **Never self-approve.** Only a human accepts, rejects, snoozes or merges into another person's

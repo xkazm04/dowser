@@ -258,4 +258,21 @@ export const MIGRATIONS = Object.freeze([
   PRIMARY KEY (proposal_id)
 )`,
   },
+  {
+    name: 'v028_work_reports',
+    // The agent work queue (core/work.mjs): what a coding agent reported about accepted work, append-only; the newest
+    // row per item is its work status. by_who = the caller as a decider (forge:<account>); id from counter `work_reports`.
+    statement: `CREATE TABLE IF NOT EXISTS work_reports (
+  id BIGINT NOT NULL,
+  proposal_id BIGINT NOT NULL,
+  project_key VARCHAR(191) NOT NULL,
+  status VARCHAR(16) NOT NULL,
+  note TEXT,
+  url TEXT,
+  by_who VARCHAR(255) NOT NULL,
+  at VARCHAR(32) NOT NULL,
+  PRIMARY KEY (id)
+)`,
+  },
+  { name: 'v029_work_reports_proposal_ix', statement: 'CREATE INDEX ix_work_reports_proposal ON work_reports (proposal_id, id)' },
 ]);

@@ -50,6 +50,8 @@ test('an inbox bound to a Jira project is open to whoever may browse it, and clo
   assert.equal((await tool(d, 'dowser_proposals_push', pushArgs([record({ topic: 'fake' })]), OTHER)).error, 'forbidden');
   assert.equal((await tool(d, 'dowser_direction_get', { project_key: PK, lens: 'all' }, OTHER)).error, 'forbidden');
   assert.equal((await tool(d, 'dowser_memory_pull', { project_key: PK, after: '0' }, OTHER)).error, 'forbidden', 'memory is the inbox: same rule');
+  assert.equal((await tool(d, 'dowser_work_list', { project_key: PK, queue: 'open' }, OTHER)).error, 'forbidden', 'the work queue is the inbox: same rule');
+  assert.equal((await tool(d, 'dowser_work_get', { ref: 'DW-1' }, OTHER)).error, 'forbidden');
   assert.equal(/** @type {any} */ ((await runRovo(d, 'dowser_inbox_list', {}, OTHER))).items.length, 0);
   assert.equal(/** @type {any} */ ((await runRovo(d, 'dowser_proposal_explain', { ref: 'DW-2' }, OTHER))).error, 'forbidden');
   assert.equal(/** @type {any} */ ((await runRovo(d, 'dowser_verdict_record', { ref: 'DW-2', status: 'snoozed' }, OTHER))).error, 'forbidden');

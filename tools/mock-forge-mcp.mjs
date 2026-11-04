@@ -56,7 +56,7 @@ import { LENSES, resurfaces } from '../skill/scripts/lib/model.mjs';
  * @typedef {{refs: number, types: string[]}} Snapshot
  * @typedef {{fp: string, external_ref: string, external_url: string, record: Obj, evidence: EvidenceId[], pushes: number,
  *   run_ids: string[], status: string, reopened?: boolean, decided_snapshot?: Snapshot, issue_ref?: string, issue_url?: string,
- *   repo_url?: string, head_sha?: string, snooze_until?: string}} Item
+ *   repo_url?: string, head_sha?: string, snooze_until?: string, work?: Obj[]}} Item
  * @typedef {{seq: number, fp: string, status: string, reason?: string, note?: string, merged_into?: string, decided_by: string,
  *   decided_at: string, external_ref: string, issue_ref?: string, issue_url?: string, snooze_until?: string}} Verdict
  * @typedef {{path: string, files: number, churn_90d: number, authors_90d?: number, last_change?: string}} Area
@@ -123,6 +123,12 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { project_key: S, cursor: S }, required: ['project_key'], additionalProperties: false } },
   { name: 'dowser_memory_pull', description: 'The inbox as the team memory: decided items (accepted, rejected, snoozed, merged) with their records and decisions, oldest first, 50 per page; the rules decided in Jira on the first page. after = "0" for the first page, then the cursor. Returns {items:[...], cursor, more?, rules?}.',
     inputSchema: { type: 'object', properties: { project_key: S, after: S }, required: ['project_key', 'after'], additionalProperties: false } },
+  { name: 'dowser_work_list', description: 'The accepted items, oldest decision first, with their Jira issue and latest work status (queue open | all). Returns {items:[{ref,fp,title,lens,issue_ref,issue_url,work_status?}], more?}.',
+    inputSchema: { type: 'object', properties: { project_key: S, queue: S }, required: ['project_key', 'queue'], additionalProperties: false } },
+  { name: 'dowser_work_get', description: 'One accepted item brief: {card, issue_ref, issue_url, done_when?}.',
+    inputSchema: { type: 'object', properties: { ref: S }, required: ['ref'], additionalProperties: false } },
+  { name: 'dowser_work_report', description: 'Record progress on an accepted item (status started|pr_open|done|blocked, note?, url? https) and comment it on the Jira issue. Returns {report}.',
+    inputSchema: { type: 'object', properties: { ref: S, status: S, note: S, url: S }, required: ['ref', 'status'], additionalProperties: false } },
   { name: 'dowser_areas_push', description: 'Replace the project\'s area stats (areas_json, a JSON array of at most 200 {path,files,churn_90d,authors_90d?,last_change?}). Returns {stored}.',
     inputSchema: { type: 'object', properties: { project_key: S, run_id: S, areas_json: S }, required: ['project_key', 'run_id', 'areas_json'], additionalProperties: false } },
   { name: 'dowser_reflect_sync', description: 'Offer rules (rules_json, a JSON array of at most 50 {id,lens,text,titles?,offered_at}) and read back every rule a person decided plus the newest 200 outcomes (with outcomes_since, an ISO time: the oldest 200 at or after it, and outcomes_more when more follow). Idempotent. Returns {rules:[{id,lens,state,text,decided_by,decided_at}], outcomes:[{ref,fp,rating,note?,issue_ref,decided_by,recorded_at}], outcomes_more?}.',
@@ -377,6 +383,46 @@ function dowserMemoryPull(b, args) {
   return out;
 }
 
+/** The accepted item `ref` (DW ref or fp) in any inbox, or bad-input. @param {Backend} b @param {unknown} ref */
+function acceptedWork(b, ref) {
+  if (!str(ref)) throw new ToolError('bad-input', 'ref is required');
+  for (const p of Object.values(b.projects)) {
+    const it = Object.values(p.items ?? {}).find((x) => x.external_ref === ref || x.fp === ref);
+    if (!it) continue;
+    if (it.status !== 'accepted' || !it.issue_ref) throw new ToolError('bad-input', `${it.external_ref} is ${it.status}, not accepted work`);
+    return it;
+  }
+  throw new ToolError('bad-input', `no Dowser proposal ${String(ref)}`);
+}
+
+/** `dowser_work_list` (Forge core/work.mjs; the mock has no delivery events, so open = all). @param {Backend} b @param {Obj} args @returns {Obj} */
+function dowserWorkList(b, args) {
+  if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
+  if (args.queue !== 'open' && args.queue !== 'all') throw new ToolError('bad-input', 'queue is open or all');
+  if (!b.projects[args.project_key]) throw new ToolError('unknown-project', `no inbox for project ${args.project_key}; push proposals first`);
+  const items = Object.values(project(b, args.project_key).items).filter((it) => it.status === 'accepted')
+    .map((it) => omitAbsent({ ref: it.external_ref, fp: it.fp, title: it.record.title, lens: it.record.lens, issue_ref: it.issue_ref, issue_url: it.issue_url,
+      work_status: (it.work ?? []).at(-1)?.status }));
+  return { items };
+}
+
+/** `dowser_work_get`. @param {Backend} b @param {Obj} args @returns {Obj} */
+function dowserWorkGet(b, args) {
+  const it = acceptedWork(b, args.ref);
+  const done = (/** @type {Obj[]} */ (it.record.evidence ?? [])).filter((e) => (e.type === 'code' || e.type === 'doc') && str(e.quote)).map((e) => `${e.ref} no longer contains: ${e.quote}`);
+  return omitAbsent({ card: { ...it.record, ref: it.external_ref, status: it.status }, issue_ref: it.issue_ref, issue_url: it.issue_url, done_when: done.length ? done : undefined });
+}
+
+/** `dowser_work_report`. @param {Backend} b @param {Obj} args @returns {Obj} */
+function dowserWorkReport(b, args) {
+  const it = acceptedWork(b, args.ref);
+  if (!['started', 'pr_open', 'done', 'blocked'].includes(args.status)) throw new ToolError('bad-input', 'status is one of started|pr_open|done|blocked');
+  if (args.url !== undefined && !/^https:\/\/\S+$/.test(String(args.url))) throw new ToolError('bad-input', 'url must be an https link');
+  const report = omitAbsent({ ref: it.external_ref, issue_ref: it.issue_ref, status: args.status, note: args.note, url: args.url, by: 'forge:mock-user', at: new Date().toISOString() });
+  (it.work ??= []).push(report);
+  return { report };
+}
+
 /** `dowser_verdicts_pull`. @param {Backend} b @param {Obj} args @returns {Obj} */
 function dowserVerdictsPull(b, args) {
   if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
@@ -563,6 +609,9 @@ const HANDLERS = {
   dowser_proposals_push: dowserProposalsPush,
   dowser_verdicts_pull: dowserVerdictsPull,
   dowser_memory_pull: dowserMemoryPull,
+  dowser_work_list: dowserWorkList,
+  dowser_work_get: dowserWorkGet,
+  dowser_work_report: dowserWorkReport,
   dowser_areas_push: dowserAreasPush,
   dowser_reflect_sync: dowserReflectSync,
   dowser_direction_get: dowserDirectionGet,
