@@ -91,9 +91,9 @@ Design principle: templates and triage history are versioned like code, so a tea
 
 ## Hackathon fit
 
-Dowser targets 1st place in its category plus all four $1,500 bonus tracks. Deadline: Dec 22, 2026, 12:00 PST.
+Dowser targets 1st place in its category plus one $1,500 bonus prize: the official rules let one submission win at most one grand prize and one bonus prize. The bonus aimed at is **Best app with Atlassian MCP**; the other tracks below still deepen Technological Implementation. Deadline: Dec 22, 2026, 12:00 PST.
 
-**Category:** Software Teams is the safe fit ("issue triage that actually understands what matters"). Business Teams is worth considering: a product-owner pitch may stand out where fewer entries are deeply technical. Decide by end of week 2.
+**Category:** Apps for Software Teams (decided 2026-11-04: "issue triage that actually understands what matters").
 
 | Bonus track | How Dowser qualifies |
 | --- | --- |

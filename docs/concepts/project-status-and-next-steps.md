@@ -1,6 +1,6 @@
 # Dowser - project status and next steps
 
-As of 2026-10-29 (week 1 of the 8-week plan in `docs/project-documentation.md`; Codegeist deadline
+As of 2026-11-04 (week 2 of the 8-week plan in `docs/project-documentation.md`; Codegeist deadline
 Dec 22, 2026, 12:00 PST). Written for a fresh session that picks the work up with no other context.
 Read this first, then `AGENTS.md`, then the documents it points to.
 
@@ -63,7 +63,8 @@ each planned item to what exists.
 | Proposal model (fingerprint, evidence, effort, confidence, provenance) | Done | `skill/scripts/lib/model.mjs`, shared with Forge as byte copies |
 | Reject reasons tune the lens | Done (local) | Rule offers after 3 matching rejections; exemplars from accepted items |
 | Marketplace listing by week 7 | Not started | Needs a production deploy, app sharing enabled, listing copy, review ticket |
-| Category decision (Software vs Business Teams) | Open | Plan says decide by Nov 10 |
+| Category decision (Software vs Business Teams) | Decided 2026-11-04 | Apps for Software Teams |
+| Judge first run (sample inbox, setup checklist) | Done, fixture-verified | Not part of the original plan; see "Judge first run" below |
 | Demo video (< 5 min) and judges' setup | Not started | Setup steps drafted in `docs/forge-app.md` |
 
 Week-one spikes from the plan: `rovo:mcp` limits and auth model are answered (see below); TWG
@@ -136,8 +137,9 @@ and Jira's sidebar groups need a DOM click, not a coordinate click.
 
 Fixed since (2026-10-29 check against the code): 1 (snooze and reject wait in an undo window,
 `useCommitWindow`), 2 (account ids resolved through `/rest/api/3/user/bulk`), 4 (the accept preview renders
-markdown), 6 (one structured log line per tool and resolver call, `forge/src/core/observe.mjs`). Still open: 3
-and 5.
+markdown), 6 (one structured log line per tool and resolver call, `forge/src/core/observe.mjs`), 3 (the change
+label is gated on open cards since 85fb5c0 in `InboxList.jsx`, `Detail.jsx` and `ProposalCard.jsx`; the doc lagged
+until 2026-11-04). Still open: 5.
 
 **Live check after the security hardening (2026-10-30, 2.12.0, browser over CDP + MCP).** Passed:
 - An MCP push to a new key created the inbox for the caller. Its first insert hit the missing `created_by` column,
@@ -154,7 +156,7 @@ Not checked live:
 - A second account being refused, which needs another user (unit-tested in `forge/test/access.test.mjs`).
 - The Rovo agent, because Rovo Chat was not reachable for the account.
 
-Small gap: the inbox picker's per-inbox open counts update only on the next full load, not after a decision.
+Fixed 2026-11-04: the inbox picker's per-inbox open counts now follow decisions (and undo) without a reload.
 
 1. **Snooze has no confirmation and no undo**: one click moves the item. Add an undo toast (a
    verdict reversal needs a server path; today there is none) or a confirm step.
@@ -168,13 +170,34 @@ Small gap: the inbox picker's per-inbox open counts update only on the next full
 6. **No local `forge logs` output for resolver calls**: logs showed only the migrate function. Add a
    structured log line per tool call and per resolver error so live failures are diagnosable.
 
+## Prize rules that shape the plan (official rules, read 2026-11-04)
+
+- One submission wins at most **one grand prize and one bonus prize**. Aim the bonus at **Best app with Atlassian
+  MCP** (`rovo:mcp` plus the open-source skill); Rovo and Teamwork Graph work counts toward Technological
+  Implementation, not toward extra prizes. Category: **Apps for Software Teams**.
+- Judges install from a sharing link and have no local skill, and judging runs Jan 5 - Feb 3, 2027: the app must
+  work in a stranger's site from the first click and stay up on production through February.
+- Judges need not watch past 3 minutes of the video; ties break on Technological Implementation first.
+
+## Judge first run (shipped 2026-11-04)
+
+A user with no inbox gets a first-run panel (`routes/inbox/FirstRun.jsx`): load the sample, connect a coding agent
+(`SetupChecklist`, also in Settings: "N tool calls have reached Dowser", from the v024 `tool_calls` table; whether
+an admin enabled the tools cannot be read), or scan your own repository. The sample is a real Dowser scan of
+Dowser's own public repository, bundled as `forge/src/sample/self-scan.json` (built by `tools/sample-capture.mjs`;
+re-capture after a later self-scan) and replayed through the real push code into the reserved inbox `dowser-sample`
+in budgeted steps. It is marked on every surface, MCP writes to the key are refused, All inboxes leaves it out, an
+Accept creates a real issue labelled `dowser-sample`, and Remove deletes it. Details: `docs/forge-app.md`.
+`npm run forge:typecheck` now also checks `static/app` (noImplicitAny still off: 510 errors of debt).
+
 ## Next steps, in order
 
-Ordered by what protects the Dec 1 gate first (core loop + three demo lenses demo-ready), then the
-bonus tracks, then polish.
+The 48-day plan of 2026-11-04 (weeks 1-2: production path and judge path; 3-4: real-repo quality, scheduled
+scans, the shipped loop; 5-6: polish, gates, graph connector, skill repo, Marketplace; 7: freeze and video).
 
-1. **Fix the two live-test gaps still open above (3 and 5).** Small, contained, each in `forge/`; redeploy with
-   `forge deploy -e development --non-interactive` and recheck with the browser approach.
+1. **Production deploy and sharing link now, not in week 7:** `forge deploy -e production`, enable sharing in the
+   developer console (operator), install on a second clean site with a second account (also covers the untested
+   second-account refusal), and walk the first-run panel there as a judge would. Live-test gap 5 rides along.
 2. **First real `/dowser` run on a real repository** (open follow-up of the local-scan spark):
    install the skill into a project, run the four lenses against a mid-size repo, push to the live
    inbox, and measure the duplicate rate across three reruns (the fingerprint risk). This is the
@@ -187,12 +210,11 @@ bonus tracks, then polish.
 5. **Test the two remaining source tools live** (`dowser_sources_tickets`, `dowser_sources_pages`)
    with real tickets and pages on the site; seed the site with demo data that tells the demo story
    (user tickets that the code almost supports, a stale Confluence page).
-6. **Category decision by Nov 10** (Software Teams vs Business Teams).
+6. **Category: Apps for Software Teams** (decided 2026-11-04; confirm on the Devpost form).
 7. **Lenses 5-7** after the Dec 1 gate, or as stubs if the gate is at risk: Tech debt and
    architecture, Decision consistency, and a lens (or a skill step) that fills `delivery_risk` per
    proposal from the areas data.
-8. **Production path for judges and the Marketplace (week 7, Dec 8-14):** `forge deploy -e
-   production`, enable app sharing in the developer console ("Distribute your apps"), write the
+8. **Judges' setup and the Marketplace (by Dec 14; production itself is step 1):** write the
    install link and judges' setup (they must enable tools themselves under Connected apps), Marketplace
    listing as "Dowser for Jira", trademark search before any commercial launch.
 9. **Demo and video (last week):** curated demo repository and site data, the arc from the plan
