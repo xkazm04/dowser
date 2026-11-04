@@ -10,7 +10,7 @@ import { getProposal, getRun } from './store.mjs';
 const KEPT = ['verified', 'pushed', 'accepted'];
 
 /** The card's one-paragraph Summary section, or undefined. @param {unknown} body */
-const summaryOf = (body) => String(body ?? '').match(/## Summary\n+([^\n#][^\n]*)/)?.[1]?.trim();
+const summaryOf = (body) => String(body ?? '').match(/## Summary[ \t]*(?:\r?\n)+([^\r\n#][^\r\n]*)/)?.[1]?.trim();
 
 /** @param {Record<string, any>} c @returns {string} */
 function cardMd(c) {

@@ -381,6 +381,8 @@ function pushOne(db, raw, i, sent) {
  * `issue_url` (else `invalid`) and records both on the proposal. A `snoozed` verdict's `snooze_until` becomes the
  * card's snooze date, even one already past (the next run start wakes it). An unknown fp, a malformed verdict or an
  * illegal transition is reported (`unknown`, `invalid`, `conflict`), never forced. The cursor is stored as `verdicts_cursor`.
+ * Any of those makes the code 1 - except `unknown` on a FRESH store (no proposal at all: a new machine, a CI runner, a
+ * cleared ~/.dowser), where every verdict is expected to be unknown: code 0, with `fresh_store` and a note saying so.
  * @param {Db} db
  * @param {unknown} doc
  * @returns {{code: number, out: Row}}
@@ -389,6 +391,8 @@ export function ingestVerdicts(db, doc) {
   const verdicts = listOf(doc, 'verdicts', 'dowser_verdicts_pull');
   const d = /** @type {Row} */ (doc);
   if (d.cursor !== undefined && typeof d.cursor !== 'string') throw new DowserError('cursor must be a string (omit it when absent)', 2);
+  // read before the loop: ingesting verdicts never creates a proposal
+  const fresh = db.prepare('SELECT 1 FROM proposals LIMIT 1').get() === undefined;
   /** @type {Row[]} */
   const items = [];
   /** @type {Record<string, number>} */
@@ -401,8 +405,12 @@ export function ingestVerdicts(db, doc) {
   if (typeof d.cursor === 'string') setState(db, 'verdicts_cursor', d.cursor);
   // the people's verdicts are what each slice's trust is measured against (trust.mjs)
   const trust = syncTrust(db);
-  const bad = items.filter((x) => !['applied', 'already-applied', 'in-sync'].includes(String(x.outcome))).length;
-  return { code: bad > 0 ? 1 : 0, out: store.clean({ verdicts: items, summary, cursor: typeof d.cursor === 'string' ? d.cursor : undefined, trust_events: trust.length ? trust : undefined }) ?? {} };
+  const fine = fresh ? ['applied', 'already-applied', 'in-sync', 'unknown'] : ['applied', 'already-applied', 'in-sync'];
+  const bad = items.filter((x) => !fine.includes(String(x.outcome))).length;
+  const note = fresh && summary.unknown
+    ? `fresh store: ${summary.unknown} verdict(s) belong to cards this store never proposed (another machine, or a cleared ~/.dowser); they are not applied and need no action`
+    : undefined;
+  return { code: bad > 0 ? 1 : 0, out: store.clean({ verdicts: items, summary, cursor: typeof d.cursor === 'string' ? d.cursor : undefined, fresh_store: fresh && summary.unknown ? true : undefined, note, trust_events: trust.length ? trust : undefined }) ?? {} };
 }
 
 /**

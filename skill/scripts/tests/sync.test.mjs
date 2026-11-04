@@ -291,3 +291,17 @@ test('run start closes a run interrupted more than a day ago and drops its fetch
   assert.equal(body(recent), 'words');
   assert.equal(runStart(db, { mode: 'full' }).abandoned, undefined, 'nothing to close: the key is omitted');
 });
+
+test('ingest-verdicts on a fresh store: unknown verdicts are expected, exit 0 with a note', () => {
+  const home = tempDir('fresh-verdicts');
+  const fresh = openStore(join(home, 'dowser.db'));
+  try {
+    const r = ingestVerdicts(fresh, { verdicts: [
+      { fp: 'ffffffffffffffff', status: 'rejected', reason: 'other', note: 'x', decided_by: 'forge:bob', decided_at: '2026-10-27T10:03:00.000Z', external_ref: 'DW-99' },
+    ] });
+    assert.equal(r.code, 0);
+    assert.equal(r.out.fresh_store, true);
+    assert.match(String(r.out.note), /^fresh store: 1 verdict/);
+    assert.equal(r.out.verdicts[0].outcome, 'unknown', 'still reported, never applied');
+  } finally { fresh.close(); removeDir(home); }
+});

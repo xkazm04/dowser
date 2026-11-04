@@ -32,3 +32,14 @@ test('share lists the run\'s kept cards with their summary and evidence refs, an
   for (const e of /** @type {{quote?: string}[]} */ (candidate().evidence)) if (e.quote) assert.ok(!out.markdown.includes(e.quote), 'no quoted line');
   assert.throws(() => shareRun(db, 'r-nope'), /does not exist/);
 });
+
+test('share keeps the Proposed line of a body written with CRLF line endings', () => {
+  const run = runStart(db, { mode: 'full' }).id;
+  const crlf = ['## Summary', 'Export orders as a CSV file.', '## Description', 'd', '## Flow', 'f', '## Expected impact', 'e', '## Evaluation', 'v'].join('\r\n');
+  const kept = propose(db, run, candidate({ topic: 'crlf-export', title: 'CRLF card', body: crlf }), { kinds: KINDS });
+  assert.ok(kept.fp, String(kept.result));
+  db.prepare("UPDATE proposals SET status = 'verified' WHERE fp = ?").run(String(kept.fp));
+  const out = shareRun(db, run);
+  assert.match(out.markdown, /\*\*Proposed:\*\* Export orders as a CSV file\.\n/);
+  assert.doesNotMatch(out.markdown, /\r/, 'no carriage return leaks into the markdown');
+});

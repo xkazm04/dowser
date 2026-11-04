@@ -109,6 +109,8 @@ Memory must reflect Jira before the scan, so a rejection made in Jira suppresses
 2. Save the tool response verbatim to `<work>/verdicts.json`.
 3. Run `ingest-verdicts --file <work>/verdicts.json`. Exit 1 means some verdicts could not be
    applied (an unknown fingerprint, or a conflict). List them in the summary. Never force them.
+   On a fresh store (no proposal yet: a new machine or CI runner) unknown verdicts are expected:
+   the output carries `fresh_store: true` and a `note`, exits 0, and needs no listing.
    An accepted verdict carries the Jira issue the person created (`issue_ref`, `issue_url`). Show
    that issue key and link next to the card in the summary.
 
