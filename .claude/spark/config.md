@@ -40,6 +40,10 @@ context map is provisional until the first scaffold commit.
   `skill/scripts/tests/local-forge-e2e.test.mjs`. (Supporting views never reached the inbox for days: each side's
   tests passed alone.)
 
+- Forge platform limits a design must state, not discover (promoted 2026-11-04 from two retros): Forge SQL has no
+  transactions (compare-and-set, UNIQUE, repair); a resolver or tool call has ~25 s (page long work with `more`); a
+  minor deploy does not run migrations (only the daily trigger, or `withSchema` / Deps `ensureSchema` on a missing
+  table), so a new table's first write is live-checked after deploy.
 - Read README.md and docs/project-documentation.md first. The plan's lens table and proposal
   model are the product contract; the local-scan deviation is recorded in `.spark/Spark/ideas/`.
 - Reuse before building: bp (`../bp`) and the registry skills `scan-sweep` / `lens-scan` already
@@ -75,4 +79,6 @@ context map is provisional until the first scaffold commit.
 - 2026-10-28 live verification: a CDP tab created with background:true throttles timers (~1/min) and hung a 2-min script for 2 h; drive live pages in a foreground tab with focus emulation and a hard timeout.
 - 2026-10-28 lens-quality-plan: liveness applies to writers too - trace a new record field to every store that persists it; the skill store's one-column-per-field layout would have dropped `artifacts` silently (caught at the Director's contract commit, not by the scout).
 - 2026-10-28 lens-quality-plan: check that a measuring instrument can fail before building on it; the first fixture seeded no more findings than the 4-card budget, so three baselines scored 1.0 and the run paid for a re-baseline.
+- 2026-11-04 judge-first-run: a platform scout must state per-call TIME limits beside atomicity (Forge resolver ~25 s vs ~8 SQL statements a card); WP1 found it by measuring, and the contract needed a `more` paging follow-up.
+- 2026-11-04 judge-first-run: a write that must never fail its call swallows errors, so lazy migrate-and-retry never sees a missing table; on Forge a minor deploy does not migrate. Give such writes their own migrate-once hook (Deps `ensureSchema`) and live-check a new table's first write after deploy.
 - 2026-10-28 lens-quality-plan: nine builders in one checkout with zero collisions - disjoint file scopes, Director-committed stubs for shared entry points, and a NEW test file per builder instead of a shared one.
