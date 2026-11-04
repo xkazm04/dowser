@@ -28,8 +28,9 @@ Personas was unreachable, so there was no decision memory. The operator triaged 
   triggers filtered on the dowser property, deliveries_json, recurred, Learning tab); relationship graph store side
   built ba1e541 (store v8 edges, link/links, prerequisite lift). Not built: Forge lineage view, outcome-derived
   follow-up edges.
-- Wave D open: idea 2 agent work queue (needs the operator's rule change for a build mode), idea 4 quality ledger,
-  Confluence doc-drift closure (+ byline index defect).
+- Wave D: idea 2 built 1616403 (work_list/get/report + SKILL.md build mode; the no-edit rule now governs scans, operator
+  approval 2026-11-04); idea 4 built d263bf4 (quality command; Learning tab view not built). Open: Confluence doc-drift
+  closure (+ byline index defect) - needs the write:confluence-content scope, so a re-consent.
 
 ## The other 10, held
 
