@@ -1,0 +1,6 @@
+{"title":"Ask-why cannot find a card by its Jira key or inbox ref in a later session","outcome":"queued","id":"mw2jchb2-6ee26r"}
+{"title":"The installer reports success but never says what to do next","outcome":"queued","id":"mw2jchb3-hmjuye"}
+{"title":"Shared scan markdown carries no link back to the inbox cards","outcome":"queued","id":"mw2jchb3-zx6s86"}
+{"title":"Headless runs never push, so a scheduled scan cannot feed the Jira inbox","outcome":"queued","id":"mw2jchb5-qc9h5b"}
+{"title":"The first full scan sets no expectation of scope or length","outcome":"queued","id":"mw2jchb5-6dk1mr"}
+{"title":"No uninstall path for the skill","outcome":"queued","id":"mw2jchb7-ww6k1w"}
