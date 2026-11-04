@@ -16,10 +16,23 @@ const Resolver = /** @type {any} */ (ResolverPkg).default ?? ResolverPkg;
 /** @typedef {import('./core/ports.mjs').Deps} Deps */
 
 /** @returns {Deps} */
-const deps = () => ({ db: forgeDb, jira, sources, links, users, perms, now: () => new Date() });
+const deps = () => ({ db: forgeDb, jira, sources, links, users, perms, now: () => new Date(), ensureSchema });
 
 /** Installations this runtime has migrated (a warm runtime may serve more than one). */
 const migrated = new Set();
+
+/**
+ * The Deps `ensureSchema` port: migrate once per installation when `e` says the schema is behind.
+ * @param {unknown} e
+ * @returns {Promise<boolean>} true when it migrated now
+ */
+async function ensureSchema(e) {
+  const inst = installationId();
+  if (migrated.has(inst) || !isSchemaBehind(e)) return false;
+  migrated.add(inst);
+  await runMigrations();
+  return true;
+}
 
 /**
  * Runs `fn`; when it fails on a missing table or column, runs the migrations once per installation and retries.

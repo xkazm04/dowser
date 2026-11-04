@@ -75,13 +75,22 @@ export async function recordCall(deps, surface, tool) {
   const update = () => deps.db.exec(
     'UPDATE tool_calls SET calls = calls + 1, last_at = CASE WHEN last_at < ? THEN ? ELSE last_at END WHERE name = ?', [at, at, name],
   );
-  try {
+  const count = async () => {
     if ((await update()).affectedRows === 1) return;
     try {
       await deps.db.exec('INSERT INTO tool_calls (name, calls, last_at) VALUES (?, 1, ?)', [name, at]);
     } catch (e) {
       if (!(e instanceof DuplicateKey)) throw e;
       await update();
+    }
+  };
+  try {
+    try {
+      await count();
+    } catch (e) {
+      // A minor deploy that ships v024 migrates only on the daily trigger: migrate here and count once more.
+      if (!(await deps.ensureSchema?.(e))) throw e;
+      await count();
     }
   } catch (e) {
     logLine(deps, { dowser: 'warn', what: 'tool-call-not-counted', error: String(/** @type {any} */ (e)?.name ?? typeof e) });

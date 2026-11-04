@@ -340,3 +340,19 @@ test('mixed planes: All inboxes leaves the sample out of items and aggregates un
   const mixed = /** @type {any} */ (await runResolver(d2, 'byline.forPage', { page_id: '98765' }, ME, 'inbox'));
   assert.deepEqual(mixed.cards.map((/** @type {any} */ c) => c.project_key), [PK]);
 });
+
+test('a tool call on a store without tool_calls migrates through ensureSchema and is counted; the tool answers once', async () => {
+  const d = makeDeps();
+  d.db.raw.exec('DROP TABLE tool_calls');
+  let migrations = 0;
+  d.ensureSchema = async (/** @type {unknown} */ e) => {
+    if (migrations > 0 || !/no such table/i.test(String(/** @type {any} */ (e)?.message))) return false;
+    migrations += 1;
+    d.db.raw.exec('CREATE TABLE tool_calls (name VARCHAR(96) PRIMARY KEY, calls INT NOT NULL, last_at VARCHAR(32) NOT NULL)');
+    return true;
+  };
+  const out = await runTool(d, 'dowser_verdicts_pull', { project_key: 'github-com-acme-shop' }, ME);
+  assert.equal(migrations, 1);
+  assert.equal(/** @type {any} */ (out).error === undefined || /** @type {any} */ (out).error === 'unknown-project', true);
+  assert.equal(d.db.raw.prepare('SELECT calls FROM tool_calls WHERE name = ?').get('mcp:dowser_verdicts_pull')?.calls, 1);
+});
