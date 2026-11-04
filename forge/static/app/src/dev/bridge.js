@@ -38,6 +38,7 @@ let cards = structuredClone(CARDS);
 // The sample inbox: absent until sample.load (or &sample), as on a fresh site. &empty hides the acme inboxes only.
 const sampleInbox = structuredClone(SAMPLE_INBOX);
 let sampleLoaded = false;
+let sampleStepped = false;
 PUSHES.push(SAMPLE_PUSH);
 for (const c of SAMPLE_CARDS) GROUP_OF[c.ref] = SAMPLE_PUSH.run_id;
 function loadSample() {
@@ -113,7 +114,10 @@ const handlers = {
     if (pretriaged !== undefined && typeof pretriaged !== 'boolean') throw err('bad-input', 'pretriaged must be true or false');
     if (area !== undefined && !project_key) throw err('bad-input', 'area needs project_key: areas belong to one inbox');
     const paths = area !== undefined ? (areasFor(project_key)).map((a) => a.path) : [];
-    const pick = liveCards().filter((c) => (!project_key || c.project_key === project_key) && (!status || c.status === status) && (!lens || c.lens === lens)
+    // As the server: "All inboxes" leaves the sample out unless it is the only inbox.
+    const live = liveCards();
+    const hideSample = !project_key && live.some((c) => !c.sample);
+    const pick = live.filter((c) => !(hideSample && c.sample) && (!project_key || c.project_key === project_key) && (!status || c.status === status) && (!lens || c.lens === lens)
       && (!pretriaged || c.pretriaged_by) && (area === undefined || (paths.includes(area) && areasOf(c, paths).has(area))));
     const ordered = [...PUSHES].sort((a, b) => b.at.localeCompare(a.at))
       .flatMap((p) => pick.filter((c) => GROUP_OF[c.ref] === p.run_id).sort(policy).map((c) => [p, c]));
@@ -232,6 +236,8 @@ const handlers = {
   },
   // The sample inbox (forge/src/core/sample.mjs on the server): load is idempotent, remove keeps the Jira issues.
   'sample.load'() {
+    // As the server: the load runs in budgeted steps, so the first call answers `more` and the next one finishes.
+    if (!sampleLoaded && !sampleStepped) { sampleStepped = true; return { project_key: SAMPLE_KEY, created: 0, more: true }; }
     const created = loadSample();
     return created ? { project_key: SAMPLE_KEY, created: SAMPLE_CARDS.length } : { project_key: SAMPLE_KEY, created: 0, already: true };
   },

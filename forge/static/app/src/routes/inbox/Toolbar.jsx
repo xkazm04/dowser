@@ -11,7 +11,10 @@ export const shortWhen = (iso) => formatDate(iso).replace(/ \d{4}/, '');
 
 /** The counts as loaded, moved by the decisions made since: every listed card had the filtered status. */
 function summarise(inboxes, projectKey, status, decided) {
-  const list = (inboxes ?? []).filter((i) => !projectKey || i.project_key === projectKey);
+  const all = inboxes ?? [];
+  // "All inboxes" leaves the sample out unless it is the only inbox, as the server's all-inbox list does.
+  const real = all.filter((i) => !i.sample);
+  const list = projectKey ? all.filter((i) => i.project_key === projectKey) : real.length ? real : all;
   // by_status is newer than open: an older backend sends only open, and the other segments then show no count.
   const by = Object.fromEntries(STATUSES.map((s) => [s, list.some((i) => i.by_status) ? list.reduce((n, i) => n + (i.by_status?.[s] ?? 0), 0) : undefined]));
   by.open = list.reduce((n, i) => n + (i.open ?? 0), 0);
@@ -20,7 +23,9 @@ function summarise(inboxes, projectKey, status, decided) {
     if (by[to] !== undefined) by[to] += 1;
   }
   const last = list.map((i) => i.last_push).filter(Boolean).sort((a, b) => String(b.at).localeCompare(String(a.at)))[0];
-  return { by, last, count: list.length };
+  // The sample is loaded in several pushes, so its last push's "N new" would undercount: it shows its scan date.
+  const sampleOnly = list.length === 1 && list[0].sample ? list[0] : undefined;
+  return { by, last, count: list.length, sampleOnly };
 }
 
 /**
@@ -34,7 +39,7 @@ function openPer(inboxes, status, decided) {
 }
 
 export function Toolbar({ inboxes, decided, projectKey, onProject, status, onStatus, lens, onLens, area = '', onClearArea, pretriaged = false, onPretriaged, onHelp, bare = false }) {
-  const { by, last, count } = summarise(inboxes, projectKey, status, decided);
+  const { by, last, count, sampleOnly } = summarise(inboxes, projectKey, status, decided);
   const open = openPer(inboxes, status, decided);
   // The counts are per inbox: a lens, area or pre-triaged filter narrows the list, not them. Say so while one is on.
   const narrowed = Boolean(lens || (area && projectKey) || pretriaged);
@@ -85,7 +90,9 @@ export function Toolbar({ inboxes, decided, projectKey, onProject, status, onSta
       )}
       <span className="dwr-spacer" />
       <p className="dwr-runline" aria-label="Run summary">
-        {last
+        {sampleOnly
+          ? <>Sample scanned {shortWhen(sampleOnly.source?.scanned_at ?? sampleOnly.last_push?.at)}</>
+          : last
           ? <>Last push {shortWhen(last.at)} · {last.created ?? 0} new, {last.updated ?? 0} updated</>
           : <>No push has reached {count > 1 ? 'these inboxes' : 'this inbox'} yet</>}
       </p>

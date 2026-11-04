@@ -110,6 +110,7 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
         <span className="dw-label">Issue preview</span>
         <div className="dw-preview" tabIndex={0} role="region" aria-label="Preview of the Jira issue">
           <div className="dw-preview__summary">{preview.summary}</div>
+          {card.sample && <div className="dw-md"><p>Created from Dowser sample data: a scan of Dowser's own public repository. The issue is labelled <code>dowser-sample</code>.</p></div>}
           <div className="dw-md">
             <table className="dw-table dw-preview__facts" aria-label="Facts">
               <thead><tr><th scope="col">Fact</th><th scope="col">Value</th></tr></thead>

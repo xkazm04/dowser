@@ -18,7 +18,10 @@ export function FirstRun({ onLoaded }) {
   async function load() {
     setState({ status: 'loading' });
     try {
-      const res = await call('sample.load');
+      // The load runs in budgeted steps (Forge's resolver time limit): call again while it answers `more`.
+      let res = await call('sample.load');
+      for (let i = 0; res?.more && i < 20; i++) res = await call('sample.load');
+      if (res?.more) throw new Error('The sample is still loading. Press Retry to finish it.');
       setState({ status: 'idle' });
       onLoaded(String(res?.project_key ?? 'dowser-sample'));
     } catch (error) {
