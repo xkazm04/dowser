@@ -281,7 +281,10 @@ carry a reason.
    or `deps`). Found quotes and ingested refs move the item to `verified`. A missing quote drops
    it with `verify-failed:<ref>`; a ref the run did not ingest drops it with
    `ref-not-ingested:<type>:<ref>` (an unconnected run ingests no tickets, pages or goals, so such
-   a card never verifies). `git` and `sarif` evidence passes unchecked; the output says so. Print
+   a card never verifies). `git` and `sarif` evidence passes unchecked; the output says so, and a card
+   with ONLY git/sarif evidence drops (`no-checkable-evidence`). Quotes are read at the run's head
+   commit, the one the pushed links point at: a line that exists only as an uncommitted edit fails with
+   `why: uncommitted`, so quote committed code (or tell the runner to commit first). Print
    per lens, from its `per_lens` (`{lens: {emitted, verified, dropped}}`, the candidates this call
    checked): `<lens>: emitted <n>, verified <v>, dropped <d>`.
    Each quote check gives `line`, the line the quote was **found** on; `claimed_line` is your hint

@@ -42,6 +42,24 @@ export function headSha(root) {
 }
 
 /**
+ * The content of `path` in the tree of `rev` (`git show <rev>:<path>`), untrimmed so line numbers hold, or
+ * undefined when the path is not in that tree or git cannot read it.
+ * @param {string} root
+ * @param {string} rev
+ * @param {string} path forward slashes; `./`-prefixed to resolve against `root` rather than the repo top
+ * @returns {string | undefined}
+ */
+export function fileAt(root, rev, path) {
+  try {
+    return execFileSync('git', ['-C', root, 'show', `${rev}:${path}`], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024, windowsHide: true,
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Whether `sha` names a commit in this repository (false after a force-push, a rebase or in a shallow clone).
  * @param {string} root
  * @param {string} sha

@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { getProposal, openStore, propose, runStart } from '../lib/store.mjs';
 import { findQuote, parseRef, verifyRun } from '../lib/verify.mjs';
 import { ingestSources } from '../lib/sync.mjs';
-import { KINDS, candidate, removeDir, tempDir, writeFiles } from './_fixture.mjs';
+import { execFileSync } from 'node:child_process';
+import { KINDS, candidate, gitRepo, removeDir, tempDir, writeFiles } from './_fixture.mjs';
 
 /** @type {string} */ let home;
 /** @type {string} */ let repo;
@@ -144,4 +145,34 @@ test('ingestSources returns the ticket fields a demand table needs, omitting the
   ]);
   const cachedRow = db.prepare("SELECT * FROM sources_cache WHERE run_id = ? AND ref = 'SUP-1'").get(run);
   assert.deepEqual(Object.keys(/** @type {object} */ (cachedRow)).sort(), ['body', 'fetched_at', 'ref', 'run_id', 'title', 'type', 'url'], 'the cache schema is unchanged');
+});
+
+test('verifyRun drops a card whose only evidence is git/sarif: nothing was checkable', () => {
+  const run = runStart(db, { mode: 'full' }).id;
+  const only = propose(db, run, candidate({
+    topic: 'unverifiable', evidence: [{ type: 'git', ref: 'abc1234' }, { type: 'sarif', ref: 'scan.sarif#R1@src/a.js:1' }],
+  }), { kinds: KINDS });
+  const r = verifyRun(db, repo, run).results.find((x) => x.fp === only.fp);
+  assert.equal(r?.result, 'dropped');
+  assert.equal(r?.note, 'no-checkable-evidence');
+  assert.equal(r?.unchecked.length, 2, 'the passed-through refs are still reported');
+});
+
+test('verifyRun reads quotes at the run head commit: an uncommitted quote fails, a committed one passes after a local edit', () => {
+  const g = tempDir('verify-git');
+  try {
+    gitRepo(g, { 'src/a.js': 'export const committed = 1;\n' });
+    const head = execFileSync('git', ['-C', g, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    // the working tree now differs from the commit: one line added, the committed line removed
+    writeFiles(g, { 'src/a.js': 'export const uncommitted = 2;\n' });
+    const run = runStart(db, { mode: 'full', headSha: head }).id;
+    const fresh = propose(db, run, candidate({ topic: 'fresh', evidence: [{ type: 'code', ref: 'src/a.js:1', quote: 'export const uncommitted = 2;' }] }), { kinds: KINDS });
+    const old = propose(db, run, candidate({ topic: 'old', evidence: [{ type: 'code', ref: 'src/a.js:1', quote: 'export const committed = 1;' }] }), { kinds: KINDS });
+    const out = verifyRun(db, g, run);
+    const f = out.results.find((x) => x.fp === fresh.fp);
+    assert.equal(f?.result, 'dropped');
+    assert.equal(f?.checks[0].why, 'uncommitted');
+    assert.equal(out.results.find((x) => x.fp === old.fp)?.result, 'verified', 'the pushed links show the committed line');
+    assert.deepEqual(findQuote(g, 'src/a.js:1', 'export const uncommitted = 2;'), { found: 'near-line', line: 1 }, 'without a rev: the working tree');
+  } finally { removeDir(g); }
 });

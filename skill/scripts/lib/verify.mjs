@@ -1,7 +1,9 @@
 // @ts-check
 // The mechanical verification pass (D8): detection and verification are separate. For every `candidate` the
 // run touched, each `code`/`doc` evidence quote must be found (whitespace-normalized substring) in the file at
-// the ref's path in the CURRENT working tree. A ref may carry `:line[:col]` (or `#L12`); the quote counts when
+// the ref's path AT THE RUN'S HEAD COMMIT when the run has one git can read (the commit the pushed links point at),
+// else in the current working tree. A quote found only in the working tree (an uncommitted edit) fails with
+// `why: 'uncommitted'`: the card's links would show a file without it. A ref may carry `:line[:col]` (or `#L12`); the quote counts when
 // it is within +-30 lines of that line (`near-line`) or anywhere in the file (`in-file`), and the result says
 // which. `line` is the line the quote was FOUND on (the occurrence nearest the hint); `claimed_line` is the hint
 // when it differs, and `drift` (the distance) flags a hint more than DRIFT_MAX lines off.
@@ -9,7 +11,8 @@
 // A `ticket`, `page`, `goal` or `dep` ref must have been fetched THIS run: it is looked up in the run's
 // sources_cache (same type and ref, written by `ingest-sources` / `deps`); one that is not there drops the card
 // with note `ref-not-ingested:<type>:<ref>` - an unconnected run never ingested any, so such a card was never
-// valid. `git` and `sarif` evidence is passed through unchecked and reported as such - the agent judges it.
+// valid. `git` and `sarif` evidence is passed through unchecked and reported as such - the agent judges it - but a
+// card whose evidence is ONLY git/sarif has nothing verify could check and drops with note `no-checkable-evidence`.
 // When several refs fail, the first in evidence order names the note.
 // Only the evidence the fingerprint's newest propose line carried is checked (store.assertedEvidence): a quote an
 // earlier line carried and the agent no longer emits is stale and never re-checked.
@@ -26,7 +29,7 @@ import { parseRef, squash } from './fingerprint.mjs';
 import { assertedEvidence, candidatesOfRun, move, requireRunning } from './store.mjs';
 import { allocateRun } from './budget.mjs';
 import { loadLensPack } from './memory.mjs';
-import { commitDate, commitsSince } from './git.mjs';
+import { commitDate, commitsSince, fileAt, hasCommit } from './git.mjs';
 import { CHURN_DAYS } from './sync.mjs';
 
 /** A lens pack's `budget`, or undefined when the pack cannot be read (the allocation then uses its default). */
@@ -51,27 +54,45 @@ export const INGESTED_TYPES = /** @type {const} */ (['ticket', 'page', 'goal', '
 export { squash, parseRef };
 
 /**
- * Looks for `quote` in the file at `ref` under `root`.
+ * Looks for `quote` in the file at `ref` under `root`. With `opts.rev` (a commit git can read) the file is read
+ * at that commit; a quote that is missing there but present in the working tree fails with `why: 'uncommitted'`.
  * @param {string} root
  * @param {string} ref
  * @param {string} quote
+ * @param {{rev?: string}} [opts]
  * @returns {Found}
  */
-export function findQuote(root, ref, quote) {
+export function findQuote(root, ref, quote, opts = {}) {
   const { path, line } = parseRef(ref);
   const abs = resolve(root, path);
   const rel = relative(root, abs);
   if (!path || rel.startsWith('..') || isAbsolute(rel)) return { found: false, why: 'path-outside-repo' };
-  /** @type {string} */
-  let text;
-  try {
-    if (!statSync(abs).isFile()) return { found: false, why: 'not-a-file' };
-    text = readFileSync(abs, 'utf8');
-  } catch {
-    return { found: false, why: 'file-missing' };
-  }
+  if (!squash(quote)) return { found: false, why: 'empty-quote' };
+  /** @returns {Found} */
+  const inWorkingTree = () => {
+    try {
+      if (!statSync(abs).isFile()) return { found: false, why: 'not-a-file' };
+      return locate(readFileSync(abs, 'utf8'), quote, line);
+    } catch {
+      return { found: false, why: 'file-missing' };
+    }
+  };
+  if (!opts.rev) return inWorkingTree();
+  const committed = fileAt(root, opts.rev, `./${rel.split(/[\\/]/).join('/')}`);
+  const f = committed === undefined ? { found: /** @type {false} */ (false), why: 'file-missing' } : locate(committed, quote, line);
+  if (f.found) return f;
+  return inWorkingTree().found ? { found: false, why: 'uncommitted' } : f;
+}
+
+/**
+ * The search half of findQuote: the occurrence of `quote` in `text` nearest the `line` hint.
+ * @param {string} text
+ * @param {string} quote
+ * @param {number | undefined} line
+ * @returns {Found}
+ */
+function locate(text, quote, line) {
   const q = squash(quote);
-  if (!q) return { found: false, why: 'empty-quote' };
   // the squashed file with the offset each line starts at: squash(text) is exactly the non-empty squashed lines
   // joined by one space, so an offset in it maps back to the line it falls on
   /** @type {number[]} */
@@ -160,7 +181,7 @@ function measureBusFactor(db, fp, count) {
  * move (see the header). `per_lens` counts per lens the candidates this call checked (`emitted`) and how many
  * verified and dropped; a lens this call checked nothing for is absent.
  * @param {import('./store.mjs').Db} db
- * @param {string} root the repo root (its current working tree is read)
+ * @param {string} root the repo root (read at the run's head commit when git has it, else its working tree)
  * @param {string} runId a running run
  * @param {{perLens?: number, perRun?: number}} [budget]
  * @returns {{run: string, verified: number, dropped: number, per_lens: Record<string, {emitted: number, verified: number, dropped: number}>, results: FpResult[], allocation: Record<string, any>}}
@@ -169,7 +190,10 @@ export function verifyRun(db, root, runId, budget = {}) {
   const run = requireRunning(db, runId);
   const cached = db.prepare('SELECT 1 FROM sources_cache WHERE run_id = ? AND type = ? AND ref = ?');
   const lensOf = db.prepare('SELECT lens FROM proposals WHERE fp = ?');
-  const count = authorCounter(root, typeof run.head_sha === 'string' ? run.head_sha : undefined);
+  const head = typeof run.head_sha === 'string' ? run.head_sha : undefined;
+  const count = authorCounter(root, head);
+  // quotes are read at the scanned commit when git can read it (a non-git root or a lost sha: the working tree)
+  const rev = head && hasCommit(root, head) ? head : undefined;
   /** @type {FpResult[]} */
   const results = [];
   /** @type {Record<string, {emitted: number, verified: number, dropped: number}>} */
@@ -186,7 +210,7 @@ export function verifyRun(db, root, runId, budget = {}) {
     for (const e of assertedEvidence(db, fp)) {
       const ref = String(e.ref);
       if (isOneOf(QUOTED_TYPES, e.type)) {
-        const f = findQuote(root, ref, String(e.quote ?? ''));
+        const f = findQuote(root, ref, String(e.quote ?? ''), { rev });
         checks.push({ type: e.type, ref, ...f });
         if (f.found === false) note ??= `verify-failed:${ref}`;
       } else if (isOneOf(INGESTED_TYPES, e.type)) {
@@ -197,6 +221,7 @@ export function verifyRun(db, root, runId, budget = {}) {
         unchecked.push({ type: e.type, ref, checked: false });
       }
     }
+    if (!note && checks.length === 0 && sources.length === 0) note = 'no-checkable-evidence';
     const bus = note ? undefined : measureBusFactor(db, fp, count);
     /** @type {FpResult} */
     const res = note

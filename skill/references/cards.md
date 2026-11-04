@@ -121,7 +121,7 @@ decorate. A view with nothing to compare is noise, and noise counts against the 
 | --- | --- | --- | --- |
 | `code` | `path:line`, repo-relative | **required**, one line copied verbatim | `verify` re-reads it. A wrong quote drops the card. |
 | `doc` | `path:line` of an in-repo doc | **required**, verbatim | Same as code. |
-| `git` | a commit id, or `path` with a short log summary | optional | For "changed in", "removed in" and ownership claims. |
+| `git` | a commit id, or `path` with a short log summary | optional | For "changed in", "removed in" and ownership claims. Never alone: a card whose evidence is only `git`/`sarif` drops (`no-checkable-evidence`). |
 | `ticket` | the `ref` `ingest-sources` returned | optional, a short phrase | Add `url`. Cite only refs this run ingested: `verify` drops any other (`ref-not-ingested:ticket:<ref>`). |
 | `page` | the `ref` `ingest-sources` returned | optional, the contradicted sentence | Add `url`. Same ingested-only rule. |
 | `goal` | the `ref` `ingest-sources` returned | optional | Add `url`. Same ingested-only rule. |
