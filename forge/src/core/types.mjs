@@ -94,7 +94,7 @@ export const SAMPLE_RESERVED = `${SAMPLE_KEY} is reserved for the sample inbox`;
  * @typedef {{slices: TrustSlice[], events: TrustEvent[]}} Trust
  * @typedef {{id: string, lens: string, state: 'accepted' | 'declined', text: string, decided_by: string, decided_at: string}} RuleDecision
  * @typedef {{ref: string, fp: string, rating: OutcomeRating, note?: string, issue_ref: string, decided_by: string, recorded_at: string}} Outcome
- * @typedef {{rules: RuleDecision[], outcomes: Outcome[]}} ReflectOutput  outcomes: newest OUTCOMES_MAX
+ * @typedef {{rules: RuleDecision[], outcomes: Outcome[], outcomes_more?: true}} ReflectOutput  outcomes: newest OUTCOMES_MAX, or with outcomes_since the oldest OUTCOMES_MAX at or after it (outcomes_more when more follow)
  *
  * Lens direction (additive to forge-mcp-2; tool 8). What a team set in Settings, per inbox and per lens: what the
  * lens should focus on and leave out, the team's intent, and (doc-drift only) the Confluence spaces to search.

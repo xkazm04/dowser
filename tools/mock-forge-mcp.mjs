@@ -8,7 +8,7 @@
 // accepting or declining an offered rule in Forge, `mock_outcome` simulates a person rating an accepted item's
 // built result, and `mock_trust` reads back the trust the last reflect sync stored.
 //
-// Tool 7, `dowser_reflect_sync` {project_key, rules_json?, trust_json?}: trust_json (the skill's per-slice trust
+// Tool 7, `dowser_reflect_sync` {project_key, rules_json?, trust_json?, outcomes_since?}: trust_json (the skill's per-slice trust
 // {slices, events}, at most 50 events) is stored whole; rules_json (a JSON array of at most 50 RuleOffer
 // {id, lens, text, titles?(<=10), offered_at}) is upserted - a new id is stored `offered`, an `offered` one takes
 // the new text and titles, a decided one is never reverted - and the reply is {rules, outcomes}: every rule a
@@ -121,8 +121,8 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { project_key: S, cursor: S }, required: ['project_key'], additionalProperties: false } },
   { name: 'dowser_areas_push', description: 'Replace the project\'s area stats (areas_json, a JSON array of at most 200 {path,files,churn_90d,authors_90d?,last_change?}). Returns {stored}.',
     inputSchema: { type: 'object', properties: { project_key: S, run_id: S, areas_json: S }, required: ['project_key', 'run_id', 'areas_json'], additionalProperties: false } },
-  { name: 'dowser_reflect_sync', description: 'Offer rules (rules_json, a JSON array of at most 50 {id,lens,text,titles?,offered_at}) and read back every rule a person decided plus the newest 200 outcomes. Idempotent. Returns {rules:[{id,lens,state,text,decided_by,decided_at}], outcomes:[{ref,fp,rating,note?,issue_ref,decided_by,recorded_at}]}.',
-    inputSchema: { type: 'object', properties: { project_key: S, rules_json: S, trust_json: S }, required: ['project_key'], additionalProperties: false } },
+  { name: 'dowser_reflect_sync', description: 'Offer rules (rules_json, a JSON array of at most 50 {id,lens,text,titles?,offered_at}) and read back every rule a person decided plus the newest 200 outcomes (with outcomes_since, an ISO time: the oldest 200 at or after it, and outcomes_more when more follow). Idempotent. Returns {rules:[{id,lens,state,text,decided_by,decided_at}], outcomes:[{ref,fp,rating,note?,issue_ref,decided_by,recorded_at}], outcomes_more?}.',
+    inputSchema: { type: 'object', properties: { project_key: S, rules_json: S, trust_json: S, outcomes_since: S }, required: ['project_key'], additionalProperties: false } },
   { name: 'dowser_direction_get', description: 'What the team set in Settings for each lens of this inbox (lens = one lens id, or all). Returns {lenses:{[lens]:{focus?,exclude?,notes?,spaces?}}}.',
     inputSchema: { type: 'object', properties: { project_key: S, lens: S }, required: ['project_key'], additionalProperties: false } },
   { name: 'mock_decide', description: 'TEST ONLY: simulate a person\'s verdict in the inbox on a pushed fp (status accepted|rejected|merged|snoozed; snooze_until = YYYY-MM-DD with snoozed, a past date allowed so tests reach the skill\'s wake path).',
@@ -402,8 +402,15 @@ function dowserReflectSync(b, args) {
   const decided = Object.values(rules).filter((r) => r.state !== 'offered')
     .sort((x, y) => String(x.decided_at).localeCompare(String(y.decided_at)) || x.id.localeCompare(y.id))
     .map((r) => omitAbsent({ id: r.id, lens: r.lens, state: r.state, text: r.text, decided_by: r.decided_by, decided_at: r.decided_at }));
-  const outcomes = /** @type {OutcomeRecord[]} */ (p.outcomes).slice(-OUTCOMES_MAX).map((o) => omitAbsent(o));
-  return { rules: decided, outcomes };
+  if (args.outcomes_since === undefined) {
+    const outcomes = /** @type {OutcomeRecord[]} */ (p.outcomes).slice(-OUTCOMES_MAX).map((o) => omitAbsent(o));
+    return { rules: decided, outcomes };
+  }
+  if (!str(args.outcomes_since) || Number.isNaN(Date.parse(String(args.outcomes_since)))) throw new ToolError('bad-input', 'outcomes_since must be an ISO date-time (omit it when absent)');
+  const page = /** @type {OutcomeRecord[]} */ (p.outcomes).filter((o) => String(o.recorded_at) >= String(args.outcomes_since))
+    .sort((x, y) => String(x.recorded_at).localeCompare(String(y.recorded_at)) || String(x.ref).localeCompare(String(y.ref)));
+  const outcomes = page.slice(0, OUTCOMES_MAX).map((o) => omitAbsent(o));
+  return page.length > OUTCOMES_MAX ? { rules: decided, outcomes, outcomes_more: true } : { rules: decided, outcomes };
 }
 
 /** `dowser_direction_get`. @param {Backend} b @param {Obj} args @returns {Obj} */

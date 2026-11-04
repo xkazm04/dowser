@@ -125,7 +125,7 @@ each new offer once, in section 7 step 5. So `rules offer` runs there and **not*
 in this section starts at `reflect export`, and the one in section 8 comes after the offers were
 presented.
 
-1. `reflect export`. It prints the tool arguments `{project_key, rules_json?, trust_json?, more?}`:
+1. `reflect export`. It prints the tool arguments `{project_key, rules_json?, trust_json?, outcomes_since?, more?}`:
    the rules still `offered` (oldest first, at most 50, each with up to 10 titles of the items
    behind it), and the per-slice trust with its newest 50 events for the inbox's Learning tab.
    `rules_json` is omitted when nothing is offered, `trust_json` when no slice has history. Call the tool anyway: decisions
@@ -133,7 +133,8 @@ presented.
 2. Call `dowser_reflect_sync` with every field except `more`, exactly as printed. Save the
    response verbatim to `<work>/reflect.json`.
 3. `reflect ingest --file <work>/reflect.json`. It prints
-   `{rules_applied, rules_skipped, outcomes_added, outcomes_seen}`. A rule that is no longer
+   `{rules_applied, rules_skipped, outcomes_added, outcomes_seen}`. When it also prints
+   `outcomes_more: true`, repeat steps 1-3 (at most 5 rounds): more outcomes wait in Jira. A rule that is no longer
    `offered` locally is skipped, never overwritten, so a replay changes nothing. Exit 1 means an
    entry was malformed (listed under `invalid`); the rest is applied.
 4. Report in one line: rules decided in Jira (accepted ones with their wording), new outcomes.

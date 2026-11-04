@@ -66,7 +66,11 @@ function checkOffer(raw, i) {
 
 /**
  * `dowser_reflect_sync`. Upserts the offered rules (a rule decided in Forge is never reverted, an offered one
- * has its text and titles refreshed), then answers the decided rules and the newest outcomes.
+ * has its text and titles refreshed), then answers the decided rules and the outcomes: without `outcomes_since`
+ * the newest OUTCOMES_MAX; with it (an ISO time, the newest `recorded_at` the skill holds) the OLDEST OUTCOMES_MAX
+ * recorded at or after it, and `outcomes_more: true` when more follow - so a skill that fell behind by more than
+ * one page catches up page by page instead of losing the oldest. `>=` re-sends the boundary row; the skill's
+ * (fp, recorded_at) key makes it `seen`.
  * @param {Deps} deps
  * @param {Record<string, unknown>} args
  * @param {{sample?: boolean}} [o]  `sample`: the sample load's bypass of the reserved-key refusal (core/sample.mjs)
@@ -89,8 +93,15 @@ export async function reflectSync(deps, args, o = {}) {
       id: String(r.id), lens: String(r.lens), state: r.state, text: String(r.text),
       decided_by: String(r.decided_by ?? ''), decided_at: String(r.decided_at ?? ''),
     }));
-  const outcomes = (await db.query(`SELECT * FROM outcomes WHERE project_key = ? ORDER BY recorded_at DESC, ref DESC LIMIT ${OUTCOMES_MAX}`, [projectKey])).map(toOutcome);
-  return { rules, outcomes };
+  const since = args.outcomes_since;
+  if (since === undefined || since === null || since === '') {
+    const outcomes = (await db.query(`SELECT * FROM outcomes WHERE project_key = ? ORDER BY recorded_at DESC, ref DESC LIMIT ${OUTCOMES_MAX}`, [projectKey])).map(toOutcome);
+    return { rules, outcomes };
+  }
+  if (typeof since !== 'string' || Number.isNaN(Date.parse(since))) throw new AppError('bad-input', 'outcomes_since must be an ISO date-time (omit it when absent)');
+  const page = await db.query(`SELECT * FROM outcomes WHERE project_key = ? AND recorded_at >= ? ORDER BY recorded_at, ref LIMIT ${OUTCOMES_MAX + 1}`, [projectKey, since]);
+  const outcomes = page.slice(0, OUTCOMES_MAX).map(toOutcome);
+  return page.length > OUTCOMES_MAX ? { rules, outcomes, outcomes_more: true } : { rules, outcomes };
 }
 
 /**

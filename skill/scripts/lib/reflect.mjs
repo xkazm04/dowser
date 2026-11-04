@@ -46,7 +46,8 @@ function decider(v) {
  * The `dowser_reflect_sync` arguments. Read-only. `rules_json` is omitted when no rule is offered (the call is
  * still worth making: it brings back decisions and outcomes). `more: true` = more than RULES_MAX rules are
  * offered, so only the oldest RULES_MAX went out; the rest follow once those are decided. The agent passes
- * every field but `more`.
+ * every field but `more`. `outcomes_since` is the newest `recorded_at` this store holds (absent before the first
+ * outcome): Forge then pages forward from it, so more than one page of outcomes between syncs is never lost.
  * @param {Db} db
  * @param {string} projectKey
  * @returns {Row}
@@ -63,9 +64,11 @@ export function exportOffers(db, projectKey) {
     return clean({ id: r.id, lens: r.lens, text: r.text, titles: titles.length ? titles : undefined, offered_at: r.offered_at });
   });
   const trust = trustReport(db, { sync: false, maxEvents: TRUST_EVENTS_MAX, cards: false });
+  const newest = /** @type {Row} */ (db.prepare('SELECT MAX(recorded_at) AS at FROM outcomes').get()).at;
   return /** @type {Row} */ (clean({
     project_key: projectKey, rules_json: offers.length ? JSON.stringify(offers) : undefined,
     trust_json: trust.slices.length || trust.events.length ? JSON.stringify(trust) : undefined,
+    outcomes_since: typeof newest === 'string' && newest ? newest : undefined,
     more: more ? true : undefined,
   }));
 }
@@ -122,6 +125,7 @@ function appendOutcome(db, raw) {
  * Applies a `dowser_reflect_sync` response. Idempotent: a replay applies nothing and adds nothing.
  * Output `{rules_applied, rules_skipped, outcomes_added, outcomes_seen}` (+ `invalid` and exit 1 when an entry
  * was malformed; the rest is still applied). `outcomes_seen` = outcomes in the response, new or not.
+ * `outcomes_more: true` is echoed when Forge said more outcomes follow: export and sync again to read the next page.
  * @param {Db} db
  * @param {unknown} doc
  * @returns {{code: number, out: Row}}
@@ -151,6 +155,7 @@ export function ingestReflect(db, doc) {
     out: /** @type {Row} */ (clean({
       rules_applied: rulesApplied, rules_skipped: rulesSkipped, outcomes_added: outcomesAdded, outcomes_seen: doc.outcomes.length,
       invalid: invalid.length ? invalid : undefined,
+      outcomes_more: doc.outcomes_more === true ? true : undefined,
     })),
   };
 }

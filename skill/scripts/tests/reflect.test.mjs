@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { candidate, gitRepo, removeDir, tempDir } from './_fixture.mjs';
 import { openStore } from '../lib/store.mjs';
-import { exportOffers } from '../lib/reflect.mjs';
+import { exportOffers, ingestReflect } from '../lib/reflect.mjs';
 import { callTool, emptyBackend, TOOLS } from '../../../tools/mock-forge-mcp.mjs';
 
 const CLI = fileURLToPath(new URL('../dowser.mjs', import.meta.url));
@@ -329,4 +329,20 @@ test('mock backend: reflect_sync validates its input', () => {
   const out = callTool(b, 'dowser_reflect_sync', { project_key: 'k', rules_json: JSON.stringify([{ id: 'a', lens: 'opportunity', text: 'three', offered_at: 'x' }]) });
   assert.deepEqual(out.rules.map((/** @type {any} */ r) => [r.state, r.text]), [['accepted', 'edited']]);
   assert.throws(() => callTool(b, 'mock_decide_rule', { project_key: 'k', id: 'a', state: 'declined' }), /already accepted/);
+});
+
+test('reflect export sends outcomes_since from the newest local outcome; ingest echoes outcomes_more', () => {
+  const home = tempDir('reflect-since');
+  const db = openStore(join(home, 'dowser.db'));
+  try {
+    assert.equal(exportOffers(db, 'pk').outcomes_since, undefined, 'no outcome yet: omitted');
+    const o = (/** @type {string} */ ref, /** @type {string} */ at) => ({ ref, fp: 'ffffffffffffffff', rating: 'right', issue_ref: 'SHOP-1', decided_by: 'forge:bob', recorded_at: at });
+    const r = ingestReflect(db, { rules: [], outcomes: [o('DW-1', '2026-11-01T00:00:00.000Z'), o('DW-2', '2026-11-02T00:00:00.000Z')], outcomes_more: true });
+    assert.equal(r.out.outcomes_added, 2);
+    assert.equal(r.out.outcomes_more, true, 'the agent is told to sync again');
+    assert.equal(exportOffers(db, 'pk').outcomes_since, '2026-11-02T00:00:00.000Z');
+    const again = ingestReflect(db, { rules: [], outcomes: [o('DW-2', '2026-11-02T00:00:00.000Z')] });
+    assert.equal(again.out.outcomes_added, 0, 'the boundary row is seen, not added');
+    assert.ok(!('outcomes_more' in again.out));
+  } finally { db.close(); removeDir(home); }
 });

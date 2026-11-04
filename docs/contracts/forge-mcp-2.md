@@ -359,7 +359,7 @@ propose `csv` items for the opportunity lens again") and offers them for a perso
 Forge is where the person decides. This tool is one idempotent round trip: the skill pushes its `offered`
 rules and reads back every rule decided in Forge and the recorded outcomes of accepted items.
 
-Input: `{project_key, rules_json?, trust_json?}`.
+Input: `{project_key, rules_json?, trust_json?, outcomes_since?}`.
 
 | field | type | rule |
 |---|---|---|
@@ -372,6 +372,7 @@ Input: `{project_key, rules_json?, trust_json?}`.
 | `rules_json[].offered_at` | string | required ISO timestamp |
 | `trust_json` | string | optional. A JSON object `{slices, events}`: the skill store's per-slice trust (`reflect export`, from `skill/scripts/lib/trust.mjs`), at most 200 slices and the newest 50 events. Forge stores it whole per inbox (table `trust`, migration v023) and shows it in the Learning tab; it never computes or acts on a level itself. Omitted (or empty) leaves the stored one. Malformed is `bad-input` |
 | `trust_json.slices[]` | object | `{slice, level, ceiling, start, n, agreement?, changed_at?, reason?}`: `slice` `<category>\|<lens>\|<risk_class>\|<size>` (at most 200 chars), levels 0-3 (Dowser's ceiling is 1), `n` >= 0 decisions in the current window, `agreement` 0-1 (omitted when n is 0) |
+| `outcomes_since` | string | optional ISO timestamp, the newest `recorded_at` the caller holds (`reflect export` sends it). With it, `outcomes` are the OLDEST 200 recorded at or after it, oldest first, and `outcomes_more: true` says more follow: call again with the new newest. The boundary outcome comes back again; the skill counts it as seen. Not an ISO time is `bad-input`. Additive, so still forge-mcp-2 |
 | `trust_json.events[]` | object | `{slice, from, to, reason, agreement?, n, item_id?, at}`: one level change; `item_id` is the fp that caused it (16 hex), `at` an ISO timestamp |
 
 A single invalid rule refuses the whole call with `bad-input` (the message names its index) and stores nothing.
@@ -391,7 +392,8 @@ Output:
 | `rules[].state` | string | `accepted` or `declined` |
 | `rules[].text` | string | the wording on file: the person's edit when they edited it while accepting, else the offered text |
 | `rules[].decided_by`, `decided_at` | string | like a verdict: `forge:<accountId>` and an ISO timestamp |
-| `outcomes[]` | | the newest 200 outcomes of the project, newest first. An outcome is how the person who owns the issue rates an accepted item |
+| `outcomes[]` | | without `outcomes_since`, the newest 200 outcomes of the project, newest first; with it, see `outcomes_since`. An outcome is how the person who owns the issue rates an accepted item |
+| `outcomes_more` | boolean | only with `outcomes_since`, and only when more outcomes follow this page; omitted otherwise |
 | `outcomes[].rating` | string | `right`, `partly` or `wrong` |
 | `outcomes[].note` | string | optional. Omitted when the person gave none |
 | `outcomes[].ref`, `fp`, `issue_ref` | string | the inbox item, its fingerprint and the Jira issue it created |

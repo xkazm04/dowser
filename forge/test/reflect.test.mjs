@@ -385,3 +385,25 @@ test('the tool 7 action key: the module key wins; rules_json routes by shape', (
   assert.equal(actionName('mcp', [], { project_key: 'x', rules_json: '[]' }), 'dowser_reflect_sync');
   assert.equal(actionName('mcp', [], { project_key: 'x' }), 'dowser_verdicts_pull');
 });
+
+test('reflect sync pages outcomes forward from outcomes_since, so more than 200 between syncs are not lost', async () => {
+  const d = await seeded();
+  const ins = d.db.raw.prepare('INSERT INTO outcomes (ref, project_key, fp, rating, issue_ref, decided_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  const at = (/** @type {number} */ i) => new Date(Date.parse('2026-11-01T00:00:00.000Z') + i * 1000).toISOString();
+  for (let i = 0; i < 250; i++) ins.run(`DW-${1000 + i}`, PK, i.toString(16).padStart(16, '0'), 'right', `SHOP-${i}`, `forge:${ME}`, at(i));
+
+  const newest = await tool(d, 'dowser_reflect_sync', sync([]));
+  assert.equal(newest.outcomes.length, 200);
+  assert.equal(newest.outcomes[0].ref, 'DW-1249', 'without outcomes_since: the newest 200, newest first (unchanged)');
+  assert.ok(!('outcomes_more' in newest));
+
+  const first = await tool(d, 'dowser_reflect_sync', { ...sync([]), outcomes_since: at(0) });
+  assert.equal(first.outcomes.length, 200);
+  assert.equal(first.outcomes[0].ref, 'DW-1000', 'oldest first from the cursor');
+  assert.equal(first.outcomes_more, true);
+  const next = await tool(d, 'dowser_reflect_sync', { ...sync([]), outcomes_since: first.outcomes.at(-1).recorded_at });
+  assert.equal(next.outcomes[0].ref, 'DW-1199', 'the boundary row comes back once more');
+  assert.equal(next.outcomes.at(-1).ref, 'DW-1249');
+  assert.ok(!('outcomes_more' in next), 'the last page says nothing more follows');
+  assert.equal((await tool(d, 'dowser_reflect_sync', { ...sync([]), outcomes_since: 'yesterday' })).error, 'bad-input');
+});
