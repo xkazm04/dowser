@@ -198,6 +198,10 @@ the estimate is a guess: drop `confidence` to `low`.
 `verbosity: short` (the default) renders as below. `full` adds the body's Summary and
 Description under the rationale. Either way the full write-up is one "open <n>" away.
 
+The numbers, and the fields of the overview, come from `triage sheet` rows; a row's
+`lookalike`, when it is the same work, adds one line under the rationale: dev `looks like <title>,
+<status> <date> as <reason>`, guided as in `references/guided-mode.md` "Triage".
+
 ### Dev mode
 
 ```

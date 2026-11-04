@@ -54,6 +54,28 @@ the item stays kept and is pushed on the next connected run.
 Ask for the code first, then offer an optional note. For `other`, keep asking for the note
 until the runner gives one or picks another code. The move is refused without it.
 
+## Deciding a sheet at once
+
+`triage sheet --run <id>` numbers the run's cards (ranked rows for the person, then the reserve,
+then the machine pre-triaged) and gives each row its prediction and its nearest rejected or
+snoozed lookalike. `triage apply --run <id> --by human:<name> --decisions "<line>"` records the
+runner's decisions on those numbers. What it guarantees:
+
+- **Validated whole, before any move.** Every entry is checked first: the card number is on the
+  sheet and decided once, the verb is keep, reject, snooze or merge, and the move's own rules
+  hold (a reject has a code from the table above, `other` has a note, a snooze date is a real date
+  after today, a merge target exists and is not the card itself or a card this line merges
+  too). One bad entry refuses the line: exit 2, `problems` names each entry, nothing moved.
+- **Same moves as `move`.** Each entry is a compare-and-set move from `verified`, one
+  `transitions` row each, all inside one store transaction, so no other writer lands between
+  them. Keep, and every number the line leaves out, records nothing.
+- **A card decided elsewhere meanwhile** (a verdict pulled from Jira after the sheet was read) is
+  refused with its `current` status; the other entries still apply (exit 1). Trust is updated
+  once for the batch.
+- `--dry-run` prints `would_apply` and `would_refuse` and changes nothing.
+
+The numbers do not shift when cards move, so a second line on the same sheet uses the same numbers.
+
 ## Snooze
 
 "Not now, but tell me if it gets stronger." The item is held back from later scans until its

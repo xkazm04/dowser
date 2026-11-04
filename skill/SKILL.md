@@ -314,7 +314,7 @@ carry a reason.
      triage batch that it was folded in.
    - Same work, and the hit is `rejected` or `snoozed`: do **not** merge or reject it yourself.
      Show it in triage with "looks like <hit title>, <status> on <date> as <reason>". The
-     runner decides.
+     runner decides. (`triage sheet` hands you the nearest such hit as the row's `lookalike`.)
    - Distinct: do nothing.
 
 ## 7. Pre-triage dialog
@@ -329,7 +329,12 @@ Load `references/triage.md` (statuses, moves, reason codes, budget, trust) and
    (guided: "Summary wording", pre-sorted by Dowser). They are not shown card by card; the runner
    may still open, reject or snooze any of them. Every other verified card is in `for_person`.
    Never mark a card yourself, and never claim a level the store did not report.
-1. First show one overview table of every verified ranked item in `for_person`: number, lens,
+1. Run `triage sheet --run <run_id>`. Its `rows` are the ranked items of `for_person`, numbered
+   in that order, then `reserve`, then `pretriaged`, numbered after them; use these numbers
+   everywhere in the dialog (they do not shift after a move). Each row carries the card's
+   `predicted_verdict` and `predicted_why`, and `lookalike`: the nearest rejected or snoozed
+   `similar` hit. Judge a `lookalike` as section 6 says; only same work is shown as "looks like".
+   First show one overview table of every row: number, lens,
    MVP mark, title, score (or `unscored`), size, confidence. Then show them in batches of at
    most 4 cards, rendered for the mode and `verbosity` (`references/cards.md` "Rendering"). The
    runner can keep or reject from the overview directly, or open any card by its number. List
@@ -349,6 +354,16 @@ Load `references/triage.md` (statuses, moves, reason codes, budget, trust) and
      `move <fp> --to merged --into <fp> --by human:<name>`.
 3. Offer **"keep the rest"** at every batch. It ends the dialog with every remaining card
    kept, and no move is recorded for them.
+   **One decision line.** The runner may answer for several cards at once, from the overview or
+   a batch: `2 reject not-worth-it; 5 snooze 2026-12-01; 7 merge 3; rest keep` (`<n>[,<n>]`
+   then `keep`, `reject <code> [note]`, `snooze [YYYY-MM-DD]`, `merge <n or fp>`; entries split
+   by `;`). Collect the reason codes and notes the runner gave, then record the whole line with
+   `triage apply --run <run_id> --by human:<name> --decisions "<line>"`. Every entry is checked
+   before the first move: on exit 2 nothing moved; read each `problems` line to the runner, fix
+   it with them, and apply again. On exit 1 the `refused` cards were decided elsewhere after the
+   sheet (their `current` status says how); say so, and the `applied` ones stand. When the runner
+   wants to see the moves before they are recorded, add `--dry-run` first: it prints
+   `would_apply` and changes nothing. Single `move` calls (step 2) stay valid for one card.
 4. `<name>` is the runner's name as they give it, or `runner` if they decline. Never record a
    human decision the runner did not make in this dialog.
 5. **Rule offers.** After the dialog, run `rules offer`. Present each new offer **once**, as its

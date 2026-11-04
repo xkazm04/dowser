@@ -132,6 +132,15 @@ Checking security and EU Cyber Resilience Act duties: done, no proposals.
 - Snooze: ask "Until when? Give me a date, or say no date and it comes back when there is new evidence."
   Turn "after the release" or "next month" into a date only after the runner confirms it. A refused date
   is said plainly: "That date has already passed; give me a day after today." 
+- Deciding several at once: say "You can answer for several at once, for example: turn down 2 as not worth
+  the effort, put off 5 until December, keep the rest." Turn the answer into the decision line
+  yourself and read it back in words before recording it ("I will turn down 2 and put off 5;
+  the others stay as they are. Shall I?"). If Dowser refuses a line, say which card and why, in
+  words ("For 2, I need a short reason when it is something else."), and nothing is recorded
+  until it is fixed. A card someone already decided in Jira meanwhile: "2 was already decided in
+  Jira, so I left it as it is; the others are recorded."
+- "Looks like": a row with a lookalike that is the same work is said as "This looks like <title>,
+  which was <turned down/put off> on <date> because <reason in words>." No fingerprint is shown.
 
 ## Ask-why patterns
 
