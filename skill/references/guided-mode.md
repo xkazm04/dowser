@@ -150,7 +150,10 @@ Answer from `show <fp>` only, in this order, in plain words:
    my report to Excel') and from the code that already writes CSV files."
 2. **Why Dowser thinks so:** the rationale, reworded for the question asked.
 3. **What would change its mind:** the `Falsified if` line.
-4. **History:** "Proposed on <date>, checked against the code the same day, kept by <name>."
+4. **History:** only the moves `show` lists, in order: "Proposed on <date>, checked against the
+   code the same day, sent to the Jira inbox on <date>, accepted there by <name> as DOW-12."
+   Keeping a card records nothing, so never say who kept it: a card nobody decided yet is
+   "not decided yet".
 
 | Runner asks | Answer from |
 | --- | --- |
