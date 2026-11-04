@@ -1,95 +1,886 @@
 {
   "schema": "dowser-sample/1",
-  "placeholder": true,
   "source": {
     "repo_url": "https://github.com/xkazm04/dowser",
     "head_sha": "414e6ed17aea40f0486f150180ab9d798e264d4f",
-    "scanned_at": "2026-11-04T09:00:00.000Z",
-    "run_id": "sample-placeholder"
+    "scanned_at": "2026-11-04T17:15:23.832Z",
+    "run_id": "r-20261104170656-058c",
+    "harness": "claude-code",
+    "model": "claude-opus-5-5"
   },
-  "lens_kinds_json": "{\"doc-drift\":[\"contradicted-by-code\",\"removed-still-documented\",\"undocumented-change\",\"stale-example\",\"missing-doc\"],\"opportunity\":[\"expose-capability\",\"extend-capability\",\"missing-capability\",\"goal-gap\",\"workflow-shortcut\"],\"security-cra\":[\"vulnerable-dependency\",\"risky-pattern\",\"secret-exposure\",\"vulnerability-handling-gap\",\"sbom-gap\",\"update-mechanism-gap\"],\"ux-friction\":[\"dead-end\",\"unrecoverable-error\",\"dark-pattern\",\"accessibility-gap\",\"missing-feedback\",\"confusing-copy\"]}",
+  "lens_kinds_json": "{\"opportunity\":[\"expose-capability\",\"extend-capability\",\"missing-capability\",\"goal-gap\",\"workflow-shortcut\"],\"ux-friction\":[\"dead-end\",\"unrecoverable-error\",\"dark-pattern\",\"accessibility-gap\",\"missing-feedback\",\"confusing-copy\"],\"doc-drift\":[\"contradicted-by-code\",\"removed-still-documented\",\"undocumented-change\",\"stale-example\",\"missing-doc\"]}",
   "proposals": [
     {
-      "fp": "ff9a917db2919ce9",
+      "fp": "50827cca2459efd8",
+      "lens": "opportunity",
+      "kind": "expose-capability",
+      "topic": "proposal-count-confluence-byline",
+      "anchors": [
+        "forge/manifest.yml",
+        "forge/src/core/cards.mjs#bylineForPage",
+        "forge/src/index.js"
+      ],
+      "title": "Show the number of Dowser proposals on the Confluence page byline",
+      "rationale": "The Confluence byline already counts the proposals that name a page, but the count only appears after a reader opens the popup. The team listed showing it in the byline title as an open follow-up. No ticket or goal asks for it, so it is a small doc-promised polish item rather than measured demand.",
+      "body": "## Summary\nPut the proposal count in the Dowser byline title on Confluence pages (\"Dowser (3)\"), so readers see a page is affected without opening the popup.\n\n## Description\nThe byline resolver already returns a count for each page (`forge/src/core/cards.mjs:269`), and the popup renders it (`forge/static/app/src/routes/byline/index.jsx:64`). The byline module title is a fixed string (`forge/manifest.yml:181`, `forge/manifest.yml:185`), so a page with three affected proposals looks the same as one with none until it is opened. The project status lists this as an open follow-up (`docs/concepts/project-status-and-next-steps.md:202`). Demand: 7 ticket queries since 2026-08-06 (90 days), including the two demand sweeps and `byline OR confluence OR doc impact OR page count`, returned 0 tickets; `dowser_sources_goals` returned 0 goals. Grouping key: none (no tickets). Done means the byline title carries the count when it is above zero and stays \"Dowser\" otherwise.\n\n## Flow\n- add a `dynamicProperties` function to the `dowser-doc-impact` byline item in the manifest\n- implement it in the Forge entry point by calling the existing bylineForPage count, limited to visible inboxes\n- return the title with the count, plain \"Dowser\" at zero\n- test: a page named by 2 open proposals yields a title with 2; an unnamed page yields \"Dowser\"\n\n## Expected impact\nConfluence readers see at a glance which pages have pending doc changes, which supports the doc-impact demo story. The dynamic-properties call runs on every page view, which adds Forge invocations and SQL reads; it must stay a single cheap count.\n\n## Evaluation\nClaim: user - Confluence readers see the proposal count without opening the byline\nBefore: 0 of 1 byline items show a count in the title; the count appears only in the popup\nAfter: the byline title shows the count; checked by opening a page named by a proposal on the live site\nMethod: quote - read the manifest entry, the resolver return and the popup header; 7 ticket queries counted 0 demand\nFalsified if: Forge contentBylineItem dynamicProperties cannot read Forge SQL within its time limit",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "forge/src/core/cards.mjs:269",
+          "quote": "return { count: cards.length, cards };"
+        },
+        {
+          "type": "code",
+          "ref": "forge/manifest.yml:181",
+          "quote": "- key: dowser-doc-impact"
+        },
+        {
+          "type": "code",
+          "ref": "forge/manifest.yml:185",
+          "quote": "title: Dowser"
+        },
+        {
+          "type": "code",
+          "ref": "forge/static/app/src/routes/byline/index.jsx:64",
+          "quote": "{plural(data.data.count ?? data.data.cards.length, 'Dowser proposal')}"
+        },
+        {
+          "type": "doc",
+          "ref": "docs/concepts/project-status-and-next-steps.md:202",
+          "quote": "- Byline count in the byline title via `dynamicProperties` (today the count shows only in the popup)."
+        }
+      ],
+      "effort": {
+        "size": "S",
+        "days_low": 1,
+        "days_high": 2,
+        "basis": [
+          "forge/manifest.yml",
+          "forge/src/index.js",
+          "forge/src/core/cards.mjs#bylineForPage"
+        ],
+        "score": 2
+      },
+      "confidence": "low",
+      "confidence_why": "The code and the status doc agree the count exists and is hidden, but 7 ticket queries and the goals source returned nothing; one reader or demand ticket asking for it would raise it.",
+      "doc_impact": [
+        "docs/forge-app.md",
+        "docs/concepts/project-status-and-next-steps.md"
+      ],
+      "delivery_risk": {
+        "blast": "low",
+        "bus_factor": 1
+      },
+      "provenance": {
+        "lens_version": "0.3.2",
+        "model": "claude-opus-5-5",
+        "harness": "claude-code",
+        "run_id": "r-20261104170656-058c"
+      },
+      "category": "product",
+      "impact": 2,
+      "impact_why": "None: 0 tickets in 90 days across 7 queries and 0 goals; a doc-promised capability-exists claim only.",
+      "risk": 3,
+      "score": 8.1,
+      "score_parts": {
+        "impact": 2,
+        "confidence_w": 0.5,
+        "effort_div": 1.111,
+        "risk_factor": 0.9,
+        "formula": "scan-score/1"
+      },
+      "band": "ranked",
+      "mvp": true,
+      "mvp_rule": "top-score",
+      "predicted_verdict": "defer",
+      "predicted_why": "No similar decision in near or outcomes. The team listed it as its own follow-up, but with no demand and the Dec 1 gate ahead it is polish a person will likely park.",
+      "predicted_by": "dowser-opportunity@0.3.2:claude-opus-5-5",
+      "status": "verified"
+    },
+    {
+      "fp": "9860f4c9b6f92d94",
+      "lens": "ux-friction",
+      "kind": "unrecoverable-error",
+      "topic": "installer-replace-write-failure",
+      "anchors": [
+        "skill/install.mjs#isDowserInstall",
+        "skill/install.mjs#main",
+        "skill/install.mjs#removeInstall"
+      ],
+      "title": "Keep the working skill when a reinstall or upgrade fails to write",
+      "rationale": "Upgrading deletes the installed skill before copying the new one, so a write error leaves the person with no working Dowser and a bare \"write failed\" line. A leftover folder can then be refused as \"not a Dowser install\". Install and upgrade are how every person starts.",
+      "body": "## Summary\nCopy the new skill beside the old one and swap it in only once the copy is complete; on failure, say that the old install is untouched and what to try.\n\n## Description\nWith a target present the installer removes it first (`skill/install.mjs:326`) and only then creates the folder and copies (`skill/install.mjs:330`). Any error in that block ends with `write failed: <node message>` and exit 3 (`skill/install.mjs:335`), with no next step and the previous install already gone. If the removal or copy stops before `SKILL.md` is in place, the next run checks for that file (`skill/install.mjs:251`) and refuses the folder Dowser left behind (`skill/install.mjs:318`), asking the person to move it away by hand. Done means a failed write leaves the old install working, and the message names the folder and the command to run again.\n\n## Flow\n- person runs install.mjs over an existing install to upgrade\n- the installer deletes the old skill folder\n- the copy fails (disk full, permission, antivirus lock)\n- the person sees write failed with a Node error and has no working skill\n- a rerun may be refused because the leftover folder lacks SKILL.md\n\n## Expected impact\nThis blocks a person upgrading: the skill that worked a minute ago is gone, and the message does not say how to get it back. After the fix a failed upgrade changes nothing and the message says so. Measure installer exits with code 3 after a successful earlier install. A rename-based swap must stay safe for the --dev-link junction on Windows.\n\n## Evaluation\nClaim: user - a failed upgrade never leaves the person without a working skill\nBefore: delete happens before copy (1 of 1 replace paths); 1 failure message with no next step\nAfter: the old install is removed only after a complete copy; the failure message names the target and the rerun command\nMethod: quote - read the replace block and the refusal check in install.mjs; no write failure was reproduced (that would mean writing outside the work folder)\nFalsified if: fs.cpSync is in fact atomic for a directory tree on the supported platforms, or the harness keeps its own copy of the skill",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "skill/install.mjs:326",
+          "quote": "if (exists) removeInstall(target);"
+        },
+        {
+          "type": "code",
+          "ref": "skill/install.mjs:330",
+          "quote": "fs.mkdirSync(target);"
+        },
+        {
+          "type": "code",
+          "ref": "skill/install.mjs:335",
+          "quote": "fail(`write failed: ${e instanceof Error ? e.message : String(e)}`, 3);"
+        },
+        {
+          "type": "code",
+          "ref": "skill/install.mjs:251",
+          "quote": "const head = fs.readFileSync(path.join(p, 'SKILL.md'), 'utf8').slice(0, 400);"
+        },
+        {
+          "type": "code",
+          "ref": "skill/install.mjs:318",
+          "quote": "fail(`${target} exists and is not a Dowser install; move it away first`, 3);"
+        }
+      ],
+      "effort": {
+        "size": "S",
+        "days_low": 0.5,
+        "days_high": 1.5,
+        "basis": [
+          "skill/install.mjs#main",
+          "skill/install.mjs#removeInstall"
+        ],
+        "score": 2
+      },
+      "confidence": "medium",
+      "confidence_why": "The order of delete and copy is quoted directly; a reproduced failed upgrade or a support report would raise it.",
+      "delivery_risk": {
+        "blast": "low",
+        "bus_factor": 1
+      },
+      "artifacts": [
+        {
+          "kind": "flow",
+          "message": "The old install is deleted before the copy that can fail",
+          "alt": "Flow of four upgrade steps: run the installer over an existing install, the old install is deleted, the copy fails, write failed is shown with no next step. The copy failure is marked as the failure and the next step as missing.",
+          "refs": [
+            "skill/install.mjs:326",
+            "skill/install.mjs:335"
+          ],
+          "data": {
+            "steps": [
+              {
+                "label": "Run install to upgrade"
+              },
+              {
+                "label": "Old install deleted",
+                "mark": "friction"
+              },
+              {
+                "label": "Copy fails",
+                "mark": "failure"
+              },
+              {
+                "label": "write failed, no next step",
+                "mark": "missing"
+              }
+            ]
+          }
+        }
+      ],
+      "provenance": {
+        "lens_version": "0.3.2",
+        "model": "claude-opus-5-5",
+        "harness": "claude-code",
+        "run_id": "r-20261104170656-058c"
+      },
+      "category": "product",
+      "impact": 7,
+      "impact_why": "Blocked, off the main task: a failed upgrade deletes the working skill and gives no next step; reach unmeasured (0 tickets).",
+      "risk": 3,
+      "score": 42.5,
+      "score_parts": {
+        "impact": 7,
+        "confidence_w": 0.75,
+        "effort_div": 1.111,
+        "risk_factor": 0.9,
+        "formula": "scan-score/1"
+      },
+      "band": "ranked",
+      "mvp": true,
+      "mvp_rule": "top-score",
+      "predicted_verdict": "accept",
+      "predicted_why": "No similar decision in near or outcomes. Staging the copy and swapping it in is a small, local change to the one entry command, and keeping a working install is hard to argue against.",
+      "predicted_by": "dowser-ux-friction@0.3.2:claude-opus-5-5",
+      "status": "verified"
+    },
+    {
+      "fp": "369befc01c2ba069",
+      "lens": "ux-friction",
+      "kind": "unrecoverable-error",
+      "topic": "inbox-decision-conflict-recovery",
+      "anchors": [
+        "forge/src/core/verdicts.mjs#openItems",
+        "forge/static/app/src/routes/inbox/Toolbar.jsx",
+        "forge/static/app/src/routes/inbox/useVerdicts.js#failDeferred"
+      ],
+      "title": "Let a bulk reject or snooze survive one proposal someone else already decided",
+      "rationale": "When one checked proposal was decided elsewhere (a teammate, Rovo) during triage, the whole batch is refused, every card comes back as open, and the reason and note typed for it are gone. The message says to reload, but the inbox has no reload control. Triage is the main task of the Jira app, so this hits the person deciding the backlog.",
+      "body": "## Summary\nWhen a reject or snooze meets a proposal that is no longer open, decide the rest, show the conflicting one in its real status, and keep the reason and note.\n\n## Description\nThe bulk path checks every ref before deciding any (`forge/src/core/verdicts.mjs:194`), and one decided card throws a bare \"is accepted, not open\" (`forge/src/core/verdicts.mjs:138`); the single-card race says \"reload it\" (`forge/src/core/verdicts.mjs:123`). The inbox then restores every ref of the batch as open (`forge/static/app/src/routes/inbox/useVerdicts.js:65`) and shows the server text followed by \"It is back in the list.\" (`forge/static/app/src/routes/inbox/useVerdicts.js:67`), so the toast reads \"Could not reject 5 proposals: DW-7 is accepted, not open It is back in the list.\" The restored cards show the error above live Accept and Reject buttons (`forge/static/app/src/routes/inbox/ReadingPane.jsx:29`). `git grep -i reload` over `routes/inbox` finds one reload control, in the load-error state only (`forge/static/app/src/routes/inbox/index.jsx:146`); the toolbar has none. The reason and note live only in the closed Reject dialog, so a retry means choosing and typing them again. Ticket query `error OR stuck OR confusing OR \"can't\" OR lost OR accessibility OR \"screen reader\"` since 2026-05-08 returned 0 tickets, so reach is unmeasured. Done means the other cards are decided, the conflicting one shows its current status, and nothing typed has to be typed again.\n\n## Flow\n- person checks 5 proposals, presses r, picks a reason and types a note\n- meanwhile DW-7 is accepted by a teammate or through Rovo\n- after the 6-second undo window verdict.reject refuses the whole batch\n- all 5 come back as open, with an error toast that runs two sentences together\n- person finds no reload control, refreshes the Jira page, re-checks 4 cards and retypes the reason and note\n\n## Expected impact\nThis blocks the triager on the error branch of the main inbox task: the batch is lost along with the note they wrote. After the fix they read one toast and carry on. Measure the share of failed reject and snooze calls that end in a second call for the same refs. Deciding part of a batch changes the all-or-nothing contract that the Rovo and MCP callers of the resolver may rely on.\n\n## Evaluation\nClaim: user - one conflicting card no longer costs the whole batch or the typed note\nBefore: 7 steps to finish a 5-card reject after one conflict; 0 reload controls outside the load-error state; the batch of 5 is refused for 1 conflict\nAfter: 1 step (read the toast: 4 rejected, DW-7 already accepted); the reason and note are kept\nMethod: count - read the reject path from the resolver to the toast and counted the reload controls in routes/inbox with git grep\nFalsified if: verdict.reject is in fact called with only the still-open refs, or the inbox reloads on its own after a failed decision",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "forge/src/core/verdicts.mjs:194",
+          "quote": "Resolves `refs` and checks every one is open before deciding any (a bulk decision is all-or-nothing up front)."
+        },
+        {
+          "type": "code",
+          "ref": "forge/src/core/verdicts.mjs:138",
+          "quote": "throw new AppError('bad-input', `${p.ref} is ${p.status}, not open`);"
+        },
+        {
+          "type": "code",
+          "ref": "forge/src/core/verdicts.mjs:123",
+          "quote": "throw new AppError('bad-input', `${p.ref} is ${now.status}, not open; reload it`);"
+        },
+        {
+          "type": "code",
+          "ref": "forge/static/app/src/routes/inbox/useVerdicts.js:65",
+          "quote": "restore(refs, false);"
+        },
+        {
+          "type": "code",
+          "ref": "forge/static/app/src/routes/inbox/useVerdicts.js:67",
+          "quote": "${message} It is back in the list.`, 'error');"
+        },
+        {
+          "type": "code",
+          "ref": "forge/static/app/src/routes/inbox/ReadingPane.jsx:29",
+          "quote": "{error && <SectionMessage appearance=\"error\"><p>{error}</p></SectionMessage>}"
+        },
+        {
+          "type": "code",
+          "ref": "forge/static/app/src/routes/inbox/index.jsx:146",
+          "quote": "{load.status === 'error' && <div className=\"dwr-state\"><ErrorState what=\"The inbox\" error={load.error} onRetry={data.reload} /></div>}"
+        }
+      ],
+      "effort": {
+        "size": "M",
+        "days_low": 2,
+        "days_high": 3,
+        "basis": [
+          "forge/src/core/verdicts.mjs#openItems",
+          "forge/src/core/verdicts.mjs#decideAll",
+          "forge/static/app/src/routes/inbox/useVerdicts.js#failDeferred",
+          "forge/static/app/src/routes/inbox/Toolbar.jsx"
+        ],
+        "score": 4
+      },
+      "confidence": "medium",
+      "confidence_why": "The resolver and the UI restore path are quoted directly; a reproduced two-tab race or a ticket from a triager would raise it.",
+      "delivery_risk": {
+        "blast": "medium",
+        "bus_factor": 1
+      },
+      "artifacts": [
+        {
+          "kind": "flow",
+          "message": "One card decided elsewhere refuses the whole batch and offers no reload",
+          "alt": "Flow of five triage steps: check 5 proposals, pick a reason and type a note, a teammate accepts one, the batch is refused and all 5 return as open, no reload control. The refusal is marked as the failure and the reload as missing.",
+          "refs": [
+            "forge/src/core/verdicts.mjs:194",
+            "forge/static/app/src/routes/inbox/useVerdicts.js:65",
+            "forge/static/app/src/routes/inbox/index.jsx:146"
+          ],
+          "data": {
+            "steps": [
+              {
+                "label": "Check 5 proposals"
+              },
+              {
+                "label": "Pick reason, type note"
+              },
+              {
+                "label": "Teammate accepts DW-7"
+              },
+              {
+                "label": "Batch refused, all 5 back",
+                "mark": "failure"
+              },
+              {
+                "label": "Reload control",
+                "mark": "missing"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "before-after",
+          "message": "Finishing the batch after one conflict drops from 7 steps to 1",
+          "alt": "Before and after of the steps to finish a 5-card reject after one card was decided elsewhere. Before: dismiss toast, refresh the Jira page, re-check 4 cards, press r, pick reason, retype note, confirm. After: read one toast.",
+          "refs": [
+            "forge/src/core/verdicts.mjs:194",
+            "forge/static/app/src/routes/inbox/useVerdicts.js:67"
+          ],
+          "data": {
+            "measure": "steps to finish the batch",
+            "before": [
+              "Dismiss the error toast",
+              "Refresh the Jira page",
+              "Re-check 4 cards",
+              "Press r",
+              "Pick the reason again",
+              "Retype the note",
+              "Confirm"
+            ],
+            "after": [
+              "Read toast: 4 rejected"
+            ]
+          }
+        }
+      ],
+      "provenance": {
+        "lens_version": "0.3.2",
+        "model": "claude-opus-5-5",
+        "harness": "claude-code",
+        "run_id": "r-20261104170656-058c"
+      },
+      "category": "product",
+      "impact": 8,
+      "impact_why": "Blocked on the error branch of the main triage task: one conflict refuses the batch and drops the typed note; 0 tickets in 180 days, reach unmeasured.",
+      "risk": 5,
+      "score": 36,
+      "score_parts": {
+        "impact": 8,
+        "confidence_w": 0.75,
+        "effort_div": 1.333,
+        "risk_factor": 0.8,
+        "formula": "scan-score/1"
+      },
+      "band": "ranked",
+      "predicted_verdict": "accept",
+      "predicted_why": "No similar decision in near or outcomes. The inbox already invests in undo windows and error restore, so a gap that loses a batch and a typed note on the main screen fits work the team keeps.",
+      "predicted_by": "dowser-ux-friction@0.3.2:claude-opus-5-5",
+      "status": "verified"
+    },
+    {
+      "fp": "c2dea543fafb1137",
+      "lens": "ux-friction",
+      "kind": "confusing-copy",
+      "topic": "settings-direction-error-field-names",
+      "anchors": [
+        "forge/src/core/direction.mjs#lines",
+        "forge/static/app/src/routes/settings/index.jsx#LensEditor"
+      ],
+      "title": "Name the field and the line when lens direction cannot be saved",
+      "rationale": "A team lead who types eleven topics into \"Leave out\" is told \"exclude holds 11 items; at most 10\", a field name the screen never shows. An over-long line is refused without saying which one. They must work out the fix by trial.",
+      "body": "## Summary\nWord the lens direction save errors with the labels on the Settings screen, and name the line that is too long.\n\n## Description\nThe Settings fields are labelled \"Focus on\" and \"Leave out\" (`forge/static/app/src/routes/settings/index.jsx:151`). The resolver validates them under their payload keys (`forge/src/core/direction.mjs:51`) and words its errors with those keys: \"exclude holds 11 items; at most 10\" (`forge/src/core/direction.mjs:36`) and \"each exclude item is one line of at most 120 characters\" (`forge/src/core/direction.mjs:38`), which does not say which line. The editor shows the server text as is (`forge/static/app/src/routes/settings/index.jsx:174`). Done means the message uses the screen label and quotes the start of the offending line.\n\n## Flow\n- person types 11 topics into Leave out and presses Save\n- direction.set refuses: exclude holds 11 items; at most 10\n- person maps exclude to Leave out and deletes lines until Save passes\n\n## Expected impact\nSlows the person steering a lens: today they decode a field name and hunt for the long line. After the fix the message names the field they see and the line to shorten. The resolver text is also read by MCP callers, so the wording change must keep the bad-input code.\n\n## Evaluation\nClaim: user - a refused direction names the field and line the person sees\nBefore: 2 of 2 list-limit messages name the payload key, not the label; 0 name the offending line\nAfter: 2 of 2 name the label; the long-line message quotes the line\nMethod: count - read the 2 list-limit throws in direction.mjs and the 2 list labels in the Settings editor\nFalsified if: the Settings editor rewrites resolver messages before showing them",
+      "evidence": [
+        {
+          "type": "code",
+          "ref": "forge/static/app/src/routes/settings/index.jsx:151",
+          "quote": "<label htmlFor={`${idBase}-x`}>Leave out</label>"
+        },
+        {
+          "type": "code",
+          "ref": "forge/src/core/direction.mjs:51",
+          "quote": "const exclude = lines(p.exclude, 'exclude');"
+        },
+        {
+          "type": "code",
+          "ref": "forge/src/core/direction.mjs:36",
+          "quote": "throw new AppError('bad-input', `${key} holds ${out.length} items; at most ${DIRECTION_ITEMS_MAX}`);"
+        },
+        {
+          "type": "code",
+          "ref": "forge/src/core/direction.mjs:38",
+          "quote": "throw new AppError('bad-input', `each ${key} item is one line of at most ${DIRECTION_LINE_MAX} characters`);"
+        },
+        {
+          "type": "code",
+          "ref": "forge/static/app/src/routes/settings/index.jsx:174",
+          "quote": "{failed && <span role=\"alert\" style={{ color: 'var(--ds-text-danger, #AE2E24)' }}>{state}</span>}"
+        }
+      ],
+      "effort": {
+        "size": "XS",
+        "days_low": 0.25,
+        "days_high": 0.5,
+        "basis": [
+          "forge/src/core/direction.mjs#lines"
+        ],
+        "score": 1
+      },
+      "confidence": "medium",
+      "confidence_why": "Label, validator and display are quoted from two files; a ticket from someone who hit the limit would raise it.",
+      "delivery_risk": {
+        "blast": "low",
+        "bus_factor": 1
+      },
+      "provenance": {
+        "lens_version": "0.3.2",
+        "model": "claude-opus-5-5",
+        "harness": "claude-code",
+        "run_id": "r-20261104170656-058c"
+      },
+      "category": "product",
+      "impact": 3,
+      "impact_why": "Slowed, off the core path: Settings errors name the payload key exclude instead of the Leave out label, and not the line.",
+      "risk": 2,
+      "score": 21.4,
+      "score_parts": {
+        "impact": 3,
+        "confidence_w": 0.75,
+        "effort_div": 1,
+        "risk_factor": 0.95,
+        "formula": "scan-score/1"
+      },
+      "band": "ranked",
+      "predicted_verdict": "reject",
+      "predicted_why": "No similar decision in near or outcomes. The hint under the fields already states the limits, so a copy fix on a rarely hit Settings error is likely judged not worth a ticket.",
+      "predicted_by": "dowser-ux-friction@0.3.2:claude-opus-5-5",
+      "status": "verified"
+    },
+    {
+      "fp": "76f18bfa167e57e9",
+      "lens": "doc-drift",
+      "kind": "stale-example",
+      "topic": "forge-install-ui-deps-docs",
+      "anchors": [
+        "docs/forge-app.md",
+        "forge/package.json",
+        "forge/static/app/package.json"
+      ],
+      "title": "Make the Jira app install steps build the inbox UI on a fresh clone",
+      "rationale": "The guide the README links for connecting Jira tells you to install the app's packages and then build its inbox screen, but the install step never fetches the screen's build tool. On a fresh clone the second command fails, so a first-time admin cannot get the inbox onto their site by following the steps.",
+      "body": "## Summary\nAdd the Custom UI install (`npm --prefix static/app install`) to the \"Install on a development site\" steps before `npm run build:ui`, so the documented sequence works on a fresh clone.\n\n## Description\nThe guide runs `npm install` in `forge/` (`docs/forge-app.md:145`) and then `npm run build:ui` (`docs/forge-app.md:146`). That script is `npm --prefix static/app run build` (`forge/package.json:15`), which runs `vite build` (`forge/static/app/package.json:10`); `vite` is a devDependency of `forge/static/app` only (`forge/static/app/package.json:20`), and `static/app` has its own lockfile. `npm install` in `forge/` installs `forge/package.json` alone. Checks: no `workspaces` in `forge/package.json` or the root `package.json`, no `postinstall` or `prebuild:ui` hook in either, and the section is not scoped to an already-set-up checkout. The README sends first-time users to this section (`README.md:69`). The local-run section has the same gap: `npm run local:ui` (`docs/forge-app.md:396`) also needs `static/app` installed, which only the separate \"Running the UI outside Jira\" section does. Not executed (the pack forbids installing to check). Done means the install block on a fresh clone builds `static/app/dist` with no extra step.\n\n## Flow\n- admin clones the repo and follows \"Install on a development site\"\n- `npm install` in forge/ installs the backend packages only\n- `npm run build:ui` fails: vite is not found in static/app\n\n## Expected impact\nFirst-time admins and Codegeist judges get the Jira inbox deployed by following the guide as written. Measured by running the block on a fresh clone. Low risk: a one-line doc change.\n\n## Evaluation\nClaim: docs - the documented install block builds the Custom UI on a fresh clone\nBefore: 1 build command whose tool (vite) no listed step installs; 0 install steps for forge/static/app in the section\nAfter: 1 install step for forge/static/app before the build; the block runs clean on a fresh clone\nMethod: quote - read the two doc lines and the three package.json lines; not run, since checking would mean installing\nFalsified if: `npm install` in forge/ is shown to install forge/static/app dependencies (a workspace or hook not found here)",
+      "evidence": [
+        {
+          "type": "doc",
+          "ref": "docs/forge-app.md:145",
+          "quote": "npm install"
+        },
+        {
+          "type": "doc",
+          "ref": "docs/forge-app.md:146",
+          "quote": "npm run build:ui                 # builds static/app/dist, the Custom UI resource"
+        },
+        {
+          "type": "code",
+          "ref": "forge/package.json:15",
+          "quote": "\"build:ui\": \"npm --prefix static/app run build\""
+        },
+        {
+          "type": "code",
+          "ref": "forge/static/app/package.json:10",
+          "quote": "\"build\": \"vite build\""
+        },
+        {
+          "type": "code",
+          "ref": "forge/static/app/package.json:20",
+          "quote": "\"vite\": \"^8.3.5\""
+        },
+        {
+          "type": "doc",
+          "ref": "README.md:69",
+          "quote": "([docs/forge-app.md](docs/forge-app.md#install-on-a-development-site)), then add its MCP server to"
+        },
+        {
+          "type": "doc",
+          "ref": "docs/forge-app.md:396",
+          "quote": "npm run local:ui        # terminal 2: the Custom UI (vite --mode local) at http://127.0.0.1:5173, POSTing to :4710"
+        }
+      ],
+      "effort": {
+        "size": "XS",
+        "days_low": 0.25,
+        "days_high": 0.5,
+        "basis": [
+          "docs/forge-app.md"
+        ],
+        "score": 1
+      },
+      "confidence": "high",
+      "confidence_why": "Sure, tier 1: doc and package.json lines quoted and no workspace or install hook found; running the block on a fresh clone would make it certain.",
+      "doc_impact": [
+        "docs/forge-app.md"
+      ],
+      "delivery_risk": {
+        "blast": "low",
+        "bus_factor": 2
+      },
+      "artifacts": [
+        {
+          "kind": "table",
+          "message": "The install block builds the UI with vite, which no step of the block installs",
+          "alt": "Table of the install steps and package scripts: forge-app.md runs npm install in forge then npm run build:ui; forge/package.json maps build:ui to static/app; static/app runs vite build and lists vite as its own devDependency.",
+          "refs": [
+            "docs/forge-app.md:145",
+            "docs/forge-app.md:146",
+            "forge/package.json:15",
+            "forge/static/app/package.json:10",
+            "forge/static/app/package.json:20"
+          ],
+          "data": {
+            "columns": [
+              "Side",
+              "Place",
+              "Says"
+            ],
+            "rows": [
+              [
+                "doc",
+                "docs/forge-app.md:145",
+                "npm install in forge/"
+              ],
+              [
+                "doc",
+                "docs/forge-app.md:146",
+                "then npm run build:ui"
+              ],
+              [
+                "code",
+                "forge/package.json:15",
+                "build runs in static/app"
+              ],
+              [
+                "code",
+                "forge/static/app/package.json:10",
+                "vite build"
+              ],
+              [
+                "code",
+                "forge/static/app/package.json:20",
+                "vite: static/app devDep only"
+              ]
+            ],
+            "highlight": [
+              0,
+              1
+            ]
+          }
+        }
+      ],
+      "provenance": {
+        "lens_version": "0.3.2",
+        "model": "claude-opus-5-5",
+        "harness": "claude-code",
+        "run_id": "r-20261104170656-058c"
+      },
+      "category": "technical",
+      "impact": 8,
+      "impact_why": "Tier 1, a documented step fails: the README-linked Jira install stops at npm run build:ui on a fresh clone.",
+      "risk": 2,
+      "score": 72.2,
+      "score_parts": {
+        "impact": 8,
+        "confidence_w": 0.95,
+        "effort_div": 1,
+        "risk_factor": 0.95,
+        "formula": "scan-score/1"
+      },
+      "band": "ranked",
+      "mvp": true,
+      "mvp_rule": "top-score",
+      "predicted_verdict": "accept",
+      "predicted_why": "No similar decision in near or outcomes. A sure first-run break in the setup guide with both sides quoted, fixed by one doc line; nothing suggests the team would turn it down.",
+      "predicted_by": "dowser-doc-drift@0.3.2:claude-opus-5-5",
+      "pretriaged_by": "machine:dowser",
+      "status": "verified"
+    },
+    {
+      "fp": "a92053d2b1052867",
       "lens": "doc-drift",
       "kind": "contradicted-by-code",
-      "topic": "forge app tool count",
-      "anchors": ["docs/forge-app.md", "forge/src/core/app.mjs#TOOL_NAMES"],
-      "title": "Say the app serves eight MCP tools, not seven",
-      "rationale": "The module map says seven forge-mcp-2 tools; the dispatch door lists eight.",
-      "body": "## Summary\nThe Forge app doc undercounts its MCP tools.\n\n## Description\nThe module map in `docs/forge-app.md` names seven tools, while `TOOL_NAMES` holds eight since `dowser_direction_get` landed.\n\n## Flow\n- read the module map\n- connect a coding agent\n- see a tool the doc does not name\n\n## Expected impact\nA judge reading the doc sees the tool list the agent sees.\n\n## Evaluation\nThe module map names every entry of `TOOL_NAMES`.",
-      "evidence": [
-        { "type": "doc", "ref": "docs/forge-app.md:14", "quote": "| `rovo:mcp` | `dowser-mcp` | `mcp` | The seven forge-mcp-2 tools, for Claude Code and Codex CLI |" },
-        { "type": "code", "ref": "forge/src/core/app.mjs:47", "quote": "/** The eight forge-mcp-2 tools (reflect_sync and direction_get are additive to the original six). */" }
+      "topic": "status-doc-open-work-docs",
+      "anchors": [
+        "docs/concepts/project-status-and-next-steps.md",
+        "forge/static/app/src/components/ProposalCard.jsx#ProposalCard",
+        "skill/scripts/lib/verify.mjs"
       ],
-      "effort": { "size": "XS", "basis": ["one table row"] },
+      "title": "Status page sends new sessions after two items that already shipped",
+      "rationale": "The project status page, which every new session is told to read first, lists two pieces of work as still to do that the code already has. A session following its next steps would redo finished work before reaching what is actually open.",
+      "body": "## Summary\nMark live-test gap 3 (the \"NEW\" badge on decided cards) and the per-proposal `delivery_risk` item as done in the status page, so its open list and next steps name only open work.\n\n## Description\nGap 3: the page says gap 3 is still open (`docs/concepts/project-status-and-next-steps.md:138`, described at `:162`) and makes fixing it next step 1 (`:175`). The card component shows the change marker only for open items (`forge/static/app/src/components/ProposalCard.jsx:140`, with the comment at `:138`), added in commit 85fb5c0 (2026-10-28), a day before the page marked the other gaps fixed. Per-proposal delivery risk: next step 7 still plans \"a lens (or a skill step) that fills `delivery_risk`\" (`:191`), while `verify` now measures each card's bus factor from git and writes it into `delivery_risk.bus_factor` (`skill/scripts/lib/verify.mjs:16`, `:19`), since commit 7b6f408 (2026-10-30); the page's own table already says every lens fills `delivery_risk`. Checks: the page is a living status doc, not historical; no feature flag keeps the old badge; no other open item covers either. Gap 5 (not exercised live) stays open and is not part of this card. Done means the open list and next steps hold no shipped work.\n\n## Flow\n- a new session opens the status page first, as AGENTS.md says\n- it takes next step 1 (gap 3) or step 7 (delivery_risk) as open\n- it re-investigates work that already shipped\n\n## Expected impact\nSessions start on real open work (gap 5, the first real-repository run, the Rovo live test). Measured by the count of shipped items in the open list. Low risk: one doc.\n\n## Evaluation\nClaim: docs - the status page's open items match the code\nBefore: 2 items listed as open whose code is shipped (gap 3, per-proposal delivery_risk)\nAfter: 0 shipped items in \"Still open\" and \"Next steps\"\nMethod: quote - read the doc lines, the component and verify.mjs, plus the commits that added them\nFalsified if: the NEW badge still shows on decided cards in the live inbox (a path other than ProposalCard renders it)",
+      "evidence": [
+        {
+          "type": "doc",
+          "ref": "docs/concepts/project-status-and-next-steps.md:138",
+          "quote": "Still open: 3"
+        },
+        {
+          "type": "doc",
+          "ref": "docs/concepts/project-status-and-next-steps.md:162",
+          "quote": "3. **Decided cards keep the \"NEW\" badge** under the Accepted / Snoozed filters."
+        },
+        {
+          "type": "doc",
+          "ref": "docs/concepts/project-status-and-next-steps.md:175",
+          "quote": "1. **Fix the two live-test gaps still open above (3 and 5).**"
+        },
+        {
+          "type": "code",
+          "ref": "forge/static/app/src/components/ProposalCard.jsx:140",
+          "quote": "const marker = isOpen ? (card.reopened ? 'reopened' : change) : undefined;"
+        },
+        {
+          "type": "code",
+          "ref": "forge/static/app/src/components/ProposalCard.jsx:138",
+          "quote": "a decided card never wears it."
+        },
+        {
+          "type": "git",
+          "ref": "85fb5c0",
+          "quote": "forge(ui): Dowser identity, undo window, Learning tab, rendered accept preview"
+        },
+        {
+          "type": "doc",
+          "ref": "docs/concepts/project-status-and-next-steps.md:191",
+          "quote": "architecture, Decision consistency, and a lens (or a skill step) that fills `delivery_risk` per"
+        },
+        {
+          "type": "code",
+          "ref": "skill/scripts/lib/verify.mjs:16",
+          "quote": "The bus factor (card 0abc6bdd204b318b) is measured here, not guessed by the agent"
+        },
+        {
+          "type": "code",
+          "ref": "skill/scripts/lib/verify.mjs:19",
+          "quote": "into `delivery_risk.bus_factor` and wins over the card's own"
+        },
+        {
+          "type": "git",
+          "ref": "7b6f408",
+          "quote": "measured bus factor"
+        }
+      ],
+      "effort": {
+        "size": "XS",
+        "days_low": 0.25,
+        "days_high": 0.5,
+        "basis": [
+          "docs/concepts/project-status-and-next-steps.md"
+        ],
+        "score": 1
+      },
       "confidence": "high",
-      "confidence_why": "the doc line and the code line contradict each other directly",
-      "delivery_risk": { "blast": "low" },
-      "provenance": { "lens_version": "0.3.1" },
-      "status": "verified"
-    },
-    {
-      "fp": "d19b54b00926df7b",
-      "lens": "opportunity",
-      "kind": "workflow-shortcut",
-      "topic": "bulk accept from the inbox",
-      "anchors": ["forge/src/core/verdicts.mjs#accept"],
-      "title": "Accept several proposals at once",
-      "rationale": "Reject and snooze take many refs; accept takes one, so a good scan is accepted card by card.",
-      "body": "## Summary\nLet a person accept a selection of proposals in one step.\n\n## Description\n`accept` creates one Jira issue per call while `reject` and `snooze` already take a list of refs.\n\n## Flow\n- select the cards to keep\n- accept them together\n- get one issue per card\n\n## Expected impact\nFewer clicks after a strong scan.\n\n## Evaluation\nTime from first to last decision on a push drops.",
-      "evidence": [
-        { "type": "code", "ref": "forge/src/core/verdicts.mjs:149", "quote": "export async function accept(deps, args, who) {" }
+      "confidence_why": "Sure, tier 3: each doc line and the code line that ships it are quoted with the commit; a look at a decided card in the live inbox would close the last doubt on gap 3.",
+      "doc_impact": [
+        "docs/concepts/project-status-and-next-steps.md"
       ],
-      "effort": { "size": "M", "basis": ["resolver, claim per item, UI selection"] },
-      "confidence": "medium",
-      "confidence_why": "the code shows the gap; demand is not measured",
-      "delivery_risk": { "blast": "medium" },
-      "provenance": { "lens_version": "0.3.2" },
-      "status": "verified"
-    },
-    {
-      "fp": "07d3962cd2843a56",
-      "lens": "security-cra",
-      "kind": "risky-pattern",
-      "topic": "plain http repo links",
-      "anchors": ["forge/src/core/push.mjs#webRepoUrl"],
-      "title": "Decide whether plain http repo links stay allowed",
-      "rationale": "A pushed repo_url may be http, so evidence links can point at an unencrypted host.",
-      "body": "## Summary\nRepo links accept `http:` as well as `https:`.\n\n## Description\n`webRepoUrl` keeps an http remote so self-hosted servers link at all; the inbox then shows plain http links.\n\n## Flow\n- push from an http remote\n- open an evidence link\n- the browser loads it unencrypted\n\n## Expected impact\nA documented, deliberate choice either way.\n\n## Evaluation\nThe security notes say which schemes a repo link may use.",
-      "evidence": [
-        { "type": "code", "ref": "forge/src/core/push.mjs:37", "quote": "try { return ['https:', 'http:'].includes(new URL(v).protocol); } catch { return false; }" }
+      "delivery_risk": {
+        "blast": "low",
+        "bus_factor": 1
+      },
+      "artifacts": [
+        {
+          "kind": "table",
+          "message": "Two items the status page lists as open are already in the code",
+          "alt": "Table of two claims in the project status page: live-test gap 3 listed as open while ProposalCard shows the marker only on open items since 85fb5c0; next step 7 plans filling delivery_risk while verify.mjs measures bus factor since 7b6f408.",
+          "refs": [
+            "docs/concepts/project-status-and-next-steps.md:138",
+            "docs/concepts/project-status-and-next-steps.md:175",
+            "forge/static/app/src/components/ProposalCard.jsx:140",
+            "85fb5c0",
+            "docs/concepts/project-status-and-next-steps.md:191",
+            "skill/scripts/lib/verify.mjs:16",
+            "7b6f408"
+          ],
+          "data": {
+            "columns": [
+              "Claim",
+              "Doc says",
+              "Code does"
+            ],
+            "rows": [
+              [
+                "Gap 3: NEW badge on decided cards",
+                "still open, next step 1",
+                "marker on open items only (85fb5c0)"
+              ],
+              [
+                "Per-proposal delivery_risk",
+                "next step 7, to build",
+                "verify measures bus factor (7b6f408)"
+              ]
+            ]
+          }
+        }
       ],
-      "effort": { "size": "S", "basis": ["one check and a doc line"] },
-      "confidence": "medium",
-      "confidence_why": "the pattern is in the code; whether it matters depends on the host",
-      "delivery_risk": { "blast": "low" },
-      "provenance": { "lens_version": "0.3.1" },
-      "status": "verified"
-    },
-    {
-      "fp": "b939728f88ef35fa",
-      "lens": "ux-friction",
-      "kind": "missing-feedback",
-      "topic": "accept in progress dead end",
-      "anchors": ["forge/src/core/verdicts.mjs#accept"],
-      "title": "Show progress when an accept is already running",
-      "rationale": "A second click on Accept answers 'reload in a minute' with nothing to watch.",
-      "body": "## Summary\nA repeated accept tells the person to wait without showing what is happening.\n\n## Description\nThe accept claim refuses a second accept for two minutes and answers with a reload hint.\n\n## Flow\n- click Accept\n- click it again while Jira is slow\n- read reload in a minute\n\n## Expected impact\nNo duplicate clicks and no guessing.\n\n## Evaluation\nFewer repeated accepts per issue created.",
-      "evidence": [
-        { "type": "code", "ref": "forge/src/core/verdicts.mjs:172", "quote": "throw new AppError('bad-input', `an accept of ${p.ref} is already in progress; reload in a minute`);" }
-      ],
-      "effort": { "size": "S", "basis": ["one UI state"] },
-      "confidence": "medium",
-      "confidence_why": "the message is in the code; how often it shows is not measured",
-      "delivery_risk": { "blast": "low" },
-      "provenance": { "lens_version": "0.3.1" },
+      "provenance": {
+        "lens_version": "0.3.2",
+        "model": "claude-opus-5-5",
+        "harness": "claude-code",
+        "run_id": "r-20261104170656-058c"
+      },
+      "category": "technical",
+      "impact": 2,
+      "impact_why": "Tier 3, only misleads: the start-here status page lists two shipped items as open work.",
+      "risk": 2,
+      "score": 18.1,
+      "score_parts": {
+        "impact": 2,
+        "confidence_w": 0.95,
+        "effort_div": 1,
+        "risk_factor": 0.95,
+        "formula": "scan-score/1"
+      },
+      "band": "ranked",
+      "predicted_verdict": "accept",
+      "predicted_why": "No similar decision in near or outcomes. A sure, cheap status-doc correction on the page AGENTS.md tells every session to read first; low harm, but nothing suggests a no.",
+      "predicted_by": "dowser-doc-drift@0.3.2:claude-opus-5-5",
+      "pretriaged_by": "machine:dowser",
       "status": "verified"
     }
   ],
   "areas": [
-    { "path": "docs", "files": 20, "churn_90d": 56, "authors_90d": 1, "last_change": "2026-10-31T04:26:07.000Z" },
-    { "path": "forge/src", "files": 22, "churn_90d": 22, "authors_90d": 1, "last_change": "2026-10-31T00:05:58.000Z" }
-  ],
-  "trust_json": "{\"slices\":[{\"slice\":\"product|opportunity|low|M\",\"level\":0,\"ceiling\":1,\"start\":0,\"n\":0}],\"events\":[]}"
+    {
+      "path": "docs",
+      "files": 20,
+      "churn_90d": 56,
+      "authors_90d": 1,
+      "last_change": "2026-10-31T04:26:07.000Z"
+    },
+    {
+      "path": "skill",
+      "files": 123,
+      "churn_90d": 49,
+      "authors_90d": 1,
+      "last_change": "2026-10-31T00:05:58.000Z"
+    },
+    {
+      "path": "forge",
+      "files": 98,
+      "churn_90d": 46,
+      "authors_90d": 2,
+      "last_change": "2026-10-31T00:05:58.000Z"
+    },
+    {
+      "path": "skill/scripts",
+      "files": 106,
+      "churn_90d": 35,
+      "authors_90d": 1,
+      "last_change": "2026-10-31T00:05:58.000Z"
+    },
+    {
+      "path": "forge/static",
+      "files": 53,
+      "churn_90d": 32,
+      "authors_90d": 1,
+      "last_change": "2026-10-31T00:05:58.000Z"
+    },
+    {
+      "path": "tools",
+      "files": 10,
+      "churn_90d": 29,
+      "authors_90d": 1,
+      "last_change": "2026-10-31T00:05:58.000Z"
+    },
+    {
+      "path": "forge/src",
+      "files": 22,
+      "churn_90d": 22,
+      "authors_90d": 1,
+      "last_change": "2026-10-31T00:05:58.000Z"
+    },
+    {
+      "path": "skill/references",
+      "files": 8,
+      "churn_90d": 21,
+      "authors_90d": 1,
+      "last_change": "2026-10-31T00:05:58.000Z"
+    },
+    {
+      "path": "forge/test",
+      "files": 15,
+      "churn_90d": 19,
+      "authors_90d": 1,
+      "last_change": "2026-10-31T00:05:58.000Z"
+    },
+    {
+      "path": "skill/lenses",
+      "files": 5,
+      "churn_90d": 14,
+      "authors_90d": 1,
+      "last_change": "2026-10-31T00:05:58.000Z"
+    },
+    {
+      "path": "docs/contracts",
+      "files": 2,
+      "churn_90d": 14,
+      "authors_90d": 1,
+      "last_change": "2026-10-31T04:26:07.000Z"
+    },
+    {
+      "path": "docs/evals",
+      "files": 14,
+      "churn_90d": 12,
+      "authors_90d": 1,
+      "last_change": "2026-10-30T11:45:45.000Z"
+    },
+    {
+      "path": ".ai",
+      "files": 4,
+      "churn_90d": 11,
+      "authors_90d": 1,
+      "last_change": "2026-10-30T11:45:45.000Z"
+    },
+    {
+      "path": "tools/dogfood",
+      "files": 1,
+      "churn_90d": 11,
+      "authors_90d": 1,
+      "last_change": "2026-10-30T11:45:45.000Z"
+    },
+    {
+      "path": ".claude",
+      "files": 1,
+      "churn_90d": 10,
+      "authors_90d": 1,
+      "last_change": "2026-10-30T11:45:45.000Z"
+    },
+    {
+      "path": ".claude/spark",
+      "files": 1,
+      "churn_90d": 10,
+      "authors_90d": 1,
+      "last_change": "2026-10-30T11:45:45.000Z"
+    },
+    {
+      "path": "docs/concepts",
+      "files": 1,
+      "churn_90d": 10,
+      "authors_90d": 1,
+      "last_change": "2026-10-31T00:05:58.000Z"
+    },
+    {
+      "path": "forge/rovo",
+      "files": 2,
+      "churn_90d": 6,
+      "authors_90d": 1,
+      "last_change": "2026-10-30T17:40:11.000Z"
+    },
+    {
+      "path": "skill/schema",
+      "files": 2,
+      "churn_90d": 6,
+      "authors_90d": 1,
+      "last_change": "2026-10-30T16:01:51.000Z"
+    },
+    {
+      "path": "tools/local-forge",
+      "files": 1,
+      "churn_90d": 2,
+      "authors_90d": 1,
+      "last_change": "2026-10-30T14:10:01.000Z"
+    },
+    {
+      "path": ".github",
+      "files": 1,
+      "churn_90d": 1,
+      "authors_90d": 1,
+      "last_change": "2026-10-28T07:30:11.000Z"
+    },
+    {
+      "path": "forge/scripts",
+      "files": 1,
+      "churn_90d": 1,
+      "authors_90d": 1,
+      "last_change": "2026-10-27T19:52:30.000Z"
+    }
+  ]
 }

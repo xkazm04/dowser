@@ -92,7 +92,7 @@ test('sample.load files the sample for the loader: marked summary and cards, map
   const learn = await res(d, 'reflect.data', { project_key: SAMPLE_KEY });
   assert.equal(learn.totals.open, n);
   assert.equal(learn.pushes.length, 1);
-  if (BUNDLED.trust_json) assert.ok(learn.trust.slices.length > 0, 'the trust the scan had is on the Learning tab');
+  if (/** @type {{trust_json?: string}} */ (BUNDLED).trust_json) assert.ok(learn.trust.slices.length > 0, 'the trust the scan had is on the Learning tab');
   assert.equal((await res(d, 'setup.status')).sample.loaded, true);
 
   const before = counts(d);
@@ -285,18 +285,27 @@ test('sample.load keeps to its time budget: no new step past it, more: true, the
   assert.equal(d.db.raw.prepare('SELECT COUNT(*) AS n FROM areas WHERE project_key = ?').get(SAMPLE_KEY)?.n, 1);
   assert.equal(d.db.raw.prepare('SELECT COUNT(*) AS n FROM trust WHERE project_key = ?').get(SAMPLE_KEY)?.n, 1);
 
-  // the default budget against the injected clock: a slow store (every clock read 4 s later) stops early, through the resolver too
+  // the default budget against the injected clock: a slow store (every clock read 4 s later) stops early and resumes.
+  // A 25-card sample, not the bundle: the bundled scan may fit one call, which would prove nothing here.
   const slow = makeDeps();
   const base = slow.now;
   slow.now = () => { slow.clock.tick(4000); return base(); };
-  const first = await res(slow, 'sample.load');
+  const big = bigSample(25, 1);
+  const first = await loadSample(slow, ME, big);
   assert.equal(first.more, true);
-  assert.ok(first.created > 0 && first.created < BUNDLED.proposals.length + 1);
+  assert.ok(first.created > 0 && first.created < 25);
   let last = first;
-  for (let i = 0; i < 20 && last.more; i++) last = await res(slow, 'sample.load');
+  for (let i = 0; i < 20 && last.more; i++) last = await loadSample(slow, ME, big);
   assert.equal(last.more, undefined);
-  assert.deepEqual(await res(slow, 'sample.load'), { project_key: SAMPLE_KEY, created: 0, already: true });
-  assert.equal(slow.db.raw.prepare('SELECT COUNT(*) AS n FROM proposals WHERE project_key = ?').get(SAMPLE_KEY)?.n, BUNDLED.proposals.length);
+  assert.deepEqual(await loadSample(slow, ME, big), { project_key: SAMPLE_KEY, created: 0, already: true });
+  assert.equal(slow.db.raw.prepare('SELECT COUNT(*) AS n FROM proposals WHERE project_key = ?').get(SAMPLE_KEY)?.n, 25);
+
+  // through the resolver, the bundled sample completes by calling again while it answers more
+  const viaResolver = makeDeps();
+  let r = await res(viaResolver, 'sample.load');
+  for (let i = 0; i < 20 && r.more; i++) r = await res(viaResolver, 'sample.load');
+  assert.equal(r.more, undefined);
+  assert.equal(viaResolver.db.raw.prepare('SELECT COUNT(*) AS n FROM proposals WHERE project_key = ?').get(SAMPLE_KEY)?.n, BUNDLED.proposals.length);
 });
 
 test('mixed planes: All inboxes leaves the sample out of items and aggregates unless it is the only inbox; the picker still lists it', async () => {
