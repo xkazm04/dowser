@@ -33,7 +33,9 @@ Personas was unreachable, so there was no decision memory. The operator triaged 
 
 ## Incidental S/M defects (for the stabilize loop)
 
-All accepted on 2026-11-04 except the one marked REJECTED.
+All accepted on 2026-11-04 except the one marked REJECTED. Wave A (2026-11-04) built 10 of them:
+8b47642 (verify x2), 613c4f0 (memory x3), 122e661 (sync, share, docs), 34d738f (status as user),
+f75dd20 (outcomes cursor). The byline LIKE scan is folded into the Confluence doc-drift idea (same index table).
 
 - `skill/scripts/lib/verify.mjs:186-188`: a card whose only evidence is git or sarif verifies with nothing checked.
 - `skill/scripts/lib/verify.mjs:3`: verify reads the working tree, not the scanned commit.
