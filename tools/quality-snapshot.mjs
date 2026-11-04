@@ -115,7 +115,11 @@ const agentWords = Object.fromEntries([['SKILL.md', words('skill/SKILL.md')],
   ['references', prose.filter((p) => p.startsWith('skill/references/')).reduce((n, p) => n + words(p), 0)],
   ['lenses', prose.filter((p) => p.startsWith('skill/lenses/')).reduce((n, p) => n + words(p), 0)]]);
 const todos = code.filter((p) => p !== 'tools/quality-snapshot.mjs').reduce((n, p) => n + lines(p).filter((l) => /\b(TODO|FIXME|XXX|HACK)\b/.test(l)).length, 0);
-const cliCommands = (readFileSync(join(ROOT, 'skill/scripts/dowser.mjs'), 'utf8').match(/^ {2}(?:'[\w-]+'|\w+)\(a, ctx\)/gm) ?? []).length;
+// every command with a handler in dowser.mjs's COMMANDS spec, subcommands included (read from the spec, not by regex)
+const { COMMANDS } = await import(new URL('../skill/scripts/dowser.mjs', import.meta.url).href);
+/** @param {Record<string, {run?: unknown, subs?: Record<string, any>}>} c @returns {number} */
+const countCommands = (c) => Object.values(c).reduce((n, e) => n + (e.subs ? countCommands(e.subs) : 0) + (typeof e.run === 'function' ? 1 : 0), 0);
+const cliCommands = countCommands(COMMANDS);
 
 /** @type {Record<string, unknown>} */
 const g = {};
