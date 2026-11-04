@@ -292,6 +292,31 @@ function appendTransition(db, { fp, from, to, by, at, reason, note, runId }) {
 }
 
 /**
+ * Why the move's input is refused before the store is read (exit 2 in `move`), else undefined: the status names, the
+ * decider's shape, the reason / note rule (model.decisionProblem), the merge target's presence, and the snooze date.
+ * Side-effect free and state-free: the compare-and-set, the transition table, the decider guard and the merge
+ * target's existence are checked by `move` inside its transaction. `triage apply` runs it over a whole sheet
+ * before the first move.
+ * @param {string} fp
+ * @param {string} to
+ * @param {{from?: string, by: string, reason?: string, note?: string, into?: string, until?: string, today?: string, untilMayBePast?: boolean}} opts
+ * @returns {string | undefined}
+ */
+export function moveProblem(fp, to, { from, by, reason, note, into, until, today, untilMayBePast }) {
+  if (!isOneOf(STATUSES, to)) return `--to must be one of ${STATUSES.join('|')}`;
+  if (from !== undefined && !isOneOf(STATUSES, from)) return `--from must be one of ${STATUSES.join('|')}`;
+  if (!by || !DECIDER_RE.test(by)) return `--by names the decider as <kind>:<name>, e.g. operator:jane (got ${JSON.stringify(by)})`;
+  const problem = decisionProblem({ to, reason, note });
+  if (problem) return problem;
+  if (to === 'merged' && !into) return 'a merge needs --into <fp>';
+  if (to !== 'merged' && into !== undefined) return '--into goes only with --to merged';
+  if (into !== undefined && into === fp) return 'a proposal cannot merge into itself';
+  if (until !== undefined && to !== 'snoozed') return '--until goes only with --to snoozed';
+  // '' sorts before every date, so a past date passes while the calendar-date check still applies
+  return until === undefined ? undefined : untilProblem(until, untilMayBePast ? '' : today ?? localDate());
+}
+
+/**
  * Moves a proposal's status: a compare-and-set against model.TRANSITIONS. `from` (when given) is the status
  * the caller expects; a different current status is a stale refusal. An illegal or stale move throws
  * MoveRefused (exit 2) carrying the current status. Every move appends one `transitions` row and sets
@@ -307,18 +332,8 @@ function appendTransition(db, { fp, from, to, by, at, reason, note, runId }) {
  * @returns {Row} the updated proposal row (absent columns omitted)
  */
 export function move(db, fp, to, { from, by, reason, note, into, runId, until, today, untilMayBePast }) {
-  if (!isOneOf(STATUSES, to)) throw new DowserError(`--to must be one of ${STATUSES.join('|')}`, 2);
-  if (from !== undefined && !isOneOf(STATUSES, from)) throw new DowserError(`--from must be one of ${STATUSES.join('|')}`, 2);
-  if (!by || !DECIDER_RE.test(by)) throw new DowserError(`--by names the decider as <kind>:<name>, e.g. operator:jane (got ${JSON.stringify(by)})`, 2);
-  const problem = decisionProblem({ to, reason, note });
+  const problem = moveProblem(fp, to, { from, by, reason, note, into, until, today, untilMayBePast });
   if (problem) throw new DowserError(problem, 2);
-  if (to === 'merged' && !into) throw new DowserError('a merge needs --into <fp>', 2);
-  if (to !== 'merged' && into !== undefined) throw new DowserError('--into goes only with --to merged', 2);
-  if (into !== undefined && into === fp) throw new DowserError('a proposal cannot merge into itself', 2);
-  if (until !== undefined && to !== 'snoozed') throw new DowserError('--until goes only with --to snoozed', 2);
-  // '' sorts before every date, so a past date passes while the calendar-date check still applies
-  const badUntil = until === undefined ? undefined : untilProblem(until, untilMayBePast ? '' : today ?? localDate());
-  if (badUntil) throw new DowserError(badUntil, 2);
 
   return tx(db, () => {
     const cur = /** @type {Row | undefined} */ (db.prepare('SELECT status FROM proposals WHERE fp = ?').get(fp));
