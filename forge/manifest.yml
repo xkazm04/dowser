@@ -223,6 +223,13 @@ modules:
         function: resolver
       title: Dowser
 
+  confluence:pageBanner:
+    # Doc drift (core/doc-drift.mjs): renders only when an open or accepted Doc drift item names the page.
+    - key: dowser-doc-banner
+      resource: main
+      resolver:
+        function: resolver
+
   jira:entityProperty:
     # The issue property core/issue-property.mjs writes on accept and on a merge into a Jira key; JQL reads it
     # by alias, e.g. dowserLens = "security-cra" AND dowserBand = "ranked" ORDER BY dowserScore DESC.
@@ -257,6 +264,12 @@ modules:
         ignoreSelf: true
         expression: "event.runtime.issue.properties['dowser'].ref != null && event.changelog.items.some(i => i.field == 'status' || i.field == 'resolution')"
         onError: IGNORE_AND_LOG
+    # Doc-drift closure (core/doc-drift.mjs): Confluence triggers cannot filter on app data, so every page update
+    # arrives; an unlinked page costs one indexed read and stores nothing.
+    - key: dowser-page-events
+      function: page-event
+      events:
+        - avi:confluence:updated:page
     - key: dowser-issue-deleted
       function: issue-event
       events:
@@ -283,6 +296,8 @@ modules:
       handler: index.migrate
     - key: issue-event
       handler: index.issueEvent
+    - key: page-event
+      handler: index.pageEvent
 
 resources:
   - key: main
@@ -299,4 +314,5 @@ permissions:
     - read:confluence-content.all
     - search:confluence
     - read:graph:goal:atlassian
+    - write:comment:confluence
     - storage:app

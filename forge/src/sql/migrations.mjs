@@ -275,4 +275,26 @@ export const MIGRATIONS = Object.freeze([
 )`,
   },
   { name: 'v029_work_reports_proposal_ix', statement: 'CREATE INDEX ix_work_reports_proposal ON work_reports (proposal_id, id)' },
+  {
+    name: 'v030_page_links',
+    // Which inbox items name which Confluence page (core/doc-drift.mjs): page evidence and numeric doc_impact entries.
+    // The byline and the page banner read it instead of scanning record_json.
+    statement: `CREATE TABLE IF NOT EXISTS page_links (
+  page_id VARCHAR(32) NOT NULL,
+  proposal_id BIGINT NOT NULL,
+  project_key VARCHAR(191) NOT NULL,
+  PRIMARY KEY (page_id, proposal_id)
+)`,
+  },
+  {
+    name: 'v031_page_edits',
+    // The newest edit of a page some item names (the page-updated trigger); NULL version / edited_by when unknown.
+    statement: `CREATE TABLE IF NOT EXISTS page_edits (
+  page_id VARCHAR(32) NOT NULL,
+  edited_at VARCHAR(32) NOT NULL,
+  version INT,
+  edited_by VARCHAR(255),
+  PRIMARY KEY (page_id)
+)`,
+  },
 ]);

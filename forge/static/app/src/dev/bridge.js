@@ -281,7 +281,16 @@ const handlers = {
     // As the server does: a `page` evidence ref or a doc_impact entry that is the page id (forge-mcp-2: a page ref is its id).
     const hit = cards.filter((c) => (c.status === 'open' || c.status === 'accepted')
       && ((c.doc_impact ?? []).includes(page_id) || c.evidence.some((e) => e.type === 'page' && e.ref === page_id)));
+    // page 90211 was edited after its accepted card's decision (core/doc-drift.mjs page_edits)
+    if (page_id === '90211') {
+      const at = '2026-11-06T09:00:00.000Z';
+      return { count: hit.length, cards: hit.map((c) => (c.status === 'accepted' ? { ...c, page_edited_since_decision: true } : c)), page_edited_at: at };
+    }
     return { count: hit.length, cards: hit };
+  },
+  'byline.draftFix'({ page_id, ref }) {
+    if (params().get('nocomment')) throw err('unavailable', 'Confluence did not take the comment (403); you may need permission to comment on this page');
+    return { comment: { page_id, id: '9001', ref } };
   },
 };
 
@@ -323,6 +332,12 @@ export const view = {
       return { moduleKey: 'dowser-evidence', extension: { type: 'jira:issuePanel', issue: { key: s === 'panel' ? 'SHOP-101' : 'SHOP-1', id: '10000' } } };
     }
     const base = { siteUrl: 'https://acme.atlassian.net', environmentId: 'dev-env', localId: 'ari:cloud:ecosystem::extension/dev-app/dev-env/static/' };
+    if (s === 'banner') {
+      return {
+        ...base, localId: `${base.localId}dowser-doc-banner`, moduleKey: 'dowser-doc-banner',
+        extension: { type: 'confluence:pageBanner', content: { id: params().get('page') ?? '90211', type: 'page' }, space: { key: 'OPS' } },
+      };
+    }
     if (s === 'byline') {
       return {
         ...base, localId: `${base.localId}dowser-doc-impact`, moduleKey: 'dowser-doc-impact',
@@ -331,6 +346,7 @@ export const view = {
     }
     return { ...base, localId: `${base.localId}dowser-inbox`, moduleKey: 'dowser-inbox', extension: { type: 'jira:globalPage', location: `https://acme.atlassian.net/jira/apps/dev/dowser/${s}${linkQuery(params())}` } };
   },
+  close: async () => { console.info('[fixture] view.close'); },
   theme: { enable: async () => { await setGlobalTheme({ colorMode: /** @type {any} */ (params().get('mode') ?? 'auto') }); } },
 };
 

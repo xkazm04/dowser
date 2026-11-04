@@ -8,9 +8,10 @@ import Settings from './routes/settings/index.jsx';
 import Panel from './routes/panel/index.jsx';
 import MapView from './routes/map/index.jsx';
 import Byline from './routes/byline/index.jsx';
+import Banner from './routes/byline/Banner.jsx';
 import Reflect from './routes/reflect/index.jsx';
 
-const MODULES = { 'dowser-evidence': Panel, 'dowser-doc-impact': Byline };
+const MODULES = { 'dowser-evidence': Panel, 'dowser-doc-impact': Byline, 'dowser-doc-banner': Banner };
 const PAGES = { inbox: Inbox, map: MapView, reflect: Reflect, settings: Settings };
 
 export function Router() {

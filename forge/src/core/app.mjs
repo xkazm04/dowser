@@ -10,6 +10,7 @@ import { loadSample, removeSample, setupStatus } from './sample.mjs';
 import { outcomeRecord, reflectData, reflectSync, ruleDecide } from './reflect.mjs';
 import { memoryPull } from './memory.mjs';
 import { workGet, workList, workReport } from './work.mjs';
+import { draftFix } from './doc-drift.mjs';
 import { sourcesGoals, sourcesPages, sourcesTickets } from './sources.mjs';
 import { directionGet, directionSet, directionTool } from './direction.mjs';
 import { getInbox, isSampleKey } from './store.mjs';
@@ -257,6 +258,8 @@ export const RESOLVERS = {
   },
   'map.data': async (d, p, _, __, acc) => { await openProject(acc, p); return mapData(d.db, needStr(p, 'project_key')); },
   'byline.forPage': async (d, p, _, __, acc) => bylineForPage(d.db, needStr(p, 'page_id'), await acc.visibleKeys()),
+  // a footer comment as the person (core/doc-drift.mjs): the item must be one they may open; Confluence decides the rest
+  'byline.draftFix': async (d, p, _, __, acc) => { await acc.proposal(needStr(p, 'ref')); return draftFix(d, p); },
   'reflect.data': async (d, p, _, __, acc) => { await openProject(acc, p); return reflectData(d, p); },
   'rule.decide': async (d, p, id, _, acc) => { await openProject(acc, p); return ruleDecide(d, p, id); },
   'outcome.record': async (d, p, id, _, acc) => { await acc.proposal(needStr(p, 'ref')); return outcomeRecord(d, p, id); },
@@ -300,8 +303,9 @@ async function setSettings(d, p, acc) {
  */
 export const MODULE_KEYS = Object.freeze({
   'dowser-evidence': ['panel.forIssue'],
-  'dowser-doc-impact': ['byline.forPage'],
-  'dowser-inbox': Object.keys(RESOLVERS).filter((k) => k !== 'panel.forIssue' && k !== 'byline.forPage'),
+  'dowser-doc-impact': ['byline.forPage', 'byline.draftFix'],
+  'dowser-doc-banner': ['byline.forPage'],
+  'dowser-inbox': Object.keys(RESOLVERS).filter((k) => k !== 'panel.forIssue' && k !== 'byline.forPage' && k !== 'byline.draftFix'),
 });
 
 /** @param {string | undefined} moduleKey @param {string} key */

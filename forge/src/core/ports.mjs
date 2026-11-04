@@ -93,7 +93,12 @@
  * Everything a core function may need. `now` is injected so tests control time; `log` receives the dispatch
  * door's structured lines (default console.log). `perms` is required wherever an inbox is read or decided
  * (core/access.mjs): without it, only the scan-source tools work.
- * @typedef {{db: Db, jira?: Jira, sources?: Sources, links: Links, users?: Users, perms?: Perms, now: () => Date, log?: (line: string) => void,
+ * Confluence writes, AS THE USER (write:comment:confluence): Confluence's own permission decides. Throws on failure.
+ * @typedef {{addFooterComment: (pageId: string, body: AdfDoc) => Promise<{id: string}>}} Confluence
+ */
+
+/**
+ * @typedef {{db: Db, jira?: Jira, confluence?: Confluence, sources?: Sources, links: Links, users?: Users, perms?: Perms, now: () => Date, log?: (line: string) => void,
  *   ensureSchema?: (e: unknown) => Promise<boolean>}} Deps
  *   `ensureSchema(e)`: when `e` says the schema is behind and this installation has not migrated in this runtime,
  *   runs the migrations and answers true (the caller may retry its own statement once); else false. For writes that

@@ -325,29 +325,26 @@ export async function panelForIssue(deps, issueKey) {
  * @param {Db} db
  * @param {string} pageId
  * @param {string[]} [visible]
- * @returns {Promise<{count: number, cards: Card[]}>}
+ * @returns {Promise<{count: number, cards: Card[], page_edited_at?: string}>}  a card decided before the page's newest edit carries page_edited_since_decision: true
  */
 export async function bylineForPage(db, pageId, visible) {
-  const byEvidence = await db.query(
-    "SELECT DISTINCT p.id FROM proposals p JOIN evidence e ON e.proposal_id = p.id WHERE e.type = 'page' AND e.ref = ? AND p.status IN ('open', 'accepted')",
+  // the page index (core/doc-drift.mjs, v030): one indexed read, no scan over every proposal on each page view
+  const rows = await db.query(
+    "SELECT p.* FROM page_links l JOIN proposals p ON p.id = l.proposal_id WHERE l.page_id = ? AND p.status IN ('open', 'accepted') ORDER BY p.id",
     [pageId],
   );
-  // doc_impact lives in record_json; LIKE narrows, the parse below decides.
-  // `!` as the LIKE escape: a backslash means different things in MySQL and SQLite string literals.
-  const like = `%${JSON.stringify(pageId).replace(/[!%_]/g, (c) => `!${c}`)}%`;
-  const byImpact = await db.query("SELECT * FROM proposals WHERE status IN ('open', 'accepted') AND record_json LIKE ? ESCAPE '!'", [like]);
-  const ids = new Set(byEvidence.map((r) => Number(r.id)));
-  for (const r of byImpact) {
-    const p = toProposal(r);
-    if (Array.isArray(p.record.doc_impact) && p.record.doc_impact.includes(pageId)) ids.add(p.id);
-  }
+  const edits = await db.query('SELECT edited_at FROM page_edits WHERE page_id = ?', [pageId]);
+  const editedAt = edits.length ? String(edits[0].edited_at) : undefined;
   /** @type {Card[]} */
   const cards = [];
   // A page byline spans every inbox: the sample's cards stay out unless it is the only inbox visible (itemScope).
   const scope = itemScope(visible ?? (await listInboxRows(db)).map((i) => i.project_key));
-  for (const id of [...ids].sort((a, b) => a - b)) {
-    const rows = await db.query('SELECT * FROM proposals WHERE id = ?', [id]);
-    if (rows.length && scope.includes(String(rows[0].project_key))) cards.push(await cardOf(db, toProposal(rows[0])));
+  for (const r of rows) {
+    if (!scope.includes(String(r.project_key))) continue;
+    const p = toProposal(r);
+    const card = await cardOf(db, p);
+    // the page changed after the item was decided: the next scan's verify of its doc quotes says whether it is fixed
+    cards.push(editedAt && p.decided_at && editedAt > p.decided_at ? /** @type {Card} */ ({ ...card, page_edited_since_decision: true }) : card);
   }
-  return { count: cards.length, cards };
+  return editedAt ? { count: cards.length, cards, page_edited_at: editedAt } : { count: cards.length, cards };
 }

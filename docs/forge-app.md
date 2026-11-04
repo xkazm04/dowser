@@ -18,7 +18,9 @@ Graph goals to the skill as scan sources.
 | `rovo:skill` | `dowser-skill` | - | The read actions as a skill for other agents |
 | `jira:globalPage` | `dowser-inbox` | `resolver` | The inbox, the opportunity map, the Learning tab (route `reflect`) and settings (Custom UI) |
 | `jira:issuePanel` | `dowser-evidence` | `resolver` | The evidence trail on an accepted issue |
-| `confluence:contentBylineItem` | `dowser-doc-impact` | `resolver` | The proposals that cite or affect a page |
+| `confluence:contentBylineItem` | `dowser-doc-impact` | `resolver` | The proposals that cite or affect a page, and Draft the fix |
+| `confluence:pageBanner` | `dowser-doc-banner` | `resolver` | One line on a page a Doc drift item names |
+| `trigger` | `dowser-page-events` | `page-event` | Page edits of linked pages (doc-drift closure) |
 | `jira:entityProperty` | `dowser-issue-property` | - | Indexes the `dowser` issue property for JQL (see "Dowser facts in JQL") |
 | `trigger` | `dowser-migrate` | `migrate` | Forge SQL migrations on install and upgrade |
 | `trigger` | `dowser-issue-events`, `dowser-issue-deleted` | `issue-event` | Delivery truth: status/resolution changes and deletes of issues Dowser created or merged into (filtered on the `dowser` issue property), recorded as delivered / abandoned / in progress (`core/delivery.mjs`, v027) |
@@ -540,6 +542,16 @@ On a Confluence page, the **Dowser** item in the byline opens a list of the open
 name this page: as page evidence (the quote is shown) or in their doc impact ("Listed in doc impact"). Each
 ref opens the Dowser inbox in Jira; an accepted proposal also links to its Jira issue. A page no proposal
 names says "No Dowser proposals mention this page."
+
+**Doc-drift closure** (`core/doc-drift.mjs`). The byline reads the page index `page_links` (v030: page evidence and
+numeric `doc_impact` entries, filled at every push, backfilled once by the daily trigger), not a scan of every
+proposal. On a Doc drift item the byline offers **Draft the fix as a comment**: a footer comment on the page, posted
+as the person (`write:comment:confluence`, asUser, so Confluence decides whether they may comment), with the finding
+and the code lines that disagree with the page; it never edits the page body. The `dowser-page-events` trigger
+records the newest edit of a linked page (`page_edits`, v031; every page update on the site arrives, an unlinked page
+costs one indexed read), and an item decided before that edit says "This page was edited after the decision: the
+next scan re-checks it." The **page banner** (`confluence:pageBanner`) shows one dismissable line on a page that an
+open or accepted Doc drift item names, and nothing anywhere else.
 
 ### Links into the inbox
 

@@ -191,6 +191,20 @@ export const jira = {
   },
 };
 
+/** @type {import('../core/ports.mjs').Confluence} */
+export const confluence = {
+  // As the user: a person without comment permission on the page gets Confluence's refusal, not the app's reach.
+  async addFooterComment(pageId, body) {
+    if (!/^[0-9]{1,32}$/.test(pageId)) throw new Error(`not a page id: ${pageId}`);
+    const res = await asUser().requestConfluence(route`/wiki/api/v2/footer-comments`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ pageId, body: { representation: 'atlas_doc_format', value: JSON.stringify(body) } }),
+    });
+    const out = await json(res, 'Confluence footer comment');
+    return { id: String(out.id) };
+  },
+};
+
 /** @type {Users} */
 export const users = {
   // Names are a nicety: a failed batch is skipped, so a Jira hiccup never costs a decision or a page.

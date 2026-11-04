@@ -193,7 +193,7 @@ export function clock(start = '2026-10-27T10:00:00.000Z') {
 
 /**
  * Deps over fresh in-memory ports.
- * @returns {Deps & {db: ReturnType<typeof sqliteDb>, jira: ReturnType<typeof fakeJira>, users: ReturnType<typeof fakeUsers>, perms: ReturnType<typeof fakePerms>, logs: string[], clock: ReturnType<typeof clock>}}
+ * @returns {Deps & {db: ReturnType<typeof sqliteDb>, jira: ReturnType<typeof fakeJira>, users: ReturnType<typeof fakeUsers>, perms: ReturnType<typeof fakePerms>, confluence: ReturnType<typeof fakeConfluence>, logs: string[], clock: ReturnType<typeof clock>}}
  */
 export function makeDeps() {
   const c = clock();
@@ -211,7 +211,24 @@ export function makeDeps() {
       pages: async () => [],
       goals: async () => [],
     },
+    confluence: fakeConfluence(),
   };
+}
+
+/** A fake Confluence write port: footer comments by page id; `fail = true` makes it throw (as a refused permission). */
+export function fakeConfluence() {
+  const c = {
+    fail: false,
+    /** @type {{pageId: string, body: unknown}[]} */
+    comments: [],
+    /** @param {string} pageId @param {unknown} body */
+    async addFooterComment(pageId, body) {
+      if (c.fail) throw new Error('Confluence answered 403');
+      c.comments.push({ pageId, body });
+      return { id: String(9000 + c.comments.length) };
+    },
+  };
+  return c;
 }
 
 const BODY = '## Summary\nAdd CSV export.\n\n## Description\nUsers ask for `csv`.\n\n## Flow\n- open report\n- click export\n\n## Expected impact\nFewer tickets.\n\n## Evaluation\nCount exports.';

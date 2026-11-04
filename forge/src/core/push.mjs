@@ -13,6 +13,7 @@ import {
 } from './store.mjs';
 import { deciderOf } from './verdicts.mjs';
 import { markRecurred } from './delivery.mjs';
+import { linkPushed } from './doc-drift.mjs';
 
 /**
  * @typedef {import('./ports.mjs').Deps} Deps
@@ -187,6 +188,8 @@ export async function pushProposals(deps, args, accountId, o = {}) {
     else jobs.push({ i, o: { projectKey, runId, headSha, at, fp: c.fp, record: c.record } });
   }
   await fileAll(deps, jobs, results);
+  // the page index (core/doc-drift.mjs): every item this push filed or updated, linked to the pages it names now
+  await linkPushed(deps, projectKey, jobs.map((j) => j.o.fp).filter((fp, k) => ['created', 'updated', 'reopened'].includes(String(results[jobs[k].i]?.result))));
   const created = results.filter((r) => r.result === 'created').length;
   const updated = results.filter((r) => r.result === 'updated').length;
   // scanned_at only on a sample push, so a scan's push never depends on the v025 column.

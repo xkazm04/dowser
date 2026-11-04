@@ -8,7 +8,8 @@ import { actionName, isConsent, isSchemaBehind, resolverAllowed, runResolver, ru
 import { forgeDb, runMigrations } from './adapters/forge-sql.mjs';
 import { backfillIssueProperties } from './core/issue-property.mjs';
 import { onIssueEvent } from './core/delivery.mjs';
-import { installationId, jira, links, perms, sources, users } from './adapters/atlassian.mjs';
+import { backfillPageLinks, onPageEvent } from './core/doc-drift.mjs';
+import { confluence, installationId, jira, links, perms, sources, users } from './adapters/atlassian.mjs';
 
 // @forge/resolver is CommonJS: tsc (nodenext) sees module.exports, the Forge bundler sees the class.
 /** @type {typeof import('@forge/resolver').default} */
@@ -18,7 +19,7 @@ const Resolver = /** @type {any} */ (ResolverPkg).default ?? ResolverPkg;
 /** @typedef {import('./core/ports.mjs').Deps} Deps */
 
 /** @returns {Deps} */
-const deps = () => ({ db: forgeDb, jira, sources, links, users, perms, now: () => new Date(), ensureSchema });
+const deps = () => ({ db: forgeDb, jira, confluence, sources, links, users, perms, now: () => new Date(), ensureSchema });
 
 /** Installations this runtime has migrated (a warm runtime may serve more than one). */
 const migrated = new Set();
@@ -98,14 +99,15 @@ for (const key of KEYS) {
     // Each module may call only the keys its own screen uses (core/app.mjs MODULE_KEYS).
     const type = context?.extension?.type;
     const module = context?.moduleKey
-      ?? (type === 'jira:issuePanel' ? 'dowser-evidence' : type === 'confluence:contentBylineItem' ? 'dowser-doc-impact' : type === 'jira:globalPage' ? 'dowser-inbox' : runtimeModuleKey());
+      ?? (type === 'jira:issuePanel' ? 'dowser-evidence' : type === 'confluence:contentBylineItem' ? 'dowser-doc-impact'
+        : type === 'confluence:pageBanner' ? 'dowser-doc-banner' : type === 'jira:globalPage' ? 'dowser-inbox' : runtimeModuleKey());
     if (!resolverAllowed(module, key)) {
       console.log(JSON.stringify({ dowser: 'module-denied', module: module ?? 'unknown', key }));
       return { error: 'bad-input', message: `${key} is not available from this Dowser view` };
     }
     // The panel and byline may omit their subject; the module context names it.
     if (key === 'panel.forIssue' && p.issue_key === undefined) p.issue_key = context?.extension?.issue?.key;
-    if (key === 'byline.forPage' && p.page_id === undefined) p.page_id = context?.extension?.content?.id;
+    if ((key === 'byline.forPage' || key === 'byline.draftFix') && p.page_id === undefined) p.page_id = context?.extension?.content?.id;
     return safe(() => runResolver(deps(), key, p, context?.accountId, via), true);
   });
 }
@@ -142,6 +144,20 @@ export async function rovo(payload, context) {
 }
 
 /**
+ * Confluence page edits for doc-drift closure (trigger dowser-page-events; core/doc-drift.mjs). Every page update on
+ * the site arrives (Confluence triggers cannot filter on app data); an unlinked page costs one indexed read.
+ * @param {Record<string, any>} event
+ * @returns {Promise<void>}
+ */
+export async function pageEvent(event) {
+  try {
+    await withSchema(async () => onPageEvent(deps(), event));
+  } catch (e) {
+    console.error(`dowser: page event failed (${String(/** @type {any} */ (e)?.message ?? e).slice(0, 200)})`);
+  }
+}
+
+/**
  * Jira issue events for delivery truth (triggers dowser-issue-events, dowser-issue-deleted; core/delivery.mjs). The
  * manifest filter already limits them to Dowser's issues. Never throws: a failure is logged.
  * @param {Record<string, any>} event
@@ -168,6 +184,8 @@ export async function migrate(_event) {
   try {
     const b = await backfillIssueProperties(deps());
     if (b.written || b.failed) console.log(JSON.stringify({ dowser: 'issue-property-backfill', ...b }));
+    const l = await backfillPageLinks(deps());
+    if (l.linked) console.log(JSON.stringify({ dowser: 'page-links-backfill', ...l }));
   } catch (e) {
     console.error(`dowser: issue-property backfill failed (${String(/** @type {any} */ (e)?.message ?? e).slice(0, 200)})`);
   }

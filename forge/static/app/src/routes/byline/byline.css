@@ -1,0 +1,12 @@
+/* Doc-drift closure (core/doc-drift.mjs): the byline's Draft the fix and the page banner. */
+:root .dw-byline__fix { margin: 6px 0 0; font-size: 12px; line-height: 16px; color: var(--ds-text-subtle, #505258); }
+:root .dw-byline__fixbtn { font: inherit; font-size: 12px; padding: 4px 8px; border-radius: 3px; cursor: pointer;
+  border: 1px solid var(--ds-border, #0b120e24); background: var(--ds-background-neutral-subtle, transparent); color: var(--ds-text, #172b4d); }
+:root .dw-byline__fixbtn:disabled { cursor: default; opacity: 0.6; }
+:root .dw-byline__fixbtn:focus-visible, :root .dw-banner__close:focus-visible { outline: 2px solid var(--ds-border-focused, #388bff); outline-offset: 2px; }
+:root .dw-byline__err { margin: 4px 0 0; color: var(--ds-text-danger, #ae2e24); }
+:root .dw-banner { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 3px;
+  background: var(--ds-background-warning, #fff7d6); color: var(--ds-text, #172b4d); }
+:root .dw-banner__text { margin: 0; flex: 1; font-size: 14px; line-height: 20px; }
+:root .dw-banner__close { font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 3px; cursor: pointer;
+  border: 1px solid var(--ds-border, #0b120e24); background: transparent; color: var(--ds-text-subtle, #505258); }

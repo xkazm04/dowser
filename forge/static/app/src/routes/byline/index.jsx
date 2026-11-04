@@ -1,7 +1,7 @@
 // Doc-impact byline (confluence:contentBylineItem): the open and accepted Dowser proposals that name this page,
 // either as evidence or in their doc impact (`byline.forPage`). Each links to its card in the Dowser inbox in
 // Jira (`inbox?ref=DW-n`); an accepted one also links to its Jira issue.
-import React from 'react';
+import React, { useState } from 'react';
 import { router } from '@forge/bridge';
 import { call } from '../../api.js';
 import { ErrorState, Lozenge, SectionMessage, SkeletonList, useAsync } from '../../components/ui.jsx';
@@ -10,6 +10,7 @@ import { Mark } from '../../components/Brand.jsx';
 import { SampleChip } from '../../components/SampleStrip.jsx';
 import { STATUS_APPEARANCE, STATUS_LABELS, plural } from '../../components/labels.js';
 import '../../components/viz.css';
+import './byline.css';
 import { safeHref } from '../../safeHref.js';
 
 /**
@@ -43,6 +44,33 @@ function openExternal(e, href) {
   e.preventDefault();
   const safe = safeHref(href);
   if (safe) router.open(safe).catch(() => window.open(safe, '_blank', 'noopener'));
+}
+
+/**
+ * "Draft the fix" (core/doc-drift.mjs): a footer comment on this page, posted as the person, quoting what the code
+ * says now. Confluence decides whether they may comment; its refusal is shown as is. It never edits the page body.
+ * @param {{pageId: string, card: any}} p
+ */
+function DraftFix({ pageId, card }) {
+  const [state, setState] = useState(/** @type {{s: 'idle' | 'busy' | 'done' | 'error', msg?: string}} */ ({ s: 'idle' }));
+  async function draft() {
+    setState({ s: 'busy' });
+    try {
+      await call('byline.draftFix', { page_id: pageId, ref: card.ref });
+      setState({ s: 'done' });
+    } catch (e) {
+      setState({ s: 'error', msg: String(e?.message ?? 'The comment could not be posted.') });
+    }
+  }
+  if (state.s === 'done') return <p className="dw-byline__fix" role="status">Comment posted below the page, with the code that disagrees.</p>;
+  return (
+    <div className="dw-byline__fix">
+      <button type="button" className="dw-byline__fixbtn" onClick={draft} disabled={state.s === 'busy'}>
+        {state.s === 'busy' ? 'Posting...' : 'Draft the fix as a comment'}
+      </button>
+      {state.s === 'error' && <p className="dw-byline__err" role="alert">{state.msg}</p>}
+    </div>
+  );
 }
 
 export default function Byline({ context }) {
@@ -84,6 +112,8 @@ export default function Byline({ context }) {
                   {why.kind === 'quote'
                     ? <blockquote className="dw-quote" style={{ marginLeft: 0 }}>{why.text}</blockquote>
                     : <p className="dw-byline__why">{why.text}</p>}
+                  {card.page_edited_since_decision && <p className="dw-byline__why">This page was edited after the decision: the next scan re-checks it.</p>}
+                  {card.lens === 'doc-drift' && !card.sample && <DraftFix pageId={pageId} card={card} />}
                 </li>
               );
             })}
