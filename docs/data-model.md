@@ -33,6 +33,18 @@ starts NULL (absent) on every existing row. Version 6 adds the scan-finding/1 co
 prediction (NULL, never 0). An existing file is upgraded one step at a time (1 -> 2 -> 3 -> 4 -> 5 -> 6) and
 no row is rewritten. Any version other than 0 (new), 1, 2, 3, 4, 5 or 6 is refused with exit 3.
 
+**CHECK lists.** Every enum-backed CHECK (`runs.mode`, `runs.status`; `proposals.lens`, `confidence`, `status`,
+`reason`, `category`, `band`, `mvp_rule`, `predicted_verdict`; `evidence.type`) is generated from the `model.mjs`
+constants (`store-core.mjs` `ENUMS`, `buildDDL`, `buildMigrations`), so a fresh file cannot disagree with the model.
+`rules.state` and `outcomes.rating` are not model enums and stay literal. After the version check `openStore`
+compares each stored list with the model's. A list the model grew (a new lens, status, reason, evidence type or
+verdict) is widened by a table rebuild: `PRAGMA foreign_keys = OFF` outside the transaction, `BEGIN IMMEDIATE`, then
+create at the target shape, copy every column, drop, rename, recreate the indexes and triggers, keep the
+AUTOINCREMENT high-water, require an empty `PRAGMA foreign_key_check`, `COMMIT`, foreign keys back on. The columns do
+not change, so `user_version` stays 6 and an older Dowser still opens the file. A stored row holding a value the
+model no longer lists is refused with exit 3, and nothing is rebuilt. A list that already matches costs one
+`sqlite_master` read.
+
 ## Tables
 
 | table | role | keys |
