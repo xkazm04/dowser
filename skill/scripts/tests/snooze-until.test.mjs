@@ -40,7 +40,7 @@ function cli(...args) {
 }
 
 test('a v4 store file upgrades in place to v5 (and on to v6): snooze_until added, absent on old rows', () => {
-  assert.equal(USER_VERSION, 7);
+  assert.equal(USER_VERSION, 8);
   const v6 = new RegExp(`^\\s*(${V6_COLUMNS.join('|')})\\s.*\\n`, 'gm');
   const ddlV4 = DDL.replace(/^\s*snooze_until\s.*\n/m, '').replace(v6, '').split('CREATE TABLE IF NOT EXISTS trust_state')[0]
     .replace(`PRAGMA user_version = ${USER_VERSION};`, 'PRAGMA user_version = 4;');
@@ -58,7 +58,7 @@ test('a v4 store file upgrades in place to v5 (and on to v6): snooze_until added
 
   const up = openStore(file);
   try {
-    assert.equal(Number(/** @type {any} */ (up.prepare('PRAGMA user_version').get()).user_version), 7);
+    assert.equal(Number(/** @type {any} */ (up.prepare('PRAGMA user_version').get()).user_version), 8);
     assert.ok((/** @type {any[]} */ (up.prepare('PRAGMA table_info(proposals)').all())).some((c) => c.name === 'snooze_until'));
     const p = getProposal(up, 'bbbbbbbbbbbbbbbb');
     assert.equal(p?.status, 'snoozed');

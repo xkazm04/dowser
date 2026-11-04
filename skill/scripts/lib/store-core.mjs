@@ -11,7 +11,7 @@ import {
   BANDS, CATEGORIES, CONFIDENCES, DowserError, EVIDENCE_TYPES, LENSES, MVP_RULES, REASONS, RUN_MODES, RUN_STATUSES, STATUSES, VERDICTS,
 } from './model.mjs';
 
-export const USER_VERSION = 7;
+export const USER_VERSION = 8;
 /** The decider the store itself writes for machine moves (creation, resurfacing). */
 export const SYSTEM_DECIDER = 'skill:dowser';
 
@@ -90,6 +90,26 @@ CREATE TABLE IF NOT EXISTS deliveries (
 CREATE INDEX IF NOT EXISTS deliveries_fp ON deliveries (fp, id);
 CREATE TRIGGER IF NOT EXISTS deliveries_no_update BEFORE UPDATE ON deliveries BEGIN SELECT RAISE(ABORT, 'deliveries is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS deliveries_no_delete BEFORE DELETE ON deliveries BEGIN SELECT RAISE(ABORT, 'deliveries is append-only'); END;
+`;
+
+/**
+ * v8: the proposal relationship graph (lib/edges.mjs). A typed edge between two cards of this store; append-only, one
+ * row per (from, to, kind). `unblocks` feeds the run's allocation (budget.mjs lifts a prerequisite of a ranked card).
+ */
+const EDGES_DDL = `
+CREATE TABLE IF NOT EXISTS edges (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_fp   TEXT NOT NULL REFERENCES proposals (fp),
+  to_fp     TEXT NOT NULL REFERENCES proposals (fp),
+  kind      TEXT NOT NULL CHECK (kind IN ('unblocks','duplicate-of','follow-up-of','conflicts-with','related')),
+  by        TEXT NOT NULL,
+  at        TEXT NOT NULL,
+  note      TEXT,
+  UNIQUE (from_fp, to_fp, kind)
+);
+CREATE INDEX IF NOT EXISTS edges_to ON edges (to_fp, kind);
+CREATE TRIGGER IF NOT EXISTS edges_no_update BEFORE UPDATE ON edges BEGIN SELECT RAISE(ABORT, 'edges is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS edges_no_delete BEFORE DELETE ON edges BEGIN SELECT RAISE(ABORT, 'edges is append-only'); END;
 `;
 
 /**
@@ -250,7 +270,8 @@ CREATE INDEX IF NOT EXISTS outcomes_fp ON outcomes (fp, id);
 CREATE TRIGGER IF NOT EXISTS outcomes_no_update BEFORE UPDATE ON outcomes BEGIN SELECT RAISE(ABORT, 'outcomes is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS outcomes_no_delete BEFORE DELETE ON outcomes BEGIN SELECT RAISE(ABORT, 'outcomes is append-only'); END;
 ${TRUST_DDL}
-${DELIVERIES_DDL}`;
+${DELIVERIES_DDL}
+${EDGES_DDL}`;
 }
 
 export const DDL = buildDDL();
@@ -322,6 +343,11 @@ PRAGMA user_version = 6;
 -- v7: delivery truth from the code (lib/delivery.mjs).
 ${DELIVERIES_DDL}
 PRAGMA user_version = 7;
+`,
+  7: `
+-- v8: the proposal relationship graph (lib/edges.mjs).
+${EDGES_DDL}
+PRAGMA user_version = 8;
 `,
   };
 }

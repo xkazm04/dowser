@@ -77,6 +77,32 @@ export function allocateRun(db, runId, { perLens, perRun = PER_RUN, capOf } = {}
       slot.set(String(r.fp), { band: 'ranked', mvp: false });
     } else slot.set(String(r.fp), { band: 'reserve', mvp: false });
   }
+  // (5) the prerequisite lift (lib/edges.mjs): a reserve card that `unblocks` a ranked card of this run takes the
+  // slot of the weakest plain ranked card (not an MVP, not the card it unblocks, not itself a lifted prerequisite).
+  // Scored alone the prerequisite is often the least glamorous card; the work it unblocks cannot start without it.
+  /** @type {{fp: string, unblocks: string, displaced: string}[]} */
+  const lifted = [];
+  const byFp = new Map(rows.map((r) => [String(r.fp), r]));
+  const unblocks = /** @type {Row[]} */ (db.prepare("SELECT from_fp, to_fp FROM edges WHERE kind = 'unblocks' ORDER BY id").all())
+    .filter((e) => byFp.has(String(e.from_fp)) && byFp.has(String(e.to_fp)))
+    .sort((a, b) => byRank(/** @type {Row} */ (byFp.get(String(a.to_fp))), /** @type {Row} */ (byFp.get(String(b.to_fp)))));
+  const kept = new Set();
+  for (const e of unblocks) {
+    const pre = String(e.from_fp);
+    const tgt = String(e.to_fp);
+    if (slot.get(tgt)?.band !== 'ranked' || slot.get(pre)?.band !== 'reserve') continue;
+    const weakest = [...rows].reverse().find((r) => {
+      const s = slot.get(String(r.fp));
+      return s?.band === 'ranked' && !s.mvp && String(r.fp) !== tgt && !kept.has(String(r.fp));
+    });
+    if (!weakest) continue;
+    slot.set(String(weakest.fp), { band: 'reserve', mvp: false });
+    slot.set(pre, { band: 'ranked', mvp: false });
+    ranked[weakest.lens]--;
+    ranked[/** @type {Row} */ (byFp.get(pre)).lens]++;
+    kept.add(pre).add(tgt);
+    lifted.push({ fp: pre, unblocks: tgt, displaced: String(weakest.fp) });
+  }
   tx(db, () => {
     const up = db.prepare('UPDATE proposals SET band = ?, mvp = ?, mvp_rule = ? WHERE fp = ?');
     for (const [fp, s] of slot) up.run(s.band, s.mvp ? 1 : null, s.mvp ? 'top-score' : null, fp);
@@ -96,7 +122,7 @@ export function allocateRun(db, runId, { perLens, perRun = PER_RUN, capOf } = {}
     };
     for (const r of res) reserve.push({ lens, fp: r.fp, title: r.title, ...(typeof r.score === 'number' ? { score: r.score } : {}) });
   }
-  return { per_run: perRun, ranked: used, per_lens: perLensOut, ...(reserve.length ? { reserve } : {}) };
+  return { per_run: perRun, ranked: used, per_lens: perLensOut, ...(reserve.length ? { reserve } : {}), ...(lifted.length ? { lifted } : {}) };
 }
 
 /**

@@ -277,6 +277,11 @@ For each lens, print one progress line (`<lens>: gathering (tickets 42, code)`),
    `suppressed`, `duplicate` or `invalid:<why>`. Exit 1 means some lines were invalid: fix those
    lines once and re-propose only them. A line that is still invalid is reported, not dropped
    silently.
+   When one card is a prerequisite of another (this run's or an earlier one), record it:
+   `link --from <prerequisite fp> --to <fp> --kind unblocks --by skill:dowser-<lens>`. Verify then
+   lifts a reserve prerequisite of a ranked card into the ranked band (`lifted` in its output).
+   Other kinds (`duplicate-of`, `follow-up-of`, `conflicts-with`, `related`) are recorded and
+   shown by `show` and `links`.
 9. **Progress line:** `<lens>: emitted <n>`. Guided: the wording in `references/guided-mode.md`
    "Progress"; this applies to every count line below.
 

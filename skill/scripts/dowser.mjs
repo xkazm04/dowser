@@ -41,6 +41,7 @@ const trustLib = await import('./lib/trust.mjs');
 const triageLib = await import('./lib/triage.mjs');
 const hydrateLib = await import('./lib/hydrate.mjs');
 const deliveryLib = await import('./lib/delivery.mjs');
+const edgesLib = await import('./lib/edges.mjs');
 
 /**
  * @typedef {{_: string[], [flag: string]: string | string[] | true | string[] | undefined}} Args
@@ -452,6 +453,22 @@ export const COMMANDS = {
     help: 're-check every accepted card at the run head: its quoted code/doc evidence present | partly | resolved, and the ' +
       'commits since the decision that name its Jira issue or inbox ref -> {run, checked, states, changes:[{fp, title, issue_ref?, from?, to, found, total, commits?}], note?}',
     run: (a, ctx) => ({ out: deliveryLib.checkDeliveries(ctx.open(), ctx.root, req(a, 'run')) }),
+  },
+  link: {
+    flags: { from: { arg: '<fp>', required: true }, to: { arg: '<fp>', required: true }, kind: { arg: 'unblocks|duplicate-of|follow-up-of|conflicts-with|related', required: true },
+      by: { arg: '<kind>:<name>', required: true }, note: { arg: '<text>' } },
+    help: 'record a typed edge between two cards (append-only; unblocks = from is a prerequisite of to, and verify lifts it ' +
+      'into the ranked band when to is ranked) -> {result: linked|exists, from, to, kind}',
+    run: (a, ctx) => ({ out: edgesLib.link(ctx.open(), { from: req(a, 'from'), to: req(a, 'to'), kind: req(a, 'kind'), by: req(a, 'by'), note: opt(a, 'note') }) }),
+  },
+  links: {
+    args: '<fp>',
+    help: 'every edge touching a card, oldest first -> {fp, links:[{kind, dir: in|out, fp, title?, status?, by, at, note?}]}',
+    run(a, ctx) {
+      const fp = a._[1];
+      if (!fp) throw new DowserError('links <fp>', 2);
+      return { out: { fp, links: edgesLib.linksOf(ctx.open(), fp) } };
+    },
   },
   hydrate: {
     flags: { file: FILE_FLAG },

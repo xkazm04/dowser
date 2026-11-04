@@ -7,6 +7,7 @@
 // Reads go straight to the store; every write is a compare-and-set or an idempotent insert. The resurfacing
 // predicate stays in model.mjs (`resurfaces`) - nothing here decides who comes back.
 import { createHash, randomBytes } from 'node:crypto';
+import { linksOf } from './edges.mjs';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -303,7 +304,8 @@ export function show(db, fp) {
   const evidence = evidenceOf(db, fp).map(({ id: _id, fp: _fp, key: _key, ...rest }) => rest);
   const transitions = transitionsOf(db, fp).map(({ id: _id, fp: _fp, evidence_seq: _seq, ...rest }) => rest);
   const outcomes = outcomesOf(db, fp);
-  return /** @type {Row} */ (clean({ fp, external_ref: card.external_ref, external_url: card.external_url, issue_ref: card.issue_ref, issue_url: card.issue_url, card, evidence, transitions, outcomes: outcomes.length ? outcomes : undefined }));
+  const links = linksOf(db, fp);
+  return /** @type {Row} */ (clean({ fp, external_ref: card.external_ref, external_url: card.external_url, issue_ref: card.issue_ref, issue_url: card.issue_url, card, evidence, transitions, outcomes: outcomes.length ? outcomes : undefined, links: links.length ? links : undefined }));
 }
 
 /**
