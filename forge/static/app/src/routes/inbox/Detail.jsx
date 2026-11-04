@@ -1,6 +1,7 @@
-// The reading content of one proposal: header (with the MVP, reserve and machine pre-triage markers), rationale, a
+// The reading content of one proposal: header (with the MVP, reserve and machine pre-triage markers, and for a
+// reopened or grown card the line saying what is new and what was decided before), rationale, a
 // facts grid (the stored score and its scan-score/1 breakdown, impact and its reason, the predicted verdict with the
-// precedent it quotes, effort, confidence and its reason, evidence strength, delivery risk, doc impact), the supporting views when the card has any, the evidence EXPANDED (this is where people decide), the write-up behind a
+// precedent it quotes, effort, confidence and its reason, evidence strength, delivery risk, doc impact), the supporting views when the card has any, the evidence EXPANDED (this is where people decide; an item the delta counts is marked New), the write-up behind a
 // disclosure and the triage history. Used by the reading pane, the narrow accordion and the 360px issue panel.
 // Every fact is printed, "not measured" included: the pane is the expanded view.
 import React from 'react';
@@ -11,7 +12,7 @@ import { TriageHistory } from '../../components/ProposalCard.jsx';
 import { Artifacts } from '../../components/Artifact.jsx';
 import {
   CHANGE_LABELS, EVIDENCE_LABELS, LENS_LABELS, LEVEL_LABELS, MACHINE_DECIDER, STATUS_APPEARANCE, STATUS_LABELS, VERDICT_LABELS, comesBack,
-  evidenceStrength, plural, scoreBreakdown,
+  deltaLine, evidenceStrength, plural, scoreBreakdown,
 } from '../../components/labels.js';
 import { LensDot, Meter, Pips, effortDays } from './parts.jsx';
 import { safeHref } from '../../safeHref.js';
@@ -41,6 +42,7 @@ export function Evidence({ evidence }) {
             <span className="dwr-ev__type">{EVIDENCE_LABELS[ev.type] ?? ev.type}</span>
             <div className="dwr-ev__body">
               <span className="dwr-ev__ref">{href ? <a href={href} target="_blank" rel="noreferrer noopener">{ev.ref}</a> : ev.ref}</span>
+              {ev.new && <> <Lozenge appearance="new">New</Lozenge></>}
               {ev.quote && (isCode
                 ? <pre className="dwr-code"><code>{ev.quote}</code></pre>
                 : <blockquote className="dwr-quote">{ev.quote}</blockquote>)}
@@ -65,6 +67,8 @@ export function Detail({ card, change, history, onHistoryRetry, compact = false,
   const basis = card.effort?.basis ?? [];
   const days = card.effort ? effortDays(card.effort) : '';
   const hasHistory = Array.isArray(history) && history.length > 0;
+  // Why an open card is back (server `delta`): how much evidence is new, and the decision it had. A decided card has none.
+  const delta = isOpen ? deltaLine(card) : undefined;
   return (
     <article className={`dwr-detail${compact ? ' dwr-detail--compact' : ''}`} aria-labelledby={titleId}>
       <header className="dwr-detail__head">
@@ -86,6 +90,7 @@ export function Detail({ card, change, history, onHistoryRetry, compact = false,
         </span>
         <h2 className="dwr-detail__title" id={titleId}>{card.title}</h2>
         {card.status === 'snoozed' && card.snooze_until && <p className="dwr-muted">{comesBack(card.snooze_until)}.</p>}
+        {delta && <p className="dwr-delta"><strong>{/[.!?]$/.test(delta) ? delta : `${delta}.`}</strong></p>}
       </header>
 
       <p className="dwr-rationale">{card.rationale}</p>

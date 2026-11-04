@@ -189,3 +189,28 @@ export function formatDay(iso) {
  * @param {string} until
  */
 export const comesBack = (until) => `Comes back at the first scan on or after ${formatDay(`${until}T00:00`)}`;
+
+/**
+ * Why an open card is back, in one line, from the server's `card.delta` (core/cards.mjs deltaOf): how much evidence
+ * is new and since what; for a reopened card the decision it had, with its reason label and note only when the row
+ * holds them. Undefined when the card has no delta (new, or decided).
+ * @param {{delta?: {since: 'decision' | 'previous-push', new_evidence: number,
+ *   decision?: {status: string, reason?: string, note?: string, decided_by?: string, decided_at?: string, snooze_until?: string}}}} card
+ * @returns {string | undefined}
+ */
+export function deltaLine(card) {
+  const d = card.delta;
+  if (!d) return undefined;
+  const count = plural(d.new_evidence, 'new evidence item');
+  if (d.since !== 'decision' || !d.decision) return `${count} since the previous push`;
+  const dec = d.decision;
+  const on = dec.decided_at ? ` on ${formatDay(dec.decided_at)}` : '';
+  const how = dec.status === 'rejected'
+    ? `rejected${dec.reason ? ` as ${REASON_LABELS[dec.reason] ?? dec.reason}` : ''}${on}`
+    : `snoozed${on}`;
+  const note = dec.note ? `: ${dec.note}` : '';
+  if (d.new_evidence === 0 && dec.snooze_until) {
+    return `Back on its snooze date, ${formatDay(`${dec.snooze_until}T00:00`)}, with no new evidence since it was ${how}${note}`;
+  }
+  return `${count} since it was ${how}${note}`;
+}

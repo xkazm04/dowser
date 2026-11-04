@@ -172,8 +172,10 @@ export const CARDS = [
     evidence: [
       { type: 'doc', ref: 'docs/install.md:42', quote: 'shopctl init --legacy', link: `${REPO}/blob/${SHA1}/docs/install.md#L42` },
       { type: 'git', ref: '7e1a2b9', quote: 'remove --legacy from shopctl init' },
-      { type: 'page', ref: '90211', quote: 'Run shopctl init --legacy on a fresh host.', url: 'https://acme.atlassian.net/wiki/spaces/OPS/pages/90211' },
+      { type: 'page', ref: '90211', quote: 'Run shopctl init --legacy on a fresh host.', url: 'https://acme.atlassian.net/wiki/spaces/OPS/pages/90211', new: true },
     ],
+    // grew in the latest push: the page is what that push brought (core/cards.mjs deltaOf)
+    delta: { since: 'previous-push', new_evidence: 1 },
   }),
   card({
     ref: 'DW-6', fp: 'c3d4e5f607182930', lens: 'security-cra', kind: 'vulnerable-dependency', reopened: true, change: 'reopened',
@@ -189,8 +191,14 @@ export const CARDS = [
     evidence: [
       { type: 'dep', ref: 'package-lock.json#sharp@0.32.1' },
       code('package-lock.json', 2210, '"version": "0.32.1",'),
-      { type: 'sarif', ref: 'audit.sarif#GHSA-54xq-cgqr-rpm3@package-lock.json', quote: 'Heap overflow in PNG decoder' },
+      { type: 'sarif', ref: 'audit.sarif#GHSA-54xq-cgqr-rpm3@package-lock.json', quote: 'Heap overflow in PNG decoder', new: true },
     ],
+    // reopened from a snooze by the SARIF finding: the row keeps the stamp (no reason, so the prior status is snoozed)
+    note: 'Revisit after the Node 22 upgrade lands', decided_by: 'forge:712020:7d1c', decided_at: '2026-10-15T08:00:00.000Z',
+    delta: {
+      since: 'decision', new_evidence: 1,
+      decision: { status: 'snoozed', note: 'Revisit after the Node 22 upgrade lands', decided_by: 'forge:712020:7d1c', decided_at: '2026-10-15T08:00:00.000Z' },
+    },
   }),
   card({
     ref: 'DW-17', fp: '6a7b8c9d0e1f2031', change: 'new', title: 'Show the delivery date on the order confirmation',
@@ -282,7 +290,7 @@ PUSHES.push({ run_id: '2026-10-25T10-58-00Z-b2', at: '2026-10-25T11:00:00.000Z',
 
 export const HISTORY = {
   'DW-1': [{ fp: '293041526a7b8c9d', status: 'accepted', decided_by: 'forge:712020:7d1c', decided_at: '2026-10-14T10:05:00.000Z', external_ref: 'DW-1', issue_ref: 'SHOP-101', issue_url: 'https://acme.atlassian.net/browse/SHOP-101' }],
-  'DW-6': [{ fp: 'c3d4e5f607182930', status: 'snoozed', decided_by: 'forge:712020:7d1c', decided_at: '2026-10-15T08:00:00.000Z', external_ref: 'DW-6' }],
+  'DW-6': [{ fp: 'c3d4e5f607182930', status: 'snoozed', note: 'Revisit after the Node 22 upgrade lands', decided_by: 'forge:712020:7d1c', decided_at: '2026-10-15T08:00:00.000Z', external_ref: 'DW-6' }],
 };
 
 export const INBOXES = [
