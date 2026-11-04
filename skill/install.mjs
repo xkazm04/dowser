@@ -3,7 +3,7 @@
 /**
  * Dowser skill installer. Zero dependencies, Node >= 22.
  *
- *   node skill/install.mjs --harness claude|codex [--scope user|project] [--dev-link] [--dry-run]
+ *   node skill/install.mjs --harness claude|codex [--scope user|project] [--dev-link] [--dry-run] [--force]
  *
  * Targets (skill folder name: dowser):
  *   claude user     $CLAUDE_CONFIG_DIR/skills/dowser, else ~/.claude/skills/dowser
@@ -16,7 +16,11 @@
  *
  * Copies SKILL.md, references/, lenses/, scripts/ (without tests/ and fixtures/), schema/, and writes
  * install.json into the copy: {name, version (SKILL.md frontmatter), harness, scope, installed_at,
- * source: {commit?, dirty?, repo_url?}} (repo_url is the checkout's `origin` with any credentials removed).
+ * source: {commit?, dirty?, repo_url?}, files: {<path>: sha256}} (repo_url is the checkout's `origin` with any credentials
+ * removed; files hashes every installed file, so a later install can tell an edited copy from a pristine one).
+ * Replacing a copy whose files no longer match those hashes (a lens pack forked in place, a file added) is refused
+ * with the changed files named, unless --force; --dry-run lists them as `modified`. A copy installed before the
+ * hashes existed is replaced as before, with a note.
  * --dev-link makes the target a junction (Windows) or a symlink to this folder instead (no install.json:
  * a link tracks the checkout).
  * --dry-run prints the plan as JSON and changes nothing.
@@ -33,6 +37,7 @@
  * 4 --check could not list the release tags.
  */
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -52,7 +57,7 @@ function fail(msg, code) {
 
 /**
  * @typedef {{harness: 'claude'|'codex', scope: 'user'|'project', devLink: boolean, dryRun: boolean,
- *   check: boolean, from?: string}} Options
+ *   check: boolean, force: boolean, from?: string}} Options
  */
 
 /**
@@ -65,6 +70,7 @@ function parseArgs(argv) {
   let devLink = false;
   let dryRun = false;
   let check = false;
+  let force = false;
   /** @type {string|undefined} */ let from;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -75,10 +81,11 @@ function parseArgs(argv) {
     else if (a === '--dev-link') devLink = true;
     else if (a === '--dry-run') dryRun = true;
     else if (a === '--check') check = true;
+    else if (a === '--force') force = true;
     else if (a === '--from') from = argv[++i];
     else if (a.startsWith('--from=')) from = a.slice(7);
     else if (a === '--help' || a === '-h') {
-      process.stdout.write('usage: node install.mjs --harness claude|codex [--scope user|project] [--dev-link] [--dry-run]\n'
+      process.stdout.write('usage: node install.mjs --harness claude|codex [--scope user|project] [--dev-link] [--dry-run] [--force]\n'
         + '       node install.mjs --check --harness claude|codex [--scope user|project] [--from <git url or path>]\n');
       process.exit(0);
     } else fail(`unknown argument: ${a}`, 2);
@@ -87,8 +94,8 @@ function parseArgs(argv) {
   if (scope !== 'user' && scope !== 'project') fail('--scope must be user or project', 2);
   if (from !== undefined && !from) fail('--from needs a git url or path', 2);
   if (from !== undefined && !check) fail('--from goes with --check', 2);
-  if (check && (devLink || dryRun)) fail('--check takes no --dev-link or --dry-run', 2);
-  return { harness, scope, devLink, dryRun, check, ...(from ? { from } : {}) };
+  if (check && (devLink || dryRun || force)) fail('--check takes no --dev-link, --dry-run or --force', 2);
+  return { harness, scope, devLink, dryRun, check, force, ...(from ? { from } : {}) };
 }
 
 /** The `version:` line of a SKILL.md frontmatter, if any. @param {string} dir @returns {string|undefined} */
@@ -255,6 +262,46 @@ function isDowserInstall(p) {
   }
 }
 
+/**
+ * sha256 of every file under dir except install.json, keyed by its forward-slash path relative to dir, sorted.
+ * @param {string} dir @returns {Record<string, string>}
+ */
+function hashTree(dir) {
+  /** @type {[string, string][]} */
+  const out = [];
+  /** @param {string} rel */
+  const walk = (rel) => {
+    for (const e of fs.readdirSync(path.join(dir, rel), { withFileTypes: true })) {
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(r);
+      else if (e.isFile() && r !== STAMP_FILE) out.push([r, createHash('sha256').update(fs.readFileSync(path.join(dir, r))).digest('hex')]);
+    }
+  };
+  walk('');
+  return Object.fromEntries(out.sort(([a], [b]) => (a < b ? -1 : 1)));
+}
+
+/**
+ * The files of an installed copy that differ from the hashes its install.json recorded (edited, added or removed),
+ * sorted; undefined when the copy is a link or its install.json records no hashes (installed before they existed).
+ * @param {string} target @returns {string[]|undefined}
+ */
+function modifiedFiles(target) {
+  if (isSymlink(target)) return undefined;
+  /** @type {Record<string, string>|undefined} */
+  let recorded;
+  try {
+    const f = JSON.parse(fs.readFileSync(path.join(target, STAMP_FILE), 'utf8')).files;
+    if (f && typeof f === 'object') recorded = f;
+  } catch {
+    return undefined;
+  }
+  if (!recorded) return undefined;
+  const known = recorded;
+  const now = hashTree(target);
+  return [...new Set([...Object.keys(known), ...Object.keys(now)])].filter((n) => known[n] !== now[n]).sort();
+}
+
 /** @param {string} src @param {string} dst */
 function copyTree(src, dst) {
   fs.cpSync(src, dst, {
@@ -284,6 +331,11 @@ function main() {
   }
   const sameAsSource = !isSymlink(target) && realOrSelf(target) === realOrSelf(source);
   if (sameAsSource) notes.push('target is this source folder; nothing to do');
+  const replacesCopy = exists && replaceable && !sameAsSource && !isSymlink(target);
+  const modified = replacesCopy ? modifiedFiles(target) : undefined;
+  if (replacesCopy && !modified) {
+    notes.push('the installed copy predates change tracking; edits made in it are not detected and will be replaced');
+  }
 
   const plan = {
     harness: opts.harness,
@@ -295,6 +347,7 @@ function main() {
     missing,
     target_exists: exists,
     will_replace: exists && replaceable,
+    ...(modified?.length ? { modified } : {}),
     notes,
   };
   const version = skillVersion(source);
@@ -316,6 +369,10 @@ function main() {
 
   if (missing.length) fail(`source incomplete, missing: ${missing.join(', ')} (in ${source})`, 3);
   if (exists && !replaceable) fail(`${target} exists and is not a Dowser install; move it away first`, 3);
+  if (modified?.length && !opts.force) {
+    const shown = modified.slice(0, 10).join(', ') + (modified.length > 10 ? ` and ${modified.length - 10} more` : '');
+    fail(`${target} was changed since it was installed (${shown}); copy what you want to keep to your own clone, then run again with --force to replace it`, 3);
+  }
   if (sameAsSource) {
     process.stdout.write(JSON.stringify({ installed: false, ...plan }, null, 2) + '\n');
     process.exit(0);
@@ -329,7 +386,9 @@ function main() {
     } else {
       fs.mkdirSync(target);
       for (const item of present) copyTree(path.join(source, item), path.join(target, item));
-      fs.writeFileSync(path.join(target, STAMP_FILE), JSON.stringify(stamp, null, 2) + '\n');
+      const files = hashTree(target);
+      fs.writeFileSync(path.join(target, STAMP_FILE), JSON.stringify({ ...stamp, files }, null, 2) + '\n');
+      Object.assign(plan, { files: Object.keys(files).length });
     }
   } catch (e) {
     fail(`write failed: ${e instanceof Error ? e.message : String(e)}`, 3);

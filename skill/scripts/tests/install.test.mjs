@@ -4,7 +4,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cpSync, existsSync, readFileSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gitRepo, listFiles, removeDir, tempDir } from './_fixture.mjs';
@@ -61,7 +61,9 @@ test('install writes install.json: the skill version and its source commit, no c
   assert.match(stamp.installed_at, /^\d{4}-\d\d-\d\dT/);
   assert.match(stamp.source.commit, /^[0-9a-f]{40}$/);
   if (stamp.source.repo_url) assert.doesNotMatch(stamp.source.repo_url, /\/\/[^/]*@/);
-  assert.deepEqual(r.out.stamp, stamp);
+  const { files, ...printed } = stamp;
+  assert.deepEqual(r.out.stamp, printed, 'the printed stamp is install.json without its file hashes');
+  assert.equal(r.out.files, Object.keys(files).length);
 });
 
 test('--check names a newer release tag and how to update', () => {
@@ -118,6 +120,49 @@ test('install.json drops the credentials an origin url carries', () => {
   assert.equal(stamp.source.repo_url, 'https://github.com/x/dowser.git');
   assert.equal(stamp.source.dirty, true, 'the copied skill folder is uncommitted in that repo');
   assert.doesNotMatch(readFileSync(join(config, 'skills', 'dowser', 'install.json'), 'utf8'), /ghp_secret123/);
+});
+
+test('a reinstall refuses to replace a copy someone edited, names the files, and --force replaces it', () => {
+  const config = tempDir('install-fork');
+  dirs.push(config);
+  const copy = join(config, 'skills', 'dowser');
+  assert.equal(run(config, []).code, 0);
+  const stamp = JSON.parse(readFileSync(join(copy, 'install.json'), 'utf8'));
+  assert.match(stamp.files['lenses/ux-friction.md'], /^[0-9a-f]{64}$/, 'install.json records a hash per installed file');
+  assert.equal('install.json' in stamp.files, false);
+
+  assert.equal(run(config, []).code, 0, 'an untouched copy is replaced without --force');
+
+  const pack = join(copy, 'lenses', 'ux-friction.md');
+  writeFileSync(pack, `${readFileSync(pack, 'utf8')}\n# team fork line\n`);
+  writeFileSync(join(copy, 'lenses', 'team-notes.md'), 'ours\n');
+  const dry = run(config, ['--dry-run']);
+  assert.equal(dry.code, 0, dry.err);
+  assert.deepEqual(dry.out.modified, ['lenses/team-notes.md', 'lenses/ux-friction.md']);
+
+  const refused = run(config, []);
+  assert.equal(refused.code, 3, 'a modified copy is not replaced');
+  assert.match(refused.err, /lenses\/ux-friction\.md/);
+  assert.match(refused.err, /--force/);
+  assert.match(readFileSync(pack, 'utf8'), /team fork line/, 'the edit survives the refused reinstall');
+
+  const forced = run(config, ['--force']);
+  assert.equal(forced.code, 0, forced.err);
+  assert.doesNotMatch(readFileSync(pack, 'utf8'), /team fork line/);
+  assert.equal(existsSync(join(copy, 'lenses', 'team-notes.md')), false);
+});
+
+test('a copy installed before change tracking is replaced as before, with a note', () => {
+  const config = tempDir('install-legacy');
+  dirs.push(config);
+  const copy = join(config, 'skills', 'dowser');
+  assert.equal(run(config, []).code, 0);
+  const { files: _files, ...legacy } = JSON.parse(readFileSync(join(copy, 'install.json'), 'utf8'));
+  writeFileSync(join(copy, 'install.json'), JSON.stringify(legacy));
+  writeFileSync(join(copy, 'lenses', 'team-notes.md'), 'ours\n');
+  const r = run(config, []);
+  assert.equal(r.code, 0, r.err);
+  assert.ok(r.out.notes.some((/** @type {string} */ n) => /predates change tracking/.test(n)));
 });
 
 test('--dry-run shows the stamp it would write and changes nothing', () => {

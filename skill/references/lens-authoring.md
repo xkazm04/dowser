@@ -89,8 +89,11 @@ refuses any other (`--kinds: unknown lens <id>`, exit 2), and `context --lens` a
 loader do the same. `propose` and `outbox` read each pack's `kinds` from its frontmatter, and a
 `--kinds` list may only narrow them (a kind the pack lacks exits 2). So today a team forks **in place**:
 
-1. Edit the built-in pack (`lenses/ux-friction.md`) in your installed copy or your own clone.
-   Keep its `id`: the id goes into every proposal's `lens` and fingerprint.
+1. Edit the built-in pack (`lenses/ux-friction.md`) in your own clone, and install from it
+   (`--dev-link` keeps the installed skill on the clone). Keep its `id`: the id goes into every
+   proposal's `lens` and fingerprint. An edit made in an installed copy is not lost silently: the
+   next `install.mjs` refuses to replace a copy whose files changed and names them, and only
+   `--force` replaces it. Move the edit to your clone first.
 2. Bump its `version` (patch for wording and gather steps, minor for a new kind; see
    Versioning) so every card records which pack wrote it, and add a changelog line.
 3. Change hypotheses, gather steps or kinds. Keep the seven body sections. A kind you add to
