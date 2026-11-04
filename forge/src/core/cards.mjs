@@ -4,7 +4,7 @@
 import { parseRef } from '../shared/fingerprint.mjs';
 import { areasOfProposal } from './areas.mjs';
 import { withNames } from './names.mjs';
-import { evidenceOf, findProposal, getInbox, isSampleKey, itemScope, listInboxRows, toProposal } from './store.mjs';
+import { evidenceOf, evidenceOfMany, evidenceRefsOfMany, findProposal, getInbox, isSampleKey, itemScope, listInboxRows, toProposal } from './store.mjs';
 import { AppError, omitAbsent } from './util.mjs';
 import { INBOX_STATUSES, PAGE_SIZE } from './types.mjs';
 import { LENSES, isOneOf } from '../shared/model.mjs';
@@ -122,9 +122,10 @@ export async function getProposal(deps, ref) {
  * the dispatch door always passes it.
  * @param {Db} db
  * @param {string[]} [visible]
+ * @param {import('./store.mjs').InboxRow[]} [inboxRows]  every inbox row, when the caller has read them already
  * @returns {Promise<InboxSummary[]>}
  */
-export async function inboxSummaries(db, visible) {
+export async function inboxSummaries(db, visible, inboxRows) {
   /** @returns {Record<InboxStatus, number>} */
   const zero = () => /** @type {any} */ (Object.fromEntries(INBOX_STATUSES.map((s) => [s, 0])));
   /** @type {Map<string, Record<string, number>>} */
@@ -136,7 +137,7 @@ export async function inboxSummaries(db, visible) {
   }
   /** @type {InboxSummary[]} */
   const out = [];
-  for (const i of await listInboxRows(db)) {
+  for (const i of inboxRows ?? await listInboxRows(db)) {
     if (visible && !visible.includes(i.project_key)) continue;
     const push = (await db.query('SELECT * FROM pushes WHERE project_key = ? ORDER BY at DESC, id LIMIT 1', [i.project_key]))[0];
     const sample = isSampleKey(i.project_key);
@@ -187,9 +188,12 @@ export async function listInbox(db, q) {
   if (q.lens) { where.push('lens = ?'); params.push(q.lens); }
   if (q.pretriaged) where.push('pretriaged_by IS NOT NULL');
   if (q.visible && !q.visible.length) return { inboxes: [], groups: [] };
+  /** @type {import('./store.mjs').InboxRow[] | undefined} */
+  let inboxRows;
+  const allInboxes = async () => (inboxRows ??= await listInboxRows(db));
   // All inboxes (no project_key): the sample's items stay out of the aggregate unless it is all there is
   // (store.mjs itemScope); its summary still comes back in `inboxes`.
-  const scope = q.project_key ? q.visible : itemScope(q.visible ?? (await listInboxRows(db)).map((i) => i.project_key));
+  const scope = q.project_key ? q.visible : itemScope(q.visible ?? (await allInboxes()).map((i) => i.project_key));
   if (scope) {
     where.push(`project_key IN (${scope.map(() => '?').join(', ')})`);
     params.push(...scope);
@@ -199,21 +203,58 @@ export async function listInbox(db, q) {
     : (await inArea(db, q.project_key ?? '', q.area, await db.query(`SELECT * FROM proposals WHERE ${where.join(' AND ')} ${ORDER}`, params)))
       .slice(offset, offset + PAGE_SIZE + 1);
   const page = rows.slice(0, PAGE_SIZE).map(toProposal);
-  const repos = new Map((await listInboxRows(db)).map((i) => [i.project_key, i.repo_url]));
+  const repos = new Map((await allInboxes()).map((i) => [i.project_key, i.repo_url]));
+  // One read each for the page: the evidence of its cards, and the head of the push behind each of its groups.
+  const evidence = await evidenceOfMany(db, page);
+  /** @type {ProposalRow[]} */
+  const starts = page.filter((p, k) => k === 0 || page[k - 1].last_run_id !== p.last_run_id);
+  const heads = await pushHeads(db, starts);
   /** @type {InboxGroup[]} */
   const groups = [];
   for (const p of page) {
     let g = groups[groups.length - 1];
     if (!g || g.run_id !== p.last_run_id) {
-      const push = await db.query('SELECT head_sha FROM pushes WHERE project_key = ? AND run_id = ? ORDER BY at DESC LIMIT 1', [p.project_key, p.last_run_id]);
-      g = /** @type {InboxGroup} */ (omitAbsent({ run_id: p.last_run_id, at: p.last_push_at, head_sha: push[0]?.head_sha, items: [] }));
+      g = /** @type {InboxGroup} */ (omitAbsent({ run_id: p.last_run_id, at: p.last_push_at, head_sha: heads.get(`${p.project_key}
+${p.last_run_id}`), items: [] }));
       groups.push(g);
     }
-    const card = toCard(p, await evidenceOf(db, p.id), repos.get(p.project_key));
+    const card = toCard(p, evidence.get(p.id) ?? [], repos.get(p.project_key));
     if (p.status === 'open') card.change = p.change_kind;
     g.items.push(card);
   }
-  return omitAbsent({ inboxes: await inboxSummaries(db, q.visible), groups, next: rows.length > PAGE_SIZE ? String(offset + PAGE_SIZE) : undefined });
+  return omitAbsent({ inboxes: await inboxSummaries(db, q.visible, await allInboxes()), groups, next: rows.length > PAGE_SIZE ? String(offset + PAGE_SIZE) : undefined });
+}
+
+/**
+ * The head_sha of the newest push of each (project_key, run_id) the proposals name, in one read: key
+ * `<project_key>
+<run_id>`; a run without a push row, or a push without head_sha, is absent.
+ * @param {Db} db
+ * @param {ProposalRow[]} ps
+ * @returns {Promise<Map<string, string>>}
+ */
+async function pushHeads(db, ps) {
+  /** @type {Map<string, string>} */
+  const out = new Map();
+  if (ps.length === 0) return out;
+  const keys = [...new Set(ps.map((p) => p.project_key))];
+  const runs = [...new Set(ps.map((p) => p.last_run_id))];
+  const wanted = new Set(ps.map((p) => `${p.project_key}
+${p.last_run_id}`));
+  /** @type {Set<string>} */
+  const seen = new Set();
+  const rows = await db.query(
+    `SELECT project_key, run_id, head_sha FROM pushes WHERE project_key IN (${keys.map(() => '?').join(', ')}) AND run_id IN (${runs.map(() => '?').join(', ')}) ORDER BY at DESC`,
+    [...keys, ...runs],
+  );
+  for (const r of rows) {
+    const k = `${r.project_key}
+${r.run_id}`;
+    if (!wanted.has(k) || seen.has(k)) continue;
+    seen.add(k); // the newest push of the run decides, with or without a head_sha
+    if (r.head_sha !== null && r.head_sha !== undefined) out.set(k, String(r.head_sha));
+  }
+  return out;
 }
 
 /**
@@ -225,12 +266,9 @@ export async function listInbox(db, q) {
 async function inArea(db, projectKey, area, rows) {
   const areaPaths = (await db.query('SELECT path FROM areas WHERE project_key = ?', [projectKey])).map((r) => String(r.path));
   if (!areaPaths.includes(area)) return [];
-  const out = [];
-  for (const r of rows) {
-    const p = toProposal(r);
-    if (areasOfProposal(p.record, await evidenceOf(db, p.id), areaPaths).has(area)) out.push(r);
-  }
-  return out;
+  const ps = rows.map(toProposal);
+  const refs = await evidenceRefsOfMany(db, ps);
+  return rows.filter((_, k) => areasOfProposal(ps[k].record, refs.get(ps[k].id) ?? [], areaPaths).has(area));
 }
 
 /**
