@@ -73,7 +73,7 @@ const resolver = new Resolver();
 /** @type {(keyof ResolverContract)[]} */
 const KEYS = ['inbox.list', 'proposal.get', 'verdict.accept', 'verdict.reject', 'verdict.snooze', 'verdict.merge',
   'settings.get', 'settings.set', 'jira.projects', 'panel.forIssue', 'map.data', 'byline.forPage', 'reflect.data', 'rule.decide', 'outcome.record',
-  'direction.get', 'direction.set'];
+  'direction.get', 'direction.set', 'sample.load', 'sample.remove', 'setup.status'];
 for (const key of KEYS) {
   resolver.define(key, async ({ payload, context }) => {
     // The issue panel is the only surface that decides from inside an issue; everything else is the inbox.

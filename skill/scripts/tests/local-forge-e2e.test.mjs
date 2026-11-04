@@ -435,3 +435,42 @@ test('kind-in-lens at the seam: outbox --kinds sends lens_kinds_json, the real c
   assert.throws(() => mockTool(b, 'dowser_proposals_push', { project_key: projectKey, run_id: run, proposals_json: '[]', lens_kinds_json: '{"opportunity": []}' }),
     (/** @type {any} */ e) => e.code === 'bad-input' && /lens_kinds_json/.test(e.message));
 });
+
+test('the sample inbox at the seam: both doubles refuse its key to every scan write; it loads, accepts with a label, setup counts calls, removes', async () => {
+  const SAMPLE = 'dowser-sample';
+  const RESERVED = `${SAMPLE} is reserved for the sample inbox`;
+  const writes = /** @type {[string, Record<string, unknown>][]} */ ([
+    ['dowser_proposals_push', { project_key: SAMPLE, run_id: 'r-x', proposals_json: '[]' }],
+    ['dowser_areas_push', { project_key: SAMPLE, run_id: 'r-x', areas_json: '[]' }],
+    ['dowser_reflect_sync', { project_key: SAMPLE, rules_json: '[]' }],
+    ['dowser_direction_get', { project_key: SAMPLE, lens: 'all' }],
+  ]);
+  const b = emptyBackend();
+  for (const [name, args] of writes) {
+    const r = await rpc('tools/call', { name, arguments: args });
+    assert.equal(r.result.isError, true, name);
+    assert.deepEqual(JSON.parse(r.result.content[0].text), { error: 'bad-input', message: RESERVED }, `the real core refuses ${name}`);
+    assert.throws(() => mockTool(b, name, args), (/** @type {any} */ e) => e.code === 'bad-input' && e.message === RESERVED, `the mock refuses ${name}`);
+  }
+
+  const status = await invoke('setup.status');
+  assert.ok(status.tools.calls >= writes.length, 'the MCP calls that reached the core are counted');
+  assert.equal(typeof status.tools.last_tool, 'string');
+  assert.equal(status.mcp_url, undefined, 'the local core has no MCP URL to show');
+  assert.equal(status.sample.loaded, false);
+
+  const loaded = await invoke('sample.load');
+  assert.equal(loaded.project_key, SAMPLE);
+  assert.ok(loaded.created > 0);
+  const summary = (await invoke('settings.get')).inboxes.find((/** @type {any} */ i) => i.project_key === SAMPLE);
+  assert.equal(summary.sample, true);
+  assert.equal(summary.source.repo_url, 'https://github.com/xkazm04/dowser');
+  const card = (await invoke('inbox.list', { project_key: SAMPLE })).groups[0].items[0];
+  assert.equal(card.sample, true);
+  const acc = await invoke('verdict.accept', { ref: card.ref, jira_project_key: 'DOW', issue_type_id: '10001' });
+  const issue = (await http(`/browse/${acc.card.issue_ref}`)).body.issue;
+  assert.deepEqual(issue.labels, ['dowser-sample']);
+  assert.match(issue.description.content[0].content[0].text, /^Created from Dowser sample data/);
+  assert.deepEqual(await invoke('sample.remove'), { removed: true, issues_kept: 1 });
+  assert.equal((await invoke('settings.get')).inboxes.some((/** @type {any} */ i) => i.project_key === SAMPLE), false);
+});

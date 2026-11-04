@@ -5,7 +5,7 @@
 //
 // No transactions on Forge SQL: a set is an UPDATE, else an INSERT guarded by the primary key, else (someone
 // inserted first) the UPDATE again - the last writer wins, and every step is one statement. A clear is a DELETE.
-import { needInbox } from './store.mjs';
+import { needInbox, refuseSampleKey } from './store.mjs';
 import { deciderOf } from './verdicts.mjs';
 import { AppError, DuplicateKey, isObj, needStr, optStr } from './util.mjs';
 import { DIRECTION_ITEMS_MAX, DIRECTION_LINE_MAX, DIRECTION_SPACES_MAX, NOTE_MAX, SPACE_KEY_RE } from './types.mjs';
@@ -114,6 +114,7 @@ export async function directionGet(d, p) {
  * @returns {Promise<DirectionOutput>}
  */
 export async function directionTool(d, a) {
+  refuseSampleKey(a.project_key); // a scan never reads the sample's direction (it is the sample's, not a team's)
   const lens = optStr(a, 'lens');
   if (lens !== undefined && lens !== 'all') needLens(lens);
   const out = await directionGet(d, a);

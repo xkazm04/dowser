@@ -3,7 +3,7 @@
 // proposals and evidence. Every write is a compare-and-set or a check-then-insert (see ports.mjs).
 import { evidenceKey } from '../shared/fingerprint.mjs';
 import { AppError, DuplicateKey, FP_RE, num, omitAbsent, sha256, sqlv } from './util.mjs';
-import { REF_RE } from './types.mjs';
+import { REF_RE, SAMPLE_KEY, SAMPLE_RESERVED } from './types.mjs';
 
 /**
  * @typedef {import('./ports.mjs').Db} Db
@@ -62,6 +62,32 @@ export async function counterValue(db, name) {
 }
 
 // ------------------------------------------------------------------------------------------------ inboxes
+
+/** True for the sample inbox's reserved key (types.mjs SAMPLE_KEY). @param {unknown} projectKey */
+export const isSampleKey = (projectKey) => typeof projectKey === 'string' && projectKey.trim() === SAMPLE_KEY;
+
+/**
+ * The inboxes an all-inbox view lists ITEMS from (mixed-plane rule: the source owns the sample predicate): the
+ * visible keys without the sample, unless the sample is the only one visible (a judge's first run). Summaries
+ * (`inboxes[]`) still list the sample, so a picker can offer it; only the aggregate leaves it out.
+ * @param {string[]} keys  the caller's visible inbox keys
+ * @returns {string[]}
+ */
+export function itemScope(keys) {
+  const rest = keys.filter((k) => !isSampleKey(k));
+  return rest.length > 0 ? rest : keys;
+}
+
+/**
+ * Refuses a write to the sample inbox's reserved key with `bad-input`, unless `o.sample` (only core/sample.mjs
+ * passes it: the sample load replays its scan through the same push code). The tool door (app.mjs) refuses first,
+ * before any access check; this is the core's own guard, so no other caller can mix a scan into the sample.
+ * @param {unknown} projectKey
+ * @param {{sample?: boolean}} [o]
+ */
+export function refuseSampleKey(projectKey, o = {}) {
+  if (!o.sample && isSampleKey(projectKey)) throw new AppError('bad-input', SAMPLE_RESERVED);
+}
 
 /** @param {Row} r @returns {InboxRow} */
 const toInbox = (r) => /** @type {InboxRow} */ (omitAbsent({
@@ -202,16 +228,21 @@ export async function evidenceOf(db, proposalId) {
  * @param {Db} db
  * @param {number} proposalId
  * @param {{type: string, ref: string, quote?: string, url?: string}[]} items
- * @param {{runId: string, headSha?: string, at: string}} o
+ * @param {{runId: string, headSha?: string, at: string, fresh?: boolean}} o  `fresh`: the proposal was just inserted
+ *   and has no evidence yet, so the two reads (keys present, the union's types) are answered from `items` alone
+ *   (two statements fewer per new card: a push of 50 new cards, or the sample load, is 100 statements shorter)
  * @returns {Promise<{added: number, count: number, types: string[]}>} rows added, and the union's size and types
  */
-export async function uniteEvidence(db, proposalId, items, { runId, headSha, at }) {
-  const have = new Set((await db.query('SELECT ekey_hash FROM evidence WHERE proposal_id = ?', [proposalId])).map((r) => String(r.ekey_hash)));
+export async function uniteEvidence(db, proposalId, items, { runId, headSha, at, fresh = false }) {
+  const have = new Set(fresh ? [] : (await db.query('SELECT ekey_hash FROM evidence WHERE proposal_id = ?', [proposalId])).map((r) => String(r.ekey_hash)));
+  /** @type {Set<string>} */
+  const types = new Set();
   let added = 0;
   for (const [pos, e] of items.entries()) {
     const ekey = evidenceKey(e).key;
     const h = sha256(`${e.type}\n${ekey}`);
     if (have.has(h)) continue;
+    types.add(e.type);
     try {
       await db.exec(
         'INSERT INTO evidence (proposal_id, ekey_hash, ekey, type, ref, quote, url, head_sha, added_run_id, added_at, pos) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -223,7 +254,7 @@ export async function uniteEvidence(db, proposalId, items, { runId, headSha, at 
     }
     have.add(h);
   }
+  if (fresh) return { added, count: have.size, types: [...types].sort() };
   const rows = await db.query('SELECT type FROM evidence WHERE proposal_id = ?', [proposalId]);
-  const types = [...new Set(rows.map((r) => String(r.type)))].sort();
-  return { added, count: rows.length, types };
+  return { added, count: rows.length, types: [...new Set(rows.map((r) => String(r.type)))].sort() };
 }

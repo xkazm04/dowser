@@ -4,7 +4,7 @@
 import { parseRef } from '../shared/fingerprint.mjs';
 import { areasOfProposal } from './areas.mjs';
 import { withNames } from './names.mjs';
-import { evidenceOf, findProposal, getInbox, listInboxRows, toProposal } from './store.mjs';
+import { evidenceOf, findProposal, getInbox, isSampleKey, itemScope, listInboxRows, toProposal } from './store.mjs';
 import { AppError, omitAbsent } from './util.mjs';
 import { INBOX_STATUSES, PAGE_SIZE } from './types.mjs';
 import { LENSES, isOneOf } from '../shared/model.mjs';
@@ -71,6 +71,8 @@ export function toCard(p, evidence, repoUrl) {
     reason: p.reason, note: p.note, merged_into: p.merged_into, decided_by: p.decided_by, decided_at: p.decided_at,
     snooze_until: p.status === 'snoozed' ? p.snooze_until : undefined,
     first_seen: p.first_seen, last_push_at: p.last_push_at,
+    // The source owns the sample predicate: every card of the sample inbox says so, from the server.
+    sample: isSampleKey(p.project_key) || undefined,
   }));
 }
 
@@ -136,12 +138,16 @@ export async function inboxSummaries(db, visible) {
   const out = [];
   for (const i of await listInboxRows(db)) {
     if (visible && !visible.includes(i.project_key)) continue;
-    const push =(await db.query('SELECT * FROM pushes WHERE project_key = ? ORDER BY at DESC, id LIMIT 1', [i.project_key]))[0];
+    const push = (await db.query('SELECT * FROM pushes WHERE project_key = ? ORDER BY at DESC, id LIMIT 1', [i.project_key]))[0];
+    const sample = isSampleKey(i.project_key);
     out.push(/** @type {InboxSummary} */ (omitAbsent({
       project_key: i.project_key, repo_url: i.repo_url, jira_project_key: i.jira_project_key, issue_type_id: i.issue_type_id,
       open: counts.get(i.project_key)?.open ?? 0,
       by_status: counts.get(i.project_key) ?? zero(),
       last_push: push ? omitAbsent({ run_id: String(push.run_id), at: String(push.at), head_sha: push.head_sha, created: Number(push.created), updated: Number(push.updated) }) : undefined,
+      sample: sample || undefined,
+      // What the sample is a scan of: the repo and commit its evidence links point at, and when that scan ran.
+      source: sample && push ? omitAbsent({ repo_url: push.repo_url ?? i.repo_url, head_sha: push.head_sha, scanned_at: push.scanned_at }) : undefined,
     })));
   }
   return out;
@@ -180,10 +186,13 @@ export async function listInbox(db, q) {
   if (q.project_key) { where.push('project_key = ?'); params.push(q.project_key); }
   if (q.lens) { where.push('lens = ?'); params.push(q.lens); }
   if (q.pretriaged) where.push('pretriaged_by IS NOT NULL');
-  if (q.visible) {
-    if (!q.visible.length) return { inboxes: [], groups: [] };
-    where.push(`project_key IN (${q.visible.map(() => '?').join(', ')})`);
-    params.push(...q.visible);
+  if (q.visible && !q.visible.length) return { inboxes: [], groups: [] };
+  // All inboxes (no project_key): the sample's items stay out of the aggregate unless it is all there is
+  // (store.mjs itemScope); its summary still comes back in `inboxes`.
+  const scope = q.project_key ? q.visible : itemScope(q.visible ?? (await listInboxRows(db)).map((i) => i.project_key));
+  if (scope) {
+    where.push(`project_key IN (${scope.map(() => '?').join(', ')})`);
+    params.push(...scope);
   }
   const rows = q.area === undefined
     ? await db.query(`SELECT * FROM proposals WHERE ${where.join(' AND ')} ${ORDER} LIMIT ${PAGE_SIZE + 1} OFFSET ${offset}`, params)
@@ -262,9 +271,11 @@ export async function bylineForPage(db, pageId, visible) {
   }
   /** @type {Card[]} */
   const cards = [];
+  // A page byline spans every inbox: the sample's cards stay out unless it is the only inbox visible (itemScope).
+  const scope = itemScope(visible ?? (await listInboxRows(db)).map((i) => i.project_key));
   for (const id of [...ids].sort((a, b) => a - b)) {
     const rows = await db.query('SELECT * FROM proposals WHERE id = ?', [id]);
-    if (rows.length && (!visible || visible.includes(String(rows[0].project_key)))) cards.push(await cardOf(db, toProposal(rows[0])));
+    if (rows.length && scope.includes(String(rows[0].project_key))) cards.push(await cardOf(db, toProposal(rows[0])));
   }
   return { count: cards.length, cards };
 }

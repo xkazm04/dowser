@@ -4,7 +4,7 @@
 // payload has one: the key names the repo, so it is never logged as is), ok or the error code, and the
 // duration. A failed resolver call adds a `resolver-error` line with the key, the error code and the hashed
 // project, never the error message. Never a payload body, a note, a message, a token or an account id.
-import { sha256 } from './util.mjs';
+import { DuplicateKey, sha256 } from './util.mjs';
 
 /**
  * @typedef {import('./ports.mjs').Deps} Deps
@@ -57,4 +57,33 @@ export async function observed(deps, surface, key, payload, run) {
     logLine(deps, { dowser: 'resolver-error', key: key ?? 'unknown', ...project, error: err.error });
   }
   return out;
+}
+
+/**
+ * Counts one tool call in `tool_calls` (migration v024; the setup checklist's "calls seen"): row
+ * `<surface>:<tool>` gains a call and the newer `last_at`. One upsert in the store's portable pattern (as
+ * store.mjs `nextCounter`): UPDATE, else INSERT, else (a concurrent first call inserted it) the UPDATE again. A
+ * failure is logged by its error name only and never fails the call it counts.
+ * @param {Deps} deps
+ * @param {'mcp' | 'rovo'} surface
+ * @param {string} tool  a known tool or action name (the caller checks)
+ * @returns {Promise<void>}
+ */
+export async function recordCall(deps, surface, tool) {
+  const name = `${surface}:${tool}`;
+  const at = deps.now().toISOString();
+  const update = () => deps.db.exec(
+    'UPDATE tool_calls SET calls = calls + 1, last_at = CASE WHEN last_at < ? THEN ? ELSE last_at END WHERE name = ?', [at, at, name],
+  );
+  try {
+    if ((await update()).affectedRows === 1) return;
+    try {
+      await deps.db.exec('INSERT INTO tool_calls (name, calls, last_at) VALUES (?, 1, ?)', [name, at]);
+    } catch (e) {
+      if (!(e instanceof DuplicateKey)) throw e;
+      await update();
+    }
+  } catch (e) {
+    logLine(deps, { dowser: 'warn', what: 'tool-call-not-counted', error: String(/** @type {any} */ (e)?.name ?? typeof e) });
+  }
 }

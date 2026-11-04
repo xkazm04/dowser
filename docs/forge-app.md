@@ -49,10 +49,11 @@ Graph goals to the skill as scan sources.
 | `proposals` | One row per `(project_key, fp)`. Holds the status, the record and the decision stamp |
 | `evidence` | Append-only, one row per evidence key. Each row carries the `head_sha` of the push that added it |
 | `verdicts` | Append-only verdict log. Its seq is the pull cursor |
-| `pushes` | One row per push call |
+| `pushes` | One row per push call. `scanned_at` is set only on the sample load's pushes: when the scan it replays ran |
 | `areas` | Per-directory churn and authors for the opportunity map. Each push replaces the project's set |
 | `rules` | Rules the skill offered, one row per `(project_key, id)`. While `offered` a later sync refreshes the text; once a person accepted or declined it (`decided_by`, `decided_at`) a sync never reverts it |
 | `outcomes` | One row per accepted item (`ref` is the key): the owner's rating (`right`, `partly`, `wrong`), an optional note and the issue |
+| `tool_calls` | One row per `<surface>:<tool>` (`mcp:` or `rovo:`): how many calls reached the app and the newest one's time. Written once per call at the dispatch door; a failed write never fails the call. The setup checklist reads the `mcp:` rows |
 
 Forge SQL has no multi-statement transactions. `@forge/sql` sends each statement as its own request, and
 the query policy allows one statement per request. The core is correct without transactions:
@@ -217,9 +218,63 @@ that names the allowlist, and the skill continues without goals.
 3. Optional: to drive Dowser from Claude Code, enable external MCP access for the app (see
    "Connect an external MCP client" above) and add the server.
 4. Run the Dowser skill on a repository (`skill/SKILL.md`). Its push fills the inbox, and the inbox groups
-   items by scan run.
+   items by scan run. Without a local skill, load the sample inbox instead (see "Sample inbox" below).
 5. Triage in **Apps > Dowser > Inbox**: accept, reject with a reason, snooze or merge. Or ask the Dowser
    agent in Rovo ("What should we build next?"). The next scan pulls the verdicts back.
+
+## Sample inbox
+
+A judge who has no coding agent connected can still see a real inbox. **Load a sample scan** on the inbox's
+first-run screen (resolver `sample.load`) files a real Dowser scan of Dowser's own public repository
+(`https://github.com/xkazm04/dowser`) into an inbox with the reserved key `dowser-sample`.
+
+- **Where it comes from.** `forge/src/sample/self-scan.json` (`dowser-sample/1`) is bundled with the app. It
+  holds the scan's verified cards (ranked and reserve, quotes included: the code is public), the areas of the
+  opportunity map, the scan's trust levels, and the `source`: repo URL, the scanned commit, when the scan ran and
+  its run id. Evidence links point at that commit on GitHub, so it must be a pushed commit.
+- **How it loads.** The same core push code a scan uses files it (`pushProposals` in pushes of 10 cards, then
+  `pushAreas`, then `reflectSync` with the trust), so the cards, the map and the Learning tab behave as for a
+  scan. The person who loads it is its creator. Each call has a 12 s budget of its own: past it, no new step
+  (a push of cards, the areas, the trust) starts, and the answer is `{project_key, created, more: true}`. The
+  first step always runs, so every call makes progress. The UI calls `sample.load` again until the answer has
+  no `more`. A load cut short any other way (a timeout) is completed by the next call too. A complete sample
+  answers `{project_key, created: 0, already: true}` and writes nothing.
+- **All inboxes leaves it out.** The sample never mixes into an all-inbox view: `inbox.list` without a
+  `project_key` (and Rovo's `dowser_inbox_list`, and the Confluence byline) lists no sample card, unless the
+  sample is the only inbox the caller can see. Its summary still comes back in `inboxes[]` with `sample: true`,
+  so the inbox picker can offer it, and its counts are its own inbox's.
+- **How it is marked.** The key is the sample predicate (there is no flag column). Its inbox summary carries
+  `sample: true` and `source`; every card of it carries `sample: true`, set by the server. No MCP tool can
+  write to the key (contract: "dowser-sample is reserved for the sample inbox"), so a scan never lands in it.
+- **Accept creates a real issue.** Accepting a sample card creates a Jira issue in the chosen project with the
+  label `dowser-sample`, and its description opens with "Created from Dowser sample data: a scan of Dowser's
+  own public repository." (A project whose create screen has no Labels field gets the issue without the label.)
+- **Remove.** `sample.remove` deletes every row of the sample in every table (proposals, evidence, verdicts,
+  pushes, areas, rules, outcomes, directions, trust, its verdict counter, the inbox). Only the person who
+  loaded it or a Jira admin may remove it. Issues that accepted sample cards created stay in Jira; the answer
+  counts them (`issues_kept`). DW numbers are not reused, so a reload numbers its cards anew.
+- **Load time.** A load costs about 8 Forge SQL statements per card (plus a few per push, area and the trust):
+  40 cards with 3 evidence rows each is 340 statements, 10-20 s at 30-60 ms a statement, which the 12 s budget
+  spreads over two or three calls.
+- **Re-capture after a later scan.** Scan a clean clone with the dogfood harness and an empty world, keeping
+  the clone (`node tools/dogfood.mjs --seed <empty world> --keep`), then:
+
+  ```
+  node tools/sample-capture.mjs --home <the scan's DOWSER_HOME> --repo <the kept clone> \
+    --repo-url https://github.com/xkazm04/dowser --out forge/src/sample/self-scan.json
+  ```
+
+  It reads the newest done run (or `--run <id>`) through the skill's own modules, checks every card and area as
+  the Forge push would, and writes a deterministic file. Commit it and deploy.
+
+### Setup checklist (`setup.status`)
+
+The first-run screen also shows how to connect a coding agent: the app's MCP URL
+(`https://mcp.atlassian.com/forge/<appId>`, from the app context) and whether any MCP tool call has reached
+the app. That second line reads **calls seen**, not "enabled": whether an admin turned external MCP access on
+cannot be read by the app, so the honest signal is the `mcp:` rows of `tool_calls` (`calls`, and once there is
+one, `last_at` and `last_tool`). `calls: 0` is a measured count. `sample.loaded` says whether the sample inbox
+exists.
 
 ## Surfaces
 

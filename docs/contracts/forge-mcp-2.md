@@ -44,7 +44,11 @@ context (`context.accountId`), never from an argument.
 - **Timestamps** are ISO 8601 UTC strings (`2026-10-27T10:00:00.000Z`).
 - **`project_key`** is the key Dowser derives from the repo's `origin` URL (`github-com-Acme-Shop`; see
   `docs/data-model.md`). The agent takes it from the `init` output. Forge keeps one inbox per
-  `project_key` and creates it on the first push.
+  `project_key` and creates it on the first push. **`dowser-sample` is reserved** for the app's sample inbox
+  (a bundled scan of Dowser's own repository, loaded from the Jira inbox): `dowser_proposals_push`,
+  `dowser_areas_push`, `dowser_reflect_sync` and `dowser_direction_get` with that key answer `bad-input`
+  "dowser-sample is reserved for the sample inbox", before any access check. No key the skill derives can
+  equal it.
 - **`fp`** is the 16-hex fingerprint of a proposal. It is the identity of a proposal across both sides.
 - **`external_ref`** is the Dowser inbox item (`DW-12`, unique per installation). **`external_url`** is a
   link to that item in the inbox.
@@ -430,3 +434,7 @@ Additive amendments:
   confidence, effort, risk, lens and kind, MVP). `dowser_reflect_sync` takes an optional `trust_json` (the
   skill's per-slice trust) and the Learning tab shows it. A /1 record and a sync without `trust_json` behave as
   before.
+- **Reserved sample key (2026-11-04).** The project key `dowser-sample` belongs to the sample inbox: the four
+  tools that write to or read for one inbox (push, areas, reflect sync, direction get) answer `bad-input` for
+  it. `dowser_verdicts_pull` still reads it for whoever may open it. A skill never derives that key, so nothing
+  it sends changes.

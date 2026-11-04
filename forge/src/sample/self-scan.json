@@ -1,0 +1,95 @@
+{
+  "schema": "dowser-sample/1",
+  "placeholder": true,
+  "source": {
+    "repo_url": "https://github.com/xkazm04/dowser",
+    "head_sha": "414e6ed17aea40f0486f150180ab9d798e264d4f",
+    "scanned_at": "2026-11-04T09:00:00.000Z",
+    "run_id": "sample-placeholder"
+  },
+  "lens_kinds_json": "{\"doc-drift\":[\"contradicted-by-code\",\"removed-still-documented\",\"undocumented-change\",\"stale-example\",\"missing-doc\"],\"opportunity\":[\"expose-capability\",\"extend-capability\",\"missing-capability\",\"goal-gap\",\"workflow-shortcut\"],\"security-cra\":[\"vulnerable-dependency\",\"risky-pattern\",\"secret-exposure\",\"vulnerability-handling-gap\",\"sbom-gap\",\"update-mechanism-gap\"],\"ux-friction\":[\"dead-end\",\"unrecoverable-error\",\"dark-pattern\",\"accessibility-gap\",\"missing-feedback\",\"confusing-copy\"]}",
+  "proposals": [
+    {
+      "fp": "ff9a917db2919ce9",
+      "lens": "doc-drift",
+      "kind": "contradicted-by-code",
+      "topic": "forge app tool count",
+      "anchors": ["docs/forge-app.md", "forge/src/core/app.mjs#TOOL_NAMES"],
+      "title": "Say the app serves eight MCP tools, not seven",
+      "rationale": "The module map says seven forge-mcp-2 tools; the dispatch door lists eight.",
+      "body": "## Summary\nThe Forge app doc undercounts its MCP tools.\n\n## Description\nThe module map in `docs/forge-app.md` names seven tools, while `TOOL_NAMES` holds eight since `dowser_direction_get` landed.\n\n## Flow\n- read the module map\n- connect a coding agent\n- see a tool the doc does not name\n\n## Expected impact\nA judge reading the doc sees the tool list the agent sees.\n\n## Evaluation\nThe module map names every entry of `TOOL_NAMES`.",
+      "evidence": [
+        { "type": "doc", "ref": "docs/forge-app.md:14", "quote": "| `rovo:mcp` | `dowser-mcp` | `mcp` | The seven forge-mcp-2 tools, for Claude Code and Codex CLI |" },
+        { "type": "code", "ref": "forge/src/core/app.mjs:47", "quote": "/** The eight forge-mcp-2 tools (reflect_sync and direction_get are additive to the original six). */" }
+      ],
+      "effort": { "size": "XS", "basis": ["one table row"] },
+      "confidence": "high",
+      "confidence_why": "the doc line and the code line contradict each other directly",
+      "delivery_risk": { "blast": "low" },
+      "provenance": { "lens_version": "0.3.1" },
+      "status": "verified"
+    },
+    {
+      "fp": "d19b54b00926df7b",
+      "lens": "opportunity",
+      "kind": "workflow-shortcut",
+      "topic": "bulk accept from the inbox",
+      "anchors": ["forge/src/core/verdicts.mjs#accept"],
+      "title": "Accept several proposals at once",
+      "rationale": "Reject and snooze take many refs; accept takes one, so a good scan is accepted card by card.",
+      "body": "## Summary\nLet a person accept a selection of proposals in one step.\n\n## Description\n`accept` creates one Jira issue per call while `reject` and `snooze` already take a list of refs.\n\n## Flow\n- select the cards to keep\n- accept them together\n- get one issue per card\n\n## Expected impact\nFewer clicks after a strong scan.\n\n## Evaluation\nTime from first to last decision on a push drops.",
+      "evidence": [
+        { "type": "code", "ref": "forge/src/core/verdicts.mjs:149", "quote": "export async function accept(deps, args, who) {" }
+      ],
+      "effort": { "size": "M", "basis": ["resolver, claim per item, UI selection"] },
+      "confidence": "medium",
+      "confidence_why": "the code shows the gap; demand is not measured",
+      "delivery_risk": { "blast": "medium" },
+      "provenance": { "lens_version": "0.3.2" },
+      "status": "verified"
+    },
+    {
+      "fp": "07d3962cd2843a56",
+      "lens": "security-cra",
+      "kind": "risky-pattern",
+      "topic": "plain http repo links",
+      "anchors": ["forge/src/core/push.mjs#webRepoUrl"],
+      "title": "Decide whether plain http repo links stay allowed",
+      "rationale": "A pushed repo_url may be http, so evidence links can point at an unencrypted host.",
+      "body": "## Summary\nRepo links accept `http:` as well as `https:`.\n\n## Description\n`webRepoUrl` keeps an http remote so self-hosted servers link at all; the inbox then shows plain http links.\n\n## Flow\n- push from an http remote\n- open an evidence link\n- the browser loads it unencrypted\n\n## Expected impact\nA documented, deliberate choice either way.\n\n## Evaluation\nThe security notes say which schemes a repo link may use.",
+      "evidence": [
+        { "type": "code", "ref": "forge/src/core/push.mjs:37", "quote": "try { return ['https:', 'http:'].includes(new URL(v).protocol); } catch { return false; }" }
+      ],
+      "effort": { "size": "S", "basis": ["one check and a doc line"] },
+      "confidence": "medium",
+      "confidence_why": "the pattern is in the code; whether it matters depends on the host",
+      "delivery_risk": { "blast": "low" },
+      "provenance": { "lens_version": "0.3.1" },
+      "status": "verified"
+    },
+    {
+      "fp": "b939728f88ef35fa",
+      "lens": "ux-friction",
+      "kind": "missing-feedback",
+      "topic": "accept in progress dead end",
+      "anchors": ["forge/src/core/verdicts.mjs#accept"],
+      "title": "Show progress when an accept is already running",
+      "rationale": "A second click on Accept answers 'reload in a minute' with nothing to watch.",
+      "body": "## Summary\nA repeated accept tells the person to wait without showing what is happening.\n\n## Description\nThe accept claim refuses a second accept for two minutes and answers with a reload hint.\n\n## Flow\n- click Accept\n- click it again while Jira is slow\n- read reload in a minute\n\n## Expected impact\nNo duplicate clicks and no guessing.\n\n## Evaluation\nFewer repeated accepts per issue created.",
+      "evidence": [
+        { "type": "code", "ref": "forge/src/core/verdicts.mjs:172", "quote": "throw new AppError('bad-input', `an accept of ${p.ref} is already in progress; reload in a minute`);" }
+      ],
+      "effort": { "size": "S", "basis": ["one UI state"] },
+      "confidence": "medium",
+      "confidence_why": "the message is in the code; how often it shows is not measured",
+      "delivery_risk": { "blast": "low" },
+      "provenance": { "lens_version": "0.3.1" },
+      "status": "verified"
+    }
+  ],
+  "areas": [
+    { "path": "docs", "files": 20, "churn_90d": 56, "authors_90d": 1, "last_change": "2026-10-31T04:26:07.000Z" },
+    { "path": "forge/src", "files": 22, "churn_90d": 22, "authors_90d": 1, "last_change": "2026-10-31T00:05:58.000Z" }
+  ],
+  "trust_json": "{\"slices\":[{\"slice\":\"product|opportunity|low|M\",\"level\":0,\"ceiling\":1,\"start\":0,\"n\":0}],\"events\":[]}"
+}

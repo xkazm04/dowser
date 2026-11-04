@@ -7,7 +7,7 @@ import { fingerprint } from '../shared/fingerprint.mjs';
 import { STORE_OWNED, resurfaces, validateCandidate } from '../shared/model.mjs';
 import { PUSH_MAX } from './types.mjs';
 import { DuplicateKey, AppError, isObj, needStr, optStr, sqlv } from './util.mjs';
-import { ensureInbox, getByFp, nextCounter, uniteEvidence } from './store.mjs';
+import { ensureInbox, getByFp, nextCounter, refuseSampleKey, uniteEvidence } from './store.mjs';
 import { deciderOf } from './verdicts.mjs';
 
 /**
@@ -149,15 +149,18 @@ const rankCols = (record) => [
 ];
 
 /**
- * `dowser_proposals_push`.
+ * `dowser_proposals_push`. `o.sample` is the sample load's bypass of the reserved-key refusal (core/sample.mjs) and
+ * `o.scannedAt` the time of the scan it replays, stored on the push row (`pushes.scanned_at`, v025).
  * @param {Deps} deps
  * @param {Record<string, unknown>} args
  * @param {string} accountId  the caller; a new inbox records it as its creator
+ * @param {{sample?: boolean, scannedAt?: string}} [o]
  * @returns {Promise<PushOutput>}
  */
-export async function pushProposals(deps, args, accountId) {
+export async function pushProposals(deps, args, accountId, o = {}) {
   const { db } = deps;
   const projectKey = needStr(args, 'project_key');
+  refuseSampleKey(projectKey, o);
   if (!PROJECT_KEY_RE.test(projectKey)) throw new AppError('bad-input', 'project_key must be 1-191 letters, digits or hyphens, starting with a letter or digit');
   const runId = needStr(args, 'run_id');
   const repoUrl = optStr(args, 'repo_url');
@@ -181,8 +184,10 @@ export async function pushProposals(deps, args, accountId) {
     if (r.result === 'updated') updated++;
     results.push(r);
   }
-  await db.exec('INSERT INTO pushes (id, project_key, run_id, head_sha, repo_url, at, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [crypto.randomUUID(), projectKey, runId, sqlv(headSha), sqlv(repoUrl), at, created, updated]);
+  // scanned_at only on a sample push, so a scan's push never depends on the v025 column.
+  const extra = o.scannedAt ? { col: ', scanned_at', mark: ', ?', vals: [o.scannedAt] } : { col: '', mark: '', vals: [] };
+  await db.exec(`INSERT INTO pushes (id, project_key, run_id, head_sha, repo_url, at, created, updated${extra.col}) VALUES (?, ?, ?, ?, ?, ?, ?, ?${extra.mark})`,
+    [crypto.randomUUID(), projectKey, runId, sqlv(headSha), sqlv(repoUrl), at, created, updated, ...extra.vals]);
   return { results };
 }
 
@@ -205,7 +210,7 @@ async function fileOne(deps, o) {
           VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, 0, '', ?, ?, ?, ?, 0, 'new', ?, ?, ?, ?)`,
         [n, ref, o.projectKey, o.fp, o.record.lens, o.record.title, o.record.confidence, storedRecord(o.record), o.runId, o.runId, o.at, o.at, ...rankCols(o.record)],
       );
-      const u = await uniteEvidence(db, n, o.record.evidence, { runId: o.runId, headSha: o.headSha, at: o.at });
+      const u = await uniteEvidence(db, n, o.record.evidence, { runId: o.runId, headSha: o.headSha, at: o.at, fresh: true });
       await db.exec('UPDATE proposals SET evidence_count = ?, evidence_types = ? WHERE id = ?', [u.count, u.types.join(','), n]);
       return { fp: o.fp, result: 'created', external_ref: ref, external_url: await links.inboxUrl(ref) };
     } catch (e) {

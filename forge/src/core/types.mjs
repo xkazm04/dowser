@@ -39,6 +39,16 @@ export const DIRECTION_SPACES_MAX = 10;
 export const SPACE_KEY_RE = /^[A-Za-z0-9_~-]+$/;
 /** Inbox page size (the Custom UI invoke payload cap is 500 KB). */
 export const PAGE_SIZE = 50;
+/**
+ * The reserved project key of the sample inbox (core/sample.mjs): the key IS the sample predicate (no flag column).
+ * Only `sample.load` writes to it; every MCP tool and Rovo write refuses it. No skill-generated key can equal it
+ * (the skill's keys are `<host>-<owner>-<repo>` or `local-<12 hex>`).
+ */
+export const SAMPLE_KEY = 'dowser-sample';
+/** The Jira label an accepted sample card's issue carries. */
+export const SAMPLE_LABEL = 'dowser-sample';
+/** The `bad-input` message a tool or Rovo write to SAMPLE_KEY answers. */
+export const SAMPLE_RESERVED = `${SAMPLE_KEY} is reserved for the sample inbox`;
 
 /**
  * @typedef {typeof INBOX_STATUSES[number]} InboxStatus
@@ -105,12 +115,27 @@ export const PAGE_SIZE = 50;
  * The card the Custom UI renders: the proposal record plus inbox state.
  * @typedef {{type: string, ref: string, url?: string, quote?: string, link?: string}} CardEvidence
  * @typedef {ProposalRecord & {ref: string, status: InboxStatus, project_key: string, evidence: CardEvidence[],
- *   reopened?: boolean, change?: 'new' | 'grew' | 'reopened', issue_ref?: string, issue_url?: string, snooze_until?: string, first_seen: string, last_push_at: string}} Card
- *   `change` is set on open cards inside an InboxGroup: what that push did to the item.
+ *   reopened?: boolean, change?: 'new' | 'grew' | 'reopened', issue_ref?: string, issue_url?: string, snooze_until?: string, first_seen: string, last_push_at: string,
+ *   sample?: true}} Card
+ *   `change` is set on open cards inside an InboxGroup: what that push did to the item. `sample` is set by the server
+ *   on every card of the sample inbox (SAMPLE_KEY), omitted otherwise.
  * @typedef {{run_id: string, at: string, head_sha?: string, items: Card[]}} InboxGroup
  * @typedef {{run_id: string, at: string, head_sha?: string, created: number, updated: number}} LastPush
+ * @typedef {{repo_url?: string, head_sha?: string, scanned_at?: string}} SampleSource  what the sample is a scan of
  * @typedef {{project_key: string, repo_url?: string, jira_project_key?: string, issue_type_id?: string, open: number,
- *   by_status: Record<InboxStatus, number>, last_push?: LastPush}} InboxSummary
+ *   by_status: Record<InboxStatus, number>, last_push?: LastPush, sample?: true, source?: SampleSource}} InboxSummary
+ *   `sample` and `source` only on the sample inbox.
+ */
+
+/**
+ * The first-run screen (core/sample.mjs).
+ * @typedef {{project_key: string, created: number, already?: true, more?: true}} SampleLoadOutput  `created` = items this
+ *   call filed (0 with `already` when the sample was complete and nothing was left to do); `more` = the call's time
+ *   budget ran out with work left: call again (the next call resumes)
+ * @typedef {{removed: true, issues_kept: number}} SampleRemoveOutput  `issues_kept` = sample items with a Jira issue
+ *   (a measured count: 0 is sent); the issues stay in Jira
+ * @typedef {{mcp_url?: string, tools: {calls: number, last_at?: string, last_tool?: string}, sample: {loaded: boolean}}} SetupStatus
+ *   `tools` counts the MCP tool calls that reached the app (`calls` 0 when none: measured), not whether tools are enabled
  */
 
 /**
@@ -158,6 +183,9 @@ export const PAGE_SIZE = 50;
  *   'outcome.record': [{ref: string, rating: OutcomeRating, note?: string}, {outcome: Outcome & {title: string, decided_by_name?: string}, candidates: OutcomeCandidate[]}],
  *   'direction.get': [{project_key: string}, DirectionOutput],
  *   'direction.set': [{project_key: string, lens: string} & LensDirection, {lens: string, direction?: LensDirection}],
+ *   'sample.load': [{}, SampleLoadOutput],
+ *   'sample.remove': [{}, SampleRemoveOutput],
+ *   'setup.status': [{}, SetupStatus],
  * }} ResolverContract
  *   `direction.set` replaces the lens's direction whole; all four fields absent or empty clears it (`direction` omitted).
  */

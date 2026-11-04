@@ -179,17 +179,22 @@ export function factsTable(card) {
   ]);
 }
 
+/** The paragraph an issue created from a sample card opens with. */
+export const SAMPLE_NOTE = "Created from Dowser sample data: a scan of Dowser's own public repository.";
+
 /**
  * The description of the issue an accept creates (contract amendment 3, the UI preview shows the same order):
  * the facts table, the rationale, the card body (its five sections), the supporting views under "Supporting views"
- * when the card has any, the evidence list with links, then "Proposed by Dowser (DW-n)".
+ * when the card has any, the evidence list with links, then "Proposed by Dowser (DW-n)". `o.sample` (a card of the
+ * sample inbox) opens it with SAMPLE_NOTE, so the issue says where it came from before anything else.
  * @param {Card} card
  * @param {string} [inboxUrl]
+ * @param {{sample?: boolean}} [o]
  * @returns {AdfDoc}
  */
-export function issueDescription(card, inboxUrl) {
+export function issueDescription(card, inboxUrl, o = {}) {
   /** @type {AdfNode[]} */
-  const content = [factsTable(card), paragraph(inline(String(card.rationale)))];
+  const content = [...(o.sample ? [paragraph([text(SAMPLE_NOTE)])] : []), factsTable(card), paragraph(inline(String(card.rationale)))];
   content.push(...markdownToAdf(issueBody(card.body)));
   if (Array.isArray(card.artifacts) && card.artifacts.length > 0) {
     const refs = card.evidence.map((e) => e.ref);

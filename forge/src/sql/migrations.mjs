@@ -222,4 +222,18 @@ export const MIGRATIONS = Object.freeze([
   PRIMARY KEY (project_key)
 )`,
   },
+  {
+    name: 'v024_tool_calls',
+    // Which tool calls have reached the app (the setup checklist: "calls seen", never "enabled"): one row per
+    // `<surface>:<tool>` (surface mcp | rovo), upserted once per call at the dispatch door (core/app.mjs).
+    statement: `CREATE TABLE IF NOT EXISTS tool_calls (
+  name VARCHAR(96) NOT NULL,
+  calls INT NOT NULL,
+  last_at VARCHAR(32) NOT NULL,
+  PRIMARY KEY (name)
+)`,
+  },
+  // The sample inbox's scan time (core/sample.mjs): when the scan the sample replays ran, set only on the pushes
+  // `sample.load` writes; NULL on every scan push (its `at` is the scan's own push time).
+  { name: 'v025_pushes_scanned_at', statement: 'ALTER TABLE pushes ADD COLUMN scanned_at VARCHAR(32)' },
 ]);

@@ -14,6 +14,8 @@ import { MIGRATIONS } from '../src/sql/migrations.mjs';
 
 export const ME_ID = '712020:7d1c-person';
 export const ME = ME_ID;
+/** The MCP URL the fake Links port answers (the atlassian adapter builds it from the app id). */
+export const MCP_URL = 'https://mcp.atlassian.com/forge/test-app-id';
 
 /** @param {unknown} v */
 const bind = (v) => (typeof v === 'boolean' ? Number(v) : /** @type {any} */ (v));
@@ -60,11 +62,11 @@ export function fakeJira() {
     n: 40,
     /** @type {Record<string, {name: string, category: 'new' | 'indeterminate' | 'done'}>} */
     statuses: {},
-    /** @type {{projectKey: string, issueTypeId: string, summary: string, description: AdfDoc}[]} */
+    /** @type {{projectKey: string, issueTypeId: string, summary: string, description: AdfDoc, labels?: string[]}[]} */
     created: [],
     /** @type {{issueKey: string, body: AdfDoc}[]} */
     comments: [],
-    /** @param {{projectKey: string, issueTypeId: string, summary: string, description: AdfDoc}} f */
+    /** @param {{projectKey: string, issueTypeId: string, summary: string, description: AdfDoc, labels?: string[]}} f */
     async createIssue(f) {
       if (j.fail) throw new Error('Jira answered 503');
       j.created.push(f);
@@ -156,7 +158,7 @@ export function makeDeps() {
   const logs = [];
   return {
     db, jira, users, perms, logs, clock: c, now: c.now, log: (/** @type {string} */ l) => { logs.push(l); },
-    links: { inboxUrl: async (ref) => `https://acme.atlassian.net/jira/apps/app/env/inbox?ref=${ref}` },
+    links: { inboxUrl: async (ref) => `https://acme.atlassian.net/jira/apps/app/env/inbox?ref=${ref}`, mcpUrl: () => MCP_URL },
     sources: {
       tickets: async () => [],
       pages: async () => [],

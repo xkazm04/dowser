@@ -8,7 +8,7 @@
 import { LENSES, isOneOf } from '../shared/model.mjs';
 import { namesOf } from './names.mjs';
 import { logLine } from './observe.mjs';
-import { findProposal, needInbox, toProposal } from './store.mjs';
+import { findProposal, needInbox, refuseSampleKey, toProposal } from './store.mjs';
 import { INBOX_STATUSES, NOTE_MAX, OUTCOMES_MAX, OUTCOME_RATINGS, RULES_MAX, RULE_TEXT_MAX, RULE_TITLES_MAX, TRUST_EVENTS_MAX, TRUST_SLICES_MAX } from './types.mjs';
 import { AppError, DuplicateKey, isIso, isObj, needStr, omitAbsent, optStr, sqlv, str } from './util.mjs';
 import { deciderOf } from './verdicts.mjs';
@@ -69,11 +69,13 @@ function checkOffer(raw, i) {
  * has its text and titles refreshed), then answers the decided rules and the newest outcomes.
  * @param {Deps} deps
  * @param {Record<string, unknown>} args
+ * @param {{sample?: boolean}} [o]  `sample`: the sample load's bypass of the reserved-key refusal (core/sample.mjs)
  * @returns {Promise<import('./types.mjs').ReflectOutput>}
  */
-export async function reflectSync(deps, args) {
+export async function reflectSync(deps, args, o = {}) {
   const { db } = deps;
   const projectKey = needStr(args, 'project_key');
+  refuseSampleKey(projectKey, o);
   const raw = args.rules_json;
   if (raw !== undefined && raw !== null && typeof raw !== 'string') throw new AppError('bad-input', 'rules_json must be a JSON array as a string');
   const offers = typeof raw === 'string' && raw.trim() !== '' ? parseJsonArray(args, 'rules_json', RULES_MAX).map(checkOffer) : [];

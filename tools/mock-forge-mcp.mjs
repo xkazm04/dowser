@@ -23,7 +23,9 @@
 // Jira issue; an `accepted` decision fabricates the Jira issue (`issue_ref` MOCK-<n>, `issue_url`) and the
 // verdict carries it. A re-push unites evidence by evidence key (skill/scripts/lib/fingerprint.mjs evidenceKey)
 // and reopens a snoozed item on any new key, a rejected one under the store's resurfacing rule
-// (skill/scripts/lib/model.mjs resurfaces); an accepted or merged item only gains evidence.
+// (skill/scripts/lib/model.mjs resurfaces); an accepted or merged item only gains evidence. The project key
+// `dowser-sample` is reserved for Forge's sample inbox: push, areas, reflect sync and direction get refuse it
+// with `bad-input`, as Forge does.
 //
 // Framing copied from bp's apps/mcp/bp-mcp.mjs: JSON-RPC 2.0 over newline-delimited stdin/stdout, Node builtins
 // only (no SDK); stdout carries protocol only, logs go to stderr. Methods: initialize (echoes the client's
@@ -502,6 +504,10 @@ function mockTrust(b, args) {
   return t ? { trust: t } : {};
 }
 
+/** The sample inbox's reserved project key (Forge core/types.mjs SAMPLE_KEY) and the tools that refuse it. */
+export const SAMPLE_KEY = 'dowser-sample';
+const SAMPLE_REFUSED = ['dowser_proposals_push', 'dowser_areas_push', 'dowser_reflect_sync', 'dowser_direction_get'];
+
 /** The tools by name. @type {Record<string, (b: Backend, args: Obj) => Obj>} */
 const HANDLERS = {
   dowser_sources_tickets: dowserSourcesTickets,
@@ -529,6 +535,10 @@ const HANDLERS = {
 export function callTool(b, name, args) {
   const handler = Object.hasOwn(HANDLERS, name) ? HANDLERS[name] : undefined;
   if (!handler) throw new ToolError('bad-input', `no tool ${name}`);
+  // As Forge (core/app.mjs): the sample inbox's key is reserved, so a scan's writes never land in it.
+  if (SAMPLE_REFUSED.includes(name) && typeof args?.project_key === 'string' && args.project_key.trim() === SAMPLE_KEY) {
+    throw new ToolError('bad-input', `${SAMPLE_KEY} is reserved for the sample inbox`);
+  }
   return handler(b, args);
 }
 

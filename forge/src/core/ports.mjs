@@ -35,12 +35,13 @@
  * Jira, as the app (F5: accept creates the issue as the app). Every method throws on failure; the core turns
  * that into `unavailable` and writes nothing.
  * @typedef {{
- *   createIssue: (f: {projectKey: string, issueTypeId: string, summary: string, description: AdfDoc}) => Promise<{key: string, url: string}>,
+ *   createIssue: (f: {projectKey: string, issueTypeId: string, summary: string, description: AdfDoc, labels?: string[]}) => Promise<{key: string, url: string}>,
  *   addComment: (issueKey: string, body: AdfDoc) => Promise<void>,
  *   listProjects: () => Promise<{key: string, name: string, issue_types: {id: string, name: string}[]}[]>,
  *   issueStatuses: (keys: string[]) => Promise<Record<string, {name: string, category: 'new' | 'indeterminate' | 'done'}>>,
  * }} Jira
  *  `issueStatuses` answers only the keys Jira returned (a missing key is unreadable or gone); it throws on failure.
+ *  `labels` (createIssue) is set only on an issue from the sample inbox (`dowser-sample`).
  */
 
 /**
@@ -54,9 +55,11 @@
  */
 
 /**
- * Links into the product.
+ * Links into the product. `mcpUrl` is the app's MCP server URL a coding agent connects to (the setup checklist);
+ * undefined where the app context is unknown, and the method is absent where there is no MCP server (local).
  * @typedef {{
  *   inboxUrl: (ref: string) => Promise<string>,
+ *   mcpUrl?: () => string | undefined,
  * }} Links
  */
 

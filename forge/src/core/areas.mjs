@@ -5,7 +5,7 @@
 import { normalizeAnchor, parseRef } from '../shared/fingerprint.mjs';
 import { AREAS_MAX } from './types.mjs';
 import { PROJECT_KEY_RE, parseJsonArray } from './push.mjs';
-import { ensureInbox, needInbox, toProposal } from './store.mjs';
+import { ensureInbox, needInbox, refuseSampleKey, toProposal } from './store.mjs';
 import { deciderOf } from './verdicts.mjs';
 import { AppError, isIso, isObj, needStr, num, omitAbsent, sqlv } from './util.mjs';
 
@@ -49,11 +49,13 @@ export function areaProblem(a) {
  * @param {Deps} deps
  * @param {Record<string, unknown>} args
  * @param {string} accountId  the caller; a new inbox records it as its creator
+ * @param {{sample?: boolean}} [o]  `sample`: the sample load's bypass of the reserved-key refusal (core/sample.mjs)
  * @returns {Promise<{stored: number}>}
  */
-export async function pushAreas(deps, args, accountId) {
+export async function pushAreas(deps, args, accountId, o = {}) {
   const { db } = deps;
   const projectKey = needStr(args, 'project_key');
+  refuseSampleKey(projectKey, o);
   // An areas push can create the inbox too, so it takes the same project_key shape as a proposals push.
   if (!PROJECT_KEY_RE.test(projectKey)) throw new AppError('bad-input', 'project_key must be 1-191 letters, digits or hyphens, starting with a letter or digit');
   const runId = needStr(args, 'run_id');

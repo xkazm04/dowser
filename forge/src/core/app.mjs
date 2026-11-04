@@ -5,15 +5,16 @@
 import { getProposal, bylineForPage, inboxSummaries, listInbox, panelForIssue, cardOf, historyOf } from './cards.mjs';
 import { mapData, pushAreas } from './areas.mjs';
 import { pushProposals } from './push.mjs';
-import { observed } from './observe.mjs';
+import { observed, recordCall } from './observe.mjs';
+import { loadSample, removeSample, setupStatus } from './sample.mjs';
 import { outcomeRecord, reflectData, reflectSync, ruleDecide } from './reflect.mjs';
 import { sourcesGoals, sourcesPages, sourcesTickets } from './sources.mjs';
 import { directionGet, directionSet, directionTool } from './direction.mjs';
-import { getInbox } from './store.mjs';
+import { getInbox, isSampleKey } from './store.mjs';
 import { accept, deciderOf, merge, pullVerdicts, record, reject, snooze } from './verdicts.mjs';
 import { accessFor } from './access.mjs';
 import { AppError, FP_RE, ISSUE_KEY_RE, isObj, needStr, omitAbsent, optStr } from './util.mjs';
-import { INBOX_STATUSES, REF_RE } from './types.mjs';
+import { INBOX_STATUSES, REF_RE, SAMPLE_RESERVED } from './types.mjs';
 import { LENSES, isOneOf } from '../shared/model.mjs';
 
 /**
@@ -162,6 +163,12 @@ function needAccount(accountId) {
 const argsOf = (payload) => (isObj(payload) ? payload : {});
 
 /**
+ * The tools that write to (or read on behalf of a scan from) one inbox: each refuses the sample inbox's reserved
+ * key with `bad-input` before any access check, so a scan never lands in the sample (core/sample.mjs).
+ */
+const SAMPLE_REFUSED = new Set(['dowser_proposals_push', 'dowser_areas_push', 'dowser_reflect_sync', 'dowser_direction_get']);
+
+/**
  * A forge-mcp-2 tool call.
  * @param {Deps} deps
  * @param {string | undefined} name
@@ -170,11 +177,31 @@ const argsOf = (payload) => (isObj(payload) ? payload : {});
  * @returns {Promise<object>} the tool's JSON, or `{error, message}`
  */
 export function runTool(deps, name, payload, accountId) {
-  return observed(deps, 'tool', name, payload, () => answer(async () => {
-    const id = needAccount(accountId);
-    if (!name || !Object.hasOwn(TOOLS, name)) throw new AppError('bad-input', `unknown tool ${JSON.stringify(name)}`);
-    return TOOLS[/** @type {typeof TOOL_NAMES[number]} */ (name)](deps, argsOf(payload), id, accessFor(deps, id));
-  }));
+  return toolCall(deps, name, payload, accountId, 'mcp');
+}
+
+/**
+ * A tool call from `surface` (an MCP client, or the Rovo agent running a shared tool). A call to a known tool is
+ * counted in `tool_calls` (observe.mjs recordCall) once it has answered, whatever it answered.
+ * @param {Deps} deps
+ * @param {string | undefined} name
+ * @param {unknown} payload
+ * @param {unknown} accountId
+ * @param {'mcp' | 'rovo'} surface
+ * @returns {Promise<object>}
+ */
+function toolCall(deps, name, payload, accountId, surface) {
+  return observed(deps, 'tool', name, payload, async () => {
+    const out = await answer(async () => {
+      const id = needAccount(accountId);
+      if (!name || !Object.hasOwn(TOOLS, name)) throw new AppError('bad-input', `unknown tool ${JSON.stringify(name)}`);
+      const args = argsOf(payload);
+      if (SAMPLE_REFUSED.has(name) && isSampleKey(args.project_key)) throw new AppError('bad-input', SAMPLE_RESERVED);
+      return TOOLS[/** @type {typeof TOOL_NAMES[number]} */ (name)](deps, args, id, accessFor(deps, id));
+    });
+    if (name && Object.hasOwn(TOOLS, name)) await recordCall(deps, surface, name);
+    return out;
+  });
 }
 
 /**
@@ -223,6 +250,11 @@ export const RESOLVERS = {
   'outcome.record': async (d, p, id, _, acc) => { await acc.proposal(needStr(p, 'ref')); return outcomeRecord(d, p, id); },
   'direction.get': async (d, p, _, __, acc) => { await openProject(acc, p); return directionGet(d, p); },
   'direction.set': async (d, p, id, _, acc) => { await openProject(acc, p); return directionSet(d, p, id); },
+  // The first-run screen. Load and remove check their own access (core/sample.mjs): load opens an existing sample
+  // like any inbox; remove is for the person who loaded it or a Jira admin.
+  'sample.load': (d, _, id) => loadSample(d, id),
+  'sample.remove': (d, _, id) => removeSample(d, id),
+  'setup.status': (d) => setupStatus(d),
 };
 
 /**
@@ -290,6 +322,7 @@ const brief = (c) => omitAbsent({
   ref: c.ref, fp: c.fp, project_key: c.project_key, status: c.status, lens: c.lens, title: c.title, rationale: c.rationale,
   confidence: c.confidence, effort: c.effort?.size, score: c.score, band: c.band, mvp: c.mvp, evidence_count: c.evidence.length,
   evidence_types: [...new Set(c.evidence.map((e) => e.type))].sort(), reopened: c.reopened, issue_ref: c.issue_ref,
+  sample: c.sample,
 });
 
 /**
@@ -348,12 +381,18 @@ const ROVO = {
  * @returns {Promise<object>}
  */
 export function runRovo(deps, name, payload, accountId) {
-  if (name && /** @type {readonly string[]} */ (TOOL_NAMES).includes(name)) return runTool(deps, name, payload, accountId);
-  return observed(deps, 'rovo', name, payload, () => answer(async () => {
-    const id = needAccount(accountId);
-    if (!name || !Object.hasOwn(ROVO, name)) throw new AppError('bad-input', `unknown action ${JSON.stringify(name)}`);
-    return ROVO[/** @type {typeof ROVO_ACTIONS[number]} */ (name)](deps, argsOf(payload), id, accessFor(deps, id));
-  }));
+  if (name && /** @type {readonly string[]} */ (TOOL_NAMES).includes(name)) return toolCall(deps, name, payload, accountId, 'rovo');
+  // No Rovo action writes by project_key (dowser_verdict_record takes a ref; deciding a sample card is the
+  // point of the sample), so the reserved-key refusal is the shared tools' (toolCall).
+  return observed(deps, 'rovo', name, payload, async () => {
+    const out = await answer(async () => {
+      const id = needAccount(accountId);
+      if (!name || !Object.hasOwn(ROVO, name)) throw new AppError('bad-input', `unknown action ${JSON.stringify(name)}`);
+      return ROVO[/** @type {typeof ROVO_ACTIONS[number]} */ (name)](deps, argsOf(payload), id, accessFor(deps, id));
+    });
+    if (name && Object.hasOwn(ROVO, name)) await recordCall(deps, 'rovo', name);
+    return out;
+  });
 }
 
 

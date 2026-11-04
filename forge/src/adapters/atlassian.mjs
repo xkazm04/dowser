@@ -110,16 +110,28 @@ export const links = {
     const ctx = getAppContext();
     return `${await siteUrl()}/jira/apps/${ctx.appAri.appId}/${ctx.environmentAri.environmentId}/inbox?ref=${encodeURIComponent(ref)}`;
   },
+  // The rovo:mcp server a coding agent connects to: one URL per app (the setup checklist shows it).
+  mcpUrl() {
+    try {
+      const appId = getAppContext().appAri?.appId;
+      return appId ? `https://mcp.atlassian.com/forge/${appId}` : undefined;
+    } catch { return undefined; }
+  },
 };
 
 /** @type {Jira} */
 export const jira = {
-  async createIssue({ projectKey, issueTypeId, summary, description }) {
-    const res = await asApp().requestJira(route`/rest/api/3/issue`, {
+  async createIssue({ projectKey, issueTypeId, summary, description, labels }) {
+    /** @param {boolean} withLabels */
+    const post = (withLabels) => asApp().requestJira(route`/rest/api/3/issue`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ fields: { project: { key: projectKey }, issuetype: { id: issueTypeId }, summary, description } }),
+      body: JSON.stringify({ fields: { project: { key: projectKey }, issuetype: { id: issueTypeId }, summary, description, ...(withLabels ? { labels } : {}) } }),
     });
+    let res = await post(Boolean(labels?.length));
+    // A project whose create screen has no Labels field answers 400 to a label; the sample issue is then created
+    // without it (its description still opens with the sample line), rather than failing the accept.
+    if (res.status === 400 && labels?.length) res = await post(false);
     const out = await json(res, 'Jira create issue');
     const key = String(out.key);
     return { key, url: `${await siteUrl()}/browse/${key}` };

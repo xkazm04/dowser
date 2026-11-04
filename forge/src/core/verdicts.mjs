@@ -10,8 +10,8 @@
 import { REASONS, decisionProblem, isOneOf } from '../shared/model.mjs';
 import { issueDescription, mergeComment } from './adf.mjs';
 import { cardOf, toVerdict } from './cards.mjs';
-import { counterValue, findProposal, needInbox, nextCounter, toProposal } from './store.mjs';
-import { NOTE_MAX, REF_RE, VERDICT_STATUSES } from './types.mjs';
+import { counterValue, findProposal, isSampleKey, needInbox, nextCounter, toProposal } from './store.mjs';
+import { NOTE_MAX, REF_RE, SAMPLE_LABEL, VERDICT_STATUSES } from './types.mjs';
 import { AppError, DuplicateKey, FP_RE, ISSUE_KEY_RE, needStr, optStr, sqlv, str } from './util.mjs';
 
 /**
@@ -173,10 +173,15 @@ export async function accept(deps, args, who) {
   }
 
   const card = await cardOf(db, p);
+  // A sample card's issue is real but marked: the label and an opening line say it came from sample data.
+  const sample = isSampleKey(p.project_key);
   /** @type {{key: string, url: string}} */
   let issue;
   try {
-    issue = await deps.jira.createIssue({ projectKey, issueTypeId, summary: card.title, description: issueDescription(card, await links.inboxUrl(p.ref)) });
+    issue = await deps.jira.createIssue({
+      projectKey, issueTypeId, summary: card.title, description: issueDescription(card, await links.inboxUrl(p.ref), { sample }),
+      ...(sample ? { labels: [SAMPLE_LABEL] } : {}),
+    });
   } catch (e) {
     await db.exec('UPDATE proposals SET accept_claim = NULL WHERE id = ? AND accept_claim = ?', [p.id, claim]);
     throw new AppError('unavailable', `Jira did not create the issue (${/** @type {Error} */ (e).message}); ${p.ref} stays open`);

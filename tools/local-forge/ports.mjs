@@ -50,6 +50,9 @@ const LOCAL_DDL = [
     issue_type_id TEXT NOT NULL, summary TEXT NOT NULL, description_json TEXT NOT NULL, status_name TEXT NOT NULL,
     status_category TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE (project_key, n))`,
   `CREATE TABLE IF NOT EXISTS local_jira_comments (id INTEGER PRIMARY KEY, issue_key TEXT NOT NULL, body_json TEXT NOT NULL, at TEXT NOT NULL)`,
+  // Its own table, not a column, so a db file made before labels needs no ALTER (an issue from the sample inbox
+  // carries the label dowser-sample).
+  `CREATE TABLE IF NOT EXISTS local_jira_labels (issue_key TEXT NOT NULL, label TEXT NOT NULL, PRIMARY KEY (issue_key, label))`,
   `CREATE TABLE IF NOT EXISTS local_users (account_id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS local_sources (kind TEXT NOT NULL, ref TEXT NOT NULL, item_json TEXT NOT NULL, PRIMARY KEY (kind, ref))`,
 ];
@@ -160,7 +163,7 @@ export function applySeed(raw, seed = {}) {
  */
 export function localJira(raw, browseBase, now) {
   return {
-    async createIssue({ projectKey, issueTypeId, summary, description }) {
+    async createIssue({ projectKey, issueTypeId, summary, description, labels }) {
       const p = /** @type {any} */ (raw.prepare('SELECT issue_types_json FROM local_jira_projects WHERE key = ?').get(projectKey));
       if (!p) throw new Error(`Jira answered 404: no project ${projectKey}`);
       if (!JSON.parse(String(p.issue_types_json)).some((/** @type {any} */ t) => t.id === issueTypeId)) {
@@ -171,6 +174,8 @@ export function localJira(raw, browseBase, now) {
         SELECT ? || '-' || n, ?, n, ?, ?, ?, ?, 'new', ? FROM (SELECT COALESCE(MAX(n), 0) + 1 AS n FROM local_jira_issues WHERE project_key = ?)
         RETURNING key`).get(projectKey, projectKey, issueTypeId, summary, JSON.stringify(description), STATUS_NAMES.new, now().toISOString(), projectKey));
       const key = String(r.key);
+      const label = raw.prepare('INSERT OR IGNORE INTO local_jira_labels (issue_key, label) VALUES (?, ?)');
+      for (const l of labels ?? []) label.run(key, l);
       return { key, url: `${browseBase()}${key}` };
     },
     async addComment(issueKey, body) {
@@ -215,9 +220,11 @@ export function setIssueStatus(raw, key, category, name) {
 export function issueOf(raw, key) {
   const r = /** @type {any} */ (raw.prepare('SELECT * FROM local_jira_issues WHERE key = ?').get(key));
   if (!r) return undefined;
+  const labels = raw.prepare('SELECT label FROM local_jira_labels WHERE issue_key = ? ORDER BY label').all(key).map((l) => String(l.label));
   return {
     key: String(r.key), project_key: String(r.project_key), issue_type_id: String(r.issue_type_id), summary: String(r.summary),
     status: { name: String(r.status_name), category: String(r.status_category) }, created_at: String(r.created_at),
+    ...(labels.length ? { labels } : {}),
     description: JSON.parse(String(r.description_json)),
     comments: raw.prepare('SELECT body_json, at FROM local_jira_comments WHERE issue_key = ? ORDER BY id').all(key)
       .map((c) => ({ at: String(c.at), body: JSON.parse(String(c.body_json)) })),
