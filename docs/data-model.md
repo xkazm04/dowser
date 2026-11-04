@@ -98,6 +98,17 @@ allocation, which `run finish` writes (the agent never counts them). When `reser
 M" with N = `ranked` and M = `ranked + reserve`; a record from before v6 that only has `truncated > 0` keeps the old
 reading (N = `emitted`, M = `emitted + truncated`).
 
+**Where a run stands** (`run status --run <id>`, read-only; `store.runProgress`). Every stage is derived from rows
+already in the store, and a stage not reached is omitted, never 0: `direction` (the lenses with a cached
+`sources_cache` direction row), `sources` (`{<type>: n}` of the run's other cache rows), `proposed` (`{<lens>: n}`
+proposals whose `last_run_id` is the run), `not_reached` (the other lenses in lens order, while running),
+`verify` (`pending` while one of those is `candidate`, else `{state: done, verified, dropped}` from the run's
+`candidate ->` transitions), `pretriage` (`{pretriaged: n}` marked `pretriaged_by`), `push` (`{pending?, pushed?}`:
+`pending` is exactly the set `outbox` would send now, store-wide like the outbox; `pushed` the run's cards with a
+`pushed` transition). `next` lists literal CLI lines for a running run and is `[]` once it ended. `status` adds
+`open: [{run_id, started_at, next}]` and `run start` adds `open_runs: [run_id]` for runs still `running` (keys
+absent when none); `run start` neither closes nor refuses them (only the 24 h rule in `runs` above closes a run).
+
 ## Budget, score and trust (scan-finding/1)
 
 - **Score.** `propose` fills `effort.score` from `size` (XS 1, S 2, M 4, L 7, XL 10) unless the judge set it, `risk`

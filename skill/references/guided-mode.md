@@ -96,6 +96,10 @@ Checking security and EU Cyber Resilience Act duties: done, no proposals.
   says what they quoted. That is the check working, not an error."
 - An earlier scan that was interrupted and has now been closed (`abandoned`): "An earlier scan of this
   project stopped before it finished. Dowser has tidied it up; nothing was lost." Housekeeping, never an error.
+- An interrupted scan that can be resumed (`status` lists it under `open`, less than a day old): "Dowser
+  stopped partway through a scan earlier. Shall I pick up where it stopped? It keeps what it already
+  read from Jira and Confluence." On yes, say once what is left ("Two of the four checks are still to do."),
+  from `run status`'s `not_reached` and `next`, in words; never name the command.
 - A partial lens is expected, not a failure. Name its cause. Not connected: "<Lens> was partly
   done because <source> is not connected. That is normal without the Jira connection. To
   include <what it adds>, ask your Jira admin to install the Dowser app and connect it here."

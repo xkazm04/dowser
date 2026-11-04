@@ -153,6 +153,13 @@ mode: the "Jira answers forbidden" row of `references/guided-mode.md`.
    - `full` when no run has finished yet, or when the last full run is 14 or more days old.
      Label the second case "full re-anchor";
    - `incremental` otherwise.
+
+   **Resume instead** when `status` prints `open` with a run started less than a day ago: that
+   scan was interrupted (a crash, a compaction, a closed terminal) and its fetched text is still
+   cached. Offer to pick it up (guided: the "interrupted scan" row of `references/guided-mode.md`).
+   On yes, run `run status --run <run_id>`, keep that `run_id`, and carry on from `next[0]`
+   (`stages` says what already ran; `not_reached` names the lenses still to do), skipping
+   `run start`. On no, or when nobody can answer (headless), start a new run as below.
 2. Run `run start --mode <mode> --harness <claude-code|codex|other> --model <your model id>`,
    adding the same `--focus` value for a focused run. Keep `run_id`, `mode`, `base_sha` and
    `head_sha`. When it prints `fallback`, the last scanned version is gone from the history
@@ -160,7 +167,8 @@ mode: the "Jira answers forbidden" row of `references/guided-mode.md`.
    a full scan takes longer (guided: "Dowser will read the whole project this time, because the
    version it read last time is no longer in the project's history."), and again in the summary.
    When it prints `abandoned`, earlier scans of this project were interrupted and are now closed
-   as failed: say so in one line. When it prints `woke`, those snoozed items reached their date: name them before the lenses
+   as failed: say so in one line. `open_runs` lists runs of this project still open (under a
+   day old); they stay open. When it prints `woke`, those snoozed items reached their date: name them before the lenses
    start (guided: "<n> proposals you set aside until today are back."), and show them in triage.
 3. An incremental run scans what changed: `git diff --name-only <base_sha>..<head_sha>`, plus
    the files those import, plus any doc that names them. If that list is empty, every lens is
