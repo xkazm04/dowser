@@ -422,6 +422,9 @@ Jira issue appears only when a person accepts the item there.
 
 ## 9. Finish and summarize
 
+0. Run `delivery --run <run_id>`. It re-reads every accepted card's quoted evidence at this run's
+   commit and prints what changed: `resolved` (the quoted problem is gone), `partly`, or `present`
+   (still in the code), with the commits that named the card's Jira issue. Read-only.
 1. Write the lens report to `<work>/lenses.json` and run
    `run finish --run <run_id> --lenses @<work>/lenses.json`. The `@` form avoids shell quoting.
    The JSON maps each lens to
@@ -442,7 +445,10 @@ Jira issue appears only when a person accepts the item there.
      `references/guided-mode.md`);
    - triage outcome: kept, rejected, snoozed, merged; pushed, with inbox links when connected;
      accepted items with their Jira issue key and link;
-   - unapplied verdicts and refused pushes, if any.
+   - unapplied verdicts and refused pushes, if any;
+   - delivery changes from step 0, one line each (`DW-3 SHOP-12: resolved, named in 2 commits`).
+     A card Jira calls Done whose state is `present` is worth saying out loud: the issue closed,
+     the quoted problem did not.
 3. **No proposals is not "all clear".** Say what ran, against what, and what was skipped or
    partial, for example: "No proposals. Opportunity ran on code and docs only (not connected),
    UX friction and Security ran in full, Doc drift was partial (no Confluence)." Never write

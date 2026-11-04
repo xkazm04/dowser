@@ -40,6 +40,7 @@ const shareLib = await import('./lib/share.mjs');
 const trustLib = await import('./lib/trust.mjs');
 const triageLib = await import('./lib/triage.mjs');
 const hydrateLib = await import('./lib/hydrate.mjs');
+const deliveryLib = await import('./lib/delivery.mjs');
 
 /**
  * @typedef {{_: string[], [flag: string]: string | string[] | true | string[] | undefined}} Args
@@ -445,6 +446,12 @@ export const COMMANDS = {
     flags: { file: FILE_FLAG },
     help: 'apply a dowser_verdicts_pull response (CAS, idempotent), keep cursor; an accepted verdict records issue_ref/issue_url',
     run: (a, ctx) => syncLib.ingestVerdicts(ctx.open(), syncLib.readResponse(req(a, 'file'))),
+  },
+  delivery: {
+    flags: { run: RUN_FLAG },
+    help: 're-check every accepted card at the run head: its quoted code/doc evidence present | partly | resolved, and the ' +
+      'commits since the decision that name its Jira issue or inbox ref -> {run, checked, states, changes:[{fp, title, issue_ref?, from?, to, found, total, commits?}], note?}',
+    run: (a, ctx) => ({ out: deliveryLib.checkDeliveries(ctx.open(), ctx.root, req(a, 'run')) }),
   },
   hydrate: {
     flags: { file: FILE_FLAG },

@@ -115,7 +115,7 @@ test('an outdated 4-lens file opened with a widened lens list is rebuilt lossles
     assert.deepEqual(all(db, 'PRAGMA foreign_key_check'), []);
     assert.equal(one(db, 'PRAGMA foreign_keys').foreign_keys, 1);
     assert.equal(one(db, 'PRAGMA user_version').user_version, USER_VERSION);
-    assert.equal(USER_VERSION, 6);
+    assert.equal(USER_VERSION, 7);
     assertChecksMatchModel(db, WIDE);
     // the dependents are back
     assert.throws(() => db.prepare("UPDATE evidence SET ref = 'x'").run(), /evidence is append-only/);
@@ -183,7 +183,7 @@ test('two opens of the same outdated file: the first rebuilds, the second does n
 const DDL_V1 = DDL.split('-- v3:')[0].replace(/^\s*(issue_ref|issue_url|artifacts_json|snooze_until)\s.*\n/gm, '')
   .replace(new RegExp(`^\\s*(${V6_COLUMNS.join('|')})\\s.*\\n`, 'gm'), '').replace(`PRAGMA user_version = ${USER_VERSION};`, 'PRAGMA user_version = 1;');
 
-test('a v1 file migrated to v6 and opened with a widened lens list: rebuilt once, every CHECK equals the model', () => {
+test('a v1 file migrated to v7 and opened with a widened lens list: rebuilt once, every CHECK equals the model', () => {
   assert.match(MIGRATIONS[5], new RegExp(`CHECK \\(category IN \\(${CATEGORIES.map((c) => `'${c}'`).join(',')}\\)\\)`), 'the v6 migration CHECKs are generated');
   const file = join(dir, 'v1.db');
   const raw = new DatabaseSync(file);
@@ -197,7 +197,7 @@ test('a v1 file migrated to v6 and opened with a widened lens list: rebuilt once
   const db = openStore(file, { enums: { lenses: WIDE } });
   const sql1 = tableSql(db, 'proposals');
   try {
-    assert.equal(one(db, 'PRAGMA user_version').user_version, 6);
+    assert.equal(one(db, 'PRAGMA user_version').user_version, 7);
     assertChecksMatchModel(db, WIDE);
     insertTechDebt(db);
     assert.equal(one(db, 'SELECT count(*) AS n FROM evidence').n, 1);

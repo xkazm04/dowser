@@ -3,7 +3,7 @@
 The store is the single source of local memory. `skill/scripts/dowser.mjs` is its only writer, and the
 agent never writes SQL. Code: `skill/scripts/lib/store.mjs` is the facade over `store-core.mjs` (schema,
 migrations, transactions), `proposals.mjs` (propose, moves) and `runs.mjs`; the rest of the model lives in
-`skill/scripts/lib/{model,fingerprint,verify,paths,git,scan-score,predict,budget,trust,memory,triage,reflect,sync,direction,deps,share}.mjs`.
+`skill/scripts/lib/{model,fingerprint,verify,paths,git,scan-score,predict,budget,trust,memory,triage,reflect,sync,direction,deps,share,hydrate,delivery}.mjs`.
 Record schema: `skill/schema/dowser-proposal-2.schema.json` (`dowser-proposal-1.schema.json` is kept: a /1 record is
 a valid /2 record). The scan-finding/1 contract the /2 fields follow is `docs/contracts/scan-finding-1.md`.
 
@@ -28,7 +28,7 @@ version: `ALTER TABLE proposals ADD COLUMN issue_ref TEXT`, the same for `issue_
 at the current version. Version 3 adds the `outcomes` table (below): `CREATE TABLE IF NOT EXISTS` plus its index and
 triggers, then `PRAGMA user_version = 3`. Version 4 adds `proposals.artifacts_json`. Version 5 adds
 `proposals.snooze_until` (`ALTER TABLE proposals ADD COLUMN snooze_until TEXT`, then `PRAGMA user_version = 5`); it
-starts NULL (absent) on every existing row. Version 6 adds the scan-finding/1 columns to `proposals` (`impact`,
+starts NULL (absent) on every existing row. Version 7 adds the `deliveries` table (below) the same way. Version 6 adds the scan-finding/1 columns to `proposals` (`impact`,
 `impact_why`, `risk`, `category`, `score`, `score_parts_json`, `band`, `mvp`, `mvp_rule`, `mvp_why`, `predicted_verdict`,
 `predicted_why`, `predicted_by`, `pretriaged_by`; `store-core.mjs` `V6_COLUMNS`) and the `trust_state` and
 `trust_events` tables, then `PRAGMA user_version = 6`; every existing row stays unscored, unallocated and without a
@@ -59,10 +59,11 @@ model no longer lists is refused with exit 3, and nothing is rebuilt. A list tha
 | `transitions` | **append-only**: `fp`, `from_status` (NULL on creation), `to_status`, `by`, `at`, `reason`, `note`, `run_id`, `evidence_seq` | `evidence_seq` = max evidence id of the fp at the move |
 | `rules` | offered and accepted prompt rules (`offered\|accepted\|declined`). `cluster_json` keeps the source fingerprints, who decided (`decided_by`: a human at the prompt, or `forge:<account>`) and, when the wording was edited, the original as `draft_text` | PK `id` |
 | `outcomes` | **append-only** (v3): how an accepted item turned out once built, as a person rated it in Forge. `fp`, `ref` (the inbox item `DW-n`), `rating` (`right|partly|wrong`), `note`, `issue_ref`, `decided_by` (`forge:<account>`), `recorded_at`. Written only by `reflect ingest`. No foreign key on `fp`: an outcome may name an item this store never saw (it is kept, and not counted in `context`) | UNIQUE (`fp`, `recorded_at`), so a replayed sync adds nothing |
+| `deliveries` | **append-only** (v7): delivery truth from the code. One row each time `delivery --run` finds an accepted card's state CHANGED: `fp`, `run_id`, `head_sha`, `state` (`present` = every quoted code/doc line still at the run's commit, `partly`, `resolved` = none left), `found` / `total` quotes, `commits_json` (`[{sha, at}]`, commits since the decision whose message names its Jira issue or inbox ref; NULL when none), `checked_at`. The newest row per fp is the current state. Written only by `delivery` (`lib/delivery.mjs`) | index (`fp`, `id`) |
 | `sources_cache` | what a run fetched: tickets, pages and goals (`ingest-sources`), dependency advisories (`deps`) and the team's lens direction (`ingest-direction`). `verify` checks ticket, page, goal and dep refs against it. Ticket, page and goal text is dropped when the run ends; the direction rows (focus, exclude, notes, spaces) are kept as long as the store exists, until deleted (`SECURITY.md` says how) | PK (`run_id`, `type`, `ref`) |
 | `sync_state` | Forge sync bookkeeping: `verdicts_cursor`; `trust_through` (the last transition id the trust replay read); `push_seq:<fp>` (evidence id at last push); `outbox:last` (ids actually sent); `verdict:<fp>@<decided_at>` (idempotency). See `docs/contracts/forge-mcp-2.md` | PK `key` |
 
-Append-only is enforced twice. Triggers abort any UPDATE or DELETE on `evidence`, `transitions`, `outcomes` and
+Append-only is enforced twice. Triggers abort any UPDATE or DELETE on `evidence`, `transitions`, `outcomes`, `deliveries` and
 `trust_events`, and a test greps the sources for such statements on the first two.
 
 ## Reflection (`reflect`)

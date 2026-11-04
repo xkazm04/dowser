@@ -211,3 +211,28 @@ export function lastChange(root, rev, path) {
   const sha = git(root, ['log', '-1', '--format=%H', rev, '--', path]);
   return sha ? commitDate(root, sha) : undefined;
 }
+
+/**
+ * The non-merge commits reachable from `rev` and committed at or after `since` whose message names one of
+ * `needles` as a whole token (a Jira key `SHOP-12`, an inbox ref `DW-3`): `{sha, at}` newest first. Empty when
+ * there are none, undefined when git cannot walk the history.
+ * @param {string} root
+ * @param {string} rev
+ * @param {string} since ISO timestamp
+ * @param {string[]} needles
+ * @returns {{sha: string, at: string}[] | undefined}
+ */
+export function commitsNaming(root, rev, since, needles) {
+  const words = needles.filter((n) => /^[A-Za-z][A-Za-z0-9_]*-[0-9]+$/.test(n));
+  if (!words.length) return [];
+  const out = git(root, ['log', rev, `--since=${since}`, '--no-merges', '--format=%H%x1f%cI%x1f%B%x1e']);
+  if (out === undefined) return undefined;
+  const re = new RegExp(`(^|[^A-Za-z0-9_-])(${words.join('|')})(?![0-9A-Za-z_])`);
+  /** @type {{sha: string, at: string}[]} */
+  const hits = [];
+  for (const rec of out.split('\x1e')) {
+    const [sha, at, body] = rec.replace(/^\s+/, '').split('\x1f');
+    if (sha && body !== undefined && re.test(body)) hits.push({ sha: sha.trim(), at: new Date(Date.parse(at)).toISOString() });
+  }
+  return hits;
+}

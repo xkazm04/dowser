@@ -11,7 +11,7 @@ import {
   BANDS, CATEGORIES, CONFIDENCES, DowserError, EVIDENCE_TYPES, LENSES, MVP_RULES, REASONS, RUN_MODES, RUN_STATUSES, STATUSES, VERDICTS,
 } from './model.mjs';
 
-export const USER_VERSION = 6;
+export const USER_VERSION = 7;
 /** The decider the store itself writes for machine moves (creation, resurfacing). */
 export const SYSTEM_DECIDER = 'skill:dowser';
 
@@ -68,6 +68,28 @@ CREATE TABLE IF NOT EXISTS trust_events (
 );
 CREATE TRIGGER IF NOT EXISTS trust_events_no_update BEFORE UPDATE ON trust_events BEGIN SELECT RAISE(ABORT, 'trust_events is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS trust_events_no_delete BEFORE DELETE ON trust_events BEGIN SELECT RAISE(ABORT, 'trust_events is append-only'); END;
+`;
+
+/**
+ * v7: delivery truth from the code (lib/delivery.mjs). One row each time an accepted card's re-check CHANGES: its
+ * quoted evidence at the scanned commit (present / partly / resolved) and the commits that named its issue or
+ * inbox item. Append-only; the newest row per fp is the card's current delivery state.
+ */
+const DELIVERIES_DDL = `
+CREATE TABLE IF NOT EXISTS deliveries (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  fp            TEXT NOT NULL REFERENCES proposals (fp),
+  run_id        TEXT NOT NULL REFERENCES runs (id),
+  head_sha      TEXT,
+  state         TEXT NOT NULL CHECK (state IN ('present','partly','resolved')),
+  found         INTEGER NOT NULL,
+  total         INTEGER NOT NULL,
+  commits_json  TEXT,
+  checked_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS deliveries_fp ON deliveries (fp, id);
+CREATE TRIGGER IF NOT EXISTS deliveries_no_update BEFORE UPDATE ON deliveries BEGIN SELECT RAISE(ABORT, 'deliveries is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS deliveries_no_delete BEFORE DELETE ON deliveries BEGIN SELECT RAISE(ABORT, 'deliveries is append-only'); END;
 `;
 
 /**
@@ -227,7 +249,8 @@ CREATE TABLE IF NOT EXISTS outcomes (
 CREATE INDEX IF NOT EXISTS outcomes_fp ON outcomes (fp, id);
 CREATE TRIGGER IF NOT EXISTS outcomes_no_update BEFORE UPDATE ON outcomes BEGIN SELECT RAISE(ABORT, 'outcomes is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS outcomes_no_delete BEFORE DELETE ON outcomes BEGIN SELECT RAISE(ABORT, 'outcomes is append-only'); END;
-${TRUST_DDL}`;
+${TRUST_DDL}
+${DELIVERIES_DDL}`;
 }
 
 export const DDL = buildDDL();
@@ -294,6 +317,11 @@ ALTER TABLE proposals ADD COLUMN predicted_by TEXT;
 ALTER TABLE proposals ADD COLUMN pretriaged_by TEXT;
 ${TRUST_DDL}
 PRAGMA user_version = 6;
+`,
+  6: `
+-- v7: delivery truth from the code (lib/delivery.mjs).
+${DELIVERIES_DDL}
+PRAGMA user_version = 7;
 `,
   };
 }
