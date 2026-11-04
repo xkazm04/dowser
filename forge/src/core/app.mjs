@@ -315,14 +315,14 @@ export function runResolver(deps, key, payload, accountId, via) {
 // ------------------------------------------------------------------------------------------------- rovo
 
 /**
- * One compact line of a card for the agent: no body, no evidence.
+ * One compact line of a card for the agent: no body, no evidence. `new_evidence` = the card's `delta` count, when it has one.
  * @param {import('./types.mjs').Card} c
  */
 const brief = (c) => omitAbsent({
   ref: c.ref, fp: c.fp, project_key: c.project_key, status: c.status, lens: c.lens, title: c.title, rationale: c.rationale,
   confidence: c.confidence, effort: c.effort?.size, score: c.score, band: c.band, mvp: c.mvp, evidence_count: c.evidence.length,
-  evidence_types: [...new Set(c.evidence.map((e) => e.type))].sort(), reopened: c.reopened, issue_ref: c.issue_ref,
-  sample: c.sample,
+  evidence_types: [...new Set(c.evidence.map((e) => e.type))].sort(), reopened: c.reopened,
+  new_evidence: c.delta?.new_evidence, issue_ref: c.issue_ref, sample: c.sample,
 });
 
 /**

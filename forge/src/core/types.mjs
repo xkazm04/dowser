@@ -113,11 +113,18 @@ export const SAMPLE_RESERVED = `${SAMPLE_KEY} is reserved for the sample inbox`;
 
 /**
  * The card the Custom UI renders: the proposal record plus inbox state.
- * @typedef {{type: string, ref: string, url?: string, quote?: string, link?: string}} CardEvidence
+ * @typedef {{type: string, ref: string, url?: string, quote?: string, link?: string, new?: true}} CardEvidence
+ *   `new` marks an item the card's `delta` counts (added since the decision, or by the push that grew it); omitted otherwise.
+ * @typedef {{status: 'rejected' | 'snoozed', reason?: string, note?: string, decided_by: string, decided_at: string, snooze_until?: string}} CardDecision
+ *   the decision a reopened card had, as its row still holds it (a reason means rejected, else snoozed)
+ * @typedef {{since: 'decision' | 'previous-push', new_evidence: number, decision?: CardDecision}} CardDelta
+ *   why an open card is back: `since: 'decision'` on a reopened card (`new_evidence` may be 0: a dated snooze back on its
+ *   day), `since: 'previous-push'` on a card whose evidence grew (no `decision`). Absent on a new or decided card.
  * @typedef {ProposalRecord & {ref: string, status: InboxStatus, project_key: string, evidence: CardEvidence[],
- *   reopened?: boolean, change?: 'new' | 'grew' | 'reopened', issue_ref?: string, issue_url?: string, snooze_until?: string, first_seen: string, last_push_at: string,
+ *   reopened?: boolean, change?: 'new' | 'grew' | 'reopened', delta?: CardDelta, issue_ref?: string, issue_url?: string, snooze_until?: string, first_seen: string, last_push_at: string,
  *   sample?: true}} Card
- *   `change` is set on open cards inside an InboxGroup: what that push did to the item. `sample` is set by the server
+ *   `change` is set on open cards inside an InboxGroup: what that push did to the item. `delta` is set on every read of
+ *   an open card that was reopened or grew (inbox.list, proposal.get, the Rovo explain). `sample` is set by the server
  *   on every card of the sample inbox (SAMPLE_KEY), omitted otherwise.
  * @typedef {{run_id: string, at: string, head_sha?: string, items: Card[]}} InboxGroup
  * @typedef {{run_id: string, at: string, head_sha?: string, created: number, updated: number}} LastPush

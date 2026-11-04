@@ -16,6 +16,8 @@ import { LENSES, isOneOf } from '../shared/model.mjs';
  * @typedef {import('./store.mjs').EvidenceRow} EvidenceRow
  * @typedef {import('./types.mjs').Card} Card
  * @typedef {import('./types.mjs').CardEvidence} CardEvidence
+ * @typedef {import('./types.mjs').CardDelta} CardDelta
+ * @typedef {import('./types.mjs').CardDecision} CardDecision
  * @typedef {import('./types.mjs').Verdict} Verdict
  * @typedef {import('./types.mjs').InboxGroup} InboxGroup
  * @typedef {import('./types.mjs').InboxSummary} InboxSummary
@@ -56,16 +58,48 @@ export function cardEvidence(e, repoUrl) {
 }
 
 /**
+ * Why an open card is back (F3, F8), from the rows already read: which of its evidence rows are new, and the delta.
+ * Reopened: the rows added after the decision (`added_at > decided_at`), and the decision as the row still holds it;
+ * the row says `open` now, so the prior status is derived from the stamp (a reason means rejected, else snoozed: only
+ * those two reopen). Grew: the rows of the push that grew it (`added_run_id = last_run_id`, a run after the first).
+ * A card first seen in its push, and every decided card, has no delta.
+ * @param {ProposalRow} p
+ * @param {EvidenceRow[]} evidence
+ * @returns {{delta?: CardDelta, isNew: (e: EvidenceRow) => boolean}}
+ */
+export function deltaOf(p, evidence) {
+  const none = { isNew: () => false };
+  if (p.status !== 'open') return none;
+  if (p.change_kind === 'reopened' && p.decided_at) {
+    const since = p.decided_at;
+    const isNew = (/** @type {EvidenceRow} */ e) => e.added_at > since;
+    const decision = /** @type {CardDecision} */ (omitAbsent({
+      status: p.reason ? 'rejected' : 'snoozed', reason: p.reason, note: p.note, decided_by: p.decided_by, decided_at: p.decided_at,
+      snooze_until: p.reason ? undefined : p.snooze_until,
+    }));
+    return { delta: { since: 'decision', new_evidence: evidence.filter(isNew).length, decision }, isNew };
+  }
+  if (p.change_kind === 'grew' && p.last_run_id !== p.first_run_id) {
+    const isNew = (/** @type {EvidenceRow} */ e) => e.added_run_id === p.last_run_id;
+    const n = evidence.filter(isNew).length;
+    if (n > 0) return { delta: { since: 'previous-push', new_evidence: n }, isNew };
+  }
+  return none;
+}
+
+/**
  * @param {ProposalRow} p
  * @param {EvidenceRow[]} evidence
  * @param {string | undefined} repoUrl
  * @returns {Card}
  */
 export function toCard(p, evidence, repoUrl) {
+  const { delta, isNew } = deltaOf(p, evidence);
   return /** @type {Card} */ (omitAbsent({
     ...p.record,
     fp: p.fp, ref: p.ref, status: p.status, project_key: p.project_key,
-    evidence: evidence.map((e) => cardEvidence(e, repoUrl)),
+    evidence: evidence.map((e) => (isNew(e) ? { ...cardEvidence(e, repoUrl), new: true } : cardEvidence(e, repoUrl))),
+    delta,
     reopened: p.reopened || undefined,
     issue_ref: p.issue_ref, issue_url: p.issue_url,
     reason: p.reason, note: p.note, merged_into: p.merged_into, decided_by: p.decided_by, decided_at: p.decided_at,
