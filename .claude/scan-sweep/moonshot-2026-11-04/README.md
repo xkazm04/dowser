@@ -29,8 +29,12 @@ Personas was unreachable, so there was no decision memory. The operator triaged 
   built ba1e541 (store v8 edges, link/links, prerequisite lift). Not built: Forge lineage view, outcome-derived
   follow-up edges.
 - Wave D: idea 2 built 1616403 (work_list/get/report + SKILL.md build mode; the no-edit rule now governs scans, operator
-  approval 2026-11-04); idea 4 built d263bf4 (quality command; Learning tab view not built). Open: Confluence doc-drift
-  closure (+ byline index defect) - needs the write:confluence-content scope, so a re-consent.
+  approval 2026-11-04); idea 4 built d263bf4 (quality command; Learning tab view not built).
+- Doc-drift closure built 736ce15 (page_links index replaces the byline LIKE scan, page-edit trigger, Draft the fix as
+  a footer comment asUser with write:comment:confluence, page banner). Deployed 2026-11-05: dev 2.16.0 (waves A-D),
+  then 3.0.0 (new scope, major), installation upgraded; live log: migrations v026-v031 ran, 3 issue properties and
+  2 page links backfilled. Not checked live in a browser: the banner, Draft the fix, issue and page events.
+- Open: the lens registry (deferred by the operator).
 
 ## The other 10, held
 
