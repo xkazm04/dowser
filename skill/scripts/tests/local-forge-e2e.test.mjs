@@ -12,11 +12,11 @@ import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { candidate, gitRepo, listFiles, removeDir, tempDir } from './_fixture.mjs';
+import { loadLensPack } from '../lib/memory.mjs';
 import { callTool as mockTool, emptyBackend } from '../../../tools/mock-forge-mcp.mjs';
 
 const CLI = fileURLToPath(new URL('../dowser.mjs', import.meta.url));
 const SERVER = fileURLToPath(new URL('../../../tools/local-forge.mjs', import.meta.url));
-const KINDS = ['--kinds', 'opportunity=gap', '--kinds', 'doc-drift=stale'];
 
 /** @type {string} */ let home;
 /** @type {string} */ let repo;
@@ -117,7 +117,7 @@ const save = (name, doc) => { const f = join(work, name); writeFileSync(f, JSON.
 /** @param {string} runId @param {string} name @param {Record<string, unknown>[]} lines */
 function proposeFile(runId, name, lines) {
   writeFileSync(join(work, name), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
-  const p = cli('propose', '--run', runId, '--file', join(work, name), ...KINDS);
+  const p = cli('propose', '--run', runId, '--file', join(work, name));
   assert.equal(p.code, 0, p.stdout + p.stderr);
   return p.lines.filter((/** @type {any} */ l) => l.fp);
 }
@@ -128,8 +128,8 @@ const SETUP2 = { type: 'code', ref: 'docs/setup.md:3', quote: 'Then run npm star
 const ONB = ['export function startTour() {}', 'export function showChecklist() {}', 'export function skipOnboarding() {}']
   .map((quote, i) => ({ type: 'code', ref: `src/onboarding.js:${i + 1}`, quote }));
 const ONB_TOPICS = ['onboarding tour', 'onboarding checklist', 'skip onboarding'];
-const onbCandidate = (/** @type {number} */ i) => candidate({ lens: 'opportunity', kind: 'gap', topic: ONB_TOPICS[i], anchors: [`src/onboarding.js#${i}`], title: `Onboarding idea ${i}`, evidence: [ONB[i]] });
-const staleCandidate = (/** @type {Record<string, unknown>[]} */ evidence) => candidate({ lens: 'doc-drift', kind: 'stale', topic: 'stale setup guide', anchors: ['docs/setup.md'], title: 'Setup guide is stale', evidence });
+const onbCandidate = (/** @type {number} */ i) => candidate({ lens: 'opportunity', kind: 'missing-capability', topic: ONB_TOPICS[i], anchors: [`src/onboarding.js#${i}`], title: `Onboarding idea ${i}`, evidence: [ONB[i]] });
+const staleCandidate = (/** @type {Record<string, unknown>[]} */ evidence) => candidate({ lens: 'doc-drift', kind: 'stale-example', topic: 'stale setup guide', anchors: ['docs/setup.md'], title: 'Setup guide is stale', evidence });
 
 test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and outcomes round trip, idempotent', async () => {
   const filesBefore = listFiles(repo);
@@ -152,7 +152,7 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
   const projectKey = di.out.project_key;
   const run1 = cli('run', 'start', '--mode', 'full', '--harness', 'claude-code', '--model', 'm').out.run_id;
   const proposed = proposeFile(run1, 'run1.jsonl', [
-    candidate({ lens: 'opportunity', kind: 'gap', topic: 'csv export', anchors: ['src/export.js#exportReport'], title: 'Add CSV export', evidence: [EXPORT],
+    candidate({ lens: 'opportunity', kind: 'missing-capability', topic: 'csv export', anchors: ['src/export.js#exportReport'], title: 'Add CSV export', evidence: [EXPORT],
       impact: 7, impact_why: 'One ticket asks; the writer exists', delivery_risk: { blast: 'low' },
       artifacts: [{ kind: 'table', message: 'One writer, no route', alt: 'A table of the CSV writer and its callers.', refs: [EXPORT.ref], data: { columns: ['Code', 'Callers'], rows: [['exportReport', '0']] } }] }),
     onbCandidate(0), onbCandidate(1), onbCandidate(2),
@@ -315,7 +315,7 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
   // 7a. twenty doc-drift cards in one run: the store keeps 4 ranked (the MVP first) and files 16 in reserve - all pushed
   const run3 = cli('run', 'start', '--mode', 'full', '--harness', 'claude-code', '--model', 'm').out.run_id;
   const drift = Array.from({ length: 20 }, (_, i) => candidate({
-    lens: 'doc-drift', kind: 'stale', topic: `setup drift ${i}`, anchors: [`docs/setup.md#part${i}`], title: `Setup drift ${i}`, evidence: [SETUP],
+    lens: 'doc-drift', kind: 'stale-example', topic: `setup drift ${i}`, anchors: [`docs/setup.md#part${i}`], title: `Setup drift ${i}`, evidence: [SETUP],
     impact: 1 + (i % 10), impact_why: 'A reader runs the wrong command', predicted_verdict: 'reject', predicted_why: 'cosmetic doc drift; the team rejects these',
   }));
   assert.equal(proposeFile(run3, 'run3.jsonl', drift).length, 20);
@@ -351,7 +351,7 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
 
   // 7c. next run: an L1 slice's ranked card predicted `accept` skips the person's pre-triage; acceptance stays human
   const run4 = cli('run', 'start', '--mode', 'full', '--harness', 'claude-code', '--model', 'm').out.run_id;
-  const [nextCard] = proposeFile(run4, 'run4.jsonl', [candidate({ lens: 'doc-drift', kind: 'stale', topic: 'start command renamed', anchors: ['docs/setup.md#start'],
+  const [nextCard] = proposeFile(run4, 'run4.jsonl', [candidate({ lens: 'doc-drift', kind: 'stale-example', topic: 'start command renamed', anchors: ['docs/setup.md#start'],
     title: 'Start command renamed', evidence: [SETUP2], impact: 6, impact_why: 'Every new developer hits it', predicted_verdict: 'accept', predicted_why: 'a broken first step' })]);
   assert.equal(cli('verify', '--run', run4).code, 0);
   const pre = cli('pretriage', '--run', run4);
@@ -386,32 +386,32 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
   assert.deepEqual(listFiles(repo), filesBefore, 'nothing written inside the repo');
 });
 
-test('kind-in-lens at the seam: outbox --kinds sends lens_kinds_json, the real core refuses a kind its lens lacks', async () => {
+test('kind-in-lens at the seam: outbox sends the packs\' kinds as lens_kinds_json, the real core refuses a kind its lens lacks', async () => {
   const projectKey = cli('init').out.project_key;
   const run = cli('run', 'start', '--mode', 'full', '--harness', 'claude-code', '--model', 'm').out.run_id;
-  // A malformed card: proposed under a wider kind list than the pack the runner pushes with (a drifted fork or an
-  // edited pack). The well-formed card in the same push still lands.
+  // A card proposed under a wider kind list than the one the runner pushes with (a pack narrowed after the card was
+  // proposed; --kinds stands in for the narrowed pack). The well-formed card in the same push still lands.
   writeFileSync(join(work, 'kinds.jsonl'), [
-    candidate({ lens: 'opportunity', kind: 'made-up', topic: 'kind check made up', anchors: ['src/export.js#made'], title: 'A card of a made-up kind', evidence: [EXPORT] }),
-    candidate({ lens: 'opportunity', kind: 'gap', topic: 'kind check fine', anchors: ['src/export.js#fine'], title: 'A card of a known kind', evidence: [EXPORT] }),
+    candidate({ lens: 'opportunity', kind: 'expose-capability', topic: 'kind check made up', anchors: ['src/export.js#made'], title: 'A card of a made-up kind', evidence: [EXPORT] }),
+    candidate({ lens: 'opportunity', kind: 'missing-capability', topic: 'kind check fine', anchors: ['src/export.js#fine'], title: 'A card of a known kind', evidence: [EXPORT] }),
   ].map((l) => JSON.stringify(l)).join('\n') + '\n');
-  const p = cli('propose', '--run', run, '--file', join(work, 'kinds.jsonl'), '--kinds', 'opportunity=gap,made-up');
+  const p = cli('propose', '--run', run, '--file', join(work, 'kinds.jsonl'));
   assert.equal(p.code, 0, p.stdout + p.stderr);
   const [fpBad, fpOk] = p.lines.filter((/** @type {any} */ l) => l.fp).map((/** @type {any} */ l) => l.fp);
   assert.equal(cli('verify', '--run', run).code, 0);
 
-  const ob = cli('outbox', '--run', run, '--kinds', 'opportunity=gap', '--kinds', 'doc-drift=stale');
+  const ob = cli('outbox', '--run', run, '--kinds', 'opportunity=missing-capability', '--kinds', 'doc-drift=stale-example');
   assert.equal(ob.code, 0, ob.stderr);
   const sent = JSON.parse(ob.out.proposals_json).map((/** @type {any} */ r) => r.fp);
   assert.ok(sent.includes(fpBad) && sent.includes(fpOk));
-  assert.deepEqual(JSON.parse(ob.out.lens_kinds_json), { opportunity: ['gap'] }, 'only the lenses this push carries');
-  assert.equal(cli('outbox', '--run', run).out.lens_kinds_json, undefined, 'no --kinds: the key is omitted (absent = omitted)');
+  assert.deepEqual(JSON.parse(ob.out.lens_kinds_json), { opportunity: ['missing-capability'] }, 'only the lenses this push carries');
+  assert.deepEqual(JSON.parse(cli('outbox', '--run', run).out.lens_kinds_json), { opportunity: loadLensPack('opportunity').kinds }, 'no --kinds: the pack\'s kinds');
 
   const pushed = await tool('dowser_proposals_push', ob.out);
   /** @type {Record<string, any>} */
   const by = Object.fromEntries(pushed.results.map((/** @type {any} */ r) => [r.fp, r]));
   assert.equal(by[fpOk].result, 'created');
-  assert.deepEqual([by[fpBad].result, by[fpBad].why], ['refused', 'kind "made-up" is not one of opportunity\'s kinds (gap)']);
+  assert.deepEqual([by[fpBad].result, by[fpBad].why], ['refused', 'kind "expose-capability" is not one of opportunity\'s kinds (missing-capability)']);
   const ip = cli('ingest-push', '--file', save('push-kinds.json', pushed));
   assert.deepEqual(ip.out.results.filter((/** @type {any} */ r) => r.fp === fpBad).map((/** @type {any} */ r) => [r.outcome, r.status]), [['refused', 'verified']],
     'the refused card stays verified locally, reported with the refusal');
@@ -420,7 +420,7 @@ test('kind-in-lens at the seam: outbox --kinds sends lens_kinds_json, the real c
 
   // any MCP client: a hand-made push with a lens the kinds do not declare, and a malformed lens_kinds_json
   const rec = JSON.parse(ob.out.proposals_json).find((/** @type {any} */ r) => r.fp === fpBad);
-  const other = await tool('dowser_proposals_push', { project_key: projectKey, run_id: run, proposals_json: JSON.stringify([rec]), lens_kinds_json: JSON.stringify({ 'doc-drift': ['stale'] }) });
+  const other = await tool('dowser_proposals_push', { project_key: projectKey, run_id: run, proposals_json: JSON.stringify([rec]), lens_kinds_json: JSON.stringify({ 'doc-drift': ['stale-example'] }) });
   assert.deepEqual([other.results[0].result, other.results[0].why], ['refused', 'the push declares no kinds for lens opportunity (lens_kinds_json)']);
   const bad = await rpc('tools/call', { name: 'dowser_proposals_push', arguments: { project_key: projectKey, run_id: run, proposals_json: '[]', lens_kinds_json: '{"opportunity": []}' } });
   assert.equal(bad.result.isError, true);
@@ -430,7 +430,7 @@ test('kind-in-lens at the seam: outbox --kinds sends lens_kinds_json, the real c
   const b = emptyBackend();
   const mock = mockTool(b, 'dowser_proposals_push', ob.out);
   assert.deepEqual(mock.results.map((/** @type {any} */ r) => [r.fp, r.result, r.why]), pushed.results.map((/** @type {any} */ r) => [r.fp, r.result, r.why]));
-  assert.deepEqual(mockTool(b, 'dowser_proposals_push', { project_key: projectKey, run_id: run, proposals_json: JSON.stringify([rec]), lens_kinds_json: JSON.stringify({ 'doc-drift': ['stale'] }) }).results[0].why,
+  assert.deepEqual(mockTool(b, 'dowser_proposals_push', { project_key: projectKey, run_id: run, proposals_json: JSON.stringify([rec]), lens_kinds_json: JSON.stringify({ 'doc-drift': ['stale-example'] }) }).results[0].why,
     other.results[0].why);
   assert.throws(() => mockTool(b, 'dowser_proposals_push', { project_key: projectKey, run_id: run, proposals_json: '[]', lens_kinds_json: '{"opportunity": []}' }),
     (/** @type {any} */ e) => e.code === 'bad-input' && /lens_kinds_json/.test(e.message));

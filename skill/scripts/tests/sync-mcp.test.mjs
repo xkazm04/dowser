@@ -133,10 +133,10 @@ test('mock Forge over stdio: push to the inbox, accept with a Jira issue, idempo
 
   const code = { type: 'code', ref: 'src/auth.js:2', quote: 'return check(user.password);' };
   writeFileSync(join(work, 'sec.jsonl'), [
-    candidate({ evidence: [code, { type: 'ticket', ref: cite.ref, url: cite.url }] }),
-    candidate({ topic: 'Login has no rate limit', title: 'Login can be brute-forced', kind: 'vuln', evidence: [code] }),
+    candidate({ kind: 'secret-exposure', evidence: [code, { type: 'ticket', ref: cite.ref, url: cite.url }] }),
+    candidate({ topic: 'Login has no rate limit', title: 'Login can be brute-forced', kind: 'risky-pattern', evidence: [code] }),
   ].map((c) => JSON.stringify(c)).join('\n') + '\n');
-  const prop = cli('propose', '--run', runId, '--file', join(work, 'sec.jsonl'), '--kinds', 'security-cra=secret,vuln');
+  const prop = cli('propose', '--run', runId, '--file', join(work, 'sec.jsonl'));
   assert.equal(prop.code, 0, prop.stderr);
   const [fp, fp2] = [prop.lines[0].fp, prop.lines[1].fp];
   assert.equal(cli('verify', '--run', runId).code, 0);
@@ -144,7 +144,7 @@ test('mock Forge over stdio: push to the inbox, accept with a Jira issue, idempo
   // push: outbox prints the tool arguments exactly; the agent passes them unedited
   const ob = cli('outbox', '--run', runId);
   assert.equal(ob.code, 0, ob.stderr);
-  assert.deepEqual(Object.keys(ob.out).sort(), ['head_sha', 'project_key', 'proposals_json', 'repo_url', 'run_id']);
+  assert.deepEqual(Object.keys(ob.out).sort(), ['head_sha', 'lens_kinds_json', 'project_key', 'proposals_json', 'repo_url', 'run_id'], 'lens_kinds_json from the packs by default');
   assert.equal(ob.out.project_key, projectKey);
   assert.equal(ob.out.repo_url, 'https://github.com/Acme/Shop', 'credentials and .git stripped');
   assert.equal(ob.out.head_sha, headSha);
@@ -206,9 +206,9 @@ test('mock Forge over stdio: push to the inbox, accept with a Jira issue, idempo
   assert.equal(cli('ingest-verdicts', '--file', save('verdicts2.json', page2)).code, 0);
   assert.equal(cli('show', fp2).out.card.status, 'snoozed');
   writeFileSync(join(work, 'grow.jsonl'), `${JSON.stringify(candidate({
-    topic: 'Login has no rate limit', title: 'Login can be brute-forced', kind: 'vuln', evidence: [code, { type: 'ticket', ref: cite.ref, url: cite.url }],
+    topic: 'Login has no rate limit', title: 'Login can be brute-forced', kind: 'risky-pattern', evidence: [code, { type: 'ticket', ref: cite.ref, url: cite.url }],
   }))}\n`);
-  const grow = cli('propose', '--run', runId, '--file', join(work, 'grow.jsonl'), '--kinds', 'security-cra=secret,vuln');
+  const grow = cli('propose', '--run', runId, '--file', join(work, 'grow.jsonl'));
   assert.equal(grow.code, 0, grow.stderr);
   assert.equal(grow.lines[0].result, 'evidence-grew');
   assert.equal(cli('verify', '--run', runId).code, 0);

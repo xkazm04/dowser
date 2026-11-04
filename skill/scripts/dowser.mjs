@@ -5,82 +5,12 @@
 // The store lives at ~/.dowser/projects/<project-key>/dowser.db (DOWSER_HOME overrides); nothing is ever
 // written inside the scanned repo.
 //
-//   node dowser.mjs <command> [--repo <path>] [flags]          (--repo defaults to the cwd)
-//   init                                   create the store -> {db, project_key, repo, user_version}
-//   run start --mode full|incremental|focused [--harness h] [--model m] [--focus goal:..|area:..]
-//                                          -> {run_id, mode, base_sha?, head_sha?, fallback?, woke?, abandoned?, db}
-//                                          (base_sha = last done run's head; incremental with that head gone from
-//                                          history -> full; woke = snoozed fps whose --until date passed, now
-//                                          verified; abandoned = run ids left running over a day, now closed failed)
-//   run finish --run <id> --lenses <json | @file> [--status done|failed]
-//                                          lenses: {<lens>: {state: ran|skipped|partial, reason?, emitted?,
-//                                          verified?, dropped?, truncated?}}
-//   propose --run <id> --file <jsonl> --kinds <lens>=<k1,k2> [--kinds ...]
-//                                          JSONL out, one line per input line: {line, result, fp?, ...} where
-//                                          result is created | evidence-grew | suppressed | duplicate |
-//                                          invalid:<why>; a line without predicted_verdict adds warning:
-//                                          no-predicted-verdict; a category the lens may not set (product lens ->
-//                                          technical) is stored as the lens default and adds clamped:
-//                                          {category: {asked, stored}}; then one {summary} line (unpredicted: n,
-//                                          clamped: n when any)
-//   verify --run <id> [--per-lens n] [--per-run n]
-//                                          re-check code/doc quotes -> verified | dropped (verify-failed:<ref>);
-//                                          a ticket/page/goal/dep ref this run did not ingest -> dropped
-//                                          (ref-not-ingested:<type>:<ref>); each check gives the line the quote was
-//                                          found on (claimed_line when the hint differs, drift when > 3 lines);
-//                                          bus_factor measured from git (anchor paths, 90 days before head);
-//                                          per_lens {emitted, verified, dropped}; then allocate the verified
-//                                          cards: each lens's MVP, then by score up to the pack budget (4) per
-//                                          lens, then free run slots (16 per run) to the best reserve of any lens
-//                                          -> band ranked; the rest band reserve (stored, pushed) -> allocation
-//   pretriage --run <id>                   the L1 gate: mark verified ranked cards predicted `accept` in slices at
-//                                          trust level 1 pretriaged_by machine:dowser -> {pretriaged, for_person}
-//   trust [--slice <key>]                  per-slice trust -> {slices: [{slice, level, ceiling, start, n,
-//                                          agreement?, changed_at?, reason?}], events: [...]} (append-only events);
-//                                          every slice with history or with a card, a new one at its start level
-//   move <fp> --to <status> --by <kind:name> [--from s] [--reason code] [--note t] [--into fp] [--run id]
-//                                          [--until YYYY-MM-DD]  (only with --to snoozed; a date after today)
-//   status [--runs n]                      counts by status and lens, last runs, "top N of M" truncation
-//   context --run <id> --lens <l> [--focus f]  -> {lens, lens_version, kinds, budget, suppressed, near (open and
-//                                          held-back items, then up to 20 accepted ones, each with fp, topic, anchors), rules,
-//                                          exemplars, outcomes?: {right, partly, wrong}, since_sha?, focus?, direction?}
-//   similar <fp>                           same-lens items sharing an anchor or 2+ topic tokens (generic words such
-//                                          as docs, md, lens ignored), and other-lens items sharing a SYMBOL anchor
-//                                          path#symbol (cross_lens: true; a shared whole file never counts), with the overlap
-//   show <fp>                              ask-why: the card, every evidence row, every transition (no rescan)
-//   list [--lens l] [--status s] [--title substring]  -> {proposals: [{fp, lens, status, title, decided_at?,
-//                                          snooze_until?}]}
-//   rules offer | rules list [--lens l] | rules accept|decline <id> --by human:<name> [--text t]
-//   reflect export                         -> {project_key, rules_json?, trust_json?, more?}: the dowser_reflect_sync
-//                                          arguments (rules in state `offered`, oldest first, at most 50, and the
-//                                          per-slice trust with its newest 50 events; read-only;
-//                                          run `rules offer` first)
-//   reflect ingest --file <json>           apply a dowser_reflect_sync response: each rule Forge decided is a CAS
-//                                          offered -> accepted|declined (others skipped), each outcome an
-//                                          append-only row -> {rules_applied, rules_skipped, outcomes_added,
-//                                          outcomes_seen}; idempotent
-//   prefs get [key ...] | prefs set key=value ...   ~/.dowser/user.json (mode dev|guided, verbosity short|full,
-//                                          quotes send|omit)
-//   outbox --run <id> [--kinds <lens>=<k1,k2> ...]
-//                                          -> {project_key, run_id, proposals_json, repo_url?, head_sha?,
-//                                          lens_kinds_json?, more?}: the dowser_proposals_push arguments (verified,
-//                                          not pushed yet; pushed items whose evidence grew), at most 50; `more:
-//                                          true` = run it again; --kinds (as at propose) lets Forge refuse a kind
-//                                          its lens lacks
-//   ingest-push --file <json>              apply a dowser_proposals_push response -> pushed | merged | refused
-//   ingest-verdicts --file <json>          apply a dowser_verdicts_pull response (CAS, idempotent), keep cursor;
-//                                          an accepted verdict records issue_ref/issue_url
-//   areas --run <id> [--top 40]            -> {project_key, run_id, areas_json}: the dowser_areas_push arguments
-//                                          (directories at depth 1-2: files, churn_90d, authors_90d?, last_change?)
-//   ingest-sources --run <id> --type ticket|page|goal --file <json>   cache a dowser_sources_* response -> refs
-//                                          (contract: docs/contracts/forge-mcp-2.md; the agent calls the tools)
-//   ingest-direction --run <id> --file <json>   cache a dowser_direction_get response on the run; context
-//                                          --lens then carries that lens's direction
-//   deps --run <id>                        run the dependency auditors present (read-only), cache their findings
-//                                          as dep items -> {auditors: [{tool, dir?, state, reason?, found?}], refs,
-//                                          not_audited?}
-//   share --run <id>                       the run's kept proposals as markdown, evidence by ref only (read-only)
-//                                          -> {run_id, cards, markdown}
+//   node dowser.mjs <command> [sub] [--repo <path>] [flags]   (--repo defaults to the cwd; --help prints every command)
+//
+// Every command is ONE entry in COMMANDS below: its flags, its positional args, its help text and its handler.
+// The dispatcher refuses a flag the entry does not declare (exit 2, naming the command's flags), enforces the
+// required ones, and --help is generated from the same entries. A command with subcommands (`run start`) is an
+// entry with `subs`, each sub a full entry. Adding a command or a flag is that one edit.
 //
 // Exit codes: 0 ok; 1 partial - part of the input was invalid, refused or skipped and the rest applied (propose,
 // ingest-push, ingest-verdicts, ingest-sources, ingest-direction, reflect ingest); 2 bad input or refused move (stdout carries
@@ -114,17 +44,26 @@ const trustLib = await import('./lib/trust.mjs');
  * @typedef {{code?: number, out?: unknown, lines?: unknown[]}} Result
  * @typedef {{root: string, open: () => import('./lib/store.mjs').Db, dbFile: () => string}} Ctx
  * @typedef {(a: Args, ctx: Ctx) => Result | Promise<Result>} Handler
+ * @typedef {{arg: string, required?: true, repeat?: true}} Flag
+ *   arg: the value placeholder help prints; required: the dispatcher refuses the command without it; repeat: the
+ *   flag may be given more than once (its values are collected into an array)
+ * @typedef {{flags?: Record<string, Flag>, args?: string, help: string, run: Handler}} Command
+ *   args: the positionals help prints after the command (`<fp>`); help: what it does and prints
+ * @typedef {{subs: Record<string, Command>}} Group
+ * @typedef {Command | Group} Entry
  */
 
-/** Flags that may repeat (collected into an array). */
-const REPEATABLE = new Set(['kinds']);
+/** Flags every command takes. */
+export const GLOBAL_FLAGS = /** @type {Record<string, Flag>} */ ({ repo: { arg: '<path>' }, help: { arg: '' } });
 
 /**
- * Parses argv: positionals in `_`, `--flag value` / `--flag=value`, a flag with no value is `true`.
+ * Parses argv: positionals in `_`, `--flag value` / `--flag=value`, a flag with no value is `true`. A flag in
+ * `repeatable` collects its values into an array; any other repeated flag keeps the last value.
  * @param {string[]} argv
+ * @param {ReadonlySet<string>} [repeatable]
  * @returns {Args}
  */
-export function parseArgs(argv) {
+export function parseArgs(argv, repeatable = REPEATABLE) {
   /** @type {Args} */
   const out = { _: [] };
   for (let i = 0; i < argv.length; i++) {
@@ -139,7 +78,7 @@ export function parseArgs(argv) {
       if (next === undefined || next.startsWith('--')) val = true;
       else { val = next; i++; }
     }
-    if (REPEATABLE.has(key)) {
+    if (repeatable.has(key)) {
       const prev = out[key];
       out[key] = [...(Array.isArray(prev) ? prev : []), String(val)];
     } else out[key] = val;
@@ -164,14 +103,22 @@ function opt(a, k, required = false) {
   return v;
 }
 
+/** A required string flag's value (the dispatcher has already refused a command without it). @param {Args} a @param {string} k */
+const req = (a, k) => /** @type {string} */ (opt(a, k, true));
+
 /**
- * `--kinds opportunity=gap,friction --kinds doc-drift=stale` -> {opportunity: [...], 'doc-drift': [...]}.
+ * The lens kinds a command works with: without `--kinds`, every lens pack's frontmatter kinds (`packKinds`);
+ * with `--kinds opportunity=gap-x --kinds doc-drift=stale-y` (or `a=..;b=..`), exactly the lenses named, each
+ * list a subset of its pack's kinds - a kind the pack lacks is bad input, named with the pack.
  * @param {Args} a
+ * @param {Record<string, string[]>} [packs] the packs' kinds (default: read from skill/lenses/)
  * @returns {Record<string, string[]>}
  */
-export function parseKinds(a) {
+export function parseKinds(a, packs) {
   const raw = a.kinds;
-  if (!Array.isArray(raw) || raw.length === 0) throw new DowserError('--kinds <lens>=<k1,k2> is required (one per lens; kinds come from the lens pack frontmatter)', 2);
+  const pack = packs ?? memory.packKinds();
+  if (raw === undefined) return pack;
+  if (!Array.isArray(raw) || raw.length === 0) throw new DowserError('--kinds needs <lens>=<k1,k2>', 2);
   /** @type {Record<string, string[]>} */
   const out = {};
   for (const item of raw) {
@@ -180,6 +127,12 @@ export function parseKinds(a) {
       if (!m) throw new DowserError(`--kinds ${JSON.stringify(part)} is not <lens>=<k1,k2>`, 2);
       if (!(/** @type {readonly string[]} */ (LENSES)).includes(m[1])) throw new DowserError(`--kinds: unknown lens ${m[1]}`, 2);
       out[m[1]] = [...new Set([...(out[m[1]] ?? []), ...m[2].split(',').map((s) => s.trim()).filter(Boolean)])];
+    }
+  }
+  for (const [lens, kinds] of Object.entries(out)) {
+    const extra = kinds.filter((k) => !(pack[lens] ?? []).includes(k));
+    if (extra.length) {
+      throw new DowserError(`--kinds ${lens}: ${extra.join(', ')} ${extra.length === 1 ? 'is not a kind' : 'are not kinds'} of lenses/${lens}.md (${(pack[lens] ?? []).join(', ')})`, 2);
     }
   }
   return out;
@@ -212,189 +165,360 @@ function readJsonArg(v) {
   }
 }
 
-/** @param {'WP2' | 'WP4'} pkg @returns {Handler} */
-const notImplemented = (pkg) => () => ({ code: 3, out: { error: 'not-implemented', package: pkg } });
-
-/** @type {Record<string, Handler>} */
-export const COMMANDS = {
-  init(_a, ctx) {
-    const db = ctx.open();
-    return { out: store.clean({ db: ctx.dbFile(), project_key: projectKey(ctx.root), verdicts_cursor: syncLib.verdictsCursor(db), repo: ctx.root, user_version: store.USER_VERSION }) };
-  },
-
+/** @param {'accepted' | 'declined'} verdict @returns {Command} */
+const decideRule = (verdict) => ({
+  args: '<id>',
+  flags: { by: { arg: 'human:<name>', required: true }, text: { arg: '<t>' } },
+  help: `${verdict === 'accepted' ? 'accept' : 'decline'} an offered rule (CAS offered -> ${verdict}); --text edits its wording`,
   run(a, ctx) {
-    const sub = a._[1];
-    if (sub === 'start') {
+    const id = a._[2];
+    if (!id) throw new DowserError(`rules ${verdict === 'accepted' ? 'accept' : 'decline'} <id> --by human:<name>`, 2);
+    return { out: memory.decideRule(ctx.open(), id, verdict, { by: req(a, 'by'), text: opt(a, 'text') }) };
+  },
+});
+
+const RUN_FLAG = /** @type {Flag} */ ({ arg: '<id>', required: true });
+const FILE_FLAG = /** @type {Flag} */ ({ arg: '<json>', required: true });
+const KINDS_FLAG = /** @type {Flag} */ ({ arg: '<lens>=<k1,k2>', repeat: true });
+
+/** Every command: flags, positionals, help and handler in one entry (see the header). @type {Record<string, Entry>} */
+export const COMMANDS = {
+  init: {
+    help: 'create the store -> {db, project_key, verdicts_cursor?, repo, user_version}',
+    run(_a, ctx) {
       const db = ctx.open();
-      const r = store.runStart(db, { mode: /** @type {string} */ (opt(a, 'mode', true)), harness: opt(a, 'harness'), model: opt(a, 'model'), focus: opt(a, 'focus'), headSha: headSha(ctx.root),
-        hasCommit: (sha) => hasCommit(ctx.root, sha) });
-      return { out: store.clean({ run_id: r.id, mode: r.mode, focus: r.focus, base_sha: r.base_sha, head_sha: r.head_sha, fallback: r.fallback, woke: r.woke, abandoned: r.abandoned, db: ctx.dbFile() }) };
-    }
-    if (sub === 'finish') {
+      return { out: store.clean({ db: ctx.dbFile(), project_key: projectKey(ctx.root), verdicts_cursor: syncLib.verdictsCursor(db), repo: ctx.root, user_version: store.USER_VERSION }) };
+    },
+  },
+
+  run: {
+    subs: {
+      start: {
+        flags: { mode: { arg: 'full|incremental|focused', required: true }, harness: { arg: '<h>' }, model: { arg: '<m>' }, focus: { arg: 'goal:..|area:..' } },
+        help: '-> {run_id, mode, base_sha?, head_sha?, fallback?, woke?, abandoned?, db} (base_sha = last done run\'s head; ' +
+          'incremental with that head gone from history -> full; woke = snoozed fps whose --until date passed, now verified; ' +
+          'abandoned = run ids left running over a day, now closed failed)',
+        run(a, ctx) {
+          const db = ctx.open();
+          const r = store.runStart(db, { mode: req(a, 'mode'), harness: opt(a, 'harness'), model: opt(a, 'model'), focus: opt(a, 'focus'), headSha: headSha(ctx.root),
+            hasCommit: (sha) => hasCommit(ctx.root, sha) });
+          return { out: store.clean({ run_id: r.id, mode: r.mode, focus: r.focus, base_sha: r.base_sha, head_sha: r.head_sha, fallback: r.fallback, woke: r.woke, abandoned: r.abandoned, db: ctx.dbFile() }) };
+        },
+      },
+      finish: {
+        flags: { run: RUN_FLAG, lenses: { arg: '<json | @file>', required: true }, status: { arg: 'done|failed' } },
+        help: 'lenses: {<lens>: {state: ran|skipped|partial, reason?, emitted?, verified?, dropped?, truncated?}}',
+        run(a, ctx) {
+          const db = ctx.open();
+          return { out: store.runFinish(db, { runId: req(a, 'run'), lenses: readJsonArg(req(a, 'lenses')), status: opt(a, 'status') }) };
+        },
+      },
+    },
+  },
+
+  propose: {
+    flags: { run: RUN_FLAG, file: { arg: '<jsonl>', required: true }, kinds: KINDS_FLAG },
+    help: 'JSONL out, one line per input line: {line, result, fp?, ...} where result is created | evidence-grew | suppressed | ' +
+      'duplicate | invalid:<why>; a line without predicted_verdict adds warning: no-predicted-verdict; a category the lens may ' +
+      'not set (product lens -> technical) is stored as the lens default and adds clamped: {category: {asked, stored}}; then one ' +
+      '{summary} line (unpredicted: n, clamped: n when any). A kind is checked against the lens pack\'s frontmatter kinds; ' +
+      '--kinds narrows to the lenses and kinds named (each one of its pack\'s kinds)',
+    run(a, ctx) {
+      const runId = req(a, 'run');
+      const file = req(a, 'file');
+      const kinds = parseKinds(a);
+      /** @type {string} */
+      let text;
+      try { text = readFileSync(file, 'utf8'); } catch (e) { throw new DowserError(`--file ${file} is not readable (${/** @type {Error} */ (e).message})`, 2); }
       const db = ctx.open();
-      const r = store.runFinish(db, { runId: /** @type {string} */ (opt(a, 'run', true)), lenses: readJsonArg(/** @type {string} */ (opt(a, 'lenses', true))), status: opt(a, 'status') });
-      return { out: r };
-    }
-    throw new DowserError('run start | run finish', 2);
+      store.requireRunning(db, runId);
+      /** @type {unknown[]} */
+      const lines = [];
+      /** @type {Record<string, number>} */
+      const counts = { lines: 0, created: 0, 'evidence-grew': 0, suppressed: 0, duplicate: 0, invalid: 0 };
+      let unpredicted = 0;
+      let clamped = 0;
+      text.split(/\r?\n/).forEach((raw, i) => {
+        if (!raw.trim()) return;
+        counts.lines++;
+        /** @type {unknown} */
+        let obj;
+        try { obj = JSON.parse(raw); } catch (e) {
+          counts.invalid++;
+          lines.push({ line: i + 1, result: `invalid:json (${/** @type {Error} */ (e).message})` });
+          return;
+        }
+        const r = store.propose(db, runId, obj, { kinds });
+        counts[r.result.startsWith('invalid:') ? 'invalid' : r.result]++;
+        if (r.warning === 'no-predicted-verdict') unpredicted++;
+        if (r.clamped) clamped++;
+        lines.push({ line: i + 1, ...r });
+      });
+      lines.push({ summary: { ...counts, ...(unpredicted ? { unpredicted } : {}), ...(clamped ? { clamped } : {}) } });
+      return { code: counts.invalid > 0 ? 1 : 0, lines };
+    },
   },
 
-  propose(a, ctx) {
-    const runId = /** @type {string} */ (opt(a, 'run', true));
-    const file = /** @type {string} */ (opt(a, 'file', true));
-    const kinds = parseKinds(a);
-    /** @type {string} */
-    let text;
-    try { text = readFileSync(file, 'utf8'); } catch (e) { throw new DowserError(`--file ${file} is not readable (${/** @type {Error} */ (e).message})`, 2); }
-    const db = ctx.open();
-    store.requireRunning(db, runId);
-    /** @type {unknown[]} */
-    const lines = [];
-    /** @type {Record<string, number>} */
-    const counts = { lines: 0, created: 0, 'evidence-grew': 0, suppressed: 0, duplicate: 0, invalid: 0 };
-    let unpredicted = 0;
-    let clamped = 0;
-    text.split(/\r?\n/).forEach((raw, i) => {
-      if (!raw.trim()) return;
-      counts.lines++;
-      /** @type {unknown} */
-      let obj;
-      try { obj = JSON.parse(raw); } catch (e) {
-        counts.invalid++;
-        lines.push({ line: i + 1, result: `invalid:json (${/** @type {Error} */ (e).message})` });
-        return;
-      }
-      const r = store.propose(db, runId, obj, { kinds });
-      counts[r.result.startsWith('invalid:') ? 'invalid' : r.result]++;
-      if (r.warning === 'no-predicted-verdict') unpredicted++;
-      if (r.clamped) clamped++;
-      lines.push({ line: i + 1, ...r });
-    });
-    lines.push({ summary: { ...counts, ...(unpredicted ? { unpredicted } : {}), ...(clamped ? { clamped } : {}) } });
-    return { code: counts.invalid > 0 ? 1 : 0, lines };
+  verify: {
+    flags: { run: RUN_FLAG, 'per-lens': { arg: '<n>' }, 'per-run': { arg: '<n>' } },
+    help: 're-check code/doc quotes -> verified | dropped (verify-failed:<ref>); a ticket/page/goal/dep ref this run did not ' +
+      'ingest -> dropped (ref-not-ingested:<type>:<ref>); each check gives the line the quote was found on (claimed_line when the ' +
+      'hint differs, drift when > 3 lines); bus_factor measured from git (anchor paths, 90 days before head); per_lens {emitted, ' +
+      'verified, dropped}; then allocate the verified cards: each lens\'s MVP, then by score up to the pack budget (4) per lens, ' +
+      'then free run slots (16 per run) to the best reserve of any lens -> band ranked; the rest band reserve (stored, pushed) -> allocation',
+    run(a, ctx) {
+      const db = ctx.open();
+      return { out: verifyLib.verifyRun(db, ctx.root, req(a, 'run'), { perLens: intOpt(a, 'per-lens'), perRun: intOpt(a, 'per-run') }) };
+    },
   },
 
-  verify(a, ctx) {
-    const db = ctx.open();
-    return { out: verifyLib.verifyRun(db, ctx.root, /** @type {string} */ (opt(a, 'run', true)), { perLens: intOpt(a, 'per-lens'), perRun: intOpt(a, 'per-run') }) };
+  pretriage: {
+    flags: { run: RUN_FLAG },
+    help: 'the L1 gate: mark verified ranked cards predicted `accept` in slices at trust level 1 pretriaged_by machine:dowser -> {pretriaged, for_person}',
+    run(a, ctx) { return { out: trustLib.pretriageRun(ctx.open(), req(a, 'run')) }; },
   },
 
-  move(a, ctx) {
-    const fp = a._[1];
-    if (!fp) throw new DowserError('move <fp> --to <status> --by <kind:name>', 2);
-    const db = ctx.open();
-    const row = store.move(db, fp, /** @type {string} */ (opt(a, 'to', true)), {
-      from: opt(a, 'from'), by: /** @type {string} */ (opt(a, 'by', true)), reason: opt(a, 'reason'),
-      note: opt(a, 'note'), into: opt(a, 'into'), runId: opt(a, 'run'), until: opt(a, 'until'),
-    });
-    const events = trustLib.syncTrust(db);
-    return { out: { fp: row.fp, status: row.status, ...store.clean({ reason: row.reason, note: row.note, merged_into: row.merged_into, snooze_until: row.snooze_until }), decided_by: row.decided_by, decided_at: row.decided_at, ...(events.length ? { trust_events: events } : {}) } };
+  trust: {
+    flags: { slice: { arg: '<key>' } },
+    help: 'per-slice trust -> {slices: [{slice, level, ceiling, start, n, agreement?, changed_at?, reason?}], events: [...]} ' +
+      '(append-only events); every slice with history or with a card, a new one at its start level',
+    run(a, ctx) { return { out: trustLib.trustReport(ctx.open(), { slice: opt(a, 'slice') }) }; },
   },
 
-  trust(a, ctx) {
-    return { out: trustLib.trustReport(ctx.open(), { slice: opt(a, 'slice') }) };
+  move: {
+    args: '<fp>',
+    flags: {
+      to: { arg: '<status>', required: true }, by: { arg: '<kind:name>', required: true }, from: { arg: '<s>' }, reason: { arg: '<code>' },
+      note: { arg: '<t>' }, into: { arg: '<fp>' }, run: { arg: '<id>' }, until: { arg: 'YYYY-MM-DD' },
+    },
+    help: 'a compare-and-set status move; --until only with --to snoozed, a date after today',
+    run(a, ctx) {
+      const fp = a._[1];
+      if (!fp) throw new DowserError('move <fp> --to <status> --by <kind:name>', 2);
+      const db = ctx.open();
+      const row = store.move(db, fp, req(a, 'to'), {
+        from: opt(a, 'from'), by: req(a, 'by'), reason: opt(a, 'reason'),
+        note: opt(a, 'note'), into: opt(a, 'into'), runId: opt(a, 'run'), until: opt(a, 'until'),
+      });
+      const events = trustLib.syncTrust(db);
+      return { out: { fp: row.fp, status: row.status, ...store.clean({ reason: row.reason, note: row.note, merged_into: row.merged_into, snooze_until: row.snooze_until }), decided_by: row.decided_by, decided_at: row.decided_at, ...(events.length ? { trust_events: events } : {}) } };
+    },
   },
 
-  pretriage(a, ctx) {
-    return { out: trustLib.pretriageRun(ctx.open(), /** @type {string} */ (opt(a, 'run', true))) };
-  },
-
-  status(a, ctx) {
-    const db = ctx.open();
-    const n = opt(a, 'runs');
-    const runs = n === undefined ? 5 : Number(n);
-    if (!Number.isInteger(runs) || runs < 1) throw new DowserError('--runs is a positive integer', 2);
-    return { out: { db: ctx.dbFile(), project_key: projectKey(ctx.root), ...store.statusSummary(db, { runs }) } };
+  status: {
+    flags: { runs: { arg: '<n>' } },
+    help: 'counts by status and lens, last runs (default 5), "top N of M" truncation',
+    run(a, ctx) {
+      const db = ctx.open();
+      const n = opt(a, 'runs');
+      const runs = n === undefined ? 5 : Number(n);
+      if (!Number.isInteger(runs) || runs < 1) throw new DowserError('--runs is a positive integer', 2);
+      return { out: { db: ctx.dbFile(), project_key: projectKey(ctx.root), ...store.statusSummary(db, { runs }) } };
+    },
   },
 
   // WP2 - memory and learning
-  context(a, ctx) {
-    const db = ctx.open();
-    return { out: memory.contextPack(db, { runId: /** @type {string} */ (opt(a, 'run', true)), lens: /** @type {string} */ (opt(a, 'lens', true)), focus: opt(a, 'focus') }) };
+  context: {
+    flags: { run: RUN_FLAG, lens: { arg: '<l>', required: true }, focus: { arg: '<f>' } },
+    help: '-> {lens, lens_version, kinds, budget, suppressed, near (open and held-back items, then up to 20 accepted ones, each ' +
+      'with fp, topic, anchors), rules, exemplars, outcomes?: {right, partly, wrong}, since_sha?, focus?, direction?}',
+    run(a, ctx) {
+      const db = ctx.open();
+      return { out: memory.contextPack(db, { runId: req(a, 'run'), lens: req(a, 'lens'), focus: opt(a, 'focus') }) };
+    },
   },
 
-  similar(a, ctx) {
-    const fp = a._[1];
-    if (!fp) throw new DowserError('similar <fp>', 2);
-    return { out: memory.similar(ctx.open(), fp) };
+  similar: {
+    args: '<fp>',
+    help: 'same-lens items sharing an anchor or 2+ topic tokens (generic words such as docs, md, lens ignored), and other-lens ' +
+      'items sharing a SYMBOL anchor path#symbol (cross_lens: true; a shared whole file never counts), with the overlap',
+    run(a, ctx) {
+      const fp = a._[1];
+      if (!fp) throw new DowserError('similar <fp>', 2);
+      return { out: memory.similar(ctx.open(), fp) };
+    },
   },
 
-  show(a, ctx) {
-    const fp = a._[1];
-    if (!fp) throw new DowserError('show <fp>', 2);
-    return { out: memory.show(ctx.open(), fp) };
+  show: {
+    args: '<fp>',
+    help: 'ask-why: the card, every evidence row, every transition (no rescan)',
+    run(a, ctx) {
+      const fp = a._[1];
+      if (!fp) throw new DowserError('show <fp>', 2);
+      return { out: memory.show(ctx.open(), fp) };
+    },
   },
 
-  list(a, ctx) {
-    const db = ctx.open();
-    const out = memory.list(db, { lens: opt(a, 'lens'), status: opt(a, 'status'), title: opt(a, 'title') });
-    return { out: { ...out, proposals: store.withSnoozeUntil(db, out.proposals) } };
+  list: {
+    flags: { lens: { arg: '<l>' }, status: { arg: '<s>' }, title: { arg: '<substring>' } },
+    help: '-> {proposals: [{fp, lens, status, title, decided_at?, snooze_until?}]}',
+    run(a, ctx) {
+      const db = ctx.open();
+      const out = memory.list(db, { lens: opt(a, 'lens'), status: opt(a, 'status'), title: opt(a, 'title') });
+      return { out: { ...out, proposals: store.withSnoozeUntil(db, out.proposals) } };
+    },
   },
 
-  rules(a, ctx) {
-    const sub = a._[1];
-    if (sub === 'offer') return { out: memory.offerRules(ctx.open()) };
-    if (sub === 'list') return { out: memory.listRules(ctx.open(), { lens: opt(a, 'lens') }) };
-    if (sub === 'accept' || sub === 'decline') {
-      const id = a._[2];
-      if (!id) throw new DowserError(`rules ${sub} <id> --by human:<name>`, 2);
-      return { out: memory.decideRule(ctx.open(), id, sub === 'accept' ? 'accepted' : 'declined', { by: /** @type {string} */ (opt(a, 'by', true)), text: opt(a, 'text') }) };
-    }
-    throw new DowserError('rules offer | rules list [--lens l] | rules accept|decline <id> --by human:<name> [--text t]', 2);
+  rules: {
+    subs: {
+      offer: { help: 'offer a rule for every (lens, reason, token) rejected 3+ times', run: (_a, ctx) => ({ out: memory.offerRules(ctx.open()) }) },
+      list: { flags: { lens: { arg: '<l>' } }, help: 'the rules and their states', run: (a, ctx) => ({ out: memory.listRules(ctx.open(), { lens: opt(a, 'lens') }) }) },
+      accept: decideRule('accepted'),
+      decline: decideRule('declined'),
+    },
   },
 
-  reflect(a, ctx) {
-    const sub = a._[1];
-    if (sub === 'export') return { out: reflectLib.exportOffers(ctx.open(), projectKey(ctx.root)) };
-    if (sub === 'ingest') return reflectLib.ingestReflect(ctx.open(), syncLib.readResponse(/** @type {string} */ (opt(a, 'file', true))));
-    throw new DowserError('reflect export | reflect ingest --file <json>', 2);
+  reflect: {
+    subs: {
+      export: {
+        help: '-> {project_key, rules_json?, trust_json?, more?}: the dowser_reflect_sync arguments (rules in state `offered`, oldest ' +
+          'first, at most 50, and the per-slice trust with its newest 50 events; read-only; run `rules offer` first)',
+        run: (_a, ctx) => ({ out: reflectLib.exportOffers(ctx.open(), projectKey(ctx.root)) }),
+      },
+      ingest: {
+        flags: { file: FILE_FLAG },
+        help: 'apply a dowser_reflect_sync response: each rule Forge decided is a CAS offered -> accepted|declined (others skipped), ' +
+          'each outcome an append-only row -> {rules_applied, rules_skipped, outcomes_added, outcomes_seen}; idempotent',
+        run: (a, ctx) => reflectLib.ingestReflect(ctx.open(), syncLib.readResponse(req(a, 'file'))),
+      },
+    },
   },
 
-  prefs(a, ctx) {
-    const sub = a._[1];
-    if (sub === 'get') return { out: memory.getPrefs(a._.slice(2), ctx.root) };
-    if (sub === 'set') return { out: memory.setPrefs(a._.slice(2), ctx.root) };
-    throw new DowserError('prefs get [key ...] | prefs set key=value [key=value ...]', 2);
+  prefs: {
+    subs: {
+      get: { args: '[key ...]', help: '~/.dowser/user.json (mode dev|guided, verbosity short|full, quotes send|omit)', run: (a, ctx) => ({ out: memory.getPrefs(a._.slice(2), ctx.root) }) },
+      set: { args: 'key=value ...', help: 'set preferences in ~/.dowser/user.json', run: (a, ctx) => ({ out: memory.setPrefs(a._.slice(2), ctx.root) }) },
+    },
   },
+
   // WP4 - the Forge seam
-  outbox(a, ctx) {
-    const origin = originUrl(ctx.root);
-    const quotes = memory.readPrefs(ctx.root).quotes === 'omit' ? 'omit' : 'send';
-    // --kinds as at propose (the lens packs' kinds): sent as lens_kinds_json, so Forge checks kind-in-lens too
-    const lensKinds = a.kinds === undefined ? undefined : parseKinds(a);
-    return { out: syncLib.outbox(ctx.open(), { projectKey: projectKey(ctx.root), runId: /** @type {string} */ (opt(a, 'run', true)), repoUrl: origin ? webUrl(origin) : undefined, quotes, lensKinds }) };
+  outbox: {
+    flags: { run: RUN_FLAG, kinds: KINDS_FLAG },
+    help: '-> {project_key, run_id, proposals_json, repo_url?, head_sha?, lens_kinds_json?, more?}: the dowser_proposals_push ' +
+      'arguments (verified, not pushed yet; pushed items whose evidence grew), at most 50; `more: true` = run it again. ' +
+      'lens_kinds_json carries the lens packs\' kinds (narrowed to the lenses sent; --kinds as at propose), so Forge refuses a kind its lens lacks',
+    run(a, ctx) {
+      const origin = originUrl(ctx.root);
+      const quotes = memory.readPrefs(ctx.root).quotes === 'omit' ? 'omit' : 'send';
+      return { out: syncLib.outbox(ctx.open(), { projectKey: projectKey(ctx.root), runId: req(a, 'run'), repoUrl: origin ? webUrl(origin) : undefined, quotes, lensKinds: parseKinds(a) }) };
+    },
   },
-  'ingest-push'(a, ctx) {
-    const doc = syncLib.readResponse(/** @type {string} */ (opt(a, 'file', true)));
-    return syncLib.ingestPush(ctx.open(), doc);
+  'ingest-push': {
+    flags: { file: FILE_FLAG },
+    help: 'apply a dowser_proposals_push response -> pushed | merged | refused',
+    run: (a, ctx) => syncLib.ingestPush(ctx.open(), syncLib.readResponse(req(a, 'file'))),
   },
-  'ingest-verdicts'(a, ctx) {
-    const doc = syncLib.readResponse(/** @type {string} */ (opt(a, 'file', true)));
-    return syncLib.ingestVerdicts(ctx.open(), doc);
+  'ingest-verdicts': {
+    flags: { file: FILE_FLAG },
+    help: 'apply a dowser_verdicts_pull response (CAS, idempotent), keep cursor; an accepted verdict records issue_ref/issue_url',
+    run: (a, ctx) => syncLib.ingestVerdicts(ctx.open(), syncLib.readResponse(req(a, 'file'))),
   },
-  areas(a, ctx) {
-    const topArg = opt(a, 'top');
-    const top = topArg === undefined ? undefined : Number(topArg);
-    return { out: syncLib.areas(ctx.open(), { root: ctx.root, projectKey: projectKey(ctx.root), runId: /** @type {string} */ (opt(a, 'run', true)), top }) };
+  areas: {
+    flags: { run: RUN_FLAG, top: { arg: '<n>' } },
+    help: '-> {project_key, run_id, areas_json}: the dowser_areas_push arguments (directories at depth 1-2: files, churn_90d, ' +
+      'authors_90d?, last_change?; --top defaults to 40)',
+    run(a, ctx) {
+      const topArg = opt(a, 'top');
+      const top = topArg === undefined ? undefined : Number(topArg);
+      return { out: syncLib.areas(ctx.open(), { root: ctx.root, projectKey: projectKey(ctx.root), runId: req(a, 'run'), top }) };
+    },
   },
-  'ingest-sources'(a, ctx) {
-    const runId = /** @type {string} */ (opt(a, 'run', true));
-    const type = /** @type {string} */ (opt(a, 'type', true));
-    const doc = syncLib.readResponse(/** @type {string} */ (opt(a, 'file', true)));
-    return syncLib.ingestSources(ctx.open(), { runId, type, doc });
+  'ingest-sources': {
+    flags: { run: RUN_FLAG, type: { arg: 'ticket|page|goal', required: true }, file: FILE_FLAG },
+    help: 'cache a dowser_sources_* response -> refs (contract: docs/contracts/forge-mcp-2.md; the agent calls the tools)',
+    run: (a, ctx) => syncLib.ingestSources(ctx.open(), { runId: req(a, 'run'), type: req(a, 'type'), doc: syncLib.readResponse(req(a, 'file')) }),
   },
-  'ingest-direction'(a, ctx) {
-    const runId = /** @type {string} */ (opt(a, 'run', true));
-    const doc = syncLib.readResponse(/** @type {string} */ (opt(a, 'file', true)));
-    return directionLib.ingestDirection(ctx.open(), { runId, doc });
+  'ingest-direction': {
+    flags: { run: RUN_FLAG, file: FILE_FLAG },
+    help: 'cache a dowser_direction_get response on the run; context --lens then carries that lens\'s direction',
+    run: (a, ctx) => directionLib.ingestDirection(ctx.open(), { runId: req(a, 'run'), doc: syncLib.readResponse(req(a, 'file')) }),
   },
-  deps(a, ctx) {
-    return depsLib.runDeps(ctx.open(), { root: ctx.root, runId: /** @type {string} */ (opt(a, 'run', true)) });
+  deps: {
+    flags: { run: RUN_FLAG },
+    help: 'run the dependency auditors present (read-only), cache their findings as dep items -> {auditors: [{tool, dir?, state, ' +
+      'reason?, found?}], refs, not_audited?}',
+    run: (a, ctx) => depsLib.runDeps(ctx.open(), { root: ctx.root, runId: req(a, 'run') }),
   },
 
-  share(a, ctx) {
-    return { out: shareLib.shareRun(ctx.open(), /** @type {string} */ (opt(a, 'run', true))) };
+  share: {
+    flags: { run: RUN_FLAG },
+    help: 'the run\'s kept proposals as markdown, evidence by ref only (read-only) -> {run_id, cards, markdown}',
+    run(a, ctx) { return { out: shareLib.shareRun(ctx.open(), req(a, 'run')) }; },
   },
 };
+
+/** Flags that may repeat, from the spec. */
+const REPEATABLE = new Set(Object.values(COMMANDS).flatMap((e) => ('subs' in e ? Object.values(e.subs) : [e]))
+  .flatMap((c) => Object.entries(c.flags ?? {}).filter(([, f]) => f.repeat).map(([k]) => k)));
+
+/**
+ * Resolves the command (and subcommand) argv names, then checks its flags against the spec: an undeclared flag or a
+ * missing required one is bad input (exit 2).
+ * @param {Args} a
+ * @param {Record<string, Entry>} [commands]
+ * @returns {{path: string, command: Command}}
+ */
+export function resolveCommand(a, commands = COMMANDS) {
+  const cmd = a._[0];
+  const entry = Object.hasOwn(commands, cmd) ? commands[cmd] : undefined;
+  if (!entry) throw new DowserError(`unknown command ${JSON.stringify(cmd)} (one of ${Object.keys(commands).join(', ')})`, 2);
+  /** @type {Command} */
+  let command;
+  let path = cmd;
+  if ('subs' in entry) {
+    const sub = a._[1];
+    if (!sub || !Object.hasOwn(entry.subs, sub)) throw new DowserError(Object.entries(entry.subs).map(([s, c]) => usage(`${cmd} ${s}`, c)).join(' | '), 2);
+    command = entry.subs[sub];
+    path = `${cmd} ${sub}`;
+  } else command = entry;
+  const flags = command.flags ?? {};
+  for (const k of Object.keys(a)) {
+    if (k === '_' || Object.hasOwn(GLOBAL_FLAGS, k) || Object.hasOwn(flags, k)) continue;
+    const accepted = [...Object.keys(flags), ...Object.keys(GLOBAL_FLAGS).filter((g) => g !== 'help')].map((f) => `--${f}`).join(', ');
+    throw new DowserError(`unknown flag --${k} for ${path} (accepted: ${accepted})`, 2);
+  }
+  for (const [k, f] of Object.entries(flags)) if (f.required && a[k] === undefined) throw new DowserError(`--${k} is required`, 2);
+  return { path, command };
+}
+
+/** One command's usage line: `propose --run <id> --file <jsonl> [--kinds <lens>=<k1,k2> ...]`. @param {string} path @param {Command} c */
+function usage(path, c) {
+  const flags = Object.entries(c.flags ?? {}).map(([k, f]) => {
+    const s = `--${k}${f.arg ? ` ${f.arg}` : ''}${f.repeat ? ' ...' : ''}`;
+    return f.required ? s : `[${s}]`;
+  });
+  return [path, ...(c.args ? [c.args] : []), ...flags].join(' ');
+}
+
+/** @param {string} text @param {string} indent @param {number} width */
+function wrap(text, indent, width) {
+  /** @type {string[]} */
+  const lines = [];
+  let line = '';
+  for (const w of text.split(/\s+/)) {
+    if (line && indent.length + line.length + 1 + w.length > width) { lines.push(indent + line); line = w; } else line = line ? `${line} ${w}` : w;
+  }
+  if (line) lines.push(indent + line);
+  return lines.join('\n');
+}
+
+/**
+ * The --help text, generated from the command spec.
+ * @param {Record<string, Entry>} [commands]
+ * @returns {string}
+ */
+export function helpText(commands = COMMANDS) {
+  const out = ['dowser - the single CLI of the Dowser skill. JSON on stdout (JSONL for propose), diagnostics on stderr.',
+    'The store lives at ~/.dowser/projects/<project-key>/dowser.db (DOWSER_HOME overrides); nothing is written in the repo.', '',
+    '  node dowser.mjs <command> [sub] [--repo <path>] [flags]   (--repo defaults to the cwd)', ''];
+  for (const [name, e] of Object.entries(commands)) {
+    for (const [path, c] of 'subs' in e ? Object.entries(e.subs).map(([s, c]) => /** @type {[string, Command]} */ ([`${name} ${s}`, c])) : [/** @type {[string, Command]} */ ([name, e])]) {
+      out.push(wrap(usage(path, c), '  ', 118), wrap(c.help, '      ', 118));
+    }
+  }
+  out.push('', 'Exit codes: 0 ok, 1 partial, 2 bad input or refused move, 3 store/connection unavailable or not implemented.', '');
+  return out.join('\n');
+}
 
 /**
  * Runs one command. Never exits the process; returns the exit code and what to print.
@@ -404,12 +528,11 @@ export const COMMANDS = {
 export async function main(argv) {
   const a = parseArgs(argv);
   const cmd = a._[0];
-  if (!cmd || a.help === true) return { code: cmd ? 0 : 2, stdout: HELP, stderr: '' };
+  if (!cmd || a.help === true) return { code: cmd ? 0 : 2, stdout: helpText(), stderr: '' };
   /** @type {import('./lib/store.mjs').Db | undefined} */
   let db;
   try {
-    const handler = Object.hasOwn(COMMANDS, cmd) ? COMMANDS[cmd] : undefined;
-    if (!handler) throw new DowserError(`unknown command ${JSON.stringify(cmd)} (one of ${Object.keys(COMMANDS).join(', ')})`, 2);
+    const { command } = resolveCommand(a);
     const repoArg = opt(a, 'repo');
     const root = repoRoot(resolve(repoArg ?? process.cwd()));
     /** @type {string | undefined} */
@@ -417,7 +540,7 @@ export async function main(argv) {
     const dbFile = () => (file ??= dbPath(root));
     const ctx = { root, dbFile, open: () => (db ??= store.openStore(dbFile())) };
     // a handler may be async (deps); awaiting inside the try keeps its rejection on the same error path
-    const r = await handler(a, ctx);
+    const r = await command.run(a, ctx);
     const stdout = r.lines ? r.lines.map((l) => JSON.stringify(l)).join('\n') + '\n' : `${JSON.stringify(r.out, null, 2)}\n`;
     return { code: r.code ?? 0, stdout, stderr: '' };
   } catch (e) {
@@ -431,10 +554,6 @@ export async function main(argv) {
     try { db?.close(); } catch { /* already closed */ }
   }
 }
-
-const HELP = readFileSync(fileURLToPath(import.meta.url), 'utf8')
-  .split('\n// Exit codes')[0].replace(/^#!.*\n/, '').replace(/^\/\/ @ts-check\n/, '').replace(/^\/\/ ?/gm, '') +
-  '\nExit codes: 0 ok, 1 partial, 2 bad input or refused move, 3 store/connection unavailable or not implemented.\n';
 
 // run as a script: compare real paths, so a skill dir reached through a junction or symlink still runs
 if (process.argv[1] && isEntry(process.argv[1], import.meta.url)) {

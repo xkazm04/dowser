@@ -56,12 +56,12 @@ test('init -> run start -> propose -> verify -> move -> status, nothing written 
 
   const file = join(scratch, 'cands.jsonl');
   writeFileSync(file, [
-    JSON.stringify(candidate()),
-    JSON.stringify(candidate({ topic: 'too long', title: 'x'.repeat(90) })),
+    JSON.stringify(candidate({ kind: 'secret-exposure' })),
+    JSON.stringify(candidate({ kind: 'secret-exposure', topic: 'too long', title: 'x'.repeat(90) })),
     '',
     '{not json',
   ].join('\n'));
-  const prop = cli('propose', '--run', run, '--file', file, '--kinds', 'security-cra=secret,vuln', '--kinds', 'opportunity=gap');
+  const prop = cli('propose', '--run', run, '--file', file, '--kinds', 'security-cra=secret-exposure,risky-pattern', '--kinds', 'opportunity=goal-gap');
   assert.equal(prop.code, 1, 'some lines invalid -> partial');
   assert.equal(prop.lines[0].result, 'created');
   assert.equal(prop.lines[0].line, 1);
@@ -72,8 +72,9 @@ test('init -> run start -> propose -> verify -> move -> status, nothing written 
   assert.deepEqual(prop.lines[3].summary, { lines: 3, created: 1, 'evidence-grew': 0, suppressed: 0, duplicate: 0, invalid: 2, unpredicted: 1 });
   const fp = prop.lines[0].fp;
 
-  const noKinds = cli('propose', '--run', run, '--file', file);
-  assert.equal(noKinds.code, 2);
+  const noFile = cli('propose', '--run', run);
+  assert.equal(noFile.code, 2);
+  assert.match(noFile.stderr, /--file is required/, 'a required flag of the spec');
 
   const ver = cli('verify', '--run', run);
   assert.equal(ver.code, 0, ver.stderr);
@@ -125,4 +126,79 @@ test('init -> run start -> propose -> verify -> move -> status, nothing written 
 
   assert.deepEqual(listFiles(repo), filesBefore, 'no file created inside the fixture repo');
   assert.equal(execFileSync('git', ['-C', repo, 'status', '--porcelain', '--ignored'], { encoding: 'utf8' }), statusBefore);
+});
+
+// ---------------------------------------------------------------------------- kinds from the packs, flags from the spec
+
+/** Starts a fresh run in the shared fixture repo. @returns {string} */
+const freshRun = () => { const s = cli('run', 'start', '--mode', 'full'); assert.equal(s.code, 0, s.stderr); return s.out.run_id; };
+/** Writes candidates to a JSONL file in scratch. @param {string} name @param {Record<string, unknown>[]} cands */
+const jsonl = (name, cands) => { const f = join(scratch, name); writeFileSync(f, cands.map((c) => JSON.stringify(c)).join('\n') + '\n'); return f; };
+
+test('propose without --kinds: the kinds come from the lens packs', () => {
+  cli('init');
+  const run = freshRun();
+  const p = cli('propose', '--run', run, '--file', jsonl('derived.jsonl', [candidate({ kind: 'secret-exposure', topic: 'derived kinds' })]));
+  assert.equal(p.code, 0, p.stdout + p.stderr);
+  assert.equal(p.lines[0].result, 'created');
+});
+
+test('propose --kinds must be a subset of the pack: kinds the pack lacks exit 2 and are named', () => {
+  cli('init');
+  const run = freshRun();
+  const p = cli('propose', '--run', run, '--file', jsonl('subset.jsonl', [candidate({ kind: 'secret-exposure', topic: 'subset kinds' })]), '--kinds', 'security-cra=secret,vuln');
+  assert.equal(p.code, 2);
+  assert.match(p.stderr, /secret, vuln are not kinds of lenses\/security-cra\.md/);
+  const ok = cli('propose', '--run', run, '--file', join(scratch, 'subset.jsonl'), '--kinds', 'security-cra=secret-exposure');
+  assert.equal(ok.code, 0, ok.stdout + ok.stderr);
+});
+
+test('outbox without --kinds sends lens_kinds_json from the pack frontmatter (kind-in-lens on by default)', async () => {
+  const { loadLensPack } = await import('../lib/memory.mjs');
+  const { LENSES } = await import('../lib/model.mjs');
+  cli('init');
+  const run = freshRun();
+  const kindOf = { opportunity: 'missing-capability', 'ux-friction': 'dead-end', 'doc-drift': 'stale-example', 'security-cra': 'secret-exposure' };
+  const p = cli('propose', '--run', run, '--file', jsonl('four.jsonl', LENSES.map((lens) => candidate({ lens, kind: kindOf[lens], topic: `four lenses ${lens}`, anchors: [`src/auth.js#${lens}`] }))));
+  assert.equal(p.code, 0, p.stdout + p.stderr);
+  assert.equal(cli('verify', '--run', run).code, 0);
+  const ob = cli('outbox', '--run', run);
+  assert.equal(ob.code, 0, ob.stderr);
+  assert.ok(ob.out.lens_kinds_json, 'lens_kinds_json is sent without --kinds');
+  const sent = JSON.parse(ob.out.lens_kinds_json);
+  assert.deepEqual(Object.keys(sent).sort(), [...LENSES].sort());
+  for (const lens of LENSES) assert.deepEqual(sent[lens], loadLensPack(lens).kinds, `${lens}: the pack's kinds`);
+});
+
+test('an unknown flag is refused, naming the flag, the command and its declared flags', () => {
+  cli('init');
+  const run = freshRun();
+  const v = cli('verify', '--run', run, '--per_lens', '2');
+  assert.equal(v.code, 2);
+  assert.match(v.stderr, /unknown flag --per_lens for verify/);
+  assert.match(v.stderr, /--per-lens/);
+  assert.match(v.stderr, /--per-run/);
+  const sub = cli('run', 'finish', '--run', run, '--lens', '{}');
+  assert.equal(sub.code, 2);
+  assert.match(sub.stderr, /unknown flag --lens for run finish/);
+});
+
+test('--help lists each command\'s declared flags from the spec', async () => {
+  const { COMMANDS: spec, helpText } = await import('../dowser.mjs');
+  const COMMANDS = /** @type {Record<string, any>} */ (spec);
+  const help = cli('--help');
+  assert.equal(help.code, 2, 'no command: help, exit 2');
+  /** @type {[string, any][]} */
+  const entries = [];
+  for (const [name, e] of Object.entries(COMMANDS)) {
+    if (e.subs) for (const [sub, c] of Object.entries(e.subs)) entries.push([`${name} ${sub}`, c]);
+    else entries.push([name, e]);
+  }
+  assert.ok(entries.length > 20);
+  for (const [path, c] of entries) {
+    assert.ok(help.stdout.includes(path), `help names ${path}`);
+    for (const flag of Object.keys(c.flags ?? {})) assert.ok(help.stdout.includes(`--${flag}`), `help names ${path} --${flag}`);
+  }
+  const grown = { ...COMMANDS, share: { ...COMMANDS.share, flags: { ...COMMANDS.share.flags, 'brand-new': { arg: '<x>' } } } };
+  assert.match(helpText(grown), /share --run <id> \[--brand-new <x>\]/, 'a flag added to the spec shows up in help');
 });

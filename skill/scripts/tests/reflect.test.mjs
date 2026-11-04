@@ -93,12 +93,12 @@ test('setup: three same-reason rejections offer a rule; `reflect export` is read
   runId = cli('run', 'start', '--mode', 'full').out.run_id;
   const lines = [
     ...['onboarding tour', 'onboarding checklist', 'skip onboarding'].map((topic, i) => candidate({
-      lens: 'opportunity', kind: 'gap', topic, anchors: [`src/onb-${i}.js`], title: `Onboarding idea ${i}`, evidence: [CODE],
+      lens: 'opportunity', kind: 'missing-capability', topic, anchors: [`src/onb-${i}.js`], title: `Onboarding idea ${i}`, evidence: [CODE],
     })),
-    candidate({ lens: 'security-cra', kind: 'secret', topic: 'plaintext password', title: 'Password compared in plaintext', evidence: [CODE] }),
+    candidate({ lens: 'security-cra', kind: 'secret-exposure', topic: 'plaintext password', title: 'Password compared in plaintext', evidence: [CODE] }),
   ];
   writeFileSync(join(work, 'c.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
-  const p = cli('propose', '--run', runId, '--file', join(work, 'c.jsonl'), '--kinds', 'opportunity=gap', '--kinds', 'security-cra=secret');
+  const p = cli('propose', '--run', runId, '--file', join(work, 'c.jsonl'));
   assert.equal(p.code, 0, p.stdout);
   const fps = p.lines.filter((/** @type {any} */ l) => l.fp).map((/** @type {any} */ l) => l.fp);
   assert.equal(cli('verify', '--run', runId).code, 0);
@@ -217,9 +217,9 @@ test('verdict notes on accepted and snoozed verdicts are kept on the transition 
   // snoozed: a verified item from another run
   // a snoozed verdict needs the item pushed too
   const snz = cli('propose', '--run', runId, '--file', (() => {
-    writeFileSync(join(work, 'z.jsonl'), `${JSON.stringify(candidate({ lens: 'doc-drift', kind: 'stale', topic: 'stale setup guide', anchors: ['docs/setup.md'], evidence: [CODE] }))}\n`);
+    writeFileSync(join(work, 'z.jsonl'), `${JSON.stringify(candidate({ lens: 'doc-drift', kind: 'stale-example', topic: 'stale setup guide', anchors: ['docs/setup.md'], evidence: [CODE] }))}\n`);
     return join(work, 'z.jsonl');
-  })(), '--kinds', 'doc-drift=stale');
+  })());
   const zfp = snz.lines[0].fp;
   assert.equal(cli('verify', '--run', runId).code, 0);
   assert.equal(cli('outbox', '--run', runId).code, 0);
@@ -238,7 +238,7 @@ test('mock round trip over stdio: offer, person decides in Forge, person rates t
   const fps = [];
   for (const topic of ['pricing banner', 'pricing popup', 'pricing modal']) {
     writeFileSync(join(work, 'p.jsonl'), `${JSON.stringify(candidate({ lens: 'ux-friction', kind: 'dead-end', topic, anchors: [`src/${topic.replace(' ', '-')}.js`], title: `Pricing ${topic}`, evidence: [CODE] }))}\n`);
-    const p = cli('propose', '--run', runId, '--file', join(work, 'p.jsonl'), '--kinds', 'ux-friction=dead-end');
+    const p = cli('propose', '--run', runId, '--file', join(work, 'p.jsonl'));
     assert.equal(p.code, 0, p.stdout);
     fps.push(p.lines[0].fp);
   }

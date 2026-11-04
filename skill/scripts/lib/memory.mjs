@@ -105,6 +105,16 @@ export function loadLensPack(lens, dir = LENS_DIR) {
   return /** @type {LensPack} */ (fm);
 }
 
+/**
+ * Every lens's closed kind list, read from its pack's frontmatter (`loadLensPack`): the one source of the kinds
+ * `propose` checks and `outbox` sends. A missing or broken pack exits 2.
+ * @param {string} [dir]
+ * @returns {Record<string, string[]>}
+ */
+export function packKinds(dir = LENS_DIR) {
+  return Object.fromEntries(LENSES.map((lens) => [lens, loadLensPack(lens, dir).kinds]));
+}
+
 // ------------------------------------------------------------------------------------------- shared
 
 /** topicTokens lives in predict.mjs (propose's precedent search uses it too); re-exported here. */

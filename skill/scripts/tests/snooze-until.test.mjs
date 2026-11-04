@@ -117,8 +117,8 @@ test('CLI: move --until validation, list shows snooze_until, run start wakes a p
   assert.equal(init.code, 0, init.stderr);
   const run = cli('run', 'start', '--mode', 'full').out.run_id;
   const file = join(dir, 'cands.jsonl');
-  writeFileSync(file, ['a due item', 'a later item', 'an undated item'].map((topic) => JSON.stringify(candidate({ topic }))).join('\n'));
-  const prop = cli('propose', '--run', run, '--file', file, '--kinds', 'security-cra=secret,vuln');
+  writeFileSync(file, ['a due item', 'a later item', 'an undated item'].map((topic) => JSON.stringify(candidate({ topic, kind: 'secret-exposure' }))).join('\n'));
+  const prop = cli('propose', '--run', run, '--file', file);
   assert.equal(prop.code, 0, prop.stderr);
   const [due, later, undated] = prop.stdout.split('\n').filter(Boolean).slice(0, 3).map((l) => JSON.parse(l).fp);
   assert.equal(cli('verify', '--run', run).out.verified, 3);

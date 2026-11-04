@@ -75,11 +75,11 @@ if (cmd === 'prep') {
   const start = cli('run', 'start', '--mode', 'full', '--harness', 'claude-code', '--model', 'e2e');
   const code = { type: 'code', ref: 'src/auth.js:2', quote: 'return check(user.password);' };
   writeFileSync(join(WORK, 'sec.jsonl'), [
-    candidate({ evidence: [code] }),
-    candidate({ topic: 'Login has no rate limit', title: 'Login can be brute-forced', kind: 'vuln', anchors: ['src/api/rate.js#limit'],
+    candidate({ kind: 'secret-exposure', evidence: [code] }),
+    candidate({ topic: 'Login has no rate limit', title: 'Login can be brute-forced', kind: 'risky-pattern', anchors: ['src/api/rate.js#limit'],
       evidence: [code, { type: 'code', ref: 'src/api/rate.js:1', quote: 'export const limit = null; // TODO rate limit' }] }),
   ].map((c) => JSON.stringify(c)).join('\n') + '\n');
-  const lines = cli('propose', '--run', start.run_id, '--file', join(WORK, 'sec.jsonl'), '--kinds', 'security-cra=secret,vuln');
+  const lines = cli('propose', '--run', start.run_id, '--file', join(WORK, 'sec.jsonl')); // kinds from the lens packs
   cli('verify', '--run', start.run_id);
   Object.assign(state, { project_key: init.project_key, run_id: start.run_id, fps: [].concat(lines).map((/** @type {any} */ l) => l.fp).filter(Boolean) });
   save();
