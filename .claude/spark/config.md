@@ -18,10 +18,11 @@ context map is provisional until the first scaffold commit.
 
 - `npm run typecheck`: `tsc -p jsconfig.json --noEmit` (checkJs, strict) over `skill/**/*.mjs` and `tools/**/*.mjs`.
 - `npm test`: `node --test "skill/scripts/tests/*.test.mjs"`. Tests use mkdtemp dirs and `DOWSER_HOME`, and clean up.
-- when `forge/` changes: `npm run forge:typecheck`, `npm run forge:test`, `npm run forge:check-shared` (the shared copies of `skill/scripts/lib/{model,fingerprint}.mjs` must match; after editing either, run `npm --prefix forge run sync-shared`).
+- when `forge/` changes: `npm run forge:typecheck` (the backend, then the Custom UI via `typecheck:ui`), `npm run forge:test`, `npm run forge:check-shared` (the shared copies of `skill/scripts/lib/{model,fingerprint}.mjs` must match; after editing either, run `npm --prefix forge run sync-shared`).
 - when `forge/static/app/` changes: `npm run forge:build-ui`.
-  `forge:typecheck` does NOT cover `static/app` and the build does not catch a ReferenceError: also render the
-  changed screen in the fixture UI (`npm --prefix forge/static/app run dev:fixture` on a port of your own) and
+  `forge:typecheck` checks `static/app` (`static/app/jsconfig.json`: checkJs, `strictNullChecks`, not full strict;
+  resolver answers are untyped), so an undefined name or wrong import fails it. It does not catch runtime-only
+  failures, and neither does the build: also render the changed screen in the fixture UI (`npm --prefix forge/static/app run dev:fixture` on a port of your own) and
   exercise the changed path, headless (Playwright) or by eye. (A dialog shipped crashing on open in hardening
   wave 8; the build was green.)
 - when `forge/manifest.yml` changes and `forge whoami` succeeds: `forge lint` in `forge/`.

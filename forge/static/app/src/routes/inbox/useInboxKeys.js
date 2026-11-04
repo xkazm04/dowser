@@ -50,9 +50,10 @@ export function useInboxKeys({ dialog, setDialog, flat, focusIndex, selected, by
   // Ctrl/Cmd+Enter confirms the open dialog (Accept: "Create issue", Reject: "Reject", Merge): `a` then Ctrl+Enter.
   useEffect(() => {
     if (!dialog) return undefined;
+    const kind = dialog.kind;
     function onKey(e) {
       // Reject dialog: 1-6 pick the reason (radios and the dialog itself, not the note field).
-      if (dialog.kind === 'reject' && /^[1-6]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey
+      if (kind === 'reject' && /^[1-6]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey
         && !(isTyping(e.target) && !(e.target instanceof HTMLInputElement && e.target.type === 'radio'))) {
         const radio = document.querySelectorAll('dialog.dw-dialog[open] input[name="dw-reason"]')[Number(e.key) - 1];
         if (radio instanceof HTMLElement) { e.preventDefault(); radio.click(); radio.focus(); }

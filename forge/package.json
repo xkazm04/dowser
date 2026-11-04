@@ -8,7 +8,8 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "typecheck": "tsc -p jsconfig.json --noEmit",
+    "typecheck": "tsc -p jsconfig.json --noEmit && npm run typecheck:ui",
+    "typecheck:ui": "tsc -p static/app/jsconfig.json --noEmit",
     "test": "node --test \"test/*.test.mjs\"",
     "sync-shared": "node scripts/sync-shared.mjs",
     "check-shared": "node scripts/sync-shared.mjs --check",

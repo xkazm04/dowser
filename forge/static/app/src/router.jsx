@@ -14,7 +14,7 @@ const MODULES = { 'dowser-evidence': Panel, 'dowser-doc-impact': Byline };
 const PAGES = { inbox: Inbox, map: MapView, reflect: Reflect, settings: Settings };
 
 export function Router() {
-  const [ctx, setCtx] = useState(null);
+  const [ctx, setCtx] = useState(/** @type {import('@forge/bridge').FullContext | null} */ (null));
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     view.getContext().then(setCtx, () => setFailed(true));

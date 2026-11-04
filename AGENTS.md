@@ -33,6 +33,9 @@ Run both before you hand back work:
 
 - `npm run typecheck`: `tsc` in checkJs mode over `skill/**/*.mjs` and `tools/**/*.mjs`.
 - `npm test`: `node --test "skill/scripts/tests/*.test.mjs"`.
+- When `forge/` changes: `npm run forge:typecheck` (backend and Custom UI), `npm run forge:test`,
+  `npm run forge:check-shared`; when `forge/static/app/` changes, also `npm run forge:build-ui` and render the changed
+  screen in the fixture UI (`npm --prefix forge/static/app run dev:fixture`): typecheck does not catch runtime-only failures.
 
 ## Rules
 

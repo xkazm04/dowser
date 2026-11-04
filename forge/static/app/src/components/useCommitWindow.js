@@ -51,7 +51,7 @@ export function useCommitWindow({ ms = COMMIT_MS } = {}) {
     const e = { id, ...spec, remaining: ms, startedAt: 0, timer: undefined };
     entries.current.set(id, e);
     arm(e);
-    setToasts((t) => [...t, { id, message: spec.message, kind: 'undo', ms }].slice(-MAX_TOASTS));
+    setToasts((t) => [...t, { id, message: spec.message, kind: /** @type {const} */ ('undo'), ms }].slice(-MAX_TOASTS));
     return id;
   }, [arm, flush, ms]);
 

@@ -8,6 +8,7 @@ const SHA1 = '9f2c4e1a7b3d5e6f8091a2b3c4d5e6f708192a3b';
 const SHA2 = '3b1d0c9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c';
 const SHA3 = 'c0ffee1234567890abcdef1234567890abcdef12';
 
+/** @type {{run_id: string, at: string, head_sha?: string, project_key: string}[]} */
 export const PUSHES = [
   { run_id: '2026-10-27T09-12-04Z-a1', at: '2026-10-27T09:14:10.000Z', head_sha: SHA1, project_key: 'github.com/acme/shop' },
   { run_id: '2026-10-20T16-40-51Z-c7', at: '2026-10-20T16:43:02.000Z', head_sha: SHA2, project_key: 'github.com/acme/shop' },

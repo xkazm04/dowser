@@ -11,6 +11,8 @@ export class ApiError extends Error {
 /**
  * @param {string} key  a ResolverContract key, e.g. 'inbox.list'
  * @param {object} [payload]
+ * @returns {Promise<any>} the resolver's answer; its shape is the ResolverContract entry for `key` (not imported here:
+ *   the contract lives in forge/src, a separate Node program)
  */
 export async function call(key, payload = {}) {
   const res = await invoke(key, payload);

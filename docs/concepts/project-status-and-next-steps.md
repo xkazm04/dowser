@@ -33,7 +33,8 @@ Gates on `master`: root `npm run typecheck` clean and `npm test` green; `npm run
 clean, `npm run forge:test` green, `npm run forge:check-shared` clean, `npm run forge:build-ui` green
 (test counts change every wave; `node tools/quality-snapshot.mjs` prints the current ones)). A change under `forge/static/app/` also needs
 the changed screen rendered and exercised in the fixture UI (`npm --prefix forge/static/app run dev:fixture`):
-`forge:typecheck` does not cover `static/app`, and a green build does not catch a runtime error.
+`forge:typecheck` now checks `static/app` too (checkJs with `strictNullChecks`, not full strict), which catches an
+undefined name or a wrong import, but neither it nor a green build catches a runtime-only failure.
 
 The ten-wave hardening campaign, in which Dowser scanned itself and the agent played the team, is
 finished (2026-10-29/30): `docs/evals/campaign/REPORT.md` is its final report, `README.md` beside it

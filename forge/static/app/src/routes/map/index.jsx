@@ -73,7 +73,7 @@ export default function MapView({ context }) {
           cardRef={openRef}
           onClose={() => setOpenRef('')}
           onOpenInbox={inboxUrl(context?.extension?.location, openRef)
-            ? () => { const to = inboxUrl(context?.extension?.location, openRef); setOpenRef(''); router.navigate(to).catch(() => {}); }
+            ? () => { const to = /** @type {string} */ (inboxUrl(context?.extension?.location, openRef)); setOpenRef(''); router.navigate(to).catch(() => {}); }
             : undefined}
         />
       )}

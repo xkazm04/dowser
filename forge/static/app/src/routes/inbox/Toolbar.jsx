@@ -1,5 +1,6 @@
 // The inbox toolbar: inbox picker, status segments with counts, lens filter, the area filter a map cell set (shown
-// with a way to clear it), the machine pre-triaged filter, the last-push line and the help button.
+// with a way to clear it), the machine pre-triaged filter, the last-push line and the help button. With no inbox at all
+// (`bare`: the first-run state) there is nothing to filter, so only the mark and the help button stay.
 import React from 'react';
 import { Mark } from '../../components/Brand.jsx';
 import { inboxOption } from '../../components/SampleStrip.jsx';
@@ -32,7 +33,7 @@ function openPer(inboxes, status, decided) {
   return new Map((inboxes ?? []).map((i) => [i.project_key, Math.max(0, (i.open ?? 0) - (gone.get(i.project_key) ?? 0))]));
 }
 
-export function Toolbar({ inboxes, decided, projectKey, onProject, status, onStatus, lens, onLens, area = '', onClearArea, pretriaged = false, onPretriaged, onHelp }) {
+export function Toolbar({ inboxes, decided, projectKey, onProject, status, onStatus, lens, onLens, area = '', onClearArea, pretriaged = false, onPretriaged, onHelp, bare = false }) {
   const { by, last, count } = summarise(inboxes, projectKey, status, decided);
   const open = openPer(inboxes, status, decided);
   // The counts are per inbox: a lens, area or pre-triaged filter narrows the list, not them. Say so while one is on.
@@ -41,7 +42,8 @@ export function Toolbar({ inboxes, decided, projectKey, onProject, status, onSta
   return (
     <header className="dwr-toolbar">
       <span className="dwr-toolbar__mark"><Mark size={16} /></span>
-      {inboxes.length > 0 && (
+      {bare && <span className="dwr-spacer" />}
+      {!bare && inboxes.length > 0 && (
         <label className="dwr-field">
           <span className="dwr-visually-hidden">Inbox</span>
           <select className="dwr-select dwr-select--inbox" value={projectKey} onChange={(e) => onProject(e.target.value)}>
@@ -50,6 +52,7 @@ export function Toolbar({ inboxes, decided, projectKey, onProject, status, onSta
           </select>
         </label>
       )}
+      {!bare && <>
       <div className="dwr-seg" role="group" aria-label={narrowed ? 'Filter by status (counts are whole-inbox totals)' : 'Filter by status'}>
         {STATUSES.map((s) => (
           <button key={s} type="button" className="dwr-seg__btn" aria-pressed={status === s} onClick={() => onStatus(s)}>
@@ -86,6 +89,7 @@ export function Toolbar({ inboxes, decided, projectKey, onProject, status, onSta
           ? <>Last push {shortWhen(last.at)} · {last.created ?? 0} new, {last.updated ?? 0} updated</>
           : <>No push has reached {count > 1 ? 'these inboxes' : 'this inbox'} yet</>}
       </p>
+      </>}
       <button type="button" className="dwr-iconbtn" onClick={onHelp} aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button>
     </header>
   );

@@ -102,7 +102,7 @@ export function Dialog({ title, onClose, children, footer }) {
  * @param {any[]} deps
  */
 export function useAsync(load, deps) {
-  const [state, setState] = useState(/** @type {{status: string, data?: T, error?: any}} */ ({ status: 'loading' }));
+  const [state, setState] = useState(/** @type {{status: 'loading', data?: undefined, error?: undefined} | {status: 'ready', data: T, error?: undefined} | {status: 'error', data?: undefined, error: any}} */ ({ status: 'loading' }));
   const seq = useRef(0);
   const run = useCallback(() => {
     const mine = ++seq.current;

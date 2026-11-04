@@ -56,6 +56,7 @@ const liveCards = () => cards.filter((c) => !empty() || c.sample);
 const history = structuredClone(HISTORY);
 const reflect = structuredClone(REFLECT);
 // Lens direction per inbox (direction.get / direction.set); the first inbox has one lens set.
+/** @type {Record<string, Record<string, {focus?: string[], exclude?: string[], spaces?: string[], notes?: string}>>} */
 const directions = {
   [INBOXES[0].project_key]: {
     opportunity: { focus: ['checkout', 'CSV and PDF exports'], exclude: ['admin console'], notes: 'This quarter is about retention: fewer drop-offs after the first order.' },
@@ -178,8 +179,9 @@ const handlers = {
     if (!known(project_key)) throw err('unknown-project', `No inbox ${project_key}.`);
     if (!LENS_IDS.includes(lens)) throw err('bad-input', `lens must be one of ${LENS_IDS.join(', ')}.`);
     const list = (v) => (Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : []);
+    /** @type {{focus?: string[], exclude?: string[], spaces?: string[], notes?: string}} */
     const d = {};
-    for (const [k, v] of [['focus', list(focus)], ['exclude', list(exclude)], ['spaces', list(spaces)]]) {
+    for (const [k, v] of /** @type {['focus' | 'exclude' | 'spaces', string[]][]} */ ([['focus', list(focus)], ['exclude', list(exclude)], ['spaces', list(spaces)]])) {
       if (v.length > 10) throw err('bad-input', `${k} holds ${v.length} items; at most 10.`);
       if (v.some((x) => x.length > 120)) throw err('bad-input', `Each ${k} item is at most 120 characters.`);
       if (v.length) d[k] = v;
@@ -262,7 +264,7 @@ const handlers = {
     if (!['right', 'partly', 'wrong'].includes(rating)) throw err('bad-input', 'rating must be right, partly or wrong.');
     const data = Object.values(reflect).find((d) => d.candidates.some((c) => c.ref === ref));
     if (!data) throw err('bad-input', `${ref} is not an accepted item waiting for an outcome.`);
-    const cand = data.candidates.find((c) => c.ref === ref);
+    const cand = /** @type {typeof data.candidates[number]} */ (data.candidates.find((c) => c.ref === ref));
     data.candidates = data.candidates.filter((c) => c.ref !== ref);
     const outcome = { ref, fp: '0000', rating, issue_ref: cand.issue_ref, decided_by: 'forge:dev-user', decided_by_name: 'Dev User', recorded_at: new Date().toISOString(), title: cand.title, ...(note ? { note } : {}) };
     data.outcomes.unshift(outcome);

@@ -57,7 +57,7 @@ export function placePoints(points) {
     if (x < 0 || y < 0) { unplaced.push(p); continue; }
     const key = `${x}:${y}`;
     if (!cells.has(key)) cells.set(key, []);
-    cells.get(key).push(p);
+    /** @type {any[]} */ (cells.get(key)).push(p);
   }
   for (const list of cells.values()) list.sort((a, b) => refNum(a.ref) - refNum(b.ref));
   return { cells, unplaced };
