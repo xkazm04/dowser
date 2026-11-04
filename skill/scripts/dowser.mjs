@@ -13,7 +13,7 @@
 // entry with `subs`, each sub a full entry. Adding a command or a flag is that one edit.
 //
 // Exit codes: 0 ok; 1 partial - part of the input was invalid, refused or skipped and the rest applied (propose,
-// ingest-push, ingest-verdicts, ingest-sources, ingest-direction, reflect ingest); 2 bad input or refused move (stdout carries
+// ingest-push, ingest-verdicts, ingest-sources, ingest-direction, reflect ingest, triage apply); 2 bad input or refused move (stdout carries
 // {"error":"refused","current":<status>,...}); 3 store or connection unavailable, or not implemented.
 
 // node:sqlite prints an ExperimentalWarning on Node 22; it is noise in an agent's transcript. Filter it before
@@ -38,6 +38,7 @@ const directionLib = await import('./lib/direction.mjs');
 const depsLib = await import('./lib/deps.mjs');
 const shareLib = await import('./lib/share.mjs');
 const trustLib = await import('./lib/trust.mjs');
+const triageLib = await import('./lib/triage.mjs');
 
 /**
  * @typedef {{_: string[], [flag: string]: string | string[] | true | string[] | undefined}} Args
@@ -283,6 +284,29 @@ export const COMMANDS = {
     flags: { run: RUN_FLAG },
     help: 'the L1 gate: mark verified ranked cards predicted `accept` in slices at trust level 1 pretriaged_by machine:dowser -> {pretriaged, for_person}',
     run(a, ctx) { return { out: trustLib.pretriageRun(ctx.open(), req(a, 'run')) }; },
+  },
+
+  triage: {
+    subs: {
+      sheet: {
+        flags: { run: RUN_FLAG },
+        help: 'the numbered pre-triage sheet, read-only -> {run_id, rows, reserve, pretriaged}; each row {n, fp, lens, mvp?, title, ' +
+          'score?, size, confidence, predicted_verdict?, predicted_why?, status, lookalike?: {fp, title, status, decided_at, reason?}} ' +
+          '(the nearest rejected or snoozed similar hit); numbers follow pretriage\'s for_person order and do not shift after moves',
+        run(a, ctx) { return { out: triageLib.triageSheet(ctx.open(), req(a, 'run')) }; },
+      },
+      apply: {
+        flags: { run: RUN_FLAG, by: { arg: 'human:<name>', required: true }, decisions: { arg: '"<n> keep|reject <code> [note]|snooze [date]|merge <n|fp>; ..."', required: true }, 'dry-run': { arg: '' } },
+        help: 'apply a sheet\'s decisions: every line validated first (one bad line -> exit 2, nothing moved), then each move a ' +
+          'CAS move from verified in one transaction; a card decided elsewhere meanwhile -> refused with its current status, ' +
+          'the rest applied (exit 1) -> {applied, refused, kept, trust_events?}; --dry-run -> {would_apply, would_refuse, kept}, store unchanged',
+        run(a, ctx) {
+          const dry = a['dry-run'];
+          if (dry !== undefined && dry !== true) throw new DowserError('--dry-run takes no value', 2);
+          return triageLib.applyDecisions(ctx.open(), req(a, 'run'), { by: req(a, 'by'), decisions: req(a, 'decisions'), dryRun: dry === true });
+        },
+      },
+    },
   },
 
   trust: {
