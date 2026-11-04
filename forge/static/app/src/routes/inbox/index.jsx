@@ -2,9 +2,10 @@
 // 2026-10-28). Filters, groups by push, paging, bulk actions, undo windows (useCommitWindow) and the deep link work as
 // before the redesign. The selection IS the keyboard focus and drives the pane; after a decision the selection moves
 // to the next row; below 900px the pane becomes an accordion under the selected row.
-// This file is the composition: the page's selection state, the hooks and the layout. Data and filters are in
-// useInboxData, the decisions and undo windows in useVerdicts, the focus in useInboxFocus, the keys in useInboxKeys.
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+// This file is the composition: the triage reducer (triage.js: the decided cards, the checked set, the selection,
+// the snooze step and the dialog), the hooks and the layout. Data and filters are in useInboxData, the decisions'
+// timers and undo windows in useVerdicts, the DOM focus in useInboxFocus, the keys in useInboxKeys.
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { call } from '../../api.js';
 import { ErrorState } from '../../components/ui.jsx';
 import { ToastRegion } from '../../components/Toast.jsx';
@@ -22,6 +23,7 @@ import { useInboxData } from './useInboxData.js';
 import { useInboxFocus } from './useInboxFocus.js';
 import { useInboxKeys } from './useInboxKeys.js';
 import { useVerdicts } from './useVerdicts.js';
+import { checkedVisible, initialTriage, phaseSets, snoozingRef, tallyOf, triage } from './triage.js';
 
 const WIDE = '(min-width: 900px)';
 
@@ -64,11 +66,8 @@ function useHistory(card, need) {
 }
 
 export default function Inbox({ context }) {
-  const [focusRef, setFocusRef] = useState('');
-  const [focusReq, setFocusReq] = useState('');
-  const [snoozeFor, setSnoozeFor] = useState(''); // a card ref, or BULK for the bulk bar's step
-  const [expanded, setExpanded] = useState(true);
-  const [dialog, setDialog] = useState(/** @type {{kind: string, refs: string[]} | null} */ (null));
+  const [tri, dispatch] = useReducer(triage, undefined, initialTriage);
+  const { focus: focusRef, expanded, dialog } = tri;
   const [link, setLink] = useState(/** @type {import('../../components/deeplink.js').InboxLink | undefined} */ (undefined));
   const cw = useCommitWindow();
   const wide = useWide();
@@ -78,46 +77,36 @@ export default function Inbox({ context }) {
     deepLink(context).then((l) => { if (live) setLink(l); }, () => { if (live) setLink({}); });
     return () => { live = false; };
   }, [context]);
-  const verdicts = useVerdicts({ cw, setFocusRef, setFocusReq, setSnoozeFor });
-  const data = useInboxData({
-    cw, removed: verdicts.removed, leaving: verdicts.leaving, onReset: () => { verdicts.reset(); setSnoozeFor(''); setFocusRef(''); }, link,
-  });
+  // the rows listed now, read when a decision moves the selection along them
+  const order = useRef(/** @type {string[]} */ ([]));
+  const verdicts = useVerdicts({ cw, dispatch, order: () => order.current });
+  const { leaving, removed } = useMemo(() => phaseSets(tri), [tri.decided]);
+  const data = useInboxData({ cw, removed, leaving, onReset: verdicts.reset, link });
   const { load, visible, shown, flat, byRef, groupOf, next } = data;
+  order.current = flat.map((c) => c.ref);
   const { rowEls, paneScroll, focusIndex, moveFocus } = useInboxFocus({
-    linkRef: link === undefined ? undefined : (link.ref ?? ''), filters: data.filters, pin: data.pin, loadStatus: load.status, flat, byRef,
-    removed: verdicts.removed, leaving: verdicts.leaving, focusRef, setFocusRef, focusReq, setFocusReq, dialog, setDialog, snoozeFor,
+    linkRef: link === undefined ? undefined : (link.ref ?? ''), filters: data.filters, pin: data.pin, loadStatus: load.status, flat, byRef, tri, dispatch,
   });
 
-  function open(kind, refs) {
-    if (refs.length === 0) return;
-    setSnoozeFor('');
-    setDialog({ kind, refs });
-  }
+  /** @param {string} kind @param {string[]} refs */
+  const open = (kind, refs) => dispatch({ type: 'openDialog', kind, refs });
+  const snoozeFor = snoozingRef(tri);
 
   function cancelSnooze() {
     const ref = snoozeFor;
-    setSnoozeFor('');
+    dispatch({ type: 'closeSnooze' });
     requestAnimationFrame(() => rowEls.current[ref]?.focus());
   }
 
-  function select(ref) {
-    if (ref === focusRef && !wide) setExpanded((v) => !v);
-    else { setFocusRef(ref); setExpanded(true); }
-    setSnoozeFor('');
-  }
+  /** @param {string} ref */
+  const select = (ref) => dispatch({ type: 'select', ref, wide });
 
-  useInboxKeys({
-    dialog, setDialog, flat, focusIndex, selected: verdicts.selected, byRef, moveFocus, setExpanded, toggle: verdicts.toggle, open, setSnoozeFor, cw,
-  });
+  useInboxKeys({ tri, dispatch, flat, focusIndex, byRef, moveFocus, cw });
 
   const dialogCards = (dialog?.refs ?? []).map((r) => byRef.get(r)).filter(Boolean);
-  const selectedVisible = [...verdicts.selected].filter((r) => byRef.has(r));
-  const closeDialog = () => setDialog(null);
-  const tally = useMemo(() => {
-    const t = { accepted: 0, rejected: 0, snoozed: 0, merged: 0, total: 0 };
-    for (const v of verdicts.decided.values()) { t[v.to] += 1; t.total += 1; }
-    return t;
-  }, [verdicts.decided]);
+  const checked = checkedVisible(tri, byRef);
+  const closeDialog = () => dispatch({ type: 'closeDialog' });
+  const tally = useMemo(() => tallyOf(tri), [tri.decided]);
 
   const current = byRef.get(focusRef);
   const currentGroup = current ? groupOf.get(current.ref) : undefined;
@@ -129,7 +118,7 @@ export default function Inbox({ context }) {
     accept: (c) => open('accept', [c.ref]),
     merge: (c) => open('merge', [c.ref]),
     reject: (c) => open('reject', [c.ref]),
-    snooze: (c) => { setFocusRef(c.ref); setSnoozeFor(c.ref); },
+    snooze: (c) => dispatch({ type: 'openSnooze', ref: c.ref }),
     snoozeSubmit: (c, note, until) => verdicts.deferSnooze([c], note, until),
     snoozeCancel: cancelSnooze,
   };
@@ -144,8 +133,8 @@ export default function Inbox({ context }) {
   return (
     <main className={`dwr-root${wide ? ' dwr-root--wide' : ''}`}>
       <Toolbar
-        inboxes={data.inboxes} decided={verdicts.decided} projectKey={data.projectKey} onProject={data.setProjectKey} status={data.status}
-        onStatus={data.setStatus} lens={data.lens} onLens={data.setLens} area={data.area} onClearArea={() => data.setArea('')} pretriaged={data.pretriaged} onPretriaged={data.setPretriaged} onHelp={() => setDialog({ kind: 'help', refs: [] })} bare={firstRun}
+        inboxes={data.inboxes} decided={tri.decided} projectKey={data.projectKey} onProject={data.setProjectKey} status={data.status}
+        onStatus={data.setStatus} lens={data.lens} onLens={data.setLens} area={data.area} onClearArea={() => data.setArea('')} pretriaged={data.pretriaged} onPretriaged={data.setPretriaged} onHelp={() => open('help', [])} bare={firstRun}
       />
       <h1 className="dwr-visually-hidden">Dowser inbox</h1>
       {sample && (
@@ -161,15 +150,15 @@ export default function Inbox({ context }) {
       {ready && (hasRows || next) && (
         <div className="dwr-body">
           <InboxList
-            visible={visible} leaving={verdicts.leaving} selected={verdicts.selected} selectedVisible={selectedVisible} byRef={byRef}
-            focusRef={focusRef} wide={wide} expanded={expanded} history={history} onHistoryRetry={retryHistory} errors={verdicts.errors} snoozeFor={snoozeFor}
-            setSnoozeFor={setSnoozeFor} setSelected={verdicts.setSelected} actions={actions} open={open} deferSnooze={verdicts.deferSnooze}
-            toggle={verdicts.toggle} select={select} rowEls={rowEls} next={next} moreState={data.moreState} loadMore={data.loadMore}
+            visible={visible} leaving={leaving} checked={tri.checked} checkedVisible={checked} byRef={byRef}
+            focusRef={focusRef} wide={wide} expanded={expanded} history={history} onHistoryRetry={retryHistory} errors={tri.errors} step={tri.step}
+            dispatch={dispatch} actions={actions} open={open} deferSnooze={verdicts.deferSnooze}
+            select={select} rowEls={rowEls} next={next} moreState={data.moreState} loadMore={data.loadMore}
           />
           {wide && (
             <ReadingPane
               current={current} currentChange={currentChange} history={history} onHistoryRetry={retryHistory} paneScroll={paneScroll} snoozeFor={snoozeFor}
-              errors={verdicts.errors} actions={actions}
+              errors={tri.errors} actions={actions}
             />
           )}
         </div>

@@ -50,6 +50,15 @@ export function phaseOf(state, ref) {
   return state.decided.get(ref)?.phase ?? 'open';
 }
 
+/**
+ * Whether a card can be checked: only an open card still listed as open here. The bulk actions reject or snooze every
+ * checked card, and the server refuses a verdict on a card that is not open.
+ * @param {TriageState} state @param {CardLike} card
+ */
+export function checkable(state, card) {
+  return (card.status ?? 'open') === 'open' && phaseOf(state, card.ref) === 'open';
+}
+
 /** @template T @param {Set<T>} set @param {T[]} keys */
 const without = (set, keys) => { const s = new Set(set); keys.forEach((k) => s.delete(k)); return s; };
 /** @param {Record<string, string>} rec @param {string[]} keys */
@@ -108,9 +117,7 @@ export function triage(state, ev) {
     case 'toggle': {
       const ref = ev.card.ref;
       if (state.checked.has(ref)) return { ...state, checked: without(state.checked, [ref]) };
-      // Only an open card can be checked: the bulk actions reject or snooze every checked card, and the server
-      // refuses a verdict on a card that is not open.
-      if ((ev.card.status ?? 'open') !== 'open' || phaseOf(state, ref) !== 'open') return state;
+      if (!checkable(state, ev.card)) return state;
       return { ...state, checked: new Set(state.checked).add(ref) };
     }
     case 'clearChecked':

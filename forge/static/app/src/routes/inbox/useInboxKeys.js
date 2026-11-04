@@ -1,7 +1,7 @@
 // The inbox keyboard: j/k/x/a/m/r/s/u/? on the list (no dialog open, no text field focused), and inside a dialog
 // Ctrl/Cmd+Enter confirms and 1-6 pick the Reject reason. The help dialog lists the same keys.
 import { useEffect } from 'react';
-import { BULK } from './InboxList.jsx';
+import { checkable, checkedVisible } from './triage.js';
 
 function isTyping(target) {
   if (!(target instanceof HTMLElement)) return false;
@@ -10,12 +10,14 @@ function isTyping(target) {
 }
 
 /**
- * @param {{dialog: {kind: string, refs: string[]} | null, setDialog: (d: {kind: string, refs: string[]}) => void,
- *   flat: any[], focusIndex: number, selected: Set<string>, byRef: Map<string, any>, moveFocus: (delta: number) => void,
- *   setExpanded: (v: boolean) => void, toggle: (ref: string) => void, open: (kind: string, refs: string[]) => void,
- *   setSnoozeFor: (ref: string) => void, cw: {undoLatest: () => boolean}}} page
+ * @param {{tri: import('./triage.js').TriageState, dispatch: (ev: import('./triage.js').TriageEvent) => void,
+ *   flat: any[], focusIndex: number, byRef: Map<string, any>, moveFocus: (delta: number) => void,
+ *   cw: {undoLatest: () => boolean}}} page
  */
-export function useInboxKeys({ dialog, setDialog, flat, focusIndex, selected, byRef, moveFocus, setExpanded, toggle, open, setSnoozeFor, cw }) {
+export function useInboxKeys({ tri, dispatch, flat, focusIndex, byRef, moveFocus, cw }) {
+  const dialog = tri.dialog;
+  /** @param {string} kind @param {string[]} refs */
+  const open = (kind, refs) => dispatch({ type: 'openDialog', kind, refs });
   // Keyboard: only when no dialog is open and no text field has focus.
   useEffect(() => {
     function onKey(e) {
@@ -23,22 +25,25 @@ export function useInboxKeys({ dialog, setDialog, flat, focusIndex, selected, by
       if (dialog || document.querySelector('dialog.dw-dialog[open]') || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
       const focused = focusIndex >= 0 ? flat[focusIndex] : undefined;
       const actionable = focused && focused.status === 'open';
-      const many = [...selected].filter((r) => byRef.has(r));
+      const many = checkedVisible(tri, byRef);
       switch (e.key) {
-        case 'j': moveFocus(1); setExpanded(true); break;
-        case 'k': moveFocus(-1); setExpanded(true); break;
-        case 'x': if (focused) toggle(focused.ref); else return; break;
+        case 'j': moveFocus(1); break;
+        case 'k': moveFocus(-1); break;
+        // only an open card is checked (as only an open row has the checkbox): a checked card is bulk-decided
+        case 'x':
+          if (focused && (tri.checked.has(focused.ref) || checkable(tri, focused))) dispatch({ type: 'toggle', card: focused }); else return;
+          break;
         case 'a': if (actionable) open('accept', [focused.ref]); else return; break;
         case 'm': if (actionable) open('merge', [focused.ref]); else return; break;
         case 'r':
           if (many.length > 0) open('reject', many); else if (actionable) open('reject', [focused.ref]); else return;
           break;
         case 's':
-          if (many.length > 0) setSnoozeFor(BULK);
-          else if (actionable) { setExpanded(true); setSnoozeFor(focused.ref); } else return;
+          if (many.length > 0) dispatch({ type: 'openSnooze', bulk: true });
+          else if (actionable) dispatch({ type: 'openSnooze', ref: focused.ref }); else return;
           break;
         case 'u': if (!cw.undoLatest()) return; break;
-        case '?': setDialog({ kind: 'help', refs: [] }); break;
+        case '?': open('help', []); break;
         default: return;
       }
       e.preventDefault();

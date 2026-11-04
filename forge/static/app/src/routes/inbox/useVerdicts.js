@@ -1,79 +1,70 @@
-// The decisions made on this page: which cards are leaving (the exit animation) or gone, what each was decided as,
-// which are checked for a bulk action, and the per-card errors. Snooze and reject go through the undo window
-// (useCommitWindow): the card leaves at once, Undo or a failed call brings it back with the focus.
-import { useRef, useState } from 'react';
+// The decisions made on this page, as effects around the triage reducer (triage.js): the exit timers that move a
+// leaving card to gone, and the undo window (useCommitWindow) that snooze and reject go through: the card leaves at
+// once, Undo or a failed call brings it back (Undo with the focus).
+import { useRef } from 'react';
 import { call } from '../../api.js';
 import { REASON_LABELS, comesBack, plural } from '../../components/labels.js';
 
 const EXIT_MS = 200;
 
 const reducedMotion = () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-const withoutKeys = (set, refs) => { const s = new Set(set); refs.forEach((r) => s.delete(r)); return s; };
 
 /**
  * @param {{cw: ReturnType<typeof import('../../components/useCommitWindow.js').useCommitWindow>,
- *   setFocusRef: (ref: string) => void, setFocusReq: (ref: string) => void, setSnoozeFor: (ref: string) => void}} page
- *   the page's selection setters: a restored card takes the focus, a deferred snooze closes the snooze step.
+ *   dispatch: (ev: import('./triage.js').TriageEvent) => void, order: () => string[]}} page
+ *   `dispatch` is the page's triage reducer; `order` reads the rows listed now (top to bottom), which a decision
+ *   moves the selection along.
  */
-export function useVerdicts({ cw, setFocusRef, setFocusReq, setSnoozeFor }) {
-  const [removed, setRemoved] = useState(() => new Set());
-  const [leaving, setLeaving] = useState(() => new Set());
-  // ref -> the decision made on this page: the status it moved to and the card's inbox (every listed card had the
-  // filtered status, and a filter change reloads, which clears this).
-  const [decided, setDecided] = useState(() => /** @type {Map<string, {to: string, project_key: string}>} */ (new Map()));
-  const [selected, setSelected] = useState(() => new Set());
-  const [errors, setErrors] = useState(/** @type {Record<string, string>} */ ({}));
+export function useVerdicts({ cw, dispatch, order }) {
   const exitTimers = useRef(/** @type {Map<string, ReturnType<typeof setTimeout>>} */ (new Map()));
+
+  /** @param {string[]} refs */
+  function clearTimers(refs) {
+    for (const r of refs) { clearTimeout(exitTimers.current.get(r)); exitTimers.current.delete(r); }
+  }
 
   /** A reload starts the page over. */
   function reset() {
-    setRemoved(new Set()); setLeaving(new Set()); setDecided(new Map()); setSelected(new Set()); setErrors({});
-  }
-
-  function toggle(ref) {
-    setSelected((prev) => { const s = new Set(prev); if (s.has(ref)) s.delete(ref); else s.add(ref); return s; });
+    clearTimers([...exitTimers.current.keys()]);
+    dispatch({ type: 'reset' });
   }
 
   /** The cards leave the list as `to`; each decision keeps the card's inbox, so the picker counts follow. */
   function leave(cards, to) {
-    const refs = cards.map((c) => c.ref);
-    setDecided((prev) => { const m = new Map(prev); cards.forEach((c) => m.set(c.ref, { to, project_key: c.project_key })); return m; });
-    setSelected((prev) => withoutKeys(prev, refs));
-    setErrors((prev) => { const e = { ...prev }; refs.forEach((r) => delete e[r]); return e; });
-    if (reducedMotion()) { setRemoved((prev) => new Set([...prev, ...refs])); return; }
-    setLeaving((prev) => new Set([...prev, ...refs]));
-    for (const r of refs) {
+    const instant = reducedMotion();
+    dispatch({ type: 'decide', cards, to, order: order(), instant });
+    if (instant) return;
+    for (const c of cards) {
+      const r = c.ref;
+      clearTimeout(exitTimers.current.get(r));
       exitTimers.current.set(r, setTimeout(() => {
         exitTimers.current.delete(r);
-        setRemoved((prev) => new Set([...prev, r]));
-        setLeaving((prev) => withoutKeys(prev, [r]));
+        dispatch({ type: 'exitDone', ref: r });
       }, EXIT_MS));
     }
   }
 
-  function restore(refs, focus = true) {
-    for (const r of refs) { clearTimeout(exitTimers.current.get(r)); exitTimers.current.delete(r); }
-    setRemoved((prev) => withoutKeys(prev, refs));
-    setLeaving((prev) => withoutKeys(prev, refs));
-    setDecided((prev) => { const m = new Map(prev); refs.forEach((r) => m.delete(r)); return m; });
-    if (focus) { setFocusRef(refs[0]); setFocusReq(refs[0]); }
+  /** Undo: the cards are back, the first one with the focus. @param {string[]} refs */
+  function restore(refs) {
+    clearTimers(refs);
+    dispatch({ type: 'undo', refs });
   }
 
+  /** @param {string[]} refs @param {string} message */
   function fail(refs, message) {
-    setErrors((prev) => ({ ...prev, ...Object.fromEntries(refs.map((r) => [r, message])) }));
+    dispatch({ type: 'fail', refs, message });
   }
 
   function failDeferred(refs, what, e) {
     const message = String(e?.message ?? `The ${what} failed.`);
-    restore(refs, false);
-    fail(refs, message);
+    clearTimers(refs);
+    dispatch({ type: 'commitFailed', refs, message });
     cw.notify(`Could not ${what} ${refs.length === 1 ? refs[0] : plural(refs.length, 'proposal')}: ${message} It is back in the list.`, 'error');
   }
 
   function deferSnooze(cards, note = '', until = '') {
     const refs = cards.map((c) => c.ref);
-    setSnoozeFor('');
-    leave(cards, 'snoozed');
+    leave(cards, 'snoozed'); // the decision closes the snooze step
     cw.schedule({
       message: `${refs.length === 1 ? `Snoozed ${refs[0]}` : `Snoozed ${plural(refs.length, 'proposal')}`}${until ? `. ${comesBack(until)}` : ''}`,
       run: () => call('verdict.snooze', { refs, ...(note ? { note } : {}), ...(until ? { until } : {}) }),
@@ -93,5 +84,5 @@ export function useVerdicts({ cw, setFocusRef, setFocusReq, setSnoozeFor }) {
     });
   }
 
-  return { removed, leaving, decided, selected, setSelected, errors, reset, toggle, leave, fail, deferSnooze, deferReject };
+  return { reset, leave, fail, deferSnooze, deferReject };
 }

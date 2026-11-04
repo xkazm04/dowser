@@ -11,34 +11,29 @@ import { Decide } from './ReadingPane.jsx';
 import { shortWhen } from './Toolbar.jsx';
 import { SampleChip } from '../../components/SampleStrip.jsx';
 
-/** The `snoozeFor` value while the bulk bar's snooze step is open (no card ref looks like it). */
-export const BULK = ' bulk';
-
 const CHANGE_SHORT = { new: 'New', grew: 'Grew', reopened: 'Reopened' };
 
 export function InboxList({
-  visible, leaving, selected, selectedVisible, byRef, focusRef, wide, expanded, history, onHistoryRetry, errors, snoozeFor, setSnoozeFor,
-  setSelected, actions, open, deferSnooze, toggle, select, rowEls, next, moreState, loadMore,
+  visible, leaving, checked, checkedVisible, byRef, focusRef, wide, expanded, history, onHistoryRetry, errors, step, dispatch,
+  actions, open, deferSnooze, select, rowEls, next, moreState, loadMore,
 }) {
+  const snoozing = step?.kind === 'card' ? step.ref : '';
   return (
     <section className="dwr-list" aria-label="Proposals">
-      {selectedVisible.length > 0 && (
-        <BulkBar
-          selectedVisible={selectedVisible} byRef={byRef} snoozeFor={snoozeFor} setSnoozeFor={setSnoozeFor}
-          setSelected={setSelected} open={open} deferSnooze={deferSnooze}
-        />
+      {checkedVisible.length > 0 && (
+        <BulkBar checkedVisible={checkedVisible} byRef={byRef} bulkStep={step?.kind === 'bulk'} dispatch={dispatch} open={open} deferSnooze={deferSnooze} />
       )}
       {visible.map((g) => {
         const row = (card) => (
           <Row
             key={card.ref} card={card} group={g} leaving={leaving.has(card.ref)} current={card.ref === focusRef}
-            checked={selected.has(card.ref)} onToggle={() => toggle(card.ref)} onSelect={() => select(card.ref)}
+            checked={checked.has(card.ref)} onToggle={() => dispatch({ type: 'toggle', card })} onSelect={() => select(card.ref)}
             rowRef={(el) => { rowEls.current[card.ref] = el; }}
           >
             {!wide && card.ref === focusRef && expanded && !leaving.has(card.ref) && (
               <div className="dwr-inline">
                 <Detail card={card} change={changeOf(card, g)} history={history} onHistoryRetry={onHistoryRetry} titleId={`dwr-t-${card.ref}`} />
-                <Decide card={card} snoozing={snoozeFor === card.ref} error={errors[card.ref]} actions={actions} sticky />
+                <Decide card={card} snoozing={snoozing === card.ref} error={errors[card.ref]} actions={actions} sticky />
               </div>
             )}
           </Row>
@@ -66,18 +61,18 @@ export function InboxList({
   );
 }
 
-function BulkBar({ selectedVisible, byRef, snoozeFor, setSnoozeFor, setSelected, open, deferSnooze }) {
+function BulkBar({ checkedVisible, byRef, bulkStep, dispatch, open, deferSnooze }) {
   return (
     <div className="dwr-bulk" role="region" aria-label="Bulk actions">
-      <strong>{selectedVisible.length} checked</strong>
-      <Button appearance="danger" compact onClick={() => open('reject', selectedVisible)}>Reject <Kbd>r</Kbd></Button>
-      <Button compact onClick={() => setSnoozeFor(BULK)}>Snooze <Kbd>s</Kbd></Button>
+      <strong>{checkedVisible.length} checked</strong>
+      <Button appearance="danger" compact onClick={() => open('reject', checkedVisible)}>Reject <Kbd>r</Kbd></Button>
+      <Button compact onClick={() => dispatch({ type: 'openSnooze', bulk: true })}>Snooze <Kbd>s</Kbd></Button>
       <span className="dwr-spacer" />
-      <Button appearance="subtle" compact onClick={() => { setSelected(new Set()); setSnoozeFor(''); }}>Clear</Button>
-      {snoozeFor === BULK && (
+      <Button appearance="subtle" compact onClick={() => dispatch({ type: 'clearChecked' })}>Clear</Button>
+      {bulkStep && (
         <SnoozeStep
-          cardRef="bulk" label={plural(selectedVisible.length, 'proposal')} withNote={false}
-          onSubmit={(_, until) => deferSnooze(selectedVisible.map((r) => byRef.get(r)), '', until)} onCancel={() => setSnoozeFor('')}
+          cardRef="bulk" label={plural(checkedVisible.length, 'proposal')} withNote={false}
+          onSubmit={(_, until) => deferSnooze(checkedVisible.map((r) => byRef.get(r)), '', until)} onCancel={() => dispatch({ type: 'closeSnooze' })}
         />
       )}
     </div>
