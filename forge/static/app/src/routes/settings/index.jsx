@@ -12,10 +12,15 @@ import { LENSES, LENS_LABELS, plural } from '../../components/labels.js';
 import { LensDot } from '../inbox/parts.jsx';
 import './settings.css';
 import { safeHref } from '../../safeHref.js';
+import { router } from '@forge/bridge';
+import { pageUrl } from '../../components/deeplink.js';
+import { SetupChecklist } from '../../components/SetupChecklist.jsx';
+import { SAMPLE_NAME, SampleChip } from '../../components/SampleStrip.jsx';
 
-export default function Settings() {
+export default function Settings({ context }) {
   const data = useAsync(async () => ({ inboxes: (await call('settings.get')).inboxes ?? [] }), []);
   const jira = useAsync(async () => (await call('jira.projects')).projects ?? [], []);
+  const inboxPage = pageUrl(context?.extension?.location, 'inbox');
 
   return (
     <main className="dwr-page dwr-page--narrow">
@@ -30,7 +35,13 @@ export default function Settings() {
       {data.status === 'error' && <ErrorState what="Settings" error={data.error} onRetry={data.reload} />}
       {data.status === 'ready' && data.data.inboxes.length === 0 && (
         <SectionMessage title="No inbox yet." role="status">
-          <p>An inbox appears when a scan first pushes proposals. Run <code>/dowser</code> in Claude Code or Codex, in the repository.</p>
+          <p>
+            An inbox appears when a scan first pushes proposals. To look around first, load the sample on the{' '}
+            {inboxPage
+              ? <a href={inboxPage} onClick={(e) => { e.preventDefault(); router.navigate(inboxPage).catch(() => {}); }}>Inbox page</a>
+              : 'Inbox page'}
+            : a real Dowser scan of its own public repository.
+          </p>
         </SectionMessage>
       )}
       {data.status === 'ready' && data.data.inboxes.length > 0 && (
@@ -68,6 +79,13 @@ export default function Settings() {
         </div>
         </section>
       )}
+      <section className="dwr-secs" aria-labelledby="dw-agent-h">
+        <div className="dwr-sec">
+          <h2 className="dwr-sec__h" id="dw-agent-h">Connect a coding agent</h2>
+          <p className="dwr-sec__hint">A scan in Claude Code or Codex pushes its proposals to Dowser through the Dowser MCP tools.</p>
+          <SetupChecklist headingLevel={3} />
+        </div>
+      </section>
     </main>
   );
 }
@@ -92,7 +110,7 @@ function DirectionInbox({ inbox }) {
   const hid = `dw-dir-${inbox.project_key.replace(/[^A-Za-z0-9_-]/g, '_')}`;
   return (
     <section className="dw-dir" aria-labelledby={hid}>
-      <h3 className="dw-dir__inbox" id={hid}>{inbox.project_key}</h3>
+      <h3 className="dw-dir__inbox" id={hid}>{inbox.sample ? <>{SAMPLE_NAME} <SampleChip /></> : inbox.project_key}</h3>
       {data.status === 'loading' && <div className="dw-skel" style={{ height: 160 }} role="status" aria-label={`Loading direction for ${inbox.project_key}`} />}
       {data.status === 'error' && <ErrorState what="Lens direction" error={data.error} onRetry={data.reload} />}
       {data.status === 'ready' && (
@@ -205,7 +223,7 @@ function InboxRow({ inbox, projects, loading }) {
   return (
     <tr>
       <td>
-        <strong>{inbox.project_key}</strong>
+        {inbox.sample ? <><strong>{SAMPLE_NAME}</strong> <SampleChip /></> : <strong>{inbox.project_key}</strong>}
         {saved.repo_url && <div className="dw-subtlest">{safeHref(saved.repo_url) ? <a href={safeHref(saved.repo_url)} target="_blank" rel="noreferrer noopener">{saved.repo_url}</a> : saved.repo_url}</div>}
         <div className="dw-subtlest">{plural(inbox.open ?? 0, 'open proposal')}</div>
       </td>

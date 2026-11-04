@@ -9,6 +9,7 @@ import { Detail } from './Detail.jsx';
 import { Kbd, LENS_SHORT, LensDot, RowSignals } from './parts.jsx';
 import { Decide } from './ReadingPane.jsx';
 import { shortWhen } from './Toolbar.jsx';
+import { SampleChip } from '../../components/SampleStrip.jsx';
 
 /** The `snoozeFor` value while the bulk bar's snooze step is open (no card ref looks like it). */
 export const BULK = ' bulk';
@@ -131,6 +132,7 @@ function Row({ card, group, leaving, current, checked, onToggle, onSelect, rowRe
                 <LensDot lens={card.lens} />
                 <span className="dwr-ref">{card.ref}</span>
                 <span className="dwr-row__lens">{LENS_SHORT[card.lens] ?? card.lens}</span>
+                {card.sample && <SampleChip />}
                 {card.mvp && <span className="dwr-mark dwr-mark--mvp" title={`The top proposal of the ${LENS_SHORT[card.lens] ?? card.lens} lens in this scan`}>MVP</span>}
                 {change && <span className={`dwr-mark dwr-mark--${change}`}>{CHANGE_SHORT[change]}</span>}
                 {card.pretriaged_by === MACHINE_DECIDER && <span className="dwr-mark dwr-mark--machine" title="Machine pre-triaged: the scan's trust in this kind of proposal let it skip the pre-triage. Accepting stays your call.">Pre-triaged</span>}

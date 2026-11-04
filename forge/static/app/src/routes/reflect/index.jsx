@@ -15,6 +15,9 @@ import './reflect.css';
 import './learn.css';
 import { LensDot } from '../inbox/parts.jsx';
 import { safeHref } from '../../safeHref.js';
+import { SampleStrip, defaultInbox, inboxOption, sampleShown } from '../../components/SampleStrip.jsx';
+import { ToastRegion } from '../../components/Toast.jsx';
+import { useCommitWindow } from '../../components/useCommitWindow.js';
 
 function useReflect(projectKey) {
   const [state, setState] = useState(/** @type {{status: 'loading'|'ready'|'error', data?: any, error?: any}} */ ({ status: 'loading' }));
@@ -31,14 +34,16 @@ function useReflect(projectKey) {
   return { ...state, reload: () => fetchData(false), refresh: () => fetchData(true) };
 }
 
-export default function Reflect() {
+export default function Reflect({ context }) {
   const inboxes = useAsync(() => call('settings.get').then((r) => r.inboxes ?? []), []);
   const [projectKey, setProjectKey] = useState('');
   useEffect(() => {
     if (inboxes.status !== 'ready' || projectKey) return;
     const list = inboxes.data;
-    if (list.length > 0) setProjectKey([...list].sort((a, b) => (b.open ?? 0) - (a.open ?? 0))[0].project_key);
+    if (list.length > 0) setProjectKey(defaultInbox(list));
   }, [inboxes.status, inboxes.data, projectKey]);
+  const cw = useCommitWindow();
+  const sample = inboxes.status === 'ready' ? sampleShown(inboxes.data, projectKey) : undefined;
 
   return (
     <main className="dwr-page">
@@ -49,11 +54,12 @@ export default function Reflect() {
           <label className="dwr-field">
             <span className="dwr-visually-hidden">Inbox</span>
             <select className="dwr-select" value={projectKey} onChange={(e) => setProjectKey(e.target.value)}>
-              {inboxes.data.map((i) => <option key={i.project_key} value={i.project_key}>{i.project_key.split('/').pop()} ({i.open} open)</option>)}
+              {inboxes.data.map((i) => <option key={i.project_key} value={i.project_key}>{inboxOption(i, i.open ?? 0)}</option>)}
             </select>
           </label>
         )}
       </header>
+      {sample && <SampleStrip inbox={sample} context={context} notify={cw.notify} onRemoved={() => { setProjectKey(''); inboxes.reload(); }} />}
       {inboxes.status === 'loading' && <div className="dw-skel dw-skel-card" role="status" aria-label="Loading the inboxes" />}
       {inboxes.status === 'error' && <ErrorState what="The inbox list" error={inboxes.error} onRetry={inboxes.reload} />}
       {inboxes.status === 'ready' && inboxes.data.length === 0 && (
@@ -64,6 +70,7 @@ export default function Reflect() {
         </section>
       )}
       {projectKey && <Body key={projectKey} projectKey={projectKey} />}
+      <ToastRegion cw={cw} />
     </main>
   );
 }

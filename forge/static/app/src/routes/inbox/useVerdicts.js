@@ -18,7 +18,9 @@ const withoutKeys = (set, refs) => { const s = new Set(set); refs.forEach((r) =>
 export function useVerdicts({ cw, setFocusRef, setFocusReq, setSnoozeFor }) {
   const [removed, setRemoved] = useState(() => new Set());
   const [leaving, setLeaving] = useState(() => new Set());
-  const [decided, setDecided] = useState(() => new Map());
+  // ref -> the decision made on this page: the status it moved to and the card's inbox (every listed card had the
+  // filtered status, and a filter change reloads, which clears this).
+  const [decided, setDecided] = useState(() => /** @type {Map<string, {to: string, project_key: string}>} */ (new Map()));
   const [selected, setSelected] = useState(() => new Set());
   const [errors, setErrors] = useState(/** @type {Record<string, string>} */ ({}));
   const exitTimers = useRef(/** @type {Map<string, ReturnType<typeof setTimeout>>} */ (new Map()));
@@ -32,9 +34,10 @@ export function useVerdicts({ cw, setFocusRef, setFocusReq, setSnoozeFor }) {
     setSelected((prev) => { const s = new Set(prev); if (s.has(ref)) s.delete(ref); else s.add(ref); return s; });
   }
 
+  /** The cards leave the list as `to`; each decision keeps the card's inbox, so the picker counts follow. */
   function leave(cards, to) {
     const refs = cards.map((c) => c.ref);
-    setDecided((prev) => { const m = new Map(prev); refs.forEach((r) => m.set(r, to)); return m; });
+    setDecided((prev) => { const m = new Map(prev); cards.forEach((c) => m.set(c.ref, { to, project_key: c.project_key })); return m; });
     setSelected((prev) => withoutKeys(prev, refs));
     setErrors((prev) => { const e = { ...prev }; refs.forEach((r) => delete e[r]); return e; });
     if (reducedMotion()) { setRemoved((prev) => new Set([...prev, ...refs])); return; }

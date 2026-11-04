@@ -59,6 +59,25 @@ export async function deepLinkRef(context) {
 }
 
 /**
+ * Another tab of the global page (inbox, map, reflect, settings), from this page's location (…/inbox -> …/settings).
+ * @param {string | undefined} location @param {string} route
+ */
+export function pageUrl(location, route) {
+  if (!location) return undefined;
+  try {
+    const u = new URL(location);
+    const parts = u.pathname.replace(/\/+$/, '').split('/');
+    parts[parts.length - 1] = route;
+    u.pathname = parts.join('/');
+    u.search = '';
+    u.hash = '';
+    return u.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The inbox route URL of the global page, from another page's location (…/map -> …/inbox), optionally
  * focused on one card with `?ref=`, or filtered with `?project=&lens=&area=` (a map cell).
  * @param {string | undefined} location @param {string} [ref] @param {InboxLink} [filters]

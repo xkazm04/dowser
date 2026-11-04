@@ -11,6 +11,9 @@ import { plural } from '../../components/labels.js';
 import { HeatGrid } from './HeatGrid.jsx';
 import { EffortConfidence } from './EffortConfidence.jsx';
 import { inboxUrl } from '../../components/deeplink.js';
+import { SampleStrip, defaultInbox, inboxOption, sampleShown } from '../../components/SampleStrip.jsx';
+import { ToastRegion } from '../../components/Toast.jsx';
+import { useCommitWindow } from '../../components/useCommitWindow.js';
 import '../../components/viz.css';
 
 const EMPTY = 'No areas yet - the map fills after the next scan from Claude Code or Codex.';
@@ -24,8 +27,10 @@ export default function MapView({ context }) {
   useEffect(() => {
     if (inboxes.status !== 'ready' || projectKey) return;
     const list = inboxes.data;
-    if (list.length > 0) setProjectKey([...list].sort((a, b) => (b.open ?? 0) - (a.open ?? 0))[0].project_key);
+    if (list.length > 0) setProjectKey(defaultInbox(list));
   }, [inboxes.status, inboxes.data, projectKey]);
+  const cw = useCommitWindow();
+  const sample = inboxes.status === 'ready' ? sampleShown(inboxes.data, projectKey) : undefined;
 
 
   return (
@@ -37,11 +42,12 @@ export default function MapView({ context }) {
           <label className="dwr-field">
             <span className="dwr-visually-hidden">Inbox</span>
             <select className="dwr-select" value={projectKey} onChange={(e) => setProjectKey(e.target.value)}>
-              {inboxes.data.map((i) => <option key={i.project_key} value={i.project_key}>{i.project_key.split('/').pop()} ({i.open} open)</option>)}
+              {inboxes.data.map((i) => <option key={i.project_key} value={i.project_key}>{inboxOption(i, i.open ?? 0)}</option>)}
             </select>
           </label>
         )}
       </header>
+      {sample && <SampleStrip inbox={sample} context={context} notify={cw.notify} onRemoved={() => { setProjectKey(''); inboxes.reload(); }} />}
       <p className="dwr-page__intro">
         Where the proposals of one repository concentrate, next to how often that code changes and how many people
         change it.
@@ -71,6 +77,7 @@ export default function MapView({ context }) {
             : undefined}
         />
       )}
+      <ToastRegion cw={cw} />
     </main>
   );
 }

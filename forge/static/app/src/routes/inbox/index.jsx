@@ -16,6 +16,8 @@ import { InboxList } from './InboxList.jsx';
 import { ReadingPane } from './ReadingPane.jsx';
 import { Toolbar } from './Toolbar.jsx';
 import { EmptyState, LoadingBody } from './states.jsx';
+import { FirstRun } from './FirstRun.jsx';
+import { SampleStrip, sampleShown } from '../../components/SampleStrip.jsx';
 import { useInboxData } from './useInboxData.js';
 import { useInboxFocus } from './useInboxFocus.js';
 import { useInboxKeys } from './useInboxKeys.js';
@@ -113,7 +115,7 @@ export default function Inbox({ context }) {
   const closeDialog = () => setDialog(null);
   const tally = useMemo(() => {
     const t = { accepted: 0, rejected: 0, snoozed: 0, merged: 0, total: 0 };
-    for (const v of verdicts.decided.values()) { t[v] += 1; t.total += 1; }
+    for (const v of verdicts.decided.values()) { t[v.to] += 1; t.total += 1; }
     return t;
   }, [verdicts.decided]);
 
@@ -134,6 +136,11 @@ export default function Inbox({ context }) {
 
   const ready = load.status === 'ready';
   const hasRows = ready && shown.length > 0;
+  // No inbox at all: the first-run panel, never the "all decided" empty state.
+  const firstRun = ready && data.inboxes.length === 0;
+  const sample = sampleShown(data.inboxes, data.projectKey);
+  /** Select the inbox (here: the sample, after it loaded or was removed) and load it; a same-key pick reloads. */
+  const showInbox = (key) => { if (key === data.projectKey) data.reload(); else data.setProjectKey(key); };
   return (
     <main className={`dwr-root${wide ? ' dwr-root--wide' : ''}`}>
       <Toolbar
@@ -141,10 +148,14 @@ export default function Inbox({ context }) {
         onStatus={data.setStatus} lens={data.lens} onLens={data.setLens} area={data.area} onClearArea={() => data.setArea('')} pretriaged={data.pretriaged} onPretriaged={data.setPretriaged} onHelp={() => setDialog({ kind: 'help', refs: [] })}
       />
       <h1 className="dwr-visually-hidden">Dowser inbox</h1>
+      {sample && (
+        <SampleStrip inbox={sample} context={context} notify={cw.notify} onBeforeRemove={cw.flush} onRemoved={() => showInbox('')} />
+      )}
 
       {load.status === 'loading' && <LoadingBody wide={wide} />}
       {load.status === 'error' && <div className="dwr-state"><ErrorState what="The inbox" error={load.error} onRetry={data.reload} /></div>}
-      {ready && !hasRows && !next && <div className="dwr-state"><EmptyState status={data.status} lens={data.lens} lastPush={data.lastPush} tally={tally}
+      {firstRun && <div className="dwr-state dwr-state--first"><FirstRun onLoaded={showInbox} /></div>}
+      {ready && !firstRun && !hasRows && !next && <div className="dwr-state"><EmptyState status={data.status} lens={data.lens} lastPush={data.lastPush} tally={tally}
         area={data.projectKey ? data.area : ''} onClearArea={() => data.setArea('')} pretriaged={data.pretriaged} onClearPretriaged={() => data.setPretriaged(false)} /></div>}
 
       {ready && (hasRows || next) && (

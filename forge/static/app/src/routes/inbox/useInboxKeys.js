@@ -19,7 +19,8 @@ export function useInboxKeys({ dialog, setDialog, flat, focusIndex, selected, by
   // Keyboard: only when no dialog is open and no text field has focus.
   useEffect(() => {
     function onKey(e) {
-      if (dialog || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
+      // A dialog the page does not track (the sample strip's Remove confirm) blocks the keys as well.
+      if (dialog || document.querySelector('dialog.dw-dialog[open]') || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
       const focused = focusIndex >= 0 ? flat[focusIndex] : undefined;
       const actionable = focused && focused.status === 'open';
       const many = [...selected].filter((r) => byRef.has(r));

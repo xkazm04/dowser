@@ -42,6 +42,24 @@ export function formatDate(iso) {
   return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+/**
+ * "just now", "5 minutes ago", "3 hours ago", "2 days ago"; past a week the day itself.
+ * @param {string | undefined} iso @param {number} [now]
+ */
+export function relativeTime(iso, now = Date.now()) {
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return iso;
+  const min = Math.round((now - t) / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${plural(min, 'minute')} ago`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${plural(h, 'hour')} ago`;
+  const d = Math.round(h / 24);
+  if (d <= 7) return `${plural(d, 'day')} ago`;
+  return `on ${formatDay(iso)}`;
+}
+
 /** @param {number} n @param {string} one @param {string} [many] */
 export function plural(n, one, many = `${one}s`) {
   return `${n} ${n === 1 ? one : many}`;

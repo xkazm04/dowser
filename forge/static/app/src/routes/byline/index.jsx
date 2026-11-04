@@ -7,6 +7,7 @@ import { call } from '../../api.js';
 import { ErrorState, Lozenge, SectionMessage, SkeletonList, useAsync } from '../../components/ui.jsx';
 import { LensBadge } from '../../components/ProposalCard.jsx';
 import { Mark } from '../../components/Brand.jsx';
+import { SampleChip } from '../../components/SampleStrip.jsx';
 import { STATUS_APPEARANCE, STATUS_LABELS, plural } from '../../components/labels.js';
 import '../../components/viz.css';
 import { safeHref } from '../../safeHref.js';
@@ -74,6 +75,7 @@ export default function Byline({ context }) {
                       : <span className="dw-subtlest">{card.ref}</span>}
                     <Lozenge appearance={STATUS_APPEARANCE[card.status] ?? 'default'}>{STATUS_LABELS[card.status] ?? card.status}</Lozenge>
                     <LensBadge lens={card.lens} />
+                    {card.sample && <SampleChip />}
                     {card.issue_ref && (safeHref(card.issue_url)
                       ? <a href={safeHref(card.issue_url)} target="_blank" rel="noreferrer noopener" onClick={(e) => openExternal(e, card.issue_url)}>{card.issue_ref}</a>
                       : <span>{card.issue_ref}</span>)}

@@ -18,8 +18,15 @@
 //   &fail=reflect.data | rule.decide | outcome.record | verdict.snooze | verdict.reject   that call fails
 //   #settings             accept targets and Lens direction (shop has Opportunity set)   &fail=direction.set
 //   &page=<n>             inbox page size (default 4)     &mode=dark|light   colour mode (default: the OS)
+//   sample.load / sample.remove   add or drop the sample inbox (`sample: true`, `source`, five sample cards); &empty
+//                         hides only the acme inboxes, so `#inbox&empty` -> Load the sample -> the sample inbox
+//   &sample               the sample inbox is loaded when the page opens
+//   setup.status          &calls=<n> tool calls seen (default 0); &nomcp leaves mcp_url out
+//   &fail=sample.load | sample.remove | setup.status   that call fails
 import { setGlobalTheme } from '@atlaskit/tokens/set-global-theme';
-import { AREAS, CARDS, GROUP_OF, HISTORY, INBOXES, PROJECTS, PUSHES, REFLECT } from './fixture.js';
+import {
+  AREAS, CARDS, GROUP_OF, HISTORY, INBOXES, PROJECTS, PUSHES, REFLECT, SAMPLE_AREAS, SAMPLE_CARDS, SAMPLE_INBOX, SAMPLE_KEY, SAMPLE_PUSH, SAMPLE_REFLECT,
+} from './fixture.js';
 import { STATUSES } from '../components/labels.js';
 
 const PAGE = 4; // small on purpose, so "Load more" and a group split across pages are exercised
@@ -27,7 +34,25 @@ const params = () => new URLSearchParams(location.hash.slice(1).replace(/^[a-z-]
 const surface = () => (location.hash.slice(1).match(/^[a-z-]+/) ?? ['inbox'])[0];
 let nextIssue = 102;
 
-const cards = structuredClone(CARDS);
+let cards = structuredClone(CARDS);
+// The sample inbox: absent until sample.load (or &sample), as on a fresh site. &empty hides the acme inboxes only.
+const sampleInbox = structuredClone(SAMPLE_INBOX);
+let sampleLoaded = false;
+PUSHES.push(SAMPLE_PUSH);
+for (const c of SAMPLE_CARDS) GROUP_OF[c.ref] = SAMPLE_PUSH.run_id;
+function loadSample() {
+  if (sampleLoaded) return false;
+  sampleLoaded = true;
+  cards.push(...structuredClone(SAMPLE_CARDS));
+  return true;
+}
+if (params().has('sample')) loadSample();
+const empty = () => params().has('empty');
+/** The inboxes this person sees, in inbox.list order. */
+const allInboxes = () => [...(empty() ? [] : INBOXES), ...(sampleLoaded ? [sampleInbox] : [])];
+const known = (key) => allInboxes().some((i) => i.project_key === key);
+/** The cards of the inboxes listed: &empty hides the acme cards, the sample's stay. */
+const liveCards = () => cards.filter((c) => !empty() || c.sample);
 const history = structuredClone(HISTORY);
 const reflect = structuredClone(REFLECT);
 // Lens direction per inbox (direction.get / direction.set); the first inbox has one lens set.
@@ -45,6 +70,8 @@ function summary(i) {
   return { ...i, open: by_status.open, by_status };
 }
 function err(error, message) { return { error, message }; }
+/** The pushed areas of an inbox (`map.data`, the area filter). */
+const areasFor = (key) => (key === SAMPLE_KEY ? SAMPLE_AREAS : AREAS[key] ?? []);
 /** The areas a card counts in: the longest area prefix of each anchor path and code/doc evidence path. */
 function areasOf(c, paths) {
   const touched = [...(c.anchors ?? []).map((a) => String(a).split('#')[0]),
@@ -82,11 +109,10 @@ function decide(ref, status, extra = {}) {
 
 const handlers = {
   'inbox.list'({ project_key, status, lens, area, cursor, pretriaged }) {
-    if (params().has('empty')) return { inboxes: [], groups: [] };
     if (pretriaged !== undefined && typeof pretriaged !== 'boolean') throw err('bad-input', 'pretriaged must be true or false');
     if (area !== undefined && !project_key) throw err('bad-input', 'area needs project_key: areas belong to one inbox');
-    const paths = area !== undefined ? (AREAS[project_key] ?? []).map((a) => a.path) : [];
-    const pick = cards.filter((c) => (!project_key || c.project_key === project_key) && (!status || c.status === status) && (!lens || c.lens === lens)
+    const paths = area !== undefined ? (areasFor(project_key)).map((a) => a.path) : [];
+    const pick = liveCards().filter((c) => (!project_key || c.project_key === project_key) && (!status || c.status === status) && (!lens || c.lens === lens)
       && (!pretriaged || c.pretriaged_by) && (area === undefined || (paths.includes(area) && areasOf(c, paths).has(area))));
     const ordered = [...PUSHES].sort((a, b) => b.at.localeCompare(a.at))
       .flatMap((p) => pick.filter((c) => GROUP_OF[c.ref] === p.run_id).sort(policy).map((c) => [p, c]));
@@ -105,7 +131,7 @@ const handlers = {
       g.items.push(c);
     }
     const out = {
-      inboxes: INBOXES.map(summary),
+      inboxes: allInboxes().map(summary),
       groups,
     };
     if (start + size < ordered.length) out.next = String(start + size);
@@ -118,7 +144,7 @@ const handlers = {
   },
   'verdict.accept'({ ref, jira_project_key, issue_type_id, note }) {
     const c = cards.find((x) => x.ref === ref);
-    const inbox = INBOXES.find((i) => i.project_key === c?.project_key);
+    const inbox = allInboxes().find((i) => i.project_key === c?.project_key);
     const project = jira_project_key ?? inbox?.jira_project_key;
     if (!project || !(issue_type_id ?? inbox?.issue_type_id)) throw err('bad-input', 'This inbox has no Jira target. Set one in Settings.');
     if (project === 'BILL') throw err('unavailable', 'Jira refused to create the issue: the Billing project is archived.');
@@ -135,21 +161,21 @@ const handlers = {
     return { card: decide(ref, 'merged', { merged_into: into }) };
   },
   'settings.get'() {
-    return { inboxes: INBOXES.map(summary) };
+    return { inboxes: allInboxes().map(summary) };
   },
   'settings.set'({ project_key, jira_project_key, issue_type_id }) {
-    const i = INBOXES.find((x) => x.project_key === project_key);
+    const i = allInboxes().find((x) => x.project_key === project_key);
     if (!i) throw err('unknown-project', `No inbox ${project_key}.`);
     Object.assign(i, { jira_project_key, issue_type_id });
     return { inbox: summary(i) };
   },
   'jira.projects'() { return { projects: PROJECTS }; },
   'direction.get'({ project_key }) {
-    if (!INBOXES.some((i) => i.project_key === project_key)) throw err('unknown-project', `No inbox ${project_key}.`);
+    if (!known(project_key)) throw err('unknown-project', `No inbox ${project_key}.`);
     return { lenses: directions[project_key] ?? {} };
   },
   'direction.set'({ project_key, lens, focus, exclude, notes, spaces }) {
-    if (!INBOXES.some((i) => i.project_key === project_key)) throw err('unknown-project', `No inbox ${project_key}.`);
+    if (!known(project_key)) throw err('unknown-project', `No inbox ${project_key}.`);
     if (!LENS_IDS.includes(lens)) throw err('bad-input', `lens must be one of ${LENS_IDS.join(', ')}.`);
     const list = (v) => (Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : []);
     const d = {};
@@ -172,8 +198,8 @@ const handlers = {
   },
   'map.data'({ project_key }) {
     if (!project_key) throw err('bad-input', 'project_key is required.');
-    if (!INBOXES.some((i) => i.project_key === project_key)) throw err('unknown-project', `No inbox ${project_key}.`);
-    if (params().has('empty')) return { areas: [], points: [] };
+    if (!known(project_key)) throw err('unknown-project', `No inbox ${project_key}.`);
+    if (empty() && project_key !== SAMPLE_KEY) return { areas: [], points: [] };
     const points = cards.filter((c) => c.project_key === project_key && c.status === 'open' && c.effort?.size)
       .map((c) => {
         const p = { ref: c.ref, lens: c.lens, effort: c.effort.size, confidence: c.confidence };
@@ -182,7 +208,7 @@ const handlers = {
       });
     // The counts come from the cards, by the same mapping the area filter uses (as forge/src/core/areas.mjs), so a
     // cell's number is what its inbox link lists.
-    const list = AREAS[project_key] ?? [];
+    const list = areasFor(project_key);
     const paths = list.map((a) => a.path);
     const areas = list.map((a) => {
       const by = {};
@@ -197,9 +223,32 @@ const handlers = {
   },
   'reflect.data'({ project_key }) {
     if (!project_key) throw err('bad-input', 'project_key is required.');
-    if (!INBOXES.some((i) => i.project_key === project_key)) throw err('unknown-project', `No inbox ${project_key}.`);
-    if (params().has('empty')) return EMPTY_REFLECT;
+    if (!known(project_key)) throw err('unknown-project', `No inbox ${project_key}.`);
+    if (project_key === SAMPLE_KEY) return SAMPLE_REFLECT;
+    if (empty()) return EMPTY_REFLECT;
     return reflect[project_key] ?? EMPTY_REFLECT;
+  },
+  // The sample inbox (forge/src/core/sample.mjs on the server): load is idempotent, remove keeps the Jira issues.
+  'sample.load'() {
+    const created = loadSample();
+    return created ? { project_key: SAMPLE_KEY, created: SAMPLE_CARDS.length } : { project_key: SAMPLE_KEY, created: 0, already: true };
+  },
+  'sample.remove'() {
+    if (!sampleLoaded) return { removed: true, issues_kept: 0 };
+    const kept = cards.filter((c) => c.sample && c.issue_ref).length;
+    cards = cards.filter((c) => !c.sample);
+    for (const c of SAMPLE_CARDS) delete history[c.ref];
+    delete sampleInbox.jira_project_key; delete sampleInbox.issue_type_id;
+    sampleLoaded = false;
+    return { removed: true, issues_kept: kept };
+  },
+  'setup.status'() {
+    const calls = Number(params().get('calls')) || 0;
+    /** @type {{mcp_url?: string, tools: {calls: number, last_at?: string, last_tool?: string}, sample: {loaded: boolean}}} */
+    const out = { tools: { calls }, sample: { loaded: sampleLoaded } };
+    if (!params().has('nomcp')) out.mcp_url = 'https://dev-app.atlassian-dev.net/x1/mcp/dowser';
+    if (calls > 0) Object.assign(out.tools, { last_at: new Date(Date.now() - 42 * 60000).toISOString(), last_tool: 'dowser_proposals_push' });
+    return out;
   },
   'rule.decide'({ project_key, id, state, text }) {
     const rule = reflect[project_key]?.rules.find((r) => r.id === id);

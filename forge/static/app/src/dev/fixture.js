@@ -390,3 +390,85 @@ export const REFLECT = {
     ],
   },
 };
+
+// The sample inbox (`sample.load`): a stand-in for the captured self-scan of Dowser's own public repository
+// (forge/src/sample/self-scan.json on the server). The server marks the inbox and every card `sample: true` and
+// carries `source` on the inbox; the UI never derives either from the key. No Jira target is set, so Settings is
+// where a judge picks one before Accept.
+export const SAMPLE_KEY = 'dowser-sample';
+const SAMPLE_REPO = 'https://github.com/xkazm04/dowser';
+const SAMPLE_SHA = '414e6ed2c1f0a9b8e7d6c5b4a3928170f6e5d4c3';
+const SAMPLE_AT = '2026-11-03T18:22:40.000Z';
+export const SAMPLE_PUSH = { run_id: '2026-11-03T18-10-02Z-s1', at: SAMPLE_AT, head_sha: SAMPLE_SHA, project_key: SAMPLE_KEY };
+const scode = (path, line, quote) => ({ type: 'code', ref: `${path}:${line}`, quote, link: `${SAMPLE_REPO}/blob/${SAMPLE_SHA}/${path}#L${line}` });
+const sdoc = (path, line, quote) => ({ type: 'doc', ref: `${path}:${line}`, quote, link: `${SAMPLE_REPO}/blob/${SAMPLE_SHA}/${path}#L${line}` });
+const sampleCard = (over) => card({
+  project_key: SAMPLE_KEY, sample: true, change: 'new', first_seen: SAMPLE_AT, last_push_at: SAMPLE_AT,
+  provenance: { lens_version: '0.3.1', model: 'claude-opus-5-5', harness: 'claude-code', run_id: SAMPLE_PUSH.run_id }, ...over,
+});
+
+export const SAMPLE_INBOX = {
+  project_key: SAMPLE_KEY, repo_url: SAMPLE_REPO, sample: true,
+  source: { repo_url: SAMPLE_REPO, head_sha: SAMPLE_SHA, scanned_at: SAMPLE_AT },
+  last_push: { run_id: SAMPLE_PUSH.run_id, at: SAMPLE_AT, head_sha: SAMPLE_SHA, created: 5, updated: 0 },
+};
+
+export const SAMPLE_CARDS = [
+  sampleCard({
+    ref: 'DW-31', fp: '5a17e0c1d2b3a4f5', title: 'Give a fresh install a first-run screen instead of "every proposal decided"',
+    rationale: 'A new site with no inbox reads that every proposal was decided, which is false and gives no next step.',
+    anchors: ['forge/static/app/src/routes/inbox/states.jsx#EmptyState'], confidence: 'high',
+    effort: { size: 'S', days_low: 1, days_high: 2, basis: ['forge/static/app/src/routes/inbox/states.jsx#EmptyState'] },
+    ...scored(48.1, 8, 'Every new install lands here first', 0.95, 1.6, 0.9, { mvp: true, mvp_rule: 'top-score' }),
+    evidence: [scode('forge/static/app/src/routes/inbox/states.jsx', 89, '<p>Every proposal in this inbox has been decided.</p>')],
+  }),
+  sampleCard({
+    ref: 'DW-32', fp: '6b28f1d2e3c4b5a6', lens: 'ux-friction', kind: 'friction', title: 'Keep the inbox picker counts in step with decisions',
+    rationale: 'The picker shows the open count from the last load, so it still counts cards the person just decided.',
+    anchors: ['forge/static/app/src/routes/inbox/Toolbar.jsx#Toolbar'],
+    effort: { size: 'XS', days_low: 0.25, days_high: 0.5, basis: ['forge/static/app/src/routes/inbox/Toolbar.jsx#Toolbar'] },
+    ...scored(31.4, 5, 'Seen on every decision in a multi-inbox site', 0.75, 1, 0.95, { mvp: true, mvp_rule: 'top-score' }),
+    evidence: [scode('forge/static/app/src/routes/inbox/Toolbar.jsx', 37, '{i.project_key.split(\'/\').pop()} ({i.open} open)')],
+  }),
+  sampleCard({
+    ref: 'DW-33', fp: '7c39a2e3f4d5c6b7', lens: 'doc-drift', kind: 'stale-instruction', title: 'Remove the fixed gap 3 from the status document',
+    rationale: 'The status document still lists the NEW badge as missing; the inbox has shown it since 85fb5c0.',
+    anchors: ['docs/concepts/project-status-and-next-steps.md'], confidence: 'high',
+    effort: { size: 'XS', days_low: 0.1, days_high: 0.25, basis: ['docs/concepts/project-status-and-next-steps.md'] },
+    ...scored(27.9, 3, 'Misleads every new session that starts from the status doc', 0.95, 1, 1, { mvp: true, mvp_rule: 'top-score' }),
+    evidence: [sdoc('docs/concepts/project-status-and-next-steps.md', 61, 'Gap 3: the inbox does not mark new proposals.'), scode('forge/static/app/src/routes/inbox/InboxList.jsx', 117, "const change = isOpen ? (card.reopened ? 'reopened' : changeOf(card, group)) : undefined;")],
+  }),
+  sampleCard({
+    ref: 'DW-34', fp: '8d4ab3f405e6d7c8', lens: 'security-cra', kind: 'hardening', title: 'Refuse MCP pushes to the reserved sample key',
+    rationale: 'A scan could write into the sample inbox and mix real and sample data in one place.',
+    anchors: ['forge/src/core/push.mjs#pushProposals'], confidence: 'medium',
+    effort: { size: 'S', days_low: 0.5, days_high: 1, basis: ['forge/src/core/push.mjs#pushProposals'] },
+    ...scored(22.6, 4, 'Every MCP push goes through this check', 0.75, 1.333, 0.85, { mvp: true, mvp_rule: 'top-score' }),
+    evidence: [scode('forge/src/core/push.mjs', 105, 'const bad = checkRecord(record);')],
+  }),
+  sampleCard({
+    ref: 'DW-35', fp: '9e5bc4a516f7e8d9', title: 'Show how many tool calls have reached the app',
+    rationale: 'An admin cannot tell whether the agent is connected: nothing records MCP calls.',
+    anchors: ['forge/src/core/observe.mjs#observe'], band: 'reserve',
+    evidence: [scode('forge/src/core/observe.mjs', 12, "log('tool', name);")],
+  }),
+];
+
+export const SAMPLE_AREAS = [
+  { path: 'forge/static/app', files: 48, churn_90d: 212, authors_90d: 1, last_change: '2026-11-03T17:50:00.000Z', proposals: [] },
+  { path: 'forge/src', files: 41, churn_90d: 168, authors_90d: 1, last_change: '2026-11-03T16:40:00.000Z', proposals: [] },
+  { path: 'docs', files: 22, churn_90d: 74, authors_90d: 1, last_change: '2026-11-03T12:00:00.000Z', proposals: [] },
+  { path: 'skill', files: 63, churn_90d: 190, authors_90d: 1, last_change: '2026-11-02T20:10:00.000Z', proposals: [] },
+];
+
+export const SAMPLE_REFLECT = {
+  totals: { open: 5, accepted: 0, rejected: 0, snoozed: 0, merged: 0 },
+  pushes: [{ run_id: SAMPLE_PUSH.run_id, at: SAMPLE_AT, head_sha: SAMPLE_SHA, created: 5, updated: 0, dup_rate: 0, open: 5, accepted: 0, rejected: 0, snoozed: 0 }],
+  lens_yield: [
+    { lens: 'opportunity', proposed: 2, accepted: 0, rejected: 0, snoozed: 0, open: 2 },
+    { lens: 'ux-friction', proposed: 1, accepted: 0, rejected: 0, snoozed: 0, open: 1 },
+    { lens: 'doc-drift', proposed: 1, accepted: 0, rejected: 0, snoozed: 0, open: 1 },
+    { lens: 'security-cra', proposed: 1, accepted: 0, rejected: 0, snoozed: 0, open: 1 },
+  ],
+  rejects: [], notes: [], rules: [], candidates: [], outcomes: [],
+};

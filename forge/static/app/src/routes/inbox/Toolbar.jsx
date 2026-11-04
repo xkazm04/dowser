@@ -2,6 +2,7 @@
 // with a way to clear it), the machine pre-triaged filter, the last-push line and the help button.
 import React from 'react';
 import { Mark } from '../../components/Brand.jsx';
+import { inboxOption } from '../../components/SampleStrip.jsx';
 import { LENSES, LENS_LABELS, STATUSES, STATUS_LABELS, formatDate } from '../../components/labels.js';
 
 /** "28 Oct, 19:21": several pushes a day are common, so the time is what tells them apart; the year is noise. */
@@ -13,7 +14,7 @@ function summarise(inboxes, projectKey, status, decided) {
   // by_status is newer than open: an older backend sends only open, and the other segments then show no count.
   const by = Object.fromEntries(STATUSES.map((s) => [s, list.some((i) => i.by_status) ? list.reduce((n, i) => n + (i.by_status?.[s] ?? 0), 0) : undefined]));
   by.open = list.reduce((n, i) => n + (i.open ?? 0), 0);
-  for (const to of decided?.values() ?? []) {
+  for (const { to } of decided?.values() ?? []) {
     if (by[status] !== undefined) by[status] -= 1;
     if (by[to] !== undefined) by[to] += 1;
   }
@@ -21,8 +22,19 @@ function summarise(inboxes, projectKey, status, decided) {
   return { by, last, count: list.length };
 }
 
+/**
+ * Each inbox's open count as loaded, less the open cards decided on this page since (an undo or a failed call takes
+ * the decision back, and the count with it). Only an open list holds open cards.
+ */
+function openPer(inboxes, status, decided) {
+  const gone = new Map();
+  if (status === 'open') for (const { project_key } of decided?.values() ?? []) gone.set(project_key, (gone.get(project_key) ?? 0) + 1);
+  return new Map((inboxes ?? []).map((i) => [i.project_key, Math.max(0, (i.open ?? 0) - (gone.get(i.project_key) ?? 0))]));
+}
+
 export function Toolbar({ inboxes, decided, projectKey, onProject, status, onStatus, lens, onLens, area = '', onClearArea, pretriaged = false, onPretriaged, onHelp }) {
   const { by, last, count } = summarise(inboxes, projectKey, status, decided);
+  const open = openPer(inboxes, status, decided);
   // The counts are per inbox: a lens, area or pre-triaged filter narrows the list, not them. Say so while one is on.
   const narrowed = Boolean(lens || (area && projectKey) || pretriaged);
   const countTitle = narrowed ? 'Whole inbox: the lens, area and pre-triaged filters do not change this count' : undefined;
@@ -32,9 +44,9 @@ export function Toolbar({ inboxes, decided, projectKey, onProject, status, onSta
       {inboxes.length > 0 && (
         <label className="dwr-field">
           <span className="dwr-visually-hidden">Inbox</span>
-          <select className="dwr-select" value={projectKey} onChange={(e) => onProject(e.target.value)}>
+          <select className="dwr-select dwr-select--inbox" value={projectKey} onChange={(e) => onProject(e.target.value)}>
             <option value="">All inboxes</option>
-            {inboxes.map((i) => <option key={i.project_key} value={i.project_key}>{i.project_key.split('/').pop()} ({i.open} open)</option>)}
+            {inboxes.map((i) => <option key={i.project_key} value={i.project_key}>{inboxOption(i, open.get(i.project_key) ?? 0)}</option>)}
           </select>
         </label>
       )}

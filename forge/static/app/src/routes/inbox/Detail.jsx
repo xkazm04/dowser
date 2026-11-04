@@ -6,6 +6,7 @@
 import React from 'react';
 import { Button, Lozenge } from '../../components/ui.jsx';
 import { Markdown } from '../../components/Markdown.jsx';
+import { SampleChip } from '../../components/SampleStrip.jsx';
 import { TriageHistory } from '../../components/ProposalCard.jsx';
 import { Artifacts } from '../../components/Artifact.jsx';
 import {
@@ -71,6 +72,7 @@ export function Detail({ card, change, history, onHistoryRetry, compact = false,
           <LensDot lens={card.lens} />
           <span>{LENS_LABELS[card.lens] ?? card.lens}</span>
           <span className="dwr-ref">{card.ref}</span>
+          {card.sample && <SampleChip />}
           {marker && (marker === 'reopened'
             ? <Lozenge appearance="moved">Reopened</Lozenge>
             : <Lozenge appearance={marker === 'new' ? 'new' : 'inprogress'}>{CHANGE_LABELS[marker]}</Lozenge>)}

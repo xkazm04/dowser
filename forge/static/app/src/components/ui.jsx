@@ -79,6 +79,12 @@ export function Dialog({ title, onClose, children, footer }) {
       className="dw-dialog"
       aria-labelledby={titleId}
       onCancel={(e) => { e.preventDefault(); onClose(); }}
+      onKeyDown={(e) => {
+        // Ctrl/Cmd+Enter presses the dialog's primary (or danger) button, in every dialog of every surface.
+        if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey)) return;
+        const btn = ref.current?.querySelector('.dw-dialog__foot .dw-btn--primary:not(:disabled), .dw-dialog__foot .dw-btn--danger:not(:disabled)');
+        if (btn instanceof HTMLElement) { e.preventDefault(); e.stopPropagation(); btn.click(); }
+      }}
     >
       <div className="dw-dialog__inner">
         <div className="dw-dialog__head"><h2 className="dw-h2" id={titleId}>{title}</h2></div>
