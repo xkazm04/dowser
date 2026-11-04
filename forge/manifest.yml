@@ -30,6 +30,7 @@ modules:
         - dowser_areas_push
         - dowser_reflect_sync
         - dowser_direction_get
+        - dowser_memory_pull
 
   action:
     - key: dowser_sources_tickets
@@ -74,6 +75,14 @@ modules:
       inputs:
         project_key: { title: Project key, type: string, required: true, description: The key Dowser derives from the repo origin. }
         cursor: { title: Cursor, type: string, required: false, description: The cursor from the previous pull; omit on the first pull. }
+    - key: dowser_memory_pull
+      name: Pull team memory
+      function: mcp
+      actionVerb: GET
+      description: The inbox's decided items with their records and decisions, oldest first, 50 per page, and the rules decided in Jira on the first page. A fresh store hydrates from it.
+      inputs:
+        project_key: { title: Project key, type: string, required: true, description: The key Dowser derives from the repo origin. }
+        after: { title: After, type: string, required: true, description: Send 0 for the first page, then the cursor the previous page returned. }
     - key: dowser_areas_push
       name: Push areas
       function: mcp

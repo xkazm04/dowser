@@ -1,8 +1,8 @@
 # Forge MCP contract, version 2 (`forge-mcp-2`)
 
 This is the seam between the Dowser local skill and the Dowser Forge app (`forge/`). The Forge app
-implements these eight tools on its `rovo:mcp` server (the original six plus `dowser_reflect_sync` and
-`dowser_direction_get`, added without a version change). `tools/mock-forge-mcp.mjs` implements the same tools locally, so the skill can be
+implements these nine tools on its `rovo:mcp` server (the original six plus `dowser_reflect_sync`,
+`dowser_direction_get` and `dowser_memory_pull`, added without a version change). `tools/mock-forge-mcp.mjs` implements the same tools locally, so the skill can be
 tested without a Jira site.
 
 **What changed from `forge-mcp-1`.** Version 1 was never deployed, so version 2 replaces it rather than
@@ -407,6 +407,31 @@ Repeating a call changes nothing. The skill applies the returned decisions the w
 **Notes on every decision.** `Verdict.note` was already optional. Forge now also accepts a note when a
 person **accepts** or **snoozes** an item (in the inbox and through the Rovo agent), and it arrives in the
 verdict like a reject note. A note is at most 2000 characters on every decision.
+
+## `dowser_memory_pull`
+
+The inbox as the team's memory of record. A skill store is per machine, so a teammate's first run, a reinstall or
+a CI runner starts with no decisions and would re-propose what the team already decided. This tool pages the
+inbox's **decided** items, oldest item first; the skill's `hydrate` stores them as decided cards. Read-only.
+
+Input: `{project_key, after}`.
+
+| field | type | rule |
+|---|---|---|
+| `project_key` | string | required. The inbox must exist, else `unknown-project`; the caller must be able to open it, else `forbidden` |
+| `after` | string | required. `"0"` for the first page, then the `cursor` of the previous page. Anything this server did not issue is `bad-cursor`. Required (not optional) so a transport that gives no tool name can route the call by its shape |
+
+Output:
+
+| field | type | rule |
+|---|---|---|
+| `items[]` | object | at most 50 decided items (`accepted`, `rejected`, `snoozed`, `merged`; never `open`). Each is the dowser-proposal record as it was pushed (its `evidence` as `{type, ref, quote?, url?}`), without the pushed `status`, plus the decision: `fp`, `external_ref`, `status`, `reason?`, `note?`, `merged_into?` (an fp, or a Jira key for a merge into an issue), `decided_by`, `decided_at`, `issue_ref?`, `issue_url?`, `snooze_until?` |
+| `cursor` | string | pass it as `after` for the next page |
+| `more` | boolean | only when another page follows; omitted otherwise |
+| `rules[]` | object | first page only (`after: "0"`): the rules decided in Forge, `{id, lens, state, text, offered_at, decided_by?, decided_at?}`, `state` `accepted` or `declined` |
+
+The skill checks every item before storing it (the fingerprint must match the record) and leaves an fp it already
+holds alone: local memory wins.
 
 ## Versioning
 

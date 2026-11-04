@@ -536,7 +536,8 @@ export function getRun(db, id) {
  * @returns {Row | undefined}
  */
 export function lastDoneRun(db) {
-  const r = /** @type {Row | undefined} */ (db.prepare("SELECT id FROM runs WHERE status = 'done' ORDER BY finished_at DESC, id DESC LIMIT 1").get());
+  // a hydrate run (lib/hydrate.mjs) scanned nothing: it is never the base of an incremental run
+  const r = /** @type {Row | undefined} */ (db.prepare("SELECT id FROM runs WHERE status = 'done' AND (harness IS NULL OR harness <> 'dowser-hydrate') ORDER BY finished_at DESC, id DESC LIMIT 1").get());
   return r ? getRun(db, r.id) : undefined;
 }
 

@@ -8,6 +8,7 @@ import { pushProposals } from './push.mjs';
 import { observed, recordCall } from './observe.mjs';
 import { loadSample, removeSample, setupStatus } from './sample.mjs';
 import { outcomeRecord, reflectData, reflectSync, ruleDecide } from './reflect.mjs';
+import { memoryPull } from './memory.mjs';
 import { sourcesGoals, sourcesPages, sourcesTickets } from './sources.mjs';
 import { directionGet, directionSet, directionTool } from './direction.mjs';
 import { getInbox, isSampleKey } from './store.mjs';
@@ -45,9 +46,9 @@ export function isSchemaBehind(e) {
   return SCHEMA_BEHIND_RE.test(`${String(err?.message ?? err)} ${String(debug?.message ?? '')}`);
 }
 
-/** The eight forge-mcp-2 tools (reflect_sync and direction_get are additive to the original six). */
+/** The nine forge-mcp-2 tools (reflect_sync, direction_get and memory_pull are additive to the original six). */
 export const TOOL_NAMES = /** @type {const} */ (['dowser_sources_tickets', 'dowser_sources_pages', 'dowser_sources_goals',
-  'dowser_proposals_push', 'dowser_verdicts_pull', 'dowser_areas_push', 'dowser_reflect_sync', 'dowser_direction_get']);
+  'dowser_proposals_push', 'dowser_verdicts_pull', 'dowser_areas_push', 'dowser_reflect_sync', 'dowser_direction_get', 'dowser_memory_pull']);
 /** The Rovo agent actions (dowser_sources_goals is shared with the MCP tools). */
 export const ROVO_ACTIONS = /** @type {const} */ (['dowser_inbox_list', 'dowser_proposal_explain', 'dowser_verdict_record']);
 
@@ -119,6 +120,7 @@ const TOOLS = {
   dowser_areas_push: async (d, a, id, acc) => { await openIfExists(d, acc, a); return pushAreas(d, a, id); },
   dowser_reflect_sync: async (d, a, _, acc) => { await openProject(acc, a); return reflectSync(d, a); },
   dowser_direction_get: async (d, a, _, acc) => { await openProject(acc, a); return directionTool(d, a); },
+  dowser_memory_pull: async (d, a, _, acc) => { await openProject(acc, a); return memoryPull(d, a); },
 };
 
 /** @param {string} accountId @param {Via} via */
@@ -421,6 +423,7 @@ export function actionName(surface, candidates, payload) {
     if (has(payload, 'areas_json')) return 'dowser_areas_push';
     if (has(payload, 'rules_json')) return 'dowser_reflect_sync';
     if (has(payload, 'lens')) return 'dowser_direction_get';
+    if (has(payload, 'after')) return 'dowser_memory_pull';
     if (has(payload, 'query')) return has(payload, 'limit') ? 'dowser_sources_tickets' : 'dowser_sources_pages';
     if (has(payload, 'project_key')) return 'dowser_verdicts_pull';
     return 'dowser_sources_goals';

@@ -68,6 +68,8 @@ export const TOOLS = [
       required: ['project_key', 'run_id', 'proposals_json'], additionalProperties: false } },
   { name: 'dowser_verdicts_pull', description: 'Triage decisions made in Jira since the cursor, oldest first.',
     inputSchema: { type: 'object', properties: { project_key: PK, cursor: S('The cursor from the previous pull; omit on the first pull.') }, required: ['project_key'], additionalProperties: false } },
+  { name: 'dowser_memory_pull', description: "The inbox's decided items with their records and decisions, oldest first, 50 per page, and the rules decided in Jira on the first page. A fresh store hydrates from it.",
+    inputSchema: { type: 'object', properties: { project_key: PK, after: S('Send 0 for the first page, then the cursor the previous page returned.') }, required: ['project_key', 'after'], additionalProperties: false } },
   { name: 'dowser_areas_push', description: "Per-directory churn and author counts for the opportunity map. Replaces the project's previous set.",
     inputSchema: { type: 'object', properties: { project_key: PK, run_id: S('The Dowser run that measured the areas.'), areas_json: S('JSON array of at most 200 areas.') },
       required: ['project_key', 'run_id', 'areas_json'], additionalProperties: false } },

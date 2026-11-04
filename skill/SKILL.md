@@ -94,7 +94,8 @@ its environment halfway through.
      is missing, skip only the areas step, section 8) and `dowser_reflect_sync` (when it is
      missing, skip only the reflect steps, sections 3 and 8; rules are then decided locally
      and no outcomes arrive). A third, `dowser_direction_get`, is optional too: when it is
-     missing, skip only the direction step (section 4).
+     missing, skip only the direction step (section 4). A fourth, `dowser_memory_pull`, is
+     optional: when it is missing, skip only the hydrate step (section 3, step 0).
    - Any is missing: **unconnected**. Tell the runner, before scanning, which lenses will be
      partial and why. Opportunity runs on code and docs only, at low confidence. Doc drift checks
      in-repo docs only. UX friction runs without user reports. Proposals stay local and are not
@@ -104,6 +105,13 @@ its environment halfway through.
 
 Memory must reflect Jira before the scan, so a rejection made in Jira suppresses the item today.
 
+0. **Hydrate a fresh store.** When `init` printed `fresh: true` (no proposal on this machine yet:
+   a teammate's first run, a reinstall, a CI runner) and `dowser_memory_pull` is present, take
+   the team's memory from the inbox first. Call it with `{project_key, after: "0"}`, save the
+   response to `<work>/memory.json`, run `hydrate --file <work>/memory.json`, and while its
+   output says `more: true`, call again with `after` set to its `cursor`. Report one line:
+   "Took N decided items and R rules from the team's inbox." Without this step a fresh store
+   would re-propose everything the team already rejected.
 1. Call `dowser_verdicts_pull` with `{project_key, cursor}`. Take the `cursor` from the
    `verdicts_cursor` field of the `init` output; omit `cursor` when that field is absent.
 2. Save the tool response verbatim to `<work>/verdicts.json`.

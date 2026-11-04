@@ -408,7 +408,7 @@ export function ingestVerdicts(db, doc) {
   const fine = fresh ? ['applied', 'already-applied', 'in-sync', 'unknown'] : ['applied', 'already-applied', 'in-sync'];
   const bad = items.filter((x) => !fine.includes(String(x.outcome))).length;
   const note = fresh && summary.unknown
-    ? `fresh store: ${summary.unknown} verdict(s) belong to cards this store never proposed (another machine, or a cleared ~/.dowser); they are not applied and need no action`
+    ? `fresh store: ${summary.unknown} verdict(s) belong to cards this store never proposed (another machine, or a cleared ~/.dowser); they are not applied; pull the team memory first (dowser_memory_pull, then hydrate) and they come back in-sync`
     : undefined;
   return { code: bad > 0 ? 1 : 0, out: store.clean({ verdicts: items, summary, cursor: typeof d.cursor === 'string' ? d.cursor : undefined, fresh_store: fresh && summary.unknown ? true : undefined, note, trust_events: trust.length ? trust : undefined }) ?? {} };
 }

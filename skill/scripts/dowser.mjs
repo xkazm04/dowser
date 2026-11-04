@@ -39,6 +39,7 @@ const depsLib = await import('./lib/deps.mjs');
 const shareLib = await import('./lib/share.mjs');
 const trustLib = await import('./lib/trust.mjs');
 const triageLib = await import('./lib/triage.mjs');
+const hydrateLib = await import('./lib/hydrate.mjs');
 
 /**
  * @typedef {{_: string[], [flag: string]: string | string[] | true | string[] | undefined}} Args
@@ -185,10 +186,11 @@ const KINDS_FLAG = /** @type {Flag} */ ({ arg: '<lens>=<k1,k2>', repeat: true })
 /** Every command: flags, positionals, help and handler in one entry (see the header). @type {Record<string, Entry>} */
 export const COMMANDS = {
   init: {
-    help: 'create the store -> {db, project_key, verdicts_cursor?, repo, user_version}',
+    help: 'create the store -> {db, project_key, verdicts_cursor?, fresh?, repo, user_version} (fresh: no proposal yet - hydrate from the inbox first)',
     run(_a, ctx) {
       const db = ctx.open();
-      return { out: store.clean({ db: ctx.dbFile(), project_key: projectKey(ctx.root), verdicts_cursor: syncLib.verdictsCursor(db), repo: ctx.root, user_version: store.USER_VERSION }) };
+      const fresh = db.prepare('SELECT 1 FROM proposals LIMIT 1').get() === undefined;
+      return { out: store.clean({ db: ctx.dbFile(), project_key: projectKey(ctx.root), verdicts_cursor: syncLib.verdictsCursor(db), fresh: fresh || undefined, repo: ctx.root, user_version: store.USER_VERSION }) };
     },
   },
 
@@ -443,6 +445,12 @@ export const COMMANDS = {
     flags: { file: FILE_FLAG },
     help: 'apply a dowser_verdicts_pull response (CAS, idempotent), keep cursor; an accepted verdict records issue_ref/issue_url',
     run: (a, ctx) => syncLib.ingestVerdicts(ctx.open(), syncLib.readResponse(req(a, 'file'))),
+  },
+  hydrate: {
+    flags: { file: FILE_FLAG },
+    help: 'store a dowser_memory_pull page: the inbox decided items as decided cards (one transition by the person who ' +
+      'decided), decided rules as decided; an fp already here is left alone -> {run, added, present, rules_added, cursor, more?, invalid?}',
+    run: (a, ctx) => hydrateLib.hydrate(ctx.open(), syncLib.readResponse(req(a, 'file'))),
   },
   areas: {
     flags: { run: RUN_FLAG, top: { arg: '<n>' } },

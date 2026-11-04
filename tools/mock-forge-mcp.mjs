@@ -82,6 +82,8 @@ const JSON_MAX = 4 * 1024 * 1024;
 const RULES_MAX = 50;
 const TITLES_MAX = 10;
 const OUTCOMES_MAX = 200;
+/** Decided items per memory page (forge/src/core/memory.mjs MEMORY_PAGE). */
+const MEMORY_PAGE = 50;
 /** trust_json caps (forge/src/core/types.mjs TRUST_EVENTS_MAX). */
 const TRUST_EVENTS_MAX = 50;
 const RATINGS = ['right', 'partly', 'wrong'];
@@ -119,6 +121,8 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { project_key: S, run_id: S, proposals_json: S, repo_url: S, head_sha: S, lens_kinds_json: S }, required: ['project_key', 'run_id', 'proposals_json'], additionalProperties: false } },
   { name: 'dowser_verdicts_pull', description: 'Verdicts decided in the inbox since the cursor. Returns {verdicts:[...], cursor}.',
     inputSchema: { type: 'object', properties: { project_key: S, cursor: S }, required: ['project_key'], additionalProperties: false } },
+  { name: 'dowser_memory_pull', description: 'The inbox as the team memory: decided items (accepted, rejected, snoozed, merged) with their records and decisions, oldest first, 50 per page; the rules decided in Jira on the first page. after = "0" for the first page, then the cursor. Returns {items:[...], cursor, more?, rules?}.',
+    inputSchema: { type: 'object', properties: { project_key: S, after: S }, required: ['project_key', 'after'], additionalProperties: false } },
   { name: 'dowser_areas_push', description: 'Replace the project\'s area stats (areas_json, a JSON array of at most 200 {path,files,churn_90d,authors_90d?,last_change?}). Returns {stored}.',
     inputSchema: { type: 'object', properties: { project_key: S, run_id: S, areas_json: S }, required: ['project_key', 'run_id', 'areas_json'], additionalProperties: false } },
   { name: 'dowser_reflect_sync', description: 'Offer rules (rules_json, a JSON array of at most 50 {id,lens,text,titles?,offered_at}) and read back every rule a person decided plus the newest 200 outcomes (with outcomes_since, an ISO time: the oldest 200 at or after it, and outcomes_more when more follow). Idempotent. Returns {rules:[{id,lens,state,text,decided_by,decided_at}], outcomes:[{ref,fp,rating,note?,issue_ref,decided_by,recorded_at}], outcomes_more?}.',
@@ -345,6 +349,34 @@ function dowserProposalsPush(b, args) {
   return { results };
 }
 
+/** `dowser_memory_pull` (Forge core/memory.mjs). The cursor is the item's position in push order. @param {Backend} b @param {Obj} args @returns {Obj} */
+function dowserMemoryPull(b, args) {
+  if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
+  if (typeof args.after !== 'string' || !/^(0|[1-9][0-9]{0,15})$/.test(args.after)) throw new ToolError('bad-cursor', 'after was not issued by this server; send "0" for the first page');
+  if (!b.projects[args.project_key]) throw new ToolError('unknown-project', `no inbox for project ${args.project_key}; push proposals first`);
+  const p = project(b, args.project_key);
+  const after = Number(args.after);
+  const decided = Object.values(p.items).map((it, i) => ({ it, pos: i + 1 }))
+    .filter(({ it, pos }) => pos > after && ['accepted', 'rejected', 'snoozed', 'merged'].includes(it.status));
+  const page = decided.slice(0, MEMORY_PAGE);
+  const items = page.map(({ it }) => {
+    const v = [...p.verdicts].reverse().find((x) => x.fp === it.fp);
+    const { status: _pushed, ...rec } = it.record;
+    return omitAbsent({ ...rec, fp: it.fp, external_ref: it.external_ref, status: it.status, reason: v?.reason, note: v?.note,
+      merged_into: v?.merged_into, decided_by: v?.decided_by, decided_at: v?.decided_at, issue_ref: it.issue_ref, issue_url: it.issue_url,
+      snooze_until: it.status === 'snoozed' ? it.snooze_until : undefined });
+  });
+  /** @type {Obj} */
+  const out = { items, cursor: page.length ? String(page[page.length - 1].pos) : args.after };
+  if (decided.length > MEMORY_PAGE) out.more = true;
+  if (after === 0) {
+    out.rules = Object.values(/** @type {Record<string, RuleRecord>} */ (p.rules)).filter((r) => r.state !== 'offered')
+      .sort((x, y) => String(x.decided_at).localeCompare(String(y.decided_at)) || x.id.localeCompare(y.id))
+      .map((r) => omitAbsent({ id: r.id, lens: r.lens, state: r.state, text: r.text, offered_at: r.offered_at, decided_by: r.decided_by, decided_at: r.decided_at }));
+  }
+  return out;
+}
+
 /** `dowser_verdicts_pull`. @param {Backend} b @param {Obj} args @returns {Obj} */
 function dowserVerdictsPull(b, args) {
   if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
@@ -522,6 +554,7 @@ const HANDLERS = {
   dowser_sources_goals: dowserSourcesGoals,
   dowser_proposals_push: dowserProposalsPush,
   dowser_verdicts_pull: dowserVerdictsPull,
+  dowser_memory_pull: dowserMemoryPull,
   dowser_areas_push: dowserAreasPush,
   dowser_reflect_sync: dowserReflectSync,
   dowser_direction_get: dowserDirectionGet,
