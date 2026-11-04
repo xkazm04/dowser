@@ -313,7 +313,14 @@ push, not a sortable table.
   **Pre-triaged**: accepting it stays a person's click. Cards pushed before scan-finding/1 keep the older order
   (confidence, evidence count, first seen) among themselves.
 - **Reading pane.** The selected proposal: title (with the **MVP of <lens>**, **In reserve** and **Machine
-  pre-triaged** markers when they apply), rationale, then a facts grid with the score and its scan-score/1
+  pre-triaged** markers when they apply). An open card that came back says why under its title, from the card's
+  `delta` (computed at read time from the rows `inbox.list` already reads, so no extra statement): a reopened card
+  says how many evidence items are new since the decision and the decision it had ("1 new evidence item since it
+  was rejected as Already known on 27 Oct 2026: same as DW-1"; the row is open again, so the prior status is
+  derived from its stamp: a reason means rejected, else snoozed; a dated snooze back on its day says so with no new
+  evidence), and a card whose evidence grew says how many items the latest push brought. Each such item is marked
+  **New** in the evidence list (`new: true`). A new or decided card has neither; `proposal.get` and the Rovo
+  explain carry the same fields, and the Rovo list's compact item carries `new_evidence`. Then the rationale, then a facts grid with the score and its scan-score/1
   breakdown ("Unscored" with the reason when it has none), impact and its reason, the predicted verdict with who
   predicted it and the precedent it quotes, effort (size, 1-10 effort, day range, basis), confidence with its
   reason, evidence strength, delivery risk (1-10 risk of the change, blast radius, bus factor) and doc impact. A missing bus factor
