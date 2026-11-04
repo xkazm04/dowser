@@ -52,6 +52,44 @@ export function sqliteDb() {
 }
 
 /**
+ * @typedef {{sql: string, params: unknown[]}} Statement
+ * @typedef {ReturnType<typeof sqliteDb> & {statements: Statement[], count: () => number, reset: () => void,
+ *   before?: (s: Statement) => void | Promise<void>, inner: ReturnType<typeof sqliteDb>}} CountingDb
+ */
+
+/**
+ * The Db port over `db` that records every statement (one per query/exec: one Forge SQL request each, ports.mjs).
+ * `before(s)` runs before a statement reaches the store, so a test can slip a concurrent write in between two
+ * statements (through `inner`, which is not counted). `tx` delegates to the inner port's.
+ * @param {ReturnType<typeof sqliteDb>} db
+ * @returns {CountingDb}
+ */
+export function countingDb(db) {
+  /** @type {CountingDb} */
+  const c = {
+    raw: db.raw,
+    inner: db,
+    statements: [],
+    count: () => c.statements.length,
+    reset: () => { c.statements.length = 0; },
+    async query(sql, params = []) {
+      const s = { sql, params };
+      c.statements.push(s);
+      if (c.before) await c.before(s);
+      return db.query(sql, params);
+    },
+    async exec(sql, params = []) {
+      const s = { sql, params };
+      c.statements.push(s);
+      if (c.before) await c.before(s);
+      return db.exec(sql, params);
+    },
+    tx: (fn) => db.tx(fn),
+  };
+  return c;
+}
+
+/**
  * A fake Jira that records calls; `fail = true` makes every write throw.
  */
 export function fakeJira() {
