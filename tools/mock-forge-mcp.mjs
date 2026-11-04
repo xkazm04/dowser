@@ -64,7 +64,7 @@ import { LENSES, resurfaces } from '../skill/scripts/lib/model.mjs';
  * decided_by?: string, decided_at?: string}} RuleRecord
  * @typedef {{ref: string, fp: string, rating: string, note?: string, issue_ref: string, decided_by: string, recorded_at: string}} OutcomeRecord
  * @typedef {{items: Record<string, Item>, verdicts: Verdict[], areas: Area[], areas_run_id?: string,
- *   rules?: Record<string, RuleRecord>, outcomes?: OutcomeRecord[], trust?: Obj}} Project
+ *   rules?: Record<string, RuleRecord>, outcomes?: OutcomeRecord[], trust?: Obj, deliveries?: unknown[]}} Project
  * @typedef {{
  *   tickets: SourceItem[], pages: SourceItem[], goals: SourceItem[], merge_existing: Record<string, string>,
  *   projects: Record<string, Project>, next_item: number, next_issue: number, next_seq: number,
@@ -126,7 +126,7 @@ export const TOOLS = [
   { name: 'dowser_areas_push', description: 'Replace the project\'s area stats (areas_json, a JSON array of at most 200 {path,files,churn_90d,authors_90d?,last_change?}). Returns {stored}.',
     inputSchema: { type: 'object', properties: { project_key: S, run_id: S, areas_json: S }, required: ['project_key', 'run_id', 'areas_json'], additionalProperties: false } },
   { name: 'dowser_reflect_sync', description: 'Offer rules (rules_json, a JSON array of at most 50 {id,lens,text,titles?,offered_at}) and read back every rule a person decided plus the newest 200 outcomes (with outcomes_since, an ISO time: the oldest 200 at or after it, and outcomes_more when more follow). Idempotent. Returns {rules:[{id,lens,state,text,decided_by,decided_at}], outcomes:[{ref,fp,rating,note?,issue_ref,decided_by,recorded_at}], outcomes_more?}.',
-    inputSchema: { type: 'object', properties: { project_key: S, rules_json: S, trust_json: S, outcomes_since: S }, required: ['project_key'], additionalProperties: false } },
+    inputSchema: { type: 'object', properties: { project_key: S, rules_json: S, trust_json: S, outcomes_since: S, deliveries_json: S }, required: ['project_key'], additionalProperties: false } },
   { name: 'dowser_direction_get', description: 'What the team set in Settings for each lens of this inbox (lens = one lens id, or all). Returns {lenses:{[lens]:{focus?,exclude?,notes?,spaces?}}}.',
     inputSchema: { type: 'object', properties: { project_key: S, lens: S }, required: ['project_key'], additionalProperties: false } },
   { name: 'mock_decide', description: 'TEST ONLY: simulate a person\'s verdict in the inbox on a pushed fp (status accepted|rejected|merged|snoozed; snooze_until = YYYY-MM-DD with snoozed, a past date allowed so tests reach the skill\'s wake path).',
@@ -409,6 +409,14 @@ function dowserReflectSync(b, args) {
   if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
   const offers = args.rules_json === undefined ? [] : jsonArray(args.rules_json, 'rules_json', RULES_MAX);
   const p = project(b, args.project_key);
+  if (args.deliveries_json !== undefined) {
+    // the skill's re-check of accepted cards (Forge core/delivery.mjs); kept whole for tests to read back
+    const list = jsonArray(args.deliveries_json, 'deliveries_json', 500);
+    list.forEach((e, i) => {
+      if (!isObj(e) || !str(e.fp) || !['present', 'partly', 'resolved'].includes(e.state)) throw new ToolError('bad-input', `deliveries_json[${i}] must be {fp, state: present|partly|resolved, found, total, checked_at, commits?}`);
+    });
+    project(b, args.project_key).deliveries = list;
+  }
   if (args.trust_json !== undefined) {
     /** @type {unknown} */
     let t;

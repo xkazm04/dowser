@@ -21,6 +21,7 @@ Graph goals to the skill as scan sources.
 | `confluence:contentBylineItem` | `dowser-doc-impact` | `resolver` | The proposals that cite or affect a page |
 | `jira:entityProperty` | `dowser-issue-property` | - | Indexes the `dowser` issue property for JQL (see "Dowser facts in JQL") |
 | `trigger` | `dowser-migrate` | `migrate` | Forge SQL migrations on install and upgrade |
+| `trigger` | `dowser-issue-events`, `dowser-issue-deleted` | `issue-event` | Delivery truth: status/resolution changes and deletes of issues Dowser created or merged into (filtered on the `dowser` issue property), recorded as delivered / abandoned / in progress (`core/delivery.mjs`, v027) |
 | `scheduledTrigger` | `dowser-migrate-daily` | `migrate` | Daily migrations, then the issue-property backfill (at most 50 items a day) |
 | `sql` | `main` | - | The Forge SQL database (MySQL dialect, TiDB) |
 
@@ -385,7 +386,10 @@ push, not a sortable table.
 A digest first: a few plain sentences written from the data (the last push and its repeat rate, how much was
 accepted, the most common reason to say no, what is waiting). Then **Needs you**: rule offers to accept (the text
 is editable) or decline, and accepted items to rate (**Right call**, **Partly**, **Wrong call**, with an optional
-note), the ones whose Jira issue is done first. Then the supporting detail: lens yield, reject reasons with the
+note), the ones whose Jira issue is done first. Each item to rate also says what became of it: Jira's fate as
+issue events report it (Done, or closed without the work / deleted), and the code at the last scan (the skill's
+`delivery` re-check: the quoted problem still present, partly gone, or gone). "Jira says Done, but the quoted
+problem is still in the code" leads, and an item a later scan found again after delivery says the problem came back. Then the supporting detail: lens yield, reject reasons with the
 latest decision notes, the scan retro with the trend over recent pushes, and **Trust**: per slice (lens, category,
 size) the level against its ceiling (Dowser's is 1), how often the scan's predicted verdict matched yours and over
 how many decisions, then the level changes with their reasons (earned at 90 % of 20, lost on a reject of a

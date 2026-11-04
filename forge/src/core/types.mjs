@@ -162,7 +162,11 @@ export const SAMPLE_RESERVED = `${SAMPLE_KEY} is reserved for the sample inbox`;
  * @typedef {{lens: string, proposed: number, accepted: number, rejected: number, snoozed: number, open: number}} LensYield
  * @typedef {{id: string, lens: string, text: string, titles?: string[], state: RuleState, offered_at: string,
  *   decided_by_name?: string, decided_at?: string}} RuleRow
- * @typedef {{ref: string, title: string, issue_ref: string, issue_url: string, issue_status: string, done: boolean}} OutcomeCandidate  accepted, no outcome yet; `done` = Jira status category done
+ * @typedef {{ref: string, title: string, issue_ref: string, issue_url: string, issue_status: string, done: boolean,
+ *   delivery?: 'open' | 'in_progress' | 'delivered' | 'abandoned', code_state?: 'present' | 'partly' | 'resolved',
+ *   still_in_code?: true, recurred?: true}} OutcomeCandidate  accepted, no outcome yet; `done` = delivered in Jira (an
+ *   issue event, else the polled status category); `delivery` from issue events, `code_state` from the skill's
+ *   re-check (core/delivery.mjs); `still_in_code` = done in Jira while the quoted problem is still present
  * @typedef {{totals: Record<InboxStatus, number>, rejects: RejectCount[], notes: DecisionNote[], pushes: PushRetro[],
  *   lens_yield: LensYield[], rules: RuleRow[], candidates: OutcomeCandidate[], outcomes: (Outcome & {title: string, decided_by_name?: string})[],
  *   trust?: Trust & {updated_at: string}}} ReflectData

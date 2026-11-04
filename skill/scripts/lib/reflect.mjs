@@ -16,6 +16,8 @@ import { trustReport } from './trust.mjs';
 /** @typedef {import('./store.mjs').Db} Db @typedef {import('./store.mjs').Row} Row */
 
 export const OUTCOME_RATINGS = /** @type {const} */ (['right', 'partly', 'wrong']);
+/** At most this many delivery re-checks per `dowser_reflect_sync` call (forge/src/core/delivery.mjs DELIVERIES_MAX). */
+export const DELIVERIES_MAX = 500;
 /** At most this many offered rules per `dowser_reflect_sync` call, and titles per rule (forge/src/core/types.mjs). */
 export const RULES_MAX = 50;
 export const TITLES_MAX = 10;
@@ -48,6 +50,7 @@ function decider(v) {
  * offered, so only the oldest RULES_MAX went out; the rest follow once those are decided. The agent passes
  * every field but `more`. `outcomes_since` is the newest `recorded_at` this store holds (absent before the first
  * outcome): Forge then pages forward from it, so more than one page of outcomes between syncs is never lost.
+ * `deliveries_json` is the newest code re-check (`delivery`) of each accepted card the inbox knows, absent when none.
  * @param {Db} db
  * @param {string} projectKey
  * @returns {Row}
@@ -65,10 +68,18 @@ export function exportOffers(db, projectKey) {
   });
   const trust = trustReport(db, { sync: false, maxEvents: TRUST_EVENTS_MAX, cards: false });
   const newest = /** @type {Row} */ (db.prepare('SELECT MAX(recorded_at) AS at FROM outcomes').get()).at;
+  // the newest code re-check of each accepted card the inbox knows (lib/delivery.mjs), for the Learning tab
+  const deliveries = /** @type {Row[]} */ (db.prepare(
+    `SELECT d.fp, d.state, d.found, d.total, d.commits_json, d.checked_at FROM deliveries d JOIN proposals p ON p.fp = d.fp
+     WHERE p.status = 'accepted' AND p.external_ref IS NOT NULL AND d.id = (SELECT MAX(id) FROM deliveries x WHERE x.fp = d.fp)
+     ORDER BY d.id DESC LIMIT ${DELIVERIES_MAX}`,
+  ).all()).map((d) => clean({ fp: d.fp, state: d.state, found: Number(d.found), total: Number(d.total),
+    commits: d.commits_json ? JSON.parse(String(d.commits_json)).length : undefined, checked_at: d.checked_at }));
   return /** @type {Row} */ (clean({
     project_key: projectKey, rules_json: offers.length ? JSON.stringify(offers) : undefined,
     trust_json: trust.slices.length || trust.events.length ? JSON.stringify(trust) : undefined,
     outcomes_since: typeof newest === 'string' && newest ? newest : undefined,
+    deliveries_json: deliveries.length ? JSON.stringify(deliveries) : undefined,
     more: more ? true : undefined,
   }));
 }

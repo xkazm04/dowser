@@ -359,7 +359,7 @@ propose `csv` items for the opportunity lens again") and offers them for a perso
 Forge is where the person decides. This tool is one idempotent round trip: the skill pushes its `offered`
 rules and reads back every rule decided in Forge and the recorded outcomes of accepted items.
 
-Input: `{project_key, rules_json?, trust_json?, outcomes_since?}`.
+Input: `{project_key, rules_json?, trust_json?, outcomes_since?, deliveries_json?}`.
 
 | field | type | rule |
 |---|---|---|
@@ -372,6 +372,7 @@ Input: `{project_key, rules_json?, trust_json?, outcomes_since?}`.
 | `rules_json[].offered_at` | string | required ISO timestamp |
 | `trust_json` | string | optional. A JSON object `{slices, events}`: the skill store's per-slice trust (`reflect export`, from `skill/scripts/lib/trust.mjs`), at most 200 slices and the newest 50 events. Forge stores it whole per inbox (table `trust`, migration v023) and shows it in the Learning tab; it never computes or acts on a level itself. Omitted (or empty) leaves the stored one. Malformed is `bad-input` |
 | `trust_json.slices[]` | object | `{slice, level, ceiling, start, n, agreement?, changed_at?, reason?}`: `slice` `<category>\|<lens>\|<risk_class>\|<size>` (at most 200 chars), levels 0-3 (Dowser's ceiling is 1), `n` >= 0 decisions in the current window, `agreement` 0-1 (omitted when n is 0) |
+| `deliveries_json` | string | optional. A JSON array of at most 500 `{fp, state, found, total, checked_at, commits?}`: the skill's newest re-check (`delivery`) of each accepted card, `state` `present` (every quoted code/doc line still at the scanned commit), `partly` or `resolved` (none left), `found` <= `total` >= 1, `commits` the number of commits that named its issue. An fp the inbox does not hold as accepted is skipped. Malformed is `bad-input` and stores nothing. Forge shows it in the Learning tab (`still_in_code` when Jira says Done and the state is `present`). Additive |
 | `outcomes_since` | string | optional ISO timestamp, the newest `recorded_at` the caller holds (`reflect export` sends it). With it, `outcomes` are the OLDEST 200 recorded at or after it, oldest first, and `outcomes_more: true` says more follow: call again with the new newest. The boundary outcome comes back again; the skill counts it as seen. Not an ISO time is `bad-input`. Additive, so still forge-mcp-2 |
 | `trust_json.events[]` | object | `{slice, from, to, reason, agreement?, n, item_id?, at}`: one level change; `item_id` is the fp that caused it (16 hex), `at` an ISO timestamp |
 

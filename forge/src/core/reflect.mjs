@@ -13,6 +13,7 @@ import { INBOX_STATUSES, NOTE_MAX, OUTCOMES_MAX, OUTCOME_RATINGS, RULES_MAX, RUL
 import { AppError, DuplicateKey, isIso, isObj, needStr, omitAbsent, optStr, sqlv, str } from './util.mjs';
 import { deciderOf } from './verdicts.mjs';
 import { parseJsonArray } from './push.mjs';
+import { deliveriesOf, storeCodeDeliveries } from './delivery.mjs';
 
 /**
  * @typedef {import('./ports.mjs').Deps} Deps
@@ -85,6 +86,8 @@ export async function reflectSync(deps, args, o = {}) {
   const offers = typeof raw === 'string' && raw.trim() !== '' ? parseJsonArray(args, 'rules_json', RULES_MAX).map(checkOffer) : [];
   const trust = checkTrust(args.trust_json);
   await needInbox(db, projectKey);
+  // the skill's code re-check of accepted cards (core/delivery.mjs); checked whole before anything is written
+  await storeCodeDeliveries(deps, projectKey, args.deliveries_json);
   for (const o of offers) await upsertOffer(db, projectKey, o);
   if (trust) await putTrust(db, projectKey, trust, deps.now().toISOString());
 
@@ -317,6 +320,7 @@ export async function candidatesOf(deps, projectKey) {
     [projectKey],
   );
   const items = rows.map(toProposal);
+  const delivered = await deliveriesOf(deps.db, items.map((p) => p.id));
   /** @type {Record<string, {name: string, category: string}>} */
   let status = {};
   if (items.length && deps.jira) {
@@ -326,10 +330,18 @@ export async function candidatesOf(deps, projectKey) {
   }
   const all = items.map((p) => {
     const s = status[/** @type {string} */ (p.issue_ref)];
-    return /** @type {OutcomeCandidate} */ ({
+    const dv = delivered.get(p.id);
+    // an issue event (core/delivery.mjs) is fresher than the poll; the poll answers until one has arrived
+    const jira = typeof dv?.jira_state === 'string' ? String(dv.jira_state) : undefined;
+    const done = jira ? jira === 'delivered' : s ? s.category === 'done' : false;
+    const code = typeof dv?.code_state === 'string' ? String(dv.code_state) : undefined;
+    return /** @type {OutcomeCandidate} */ (omitAbsent({
       ref: p.ref, title: p.title, issue_ref: /** @type {string} */ (p.issue_ref), issue_url: p.issue_url ?? '',
-      issue_status: s ? s.name : 'unknown', done: s ? s.category === 'done' : false,
-    });
+      issue_status: jira ? String(dv?.jira_status ?? jira) : s ? s.name : 'unknown', done,
+      delivery: jira, code_state: code,
+      still_in_code: done && code === 'present' ? true : undefined,
+      recurred: dv?.recurred_at ? true : undefined,
+    }));
   });
   return [...all.filter((c) => c.done), ...all.filter((c) => !c.done)].slice(0, CANDIDATES_MAX);
 }

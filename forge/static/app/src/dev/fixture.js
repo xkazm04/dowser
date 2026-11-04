@@ -376,8 +376,8 @@ export const REFLECT = {
       { id: 'r-doc-size', lens: 'doc-drift', text: 'Bundle typo-level doc fixes into one proposal per page.', state: 'declined', offered_at: '2026-10-06T07:58:12.000Z', decided_by_name: 'Priya Natarajan', decided_at: '2026-10-09T09:00:00.000Z' },
     ],
     candidates: [
-      { ref: 'DW-1', title: 'Explain shipping costs before the payment step', issue_ref: 'SHOP-101', issue_url: 'https://acme.atlassian.net/browse/SHOP-101', issue_status: 'Done', done: true },
-      { ref: 'DW-4', title: 'Show stock levels on the product page', issue_ref: 'SHOP-97', issue_url: 'https://acme.atlassian.net/browse/SHOP-97', issue_status: 'In Progress', done: false },
+      { ref: 'DW-1', title: 'Explain shipping costs before the payment step', issue_ref: 'SHOP-101', issue_url: 'https://acme.atlassian.net/browse/SHOP-101', issue_status: 'Done', done: true, delivery: 'delivered', code_state: 'present', still_in_code: true },
+      { ref: 'DW-4', title: 'Show stock levels on the product page', issue_ref: 'SHOP-97', issue_url: 'https://acme.atlassian.net/browse/SHOP-97', issue_status: 'In Progress', done: false, delivery: 'in_progress', code_state: 'partly' },
     ],
     trust: {
       updated_at: '2026-10-27T09:20:00.000Z',

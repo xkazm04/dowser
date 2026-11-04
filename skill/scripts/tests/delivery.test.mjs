@@ -49,3 +49,23 @@ test('accepted cards are re-checked at the scanned commit: resolved, partly, pre
     assert.equal(/** @type {any} */ (db.prepare('SELECT COUNT(*) AS n FROM deliveries').get()).n, 4, 'append-only history: 2 + 2');
   } finally { db.close(); removeDir(home); removeDir(repo); }
 });
+
+test('reflect export sends the newest code re-check of each pushed accepted card as deliveries_json', async () => {
+  const { exportOffers } = await import('../lib/reflect.mjs');
+  const repo = tempDir('delivery-export-repo');
+  const home = tempDir('delivery-export-home');
+  const db = openStore(join(home, 'dowser.db'));
+  try {
+    gitRepo(repo, { 'src/a.js': 'const x = md5(pw);\n' });
+    const run = String(runStart(db, { mode: 'full', headSha: git(repo, 'rev-parse', 'HEAD') }).id);
+    const fp = String(propose(db, run, candidate({ evidence: [{ type: 'code', ref: 'src/a.js:1', quote: 'const x = md5(pw);' }] }), { kinds: KINDS }).fp);
+    move(db, fp, 'verified', { by: 'skill:dowser-verify' });
+    move(db, fp, 'pushed', { by: 'skill:dowser-sync' });
+    db.prepare("UPDATE proposals SET external_ref = 'DW-1' WHERE fp = ?").run(fp);
+    move(db, fp, 'accepted', { by: 'forge:jane' });
+    assert.equal(exportOffers(db, 'pk').deliveries_json, undefined, 'no check yet: omitted');
+    checkDeliveries(db, repo, run);
+    const sent = JSON.parse(String(exportOffers(db, 'pk').deliveries_json));
+    assert.deepEqual(sent.map((/** @type {any} */ d) => [d.fp, d.state, d.found, d.total]), [[fp, 'present', 1, 1]]);
+  } finally { db.close(); removeDir(home); removeDir(repo); }
+});

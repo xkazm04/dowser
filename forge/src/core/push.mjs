@@ -12,6 +12,7 @@ import {
   toProposal, uniteEvidence,
 } from './store.mjs';
 import { deciderOf } from './verdicts.mjs';
+import { markRecurred } from './delivery.mjs';
 
 /**
  * @typedef {import('./ports.mjs').Deps} Deps
@@ -277,6 +278,7 @@ async function fileAll(deps, jobs, results) {
       /** @type {Union} */
       const u = { added: pl.added, count: k.count, types: [...k.types].sort() };
       await refresh(db, pl.p, pl.j.o, u, pl.row);
+      if (pl.p.status === 'accepted') await markRecurred(deps, pl.p.id, pl.j.o.at);
       results[pl.j.i] = await settle(deps, pl.p, pl.j.o, u);
     }
   }
@@ -354,6 +356,8 @@ async function fileOne(deps, o) {
 async function updateOne(deps, p, o) {
   const u = await uniteEvidence(deps.db, p.id, o.record.evidence, { runId: o.runId, headSha: o.headSha, at: o.at });
   await refresh(deps.db, p, o, u);
+  // a delivered card a later scan finds again: the finding came back (core/delivery.mjs)
+  if (p.status === 'accepted') await markRecurred(deps, p.id, o.at);
   return settle(deps, p, o, u);
 }
 

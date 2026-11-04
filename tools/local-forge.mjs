@@ -76,6 +76,7 @@ export const TOOLS = [
   { name: 'dowser_reflect_sync', description: "Offer the skill's learned rules and read back the rules decided in Jira and the outcomes of accepted items. Idempotent.",
     inputSchema: { type: 'object', properties: { project_key: PK, rules_json: S('JSON array of at most 50 offered rules with id and lens and text and offered_at and optional titles. Send an empty array to only read.'),
       trust_json: S("JSON object with the skill's per-slice trust levels and their newest 50 events, as reflect export prints it. Omit it when absent."),
+      deliveries_json: S("JSON array of at most 500 {fp, state: present|partly|resolved, found, total, checked_at, commits?}: the skill's re-check of accepted cards. Omit it when absent."),
       outcomes_since: S('ISO time of the newest outcome the skill holds. Returns the oldest 200 outcomes at or after it and outcomes_more when more follow. Omit it for the newest 200.') },
       required: ['project_key'], additionalProperties: false } },
   { name: 'dowser_direction_get', description: 'What the team set in Dowser Settings for each lens of this inbox - focus, exclude, notes and Confluence spaces.',

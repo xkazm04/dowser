@@ -7,6 +7,7 @@ import { getAppContext } from '@forge/api';
 import { actionName, isConsent, isSchemaBehind, resolverAllowed, runResolver, runRovo, runTool } from './core/app.mjs';
 import { forgeDb, runMigrations } from './adapters/forge-sql.mjs';
 import { backfillIssueProperties } from './core/issue-property.mjs';
+import { onIssueEvent } from './core/delivery.mjs';
 import { installationId, jira, links, perms, sources, users } from './adapters/atlassian.mjs';
 
 // @forge/resolver is CommonJS: tsc (nodenext) sees module.exports, the Forge bundler sees the class.
@@ -138,6 +139,20 @@ export async function mcp(payload, context) {
 export async function rovo(payload, context) {
   const name = actionName('rovo', [runtimeModuleKey(), context?.moduleKey, /** @type {any} */ (payload)?.context?.moduleKey], payload);
   return safe(() => runRovo(deps(), name, payload, accountOf(context)));
+}
+
+/**
+ * Jira issue events for delivery truth (triggers dowser-issue-events, dowser-issue-deleted; core/delivery.mjs). The
+ * manifest filter already limits them to Dowser's issues. Never throws: a failure is logged.
+ * @param {Record<string, any>} event
+ * @returns {Promise<void>}
+ */
+export async function issueEvent(event) {
+  try {
+    await withSchema(async () => onIssueEvent(deps(), event));
+  } catch (e) {
+    console.error(`dowser: issue event failed (${String(/** @type {any} */ (e)?.message ?? e).slice(0, 200)})`);
+  }
 }
 
 /**

@@ -101,6 +101,7 @@ modules:
         project_key: { title: Project key, type: string, required: true, description: The key Dowser derives from the repo origin. }
         rules_json: { title: Rules, type: string, required: false, description: JSON array of at most 50 offered rules with id and lens and text and offered_at and optional titles. Send an empty array to only read. }
         trust_json: { title: Trust, type: string, required: false, description: JSON object with the skill's per-slice trust levels and their newest 50 events, as reflect export prints it. Omit it when absent. }
+        deliveries_json: { title: Deliveries, type: string, required: false, description: "JSON array of at most 500 {fp, state: present|partly|resolved, found, total, checked_at, commits?}: the skill's re-check of accepted cards. Omit it when absent." }
         outcomes_since: { title: Outcomes since, type: string, required: false, description: ISO time of the newest outcome the skill holds. Returns the oldest 200 outcomes at or after it and outcomes_more when more follow. Omit it for the newest 200. }
     - key: dowser_direction_get
       name: Get lens direction
@@ -218,6 +219,24 @@ modules:
         - avi:forge:installed:app
         - avi:forge:upgraded:app
 
+    # Delivery truth (core/delivery.mjs): status and resolution changes, and deletes, of issues Dowser created or
+    # merged into. The filter reads the dowser issue property, so no other issue on the site invokes the app.
+    - key: dowser-issue-events
+      function: issue-event
+      events:
+        - avi:jira:updated:issue
+      filter:
+        ignoreSelf: true
+        expression: "event.runtime.issue.properties['dowser'].ref != null && event.changelog.items.some(i => i.field == 'status' || i.field == 'resolution')"
+        onError: IGNORE_AND_LOG
+    - key: dowser-issue-deleted
+      function: issue-event
+      events:
+        - avi:jira:deleted:issue
+      filter:
+        expression: "event.runtime.issue.properties['dowser'].ref != null"
+        onError: IGNORE_AND_LOG
+
   scheduledTrigger:
     # upgraded:app fires only on a major version; a daily idempotent migrate covers minor deploys
     # (the first call that hits a missing table also migrates once and retries - see src/index.js).
@@ -234,6 +253,8 @@ modules:
       handler: index.rovo
     - key: migrate
       handler: index.migrate
+    - key: issue-event
+      handler: index.issueEvent
 
 resources:
   - key: main

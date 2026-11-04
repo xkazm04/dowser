@@ -239,4 +239,23 @@ export const MIGRATIONS = Object.freeze([
   // When the Jira issue property `dowser` last landed for an accepted or Jira-merged item (core/issue-property.mjs);
   // NULL = not yet written, which the daily backfill picks up.
   { name: 'v026_proposals_issue_prop_at', statement: 'ALTER TABLE proposals ADD COLUMN issue_prop_at VARCHAR(32)' },
+  {
+    name: 'v027_deliveries',
+    // Delivery truth per inbox item (core/delivery.mjs): the Jira fate from issue events, the skill's code re-check
+    // from reflect_sync, and when a delivered item was found again. NULL = that signal has not arrived.
+    statement: `CREATE TABLE IF NOT EXISTS deliveries (
+  proposal_id BIGINT NOT NULL,
+  project_key VARCHAR(191) NOT NULL,
+  jira_state VARCHAR(16),
+  jira_status VARCHAR(255),
+  jira_at VARCHAR(32),
+  code_state VARCHAR(16),
+  code_found INT,
+  code_total INT,
+  code_commits INT,
+  code_at VARCHAR(32),
+  recurred_at VARCHAR(32),
+  PRIMARY KEY (proposal_id)
+)`,
+  },
 ]);

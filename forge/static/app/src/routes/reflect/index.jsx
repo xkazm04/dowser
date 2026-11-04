@@ -236,6 +236,20 @@ function RuleOffer({ rule, projectKey, onChanged }) {
   );
 }
 
+/**
+ * What the code says about an accepted item (the skill's re-check at its last scan, core/delivery.mjs), in one
+ * sentence, or '' when nothing has arrived. The Done-but-still-present case leads: the issue closed, the problem did not.
+ * @param {{done: boolean, code_state?: string, still_in_code?: boolean, recurred?: boolean}} cand
+ */
+function deliveryLine(cand) {
+  if (cand.recurred) return 'Found again by a later scan after it was delivered: the problem came back.';
+  if (cand.still_in_code) return 'Jira says Done, but the quoted problem is still in the code at the last scan.';
+  if (cand.code_state === 'resolved') return 'The quoted problem is gone from the code at the last scan.';
+  if (cand.code_state === 'partly') return 'Part of the quoted problem is gone from the code at the last scan.';
+  if (cand.code_state === 'present') return 'The quoted problem is still in the code at the last scan.';
+  return '';
+}
+
 function Candidate({ cand, onChanged }) {
   const [rating, setRating] = useState('');
   const [note, setNote] = useState('');
@@ -264,7 +278,9 @@ function Candidate({ cand, onChanged }) {
         {safeHref(cand.issue_url) ? <a href={safeHref(cand.issue_url)} target="_blank" rel="noreferrer noopener">{cand.issue_ref}</a> : <span>{cand.issue_ref}</span>}
         <Lozenge appearance={cand.done ? 'success' : 'default'}>{cand.issue_status}</Lozenge>
         {cand.done && <span className="dwr-need__when">Jira says Done: ready to rate</span>}
+        {cand.delivery === 'abandoned' && <span className="dwr-need__when">Closed without the work (or deleted) in Jira</span>}
       </div>
+      {deliveryLine(cand) && <p className="dwr-need__code">{deliveryLine(cand)}</p>}
       <h3 className="dwr-need__title">{cand.title}</h3>
       <div className="dwr-need__act">
         <fieldset className="dwr-rate">
