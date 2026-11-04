@@ -65,6 +65,34 @@ export function scoreOf(c) {
 }
 
 /**
+ * Per store and lens: the decided rows (newest decision first) with anchors and topic tokens already parsed, so a
+ * propose batch parses each decided row once, not once per candidate line. The cache is keyed on the newest
+ * transition id: every status move appends a transition, so any decision (or undo) since the last read refreshes it.
+ * @type {WeakMap<Db, {stamp: number, byLens: Map<string, {row: Row, anchors: string[], tokens: string[]}[]>}>}
+ */
+const decidedCache = new WeakMap();
+
+/**
+ * @param {Db} db
+ * @param {string} lens
+ * @returns {{row: Row, anchors: string[], tokens: string[]}[]}
+ */
+function decidedOf(db, lens) {
+  const stamp = Number(/** @type {Row} */ (db.prepare('SELECT COALESCE(MAX(id), 0) AS m FROM transitions').get()).m);
+  let c = decidedCache.get(db);
+  if (!c || c.stamp !== stamp) { c = { stamp, byLens: new Map() }; decidedCache.set(db, c); }
+  let list = c.byLens.get(lens);
+  if (!list) {
+    list = /** @type {Row[]} */ (db.prepare(
+      `SELECT fp, title, topic, anchors_json, status, reason, note, decided_by, decided_at FROM proposals
+       WHERE lens = ? AND status IN ('accepted', 'rejected', 'snoozed') ORDER BY decided_at DESC, fp`,
+    ).all(lens)).map((row) => ({ row, anchors: /** @type {string[]} */ (JSON.parse(row.anchors_json)), tokens: topicTokens(String(row.topic)) }));
+    c.byLens.set(lens, list);
+  }
+  return list;
+}
+
+/**
  * The closest decided item of the same lens: an accepted, rejected or snoozed proposal that shares at least one
  * normalized anchor or two topic tokens with the candidate (anchors weigh 10, tokens 1; ties go to the newest
  * decision). Its reason and note come along: titles alone are not memory.
@@ -77,12 +105,10 @@ export function closestPrecedent(db, { fp, lens, topic, anchors }) {
   const tokens = new Set(topicTokens(topic));
   /** @type {{row: Row, weight: number} | undefined} */
   let best;
-  for (const r of /** @type {Row[]} */ (db.prepare(
-    `SELECT fp, title, topic, anchors_json, status, reason, note, decided_by, decided_at FROM proposals
-     WHERE lens = ? AND fp <> ? AND status IN ('accepted', 'rejected', 'snoozed') ORDER BY decided_at DESC, fp`,
-  ).all(lens, fp))) {
-    const shared = /** @type {string[]} */ (JSON.parse(r.anchors_json)).filter((a) => mine.has(a)).length;
-    const words = topicTokens(String(r.topic)).filter((t) => tokens.has(t)).length;
+  for (const { row: r, anchors: theirs, tokens: words0 } of decidedOf(db, lens)) {
+    if (r.fp === fp) continue;
+    const shared = theirs.filter((a) => mine.has(a)).length;
+    const words = words0.filter((t) => tokens.has(t)).length;
     if (shared < 1 && words < 2) continue;
     const weight = shared * 10 + words;
     if (!best || weight > best.weight) best = { row: r, weight };

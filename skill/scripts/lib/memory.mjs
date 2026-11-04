@@ -106,13 +106,36 @@ export function loadLensPack(lens, dir = LENS_DIR) {
 }
 
 /**
- * Every lens's closed kind list, read from its pack's frontmatter (`loadLensPack`): the one source of the kinds
- * `propose` checks and `outbox` sends. A missing or broken pack exits 2.
+ * Every readable lens's closed kind list, read from its pack's frontmatter (`loadLensPack`), and why each
+ * unreadable pack failed. One broken pack (a typo in a forked pack) leaves the other lenses working: its lens is
+ * absent from `kinds`, so `propose` refuses that lens's lines naming the pack, and `outbox` sends no kinds for it.
+ * @param {string} [dir]
+ * @returns {{kinds: Record<string, string[]>, broken: Record<string, string>}}
+ */
+export function packStatus(dir = LENS_DIR) {
+  /** @type {Record<string, string[]>} */
+  const kinds = {};
+  /** @type {Record<string, string>} */
+  const broken = {};
+  for (const lens of LENSES) {
+    try { kinds[lens] = loadLensPack(lens, dir).kinds; } catch (e) {
+      if (!(e instanceof DowserError)) throw e;
+      broken[lens] = e.message;
+    }
+  }
+  return { kinds, broken };
+}
+
+/**
+ * Every readable lens's closed kind list (`packStatus`): the one source of the kinds `propose` checks and
+ * `outbox` sends. Exits 2 only when NO pack is readable; a single broken pack drops just its lens.
  * @param {string} [dir]
  * @returns {Record<string, string[]>}
  */
 export function packKinds(dir = LENS_DIR) {
-  return Object.fromEntries(LENSES.map((lens) => [lens, loadLensPack(lens, dir).kinds]));
+  const { kinds, broken } = packStatus(dir);
+  if (Object.keys(kinds).length === 0) throw new DowserError(Object.values(broken)[0] ?? 'no lens pack is readable', 2);
+  return kinds;
 }
 
 // ------------------------------------------------------------------------------------------- shared
@@ -175,12 +198,23 @@ export function contextPack(db, { runId, lens, focus, lensDir }) {
   const rules =/** @type {Row[]} */ (db.prepare("SELECT id, text FROM rules WHERE lens = ? AND state = 'accepted' ORDER BY decided_at, id").all(lens))
     .map((r) => ({ id: String(r.id), text: String(r.text) }));
 
-  const exemplars = /** @type {Row[]} */ (db.prepare(
+  const exemplarRows = /** @type {Row[]} */ (db.prepare(
     `SELECT p.fp, p.title, p.rationale, p.effort_json FROM proposals p WHERE p.lens = ? AND p.status = 'accepted'
      ORDER BY p.decided_at DESC, (SELECT MAX(t.id) FROM transitions t WHERE t.fp = p.fp) DESC LIMIT ?`,
-  ).all(lens, EXEMPLAR_CAP)).map((r) => ({
+  ).all(lens, EXEMPLAR_CAP));
+  // the exemplars' evidence types in one query, not one per exemplar
+  /** @type {Map<string, string[]>} */
+  const typesOf = new Map();
+  for (const e of /** @type {Row[]} */ (db.prepare(
+    'SELECT DISTINCT fp, type FROM evidence WHERE fp IN (SELECT value FROM json_each(?)) ORDER BY fp, type',
+  ).all(JSON.stringify(exemplarRows.map((r) => String(r.fp)))))) {
+    const list = typesOf.get(String(e.fp)) ?? [];
+    list.push(String(e.type));
+    typesOf.set(String(e.fp), list);
+  }
+  const exemplars = exemplarRows.map((r) => ({
     fp: r.fp, title: r.title, rationale: r.rationale, effort: parsed(r, 'effort_json'),
-    evidence_types: /** @type {Row[]} */ (db.prepare('SELECT DISTINCT type FROM evidence WHERE fp = ? ORDER BY type').all(r.fp)).map((e) => String(e.type)),
+    evidence_types: typesOf.get(String(r.fp)) ?? [],
   }));
 
   const counts = outcomeCounts(db, lens);
@@ -369,12 +403,18 @@ export function offerRules(db) {
     // after the new ones (the campaign's offers were shown once and then never again). Declined and accepted
     // rules never come back. The key is omitted when there are none.
     const fresh = new Set(offers.map((o) => o.id));
-    const earlier = /** @type {Row[]} */ (db.prepare("SELECT * FROM rules WHERE state = 'offered' ORDER BY offered_at, id").all())
+    const pending = /** @type {Row[]} */ (db.prepare("SELECT * FROM rules WHERE state = 'offered' ORDER BY offered_at, id").all())
       .filter((r) => !fresh.has(String(r.id)))
-      .map((r) => {
-        const cluster = r.cluster_json ? JSON.parse(String(r.cluster_json)) : undefined;
+      .map((r) => ({ r, cluster: r.cluster_json ? JSON.parse(String(r.cluster_json)) : undefined }));
+    // every earlier offer's card titles in one query, not one per card
+    const allFps = [...new Set(pending.flatMap(({ cluster }) => /** @type {string[]} */ (cluster?.fps ?? [])))];
+    const titleOf = new Map(/** @type {Row[]} */ (allFps.length ? db.prepare(
+      'SELECT fp, title FROM proposals WHERE fp IN (SELECT value FROM json_each(?))',
+    ).all(JSON.stringify(allFps)) : []).map((p) => [String(p.fp), p.title]));
+    const earlier = pending
+      .map(({ r, cluster }) => {
         const fps = /** @type {string[]} */ (cluster?.fps ?? []);
-        const t = fps.map((fp) => /** @type {Row | undefined} */ (db.prepare('SELECT title FROM proposals WHERE fp = ?').get(fp))?.title).filter(Boolean);
+        const t = fps.map((fp) => titleOf.get(fp)).filter(Boolean);
         return /** @type {Row} */ (clean({ id: r.id, lens: r.lens, state: 'offered', earlier: true, text: r.text, cluster, titles: t.length ? t : undefined, offered_at: r.offered_at }));
       });
     return earlier.length ? { offers, earlier } : { offers };

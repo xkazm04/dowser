@@ -174,7 +174,9 @@ export function propose(db, runId, input, { kinds }) {
   const c = v.value;
   /** @type {string} */
   let fp;
-  try { fp = fingerprint(c, kinds[c.lens] ?? []); } catch (e) {
+  // a lens whose pack could not be read (packStatus) is absent from kinds: refuse its lines, naming the pack
+  if (kinds[c.lens] === undefined) return { result: `invalid:lens ${c.lens} has no kinds loaded (its pack is broken or missing, or --kinds did not name it)` };
+  try { fp = fingerprint(c, kinds[c.lens]); } catch (e) {
     if (e instanceof DowserError) return { result: `invalid:${e.message}` };
     throw e;
   }

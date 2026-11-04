@@ -87,7 +87,9 @@ history out of the pack itself: the agent reads the pack on every scan, and the 
 The store and the CLI accept only the four built-in lens ids: `propose --kinds <lens>=...`
 refuses any other (`--kinds: unknown lens <id>`, exit 2), and `context --lens` and the pack
 loader do the same. `propose` and `outbox` read each pack's `kinds` from its frontmatter, and a
-`--kinds` list may only narrow them (a kind the pack lacks exits 2). So today a team forks **in place**:
+`--kinds` list may only narrow them (a kind the pack lacks exits 2). A pack whose frontmatter does not
+load (no `version`, no `kinds`) takes only its own lens out: `propose` refuses that lens's lines with
+`invalid:lens <id> has no kinds loaded`, and the other lenses keep working. So today a team forks **in place**:
 
 1. Edit the built-in pack (`lenses/ux-friction.md`) in your own clone, and install from it
    (`--dev-link` keeps the installed skill on the clone). Keep its `id`: the id goes into every
