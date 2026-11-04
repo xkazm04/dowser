@@ -3,7 +3,7 @@
 The store is the single source of local memory. `skill/scripts/dowser.mjs` is its only writer, and the
 agent never writes SQL. Code: `skill/scripts/lib/store.mjs` is the facade over `store-core.mjs` (schema,
 migrations, transactions), `proposals.mjs` (propose, moves) and `runs.mjs`; the rest of the model lives in
-`skill/scripts/lib/{model,fingerprint,verify,paths,git,scan-score,predict,budget,trust,memory,triage,reflect,sync,direction,deps,share,hydrate,delivery,edges}.mjs`.
+`skill/scripts/lib/{model,fingerprint,verify,paths,git,scan-score,predict,budget,trust,memory,triage,reflect,sync,direction,deps,share,hydrate,delivery,edges,quality}.mjs`.
 Record schema: `skill/schema/dowser-proposal-2.schema.json` (`dowser-proposal-1.schema.json` is kept: a /1 record is
 a valid /2 record). The scan-finding/1 contract the /2 fields follow is `docs/contracts/scan-finding-1.md`.
 

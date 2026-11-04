@@ -82,6 +82,12 @@ background belongs in a separate `references/` file that the pack names.
 Add a one-line entry under the pack's section of `lenses/CHANGELOG.md` for every version. Keep the
 history out of the pack itself: the agent reads the pack on every scan, and the history does not help it.
 
+**Measure a version before calling it better.** `dowser.mjs quality` reports, per lens, lens version and
+model, how the cards fared once people decided them: `accept_rate`, ranked against reserve, how often the
+predicted verdict matched the person's, outcome ratings and delivery, each with its `n`. Compare the old
+version's slice with the new one's before the next bump, and quote both with their `n` in the changelog
+entry. A rate over fewer than about 20 decisions is a hint, not a verdict.
+
 ## Forking a lens for a team
 
 The store and the CLI accept only the four built-in lens ids: `propose --kinds <lens>=...`

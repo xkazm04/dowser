@@ -42,6 +42,7 @@ const triageLib = await import('./lib/triage.mjs');
 const hydrateLib = await import('./lib/hydrate.mjs');
 const deliveryLib = await import('./lib/delivery.mjs');
 const edgesLib = await import('./lib/edges.mjs');
+const qualityLib = await import('./lib/quality.mjs');
 
 /**
  * @typedef {{_: string[], [flag: string]: string | string[] | true | string[] | undefined}} Args
@@ -453,6 +454,11 @@ export const COMMANDS = {
     help: 're-check every accepted card at the run head: its quoted code/doc evidence present | partly | resolved, and the ' +
       'commits since the decision that name its Jira issue or inbox ref -> {run, checked, states, changes:[{fp, title, issue_ref?, from?, to, found, total, commits?}], note?}',
     run: (a, ctx) => ({ out: deliveryLib.checkDeliveries(ctx.open(), ctx.root, req(a, 'run')) }),
+  },
+  quality: {
+    help: 'the proposal-quality ledger per lens, lens version and model: decided {n, accepted}, accept_rate, by_band ' +
+      '(ranked vs reserve), prediction {n, agreed, rate}, outcomes, delivery, pending; a rate only when its n > 0 -> {slices}',
+    run: (_a, ctx) => ({ out: qualityLib.qualityReport(ctx.open()) }),
   },
   link: {
     flags: { from: { arg: '<fp>', required: true }, to: { arg: '<fp>', required: true }, kind: { arg: 'unblocks|duplicate-of|follow-up-of|conflicts-with|related', required: true },

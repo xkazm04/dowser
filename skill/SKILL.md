@@ -453,6 +453,8 @@ Jira issue appears only when a person accepts the item there.
    - triage outcome: kept, rejected, snoozed, merged; pushed, with inbox links when connected;
      accepted items with their Jira issue key and link;
    - unapplied verdicts and refused pushes, if any;
+   - when the runner asks how the scans are doing, `quality` answers per lens version: accept rate,
+     ranked against reserve, prediction agreement, outcomes and delivery, each with its `n`;
    - delivery changes from step 0, one line each (`DW-3 SHOP-12: resolved, named in 2 commits`).
      A card Jira calls Done whose state is `present` is worth saying out loud: the issue closed,
      the quoted problem did not.
