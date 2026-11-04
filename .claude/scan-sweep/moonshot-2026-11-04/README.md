@@ -19,6 +19,18 @@ Personas was unreachable, so there was no decision memory. The operator triaged 
 | 4 | Proposal-quality ledger: accept rate, ranked vs reserve, prediction agreement, outcome right-rate per lens version | proposal-quality measurement | 1 (core#2) + uses #1 | L | 8 | #5 scan quality | direction | accepted 2026-11-04 |
 | 5 | Dowser facts as indexed Jira issue properties (JQL, gadget, Automation) | Jira-native finding data | 1 (app#3) | L | 7 | #6 / #9 | none | accepted 2026-11-04 |
 
+## Build log
+
+- Wave B: idea 5 built 7da211f (issue property + JQL aliases + daily backfill; gadget and Automation action not built);
+  idea 3 built af0090d (dowser_memory_pull + hydrate). Lens registry deferred by the operator (needs store v-next
+  without the lens CHECK, lens_packs_json on push, UI labels from data: 2-3 sessions).
+- Wave C: idea 1 built in two slices, 8374077 (skill: delivery re-check, store v7) and dcf4984 (Forge: issue-event
+  triggers filtered on the dowser property, deliveries_json, recurred, Learning tab); relationship graph store side
+  built ba1e541 (store v8 edges, link/links, prerequisite lift). Not built: Forge lineage view, outcome-derived
+  follow-up edges.
+- Wave D open: idea 2 agent work queue (needs the operator's rule change for a build mode), idea 4 quality ledger,
+  Confluence doc-drift closure (+ byline index defect).
+
 ## The other 10, held
 
 | Idea | Source | Size | Impact | Why it was not in the top 5 | Decision |
