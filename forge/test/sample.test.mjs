@@ -261,44 +261,46 @@ test('time: sample.load of 40 records with 3 evidence rows each, statement count
   const out = await loadSample(d, ME, bigSample(40));
   const ms = performance.now() - t0;
   assert.equal(out.created, 40);
-  // ~8 statements a record (lookup, counter, insert, evidence check, 3 evidence inserts, type read, counts) plus the
-  // pushes, areas and trust: at 30-60 ms a Forge SQL statement this is ~10-20 s (see docs/forge-app.md "Sample inbox").
+  // The push files its cards as sets (one fp read, one counter block, multi-row proposal and evidence INSERTs), then
+  // the areas and the trust: about 30 statements, ~1-2 s at 30-60 ms a Forge SQL statement (docs/forge-app.md
+  // "Sample inbox"). It was ~8 statements a card (340) before the store was set-based.
   t.diagnostic(`sample.load 40 records x 3 evidence: ${statements} statements, ${ms.toFixed(0)} ms on node:sqlite; at 30-60 ms each on Forge SQL: ${(statements * 0.03).toFixed(1)}-${(statements * 0.06).toFixed(1)} s`);
-  assert.ok(statements < 500, `${statements} statements`);
+  assert.ok(statements <= 40, `${statements} statements`);
 });
 
 test('sample.load keeps to its time budget: no new step past it, more: true, the next call resumes, the last answers without more', async () => {
   const d = makeDeps();
-  const s = bigSample(25, 1);
+  const n = 2 * SAMPLE_CHUNK + 5;
+  const s = bigSample(n, 1);
   // budget 0: every call runs exactly its first step (chunks of SAMPLE_CHUNK, then the areas, then the trust)
   const calls = [];
   for (let i = 0; i < 6; i++) calls.push(await loadSample(d, ME, s, { budgetMs: 0 }));
   assert.deepEqual(calls, [
     { project_key: SAMPLE_KEY, created: SAMPLE_CHUNK, more: true },
     { project_key: SAMPLE_KEY, created: SAMPLE_CHUNK, more: true },
-    { project_key: SAMPLE_KEY, created: 25 - 2 * SAMPLE_CHUNK, more: true },
+    { project_key: SAMPLE_KEY, created: n - 2 * SAMPLE_CHUNK, more: true },
     { project_key: SAMPLE_KEY, created: 0, more: true }, // the areas; the trust is still to do
     { project_key: SAMPLE_KEY, created: 0 }, // the trust: done, so no more and not already
     { project_key: SAMPLE_KEY, created: 0, already: true },
   ]);
-  assert.equal(d.db.raw.prepare('SELECT COUNT(*) AS n FROM proposals WHERE project_key = ?').get(SAMPLE_KEY)?.n, 25);
+  assert.equal(d.db.raw.prepare('SELECT COUNT(*) AS n FROM proposals WHERE project_key = ?').get(SAMPLE_KEY)?.n, n);
   assert.equal(d.db.raw.prepare('SELECT COUNT(*) AS n FROM areas WHERE project_key = ?').get(SAMPLE_KEY)?.n, 1);
   assert.equal(d.db.raw.prepare('SELECT COUNT(*) AS n FROM trust WHERE project_key = ?').get(SAMPLE_KEY)?.n, 1);
 
   // the default budget against the injected clock: a slow store (every clock read 4 s later) stops early and resumes.
-  // A 25-card sample, not the bundle: the bundled scan may fit one call, which would prove nothing here.
+  // Four chunks of cards, not the bundle: the bundled scan may fit one call, which would prove nothing here.
   const slow = makeDeps();
   const base = slow.now;
   slow.now = () => { slow.clock.tick(4000); return base(); };
-  const big = bigSample(25, 1);
+  const big = bigSample(4 * SAMPLE_CHUNK, 1);
   const first = await loadSample(slow, ME, big);
   assert.equal(first.more, true);
-  assert.ok(first.created > 0 && first.created < 25);
+  assert.ok(first.created > 0 && first.created < 4 * SAMPLE_CHUNK);
   let last = first;
   for (let i = 0; i < 20 && last.more; i++) last = await loadSample(slow, ME, big);
   assert.equal(last.more, undefined);
   assert.deepEqual(await loadSample(slow, ME, big), { project_key: SAMPLE_KEY, created: 0, already: true });
-  assert.equal(slow.db.raw.prepare('SELECT COUNT(*) AS n FROM proposals WHERE project_key = ?').get(SAMPLE_KEY)?.n, 25);
+  assert.equal(slow.db.raw.prepare('SELECT COUNT(*) AS n FROM proposals WHERE project_key = ?').get(SAMPLE_KEY)?.n, 4 * SAMPLE_CHUNK);
 
   // through the resolver, the bundled sample completes by calling again while it answers more
   const viaResolver = makeDeps();

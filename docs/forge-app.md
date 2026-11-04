@@ -65,6 +65,13 @@ the query policy allows one statement per request. The core is correct without t
 - An accept creates the Jira issue before it changes any state. If Jira fails, nothing is written and the
   item stays open.
 
+Because each statement is a request (30-60 ms), the store works in sets. A push reads the fps it carries in one
+`IN` query, takes a block of DW numbers with one compare-and-set, and writes proposals and evidence with multi-row
+`INSERT`s, split to stay under 512 KiB and 5000 parameters a statement. A held card is updated only when it changed.
+An inbox page reads its evidence and its push heads once each. One statement is atomic, so a multi-row `INSERT`
+that hits a duplicate (a concurrent push filed the fp first) wrote nothing and is retried row by row. A 50-card push
+with 3 evidence items each costs about 12 statements, an unchanged re-push about 7, and an inbox page under 10.
+
 ### Ports
 
 The core runs against these ports (`ports.mjs`); the adapters map them to the platform.
@@ -232,7 +239,7 @@ first-run screen (resolver `sample.load`) files a real Dowser scan of Dowser's o
   holds the scan's verified cards (ranked and reserve, quotes included: the code is public), the areas of the
   opportunity map, the scan's trust levels, and the `source`: repo URL, the scanned commit, when the scan ran and
   its run id. Evidence links point at that commit on GitHub, so it must be a pushed commit.
-- **How it loads.** The same core push code a scan uses files it (`pushProposals` in pushes of 10 cards, then
+- **How it loads.** The same core push code a scan uses files it (`pushProposals` in pushes of 50 cards, then
   `pushAreas`, then `reflectSync` with the trust), so the cards, the map and the Learning tab behave as for a
   scan. The person who loads it is its creator. Each call has a 12 s budget of its own: past it, no new step
   (a push of cards, the areas, the trust) starts, and the answer is `{project_key, created, more: true}`. The
@@ -253,9 +260,10 @@ first-run screen (resolver `sample.load`) files a real Dowser scan of Dowser's o
   pushes, areas, rules, outcomes, directions, trust, its verdict counter, the inbox). Only the person who
   loaded it or a Jira admin may remove it. Issues that accepted sample cards created stay in Jira; the answer
   counts them (`issues_kept`). DW numbers are not reused, so a reload numbers its cards anew.
-- **Load time.** A load costs about 8 Forge SQL statements per card (plus a few per push, area and the trust):
-  40 cards with 3 evidence rows each is 340 statements, 10-20 s at 30-60 ms a statement, which the 12 s budget
-  spreads over two or three calls.
+- **Load time.** A push files its cards as sets (see "Data (Forge SQL)" above), so a load costs about a dozen
+  statements per push of 50 cards plus a few for the areas and the trust: 40 cards with 3 evidence rows each is
+  under 40 statements, 1-2 s at 30-60 ms a statement, and finishes in one call. The 12 s budget stays as the
+  guard for a larger sample or a slow store.
 - **Re-capture after a later scan.** Scan a clean clone with the dogfood harness and an empty world, keeping
   the clone (`node tools/dogfood.mjs --seed <empty world> --keep`), then:
 

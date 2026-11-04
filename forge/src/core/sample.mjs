@@ -14,7 +14,7 @@ import { areaProblem, pushAreas } from './areas.mjs';
 import { checkRecord, parseLensKinds, pushProposals } from './push.mjs';
 import { reflectSync } from './reflect.mjs';
 import { getInbox, isSampleKey } from './store.mjs';
-import { SAMPLE_KEY } from './types.mjs';
+import { PUSH_MAX, SAMPLE_KEY } from './types.mjs';
 import { AppError, isObj, str } from './util.mjs';
 import { deciderOf } from './verdicts.mjs';
 
@@ -31,8 +31,11 @@ export { SAMPLE_KEY, isSampleKey };
  */
 
 export const SAMPLE_SCHEMA = 'dowser-sample/1';
-/** Cards per push of the sample load: ~8 statements a card, so one chunk is at most ~5 s on Forge SQL. */
-export const SAMPLE_CHUNK = 10;
+/**
+ * Cards per push of the sample load: a whole push (PUSH_MAX). A push files its cards as sets (push.mjs `fileAll`),
+ * about a dozen statements however many cards it carries, so a chunk is well under a second on Forge SQL.
+ */
+export const SAMPLE_CHUNK = PUSH_MAX;
 /** The load's own time budget per call (ms): past it, no new step starts and the answer carries `more: true`. */
 export const SAMPLE_BUDGET_MS = 12_000;
 
@@ -91,9 +94,10 @@ export function checkSample(raw) {
  * inbox that a second load completes, filing only the records it does not hold yet. A complete sample answers
  * `already: true` and writes nothing; a sample loaded by someone the caller cannot see is `forbidden`.
  *
- * Time budget: a Forge resolver has 25 s and a Forge SQL statement costs 30-60 ms, so the load files cards in
- * pushes of SAMPLE_CHUNK and starts no new step (a chunk, the areas, the trust) once `budgetMs` of its own time
- * (`deps.now`) has passed; it then answers `more: true` and the next call resumes. The first step always runs, so
+ * Time budget: a Forge resolver has 25 s and a Forge SQL statement costs 30-60 ms. The load files cards in pushes
+ * of SAMPLE_CHUNK and starts no new step (a chunk, the areas, the trust) once `budgetMs` of its own time
+ * (`deps.now`) has passed; it then answers `more: true` and the next call resumes. A sample of up to a few hundred
+ * cards fits one call; the budget stays as the guard for a larger one or a slow store. The first step always runs, so
  * every call makes progress. The call that finishes answers without `more`.
  * @param {Deps} deps
  * @param {string} accountId
