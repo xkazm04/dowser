@@ -253,8 +253,8 @@ For each lens, print one progress line (`<lens>: gathering (tickets 42, code)`),
    Do not cut to 4: `verify` allocates the slots in code (section 6) and files the rest in
    reserve, so nothing you verified is lost and nothing is cut by hand.
 8. **Propose.** Run
-   `propose --run <run_id> --file <work>/<lens>.jsonl --kinds <lens>=<k1,k2,...>`, with the kinds
-   copied from the pack's frontmatter. Each output line is `created`, `evidence-grew`,
+   `propose --run <run_id> --file <work>/<lens>.jsonl`; it checks each `kind` against the pack's
+   frontmatter `kinds` itself. Each output line is `created`, `evidence-grew`,
    `suppressed`, `duplicate` or `invalid:<why>`. Exit 1 means some lines were invalid: fix those
    lines once and re-propose only them. A line that is still invalid is reported, not dropped
    silently.
@@ -358,9 +358,7 @@ or from "looks good".
 
 ## 8. Push (connected only)
 
-1. Run `outbox --run <run_id> --kinds <lens>=<k1,k2,...>`, with one `--kinds` for EVERY lens pack -
-   all four, not only the lenses this run used (a re-pushed card from another lens is refused when its
-   lens is undeclared); the kinds are each pack's frontmatter `kinds`, as for `propose`. It prints the
+1. Run `outbox --run <run_id>`; it reads every pack's frontmatter `kinds` itself. It prints the
    tool arguments `{project_key, run_id, proposals_json, repo_url?, head_sha?, lens_kinds_json?, more?}`,
    and Forge refuses any record whose kind its lens does not have. `proposals_json` holds
    the verified, un-rejected items that were not pushed yet, plus pushed items whose evidence

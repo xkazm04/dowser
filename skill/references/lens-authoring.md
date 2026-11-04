@@ -86,14 +86,15 @@ history out of the pack itself: the agent reads the pack on every scan, and the 
 
 The store and the CLI accept only the four built-in lens ids: `propose --kinds <lens>=...`
 refuses any other (`--kinds: unknown lens <id>`, exit 2), and `context --lens` and the pack
-loader do the same. So today a team forks **in place**:
+loader do the same. `propose` and `outbox` read each pack's `kinds` from its frontmatter, and a
+`--kinds` list may only narrow them (a kind the pack lacks exits 2). So today a team forks **in place**:
 
 1. Edit the built-in pack (`lenses/ux-friction.md`) in your installed copy or your own clone.
    Keep its `id`: the id goes into every proposal's `lens` and fingerprint.
 2. Bump its `version` (patch for wording and gather steps, minor for a new kind; see
    Versioning) so every card records which pack wrote it, and add a changelog line.
-3. Change hypotheses, gather steps or kinds. Keep the seven body sections. A kind you add must
-   also be passed to `propose`: `--kinds ux-friction=<the pack's full kinds list>`.
+3. Change hypotheses, gather steps or kinds. Keep the seven body sections. A kind you add to
+   the frontmatter `kinds` is what `propose` and `outbox` accept from then on; nothing else to pass.
 4. Re-measure it ("Measuring a lens") before the team relies on it.
 
 A fork under its own id (`ux-friction-acme`, with proposals and fingerprints separate from the

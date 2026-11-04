@@ -212,8 +212,8 @@ A reject needs a reason code: `false-positive`, `already-known`, `not-our-direct
 fp = sha256(lens | kind | normTopic | sortedUniqueNormAnchors.join(',')).hex[0:16]
 ```
 
-- `kind` must be one of the lens's kinds, which come from the lens pack frontmatter. They are passed with
-  `--kinds <lens>=<k1,k2>` and never hardcoded.
+- `kind` must be one of the lens's kinds, which come from the lens pack frontmatter: the CLI reads them from the
+  packs (`propose`, `outbox`; a `--kinds <lens>=<k1,k2>` may only narrow them) and they are never hardcoded.
 - `normTopic` is lowercase kebab with diacritics folded and quotes dropped. Every other non-alphanumeric
   run becomes one `-`.
 - An anchor is normalized to forward slashes with no leading `./`. `:line[:col]` suffixes and `#L12`
