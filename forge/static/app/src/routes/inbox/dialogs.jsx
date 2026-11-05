@@ -282,30 +282,6 @@ export function RejectDialog({ cards, onClose, onSubmit }) {
   );
 }
 
-const KEYS = [
-  ['j / k', 'Move to the next / previous proposal'],
-  ['x', 'Select or unselect the proposal'],
-  ['a', 'Accept'],
-  ['r', 'Reject (all selected, when some are selected)'],
-  ['s', 'Snooze, with an optional note and Until date (all selected, when some are selected: one date, no note)'],
-  ['m', 'Merge'],
-  ['u', 'Undo the last snooze or reject while its notice is showing'],
-  ['?', 'Show this help'],
-];
-
-export function HelpDialog({ onClose }) {
-  return (
-    <Dialog title="Keyboard shortcuts" onClose={onClose} footer={<Button appearance="primary" onClick={onClose} autoFocus>Close</Button>}>
-      <table className="dw-table">
-        <tbody>
-          {KEYS.map(([k, what]) => <tr key={k}><td><span className="dw-kbd">{k}</span></td><td>{what}</td></tr>)}
-        </tbody>
-      </table>
-      <p className="dw-subtlest">Shortcuts work when no dialog or text field has focus.</p>
-    </Dialog>
-  );
-}
-
 /**
  * A local calendar day as `YYYY-MM-DD`, `days` after today (the person's own date, as a date input shows it).
  * @param {number} [days]
