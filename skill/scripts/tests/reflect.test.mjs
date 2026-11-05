@@ -284,7 +284,7 @@ test('mock round trip over stdio: offer, person decides in Forge, person rates t
   assert.deepEqual(cli('reflect', 'ingest', '--file', f).out, { rules_applied: 0, rules_skipped: 1, outcomes_added: 0, outcomes_seen: 1 });
   assert.equal(cli('rules', 'list', '--lens', 'ux-friction').out.rules[0].state, 'declined');
   assert.equal(cli('rules', 'offer').out.offers.length, 0, 'a declined cluster is not offered again');
-  assert.equal(cli('reflect', 'export').out.rules_json, undefined);
+  assert.equal(cli('reflect', 'export').out.rules_json, '[]', 'nothing is offered any more');
 
   // 4. context weighs accepted-but-wrong patterns; show lists the rows; status is unchanged
   const ctx = cli('context', '--run', runId, '--lens', 'security-cra');
