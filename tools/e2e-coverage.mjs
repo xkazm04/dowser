@@ -20,11 +20,14 @@
 //   - an uncovered id missing from the baseline fails (new code needs a spec, not a baseline line);
 //   - a baseline id that is now covered, or no longer exists, fails as stale until --write drops it;
 //   - a baseline id that the baseline at --against (default HEAD; `none` skips) did not list fails as growth.
+// `fixmes` lists the known-red specs (`test.fixme`, tools/temper-fixmes.mjs) and `fixme_count` counts them. A fixme
+// is visible here, never gated, and its `@covers` tag would count as coverage, so a fixme spec carries none.
 // Prints one JSON object; exit 0 ok, 1 the gate failed, 2 bad arguments or unreadable sources.
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fixmeSpecs } from './temper-fixmes.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const BASELINE = join('e2e', 'coverage-baseline.json');
@@ -149,6 +152,7 @@ export function coverage({ root, baseline = BASELINE, against = 'HEAD' }) {
   const listed = existsSync(baseFile) ? parseBaseline(readFileSync(baseFile, 'utf8')) : [];
   const uncovered = ids.filter((id) => !covers.has(id));
   const before = against === 'none' ? undefined : baselineAt(root, relative(root, baseFile), against);
+  const fixmes = fixmeSpecs(root, join(root, 'e2e'));
   const report = {
     ids: Object.fromEntries(ids.map((id) => [id, covers.get(id) ?? []])),
     free: Object.fromEntries([...covers].filter(([id]) => !DERIVED.includes(id.split(':')[0])).sort(([a], [b]) => a.localeCompare(b))),
@@ -163,6 +167,8 @@ export function coverage({ root, baseline = BASELINE, against = 'HEAD' }) {
     grew: before ? listed.filter((id) => !before.includes(id)) : [],
     /** tags of a derived kind that name no id (typos) */
     unknown: [...covers.keys()].filter((id) => DERIVED.includes(id.split(':')[0]) && !known.has(id)).sort(),
+    fixme_count: fixmes.length,
+    fixmes,
   };
   return { ...report, ok: !report.unlisted.length && !report.stale.length && !report.grew.length && !report.unknown.length };
 }

@@ -64,6 +64,17 @@ test('everything tagged: ok, with each id mapped to its spec line and free tags 
   } finally { removeDir(root); }
 });
 
+test('known-red specs are counted and listed with their tickets, and do not fail the gate', () => {
+  const root = tempDir('e2e-coverage-fixme');
+  try {
+    writeFiles(root, tree(ALL));
+    assert.deepEqual([coverage({ root, against: 'none' }).fixme_count, coverage({ root, against: 'none' }).fixmes], [0, []]);
+    writeFiles(root, { 'e2e/fixture/known.spec.mjs': "test.fixme('DW-7 the count shows', () => {});\n" });
+    const r = coverage({ root, against: 'none' });
+    assert.deepEqual([r.ok, r.fixme_count, r.fixmes], [true, 1, [{ at: 'e2e/fixture/known.spec.mjs:1', ticket: 'DW-7' }]]);
+  } finally { removeDir(root); }
+});
+
 test('a planted uncovered key fails, until a spec covers it or the baseline lists it', () => {
   const root = tempDir('cov-planted');
   try {
