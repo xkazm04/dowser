@@ -240,6 +240,8 @@ export const COMMANDS = {
       const runId = req(a, 'run');
       const file = req(a, 'file');
       const kinds = parseKinds(a);
+      // the loaded packs' versions: propose stamps provenance.lens_version from them, as it stamps run_id
+      const versions = Object.fromEntries(Object.keys(kinds).map((l) => [l, memory.loadLensPack(l).version]));
       /** @type {string} */
       let text;
       try { text = readFileSync(file, 'utf8'); } catch (e) { throw new DowserError(`--file ${file} is not readable (${/** @type {Error} */ (e).message})`, 2); }
@@ -261,7 +263,7 @@ export const COMMANDS = {
           lines.push({ line: i + 1, result: `invalid:json (${/** @type {Error} */ (e).message})` });
           return;
         }
-        const r = store.propose(db, runId, obj, { kinds });
+        const r = store.propose(db, runId, obj, { kinds, versions });
         counts[r.result.startsWith('invalid:') ? 'invalid' : r.result]++;
         if (r.warning === 'no-predicted-verdict') unpredicted++;
         if (r.clamped) clamped++;

@@ -153,7 +153,9 @@ export { resurfaces } from './model.mjs';
  *    meets the resurfacing rule moves to `candidate` (`evidence-grew`, with `resurfaced`); one that does not
  *    is `suppressed`. A `dropped` item with a NEW evidence key moves to `candidate` (a retry); with only known
  *    keys it stays dropped. Any other status: `evidence-grew` when a new key landed, else `duplicate`.
- *  - `provenance.run_id` is stamped from `runId`; a different one on the line is overwritten and noted.
+ *  - `provenance.run_id` is stamped from `runId`; a different one on the line is overwritten and noted. So is
+ *    `provenance.lens_version` from `opts.versions` (the loaded packs' versions) when it names the lens, so the
+ *    quality ledger and `predicted_by` key on the pack that ran, not on a version copied from an example.
  *  - an invalid candidate: `invalid:<why>`; nothing is written.
  *  - a line without `predicted_verdict` (the lens worker's verdict is mandatory, SKILL.md section 5 step 6) is
  *    still taken, with `warning: 'no-predicted-verdict'` on its result; a re-propose without one keeps the judge's
@@ -164,10 +166,10 @@ export { resurfaces } from './model.mjs';
  * @param {Db} db
  * @param {string} runId
  * @param {unknown} input
- * @param {{kinds: Record<string, readonly string[]>}} opts
+ * @param {{kinds: Record<string, readonly string[]>, versions?: Record<string, string>}} opts
  * @returns {ProposeResult}
  */
-export function propose(db, runId, input, { kinds }) {
+export function propose(db, runId, input, { kinds, versions }) {
   const run = requireRunning(db, runId);
   const v = validateCandidate(input);
   if (!v.ok) return { result: `invalid:${v.why}` };
@@ -181,9 +183,14 @@ export function propose(db, runId, input, { kinds }) {
     throw e;
   }
   if (c.fp !== undefined && c.fp !== fp) return { result: `invalid:fp-mismatch (computed ${fp})` };
-  const note = c.provenance.run_id !== undefined && c.provenance.run_id !== runId
-    ? `provenance.run_id ${c.provenance.run_id} replaced by ${runId}` : undefined;
-  const provenance = clean({ ...c.provenance, run_id: runId, model: c.provenance.model ?? run.model, harness: c.provenance.harness ?? run.harness, focus: c.provenance.focus ?? run.focus });
+  const packVersion = versions?.[c.lens];
+  const notes = [
+    ...(c.provenance.run_id !== undefined && c.provenance.run_id !== runId ? [`provenance.run_id ${c.provenance.run_id} replaced by ${runId}`] : []),
+    ...(packVersion !== undefined && c.provenance.lens_version !== packVersion
+      ? [`provenance.lens_version ${c.provenance.lens_version} replaced by ${packVersion} (lenses/${c.lens}.md)`] : []),
+  ];
+  const note = notes.length ? notes.join('; ') : undefined;
+  const provenance = clean({ ...c.provenance, run_id: runId, lens_version: packVersion ?? c.provenance.lens_version, model: c.provenance.model ?? run.model, harness: c.provenance.harness ?? run.harness, focus: c.provenance.focus ?? run.focus });
   const anchors = [...new Set(c.anchors.map(normalizeAnchor).filter(Boolean))].sort();
   const s = scoreOf(c);
   const judged = c.predicted_verdict === undefined

@@ -143,6 +143,23 @@ test('propose without --kinds: the kinds come from the lens packs', () => {
   assert.equal(p.lines[0].result, 'created');
 });
 
+test('propose stamps provenance.lens_version from the loaded pack and notes a different one', async () => {
+  const { loadLensPack } = await import('../lib/memory.mjs');
+  const pack = loadLensPack('security-cra').version;
+  cli('init');
+  const run = freshRun();
+  const p = cli('propose', '--run', run, '--file', jsonl('version.jsonl', [
+    candidate({ kind: 'secret-exposure', topic: 'stale version copied', provenance: { lens_version: '0.0.1' } }),
+    candidate({ kind: 'secret-exposure', topic: 'right version', provenance: { lens_version: pack } }),
+  ]));
+  assert.equal(p.code, 0, p.stdout + p.stderr);
+  assert.equal(p.lines[0].note, `provenance.lens_version 0.0.1 replaced by ${pack} (lenses/security-cra.md)`);
+  assert.equal(p.lines[1].note, undefined, 'the pack\'s own version: no note');
+  const shown = cli('show', p.lines[0].fp);
+  assert.equal(shown.code, 0, shown.stderr);
+  assert.equal(shown.out.card.provenance.lens_version, pack);
+});
+
 test('propose --kinds must be a subset of the pack: kinds the pack lacks exit 2 and are named', () => {
   cli('init');
   const run = freshRun();
