@@ -30,7 +30,7 @@
 //                                            when green; red: reset loop/<date> to the last green commit
 //                                          rebase-push (bp): rebase onto origin/master, gates + secret scan, push
 //                                            HEAD:master; red: nothing pushed
-//                                          commit-only (personas): gates only; never pushes
+//                                          commit-only (personas): gates + secret scan; never pushes
 //
 // Verified vs self-reported: what this script reads from a tool's own output (the runner's exit code, e2e result
 // files, the scan ledger, quality-snapshot rows, e2e-coverage) is `verified`; what only the director's cycle file
@@ -1594,7 +1594,7 @@ export function landPlan(ctx, day, repo) {
 
 /**
  * Another repo's landing: rebase-push (rebase onto origin/master, gates, secret scan, push HEAD:master) or commit-only
- * (gates; never a push). In a dry run nothing is rebased; a branch behind origin/master is reported as "would rebase".
+ * (gates, secret scan; never a push). In a dry run nothing is rebased; a branch behind origin/master is reported as "would rebase".
  * @param {Ctx} ctx @param {any} day @param {Repo} repo @param {boolean} dry
  */
 export function repoLand(ctx, day, repo, dry) {
@@ -1630,11 +1630,11 @@ export function repoLand(ctx, day, repo, dry) {
     checks.gates = gates;
     if (!Object.keys(gates).length) reasons.push('the charter names no land gate for this repo');
     for (const [k, v] of Object.entries(gates)) if (v !== 'pass') reasons.push(`${k} failed`);
-    if (repo.landing.kind === 'rebase-push') {
-      const scan = secretScan(gitIn(ctx, wt, 'diff', '--name-only', 'origin/master...HEAD'), gitIn(ctx, wt, 'diff', '-U0', 'origin/master...HEAD'));
-      checks.secret_scan = scan;
-      if (!scan.clean) reasons.push(`the secret scan found ${scan.hits.map((h) => `${h.pattern} in ${h.file}`).join(', ')}`);
-    }
+    // every landing kind: a repo's own hook may skip its scan silently (personas: gitleaks not installed, c7)
+    const range = `${base}...HEAD`;
+    const scan = secretScan(gitIn(ctx, wt, 'diff', '--name-only', range), gitIn(ctx, wt, 'diff', '-U0', range));
+    checks.secret_scan = scan;
+    if (!scan.clean) reasons.push(`the secret scan found ${scan.hits.map((h) => `${h.pattern} in ${h.file}`).join(', ')}`);
   }
   if (repo.landing.kind === 'commit-only') return { ...out, decision: reasons.length ? 'red' : 'commit-only', head, checks, reasons, steps: [] };
   if (reasons.length) return { ...out, decision: 'red', head, checks, reasons, steps: [] };

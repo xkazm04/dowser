@@ -790,6 +790,13 @@ test('repo start/land: bp rebases onto origin/master and pushes HEAD:master only
   assert.deepEqual(pl.out.steps, []);
   assert.ok(w.calls.some((c) => c.cmd === 'npm run gate -- --cold'));
   assert.ok(!w.calls.some((c) => c.cmd === 'npm run verify:affected -- --files {files}'), 'an item gate is the builder\'s, not land\'s');
+  assert.equal(pl.out.checks.secret_scan.clean, true, 'commit-only runs the built-in secret scan too');
+  // the repo's own hook may skip its scan (gitleaks missing): the built-in scan still turns a leak red
+  put(join(p.out.worktree, 'k.txt'), 'token AKIAABCDEFGHIJKLMNOP\n');
+  g(p.out.worktree, 'add', 'k.txt'); g(p.out.worktree, 'commit', '-q', '-m', 'oops');
+  const leak = main(['land', '--repo', 'personas', '--dry-run'], w.ctx);
+  assert.equal(leak.out.decision, 'red');
+  assert.match(leak.out.reasons.join(), /aws-access-key in k\.txt/);
   assert.equal(main(['day', 'end'], w.ctx).code, 1, 'a registered run must deregister first');
   assert.equal(main(['repo', 'end', '--repo', 'personas'], w.ctx).code, 0);
   assert.equal(w.calls.filter((c) => c.cmd === 'node').at(-1)?.args[1], 'complete');

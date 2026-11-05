@@ -81,7 +81,8 @@ The loop lands only through `temper.mjs land --repo <name>`, under each repo's o
   when the day's gates and UAT are green. A red day is reset to its last green commit and stays on its branch.
 - bp (`rebase-push`) rebases `temper/<date>` onto origin/master. It pushes HEAD:master only when `npm run check` and
   the secret scan are clean.
-- personas (`commit-only`) commits on `temper/<date>` in a worktree and never pushes.
+- personas (`commit-only`) commits on `temper/<date>` in a worktree and never pushes. Its land runs the gates and
+  the same built-in secret scan (its own hook skips the scan when gitleaks is missing).
 
 Production deploys, tags and releases stay the operator's in every repo. The PreToolUse guard
 (`.claude/skills/temper/scripts/guard.mjs`) denies them, and it denies any push that a repo's landing does not permit.
