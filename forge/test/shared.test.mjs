@@ -2,12 +2,17 @@
 // The shared modules are byte-copies of the skill's (design F6): a drift fails here, not in production.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SHARED } from '../scripts/sync-shared.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+test('src/shared holds exactly the modules sync-shared copies', () => {
+  const present = readdirSync(join(HERE, '..', 'src', 'shared')).sort();
+  assert.deepEqual(present, [...SHARED].sort(), 'a file in src/shared that SHARED does not list is never compared with its source; add it to scripts/sync-shared.mjs SHARED');
+});
 
 test('src/shared matches skill/scripts/lib byte for byte', () => {
   for (const name of SHARED) {
