@@ -78,7 +78,7 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   `reason` is a reject's code only (model.mjs REASONS); a snooze or an accept says why in `note`. `inbox` (when given)
   must be the inbox checked, and `recorded` is `live` or `local`; temper-verdicts checks both and never sends them.
 - **Carried to tomorrow.** A real card that you would accept, but the day's accept cap is reached, is a snooze with
-  `deferred: "cap"` (and a `note`). It is counted apart, as `carried`: it does not count toward the reject-or-snooze
+  `deferred: "cap"` (and a `note`), and `until` the next day (YYYY-MM-DD): the next day's triage takes it first. It is counted apart, as `carried`: it does not count toward the reject-or-snooze
   floor or the rejects cap, because the cap made the call, not the triage. It is valid only once the inbox's accepts
   today reach the cap (`triage check` and `cycle end` refuse it under the cap). The report lists these cards under
   "Carried to tomorrow", and the next day's start dialog asks about them first. Forge still records a live one as a
@@ -110,6 +110,10 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   `git checkout` there). When it patches source to show a spec can pass, it does so in its own scratch worktree
   (`git worktree add <tmp> <branch>`, removed after) and never commits the patch: that the spec turns green on the
   build is the builder's to show.
+- A **gate-required tether test** is the one test a builder may write: a repo gate can demand a parity test once the
+  build mirrors a rule across languages (a census rule, for one), which QA could not foresee from the card. Brief QA to
+  write it when a card visibly mirrors a server rule. Otherwise the builder writes it, and `built[].specs` lists it with
+  `qa` naming who wrote it. It never replaces the item's red spec.
 - A pure docs card (doc drift inside the registered paths) has no natural test file. Its spec is a declared
   acceptance command (a quote or grep check that fails on the base and passes after), written by the QA subagent
   before the build and listed in `built[].specs` as the command, with `qa` saying who wrote it.

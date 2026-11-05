@@ -67,9 +67,17 @@ install missing, not the item: install, then run the gate again.
 ## Secret scanning
 
 The repo's own secret-scan hook may depend on a tool that is not installed here (gitleaks, for one): such a hook
-skips or fails without scanning. Then the repo's scan is **unverifiable**: never report it as clean, and say so in
+skips or fails without scanning, and a hook runner may still show that step with a green check mark, which is not a
+scan: read what the step printed, and tell QA and builders the same. Then the repo's scan is **unverifiable**: never report it as clean, and say so in
 `notes`. Do not install the tool or bypass the hook. `land` runs the built-in secret scan on every landing kind, so
 the director's landing still checks the diff; you still never commit a secret or a `.env`.
+
+## Exit codes and long files
+
+- A gate's verdict is its own exit code. Redirect it to a file in `scratch` and record its `$?`: never through a pipe
+  (`| tail` answers for `tail`) and never from a job's summary, and quote that line in the cycle file's `uat`.
+- Write the cycle file and other long JSON with a file-writing tool or a script file. A long inline heredoc can fail
+  to parse in the shell tool.
 
 ## Steps
 
@@ -97,7 +105,8 @@ the director's landing still checks the diff; you still never commit a secret or
    `recorded: "local"`. Do not retry it this cycle.
 3. **Build** the accepted cards, highest value first, as many as fit in about 90 minutes, any size (an XL is staged
    in slices; build the first). Check every bound first (cycle.md section 4): `registered_paths`, a baseline the
-   fix moves, a file the repo marks as needing a human. Then, per item:
+   fix moves, a file the repo marks as needing a human, a file a card quotes that a script generates (edit its source;
+   the next regeneration erases the rest). Then, per item:
    - **QA first.** A separate QA subagent writes the failing spec from the card's Flow and acceptance criteria only
      (`node tools/temper-cards.mjs --project-key <inbox> --full` prints them: `sections.Flow`, `acceptance`),
      proves it fails on the base, and commits it alone. It greps the repo's test folders for the old behaviour (the

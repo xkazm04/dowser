@@ -1287,6 +1287,10 @@ test('runner.md: the brief is repo-agnostic, on tonight\'s tools, and SKILL.md s
   assert.match(secrets, /gitleaks/);
   assert.match(secrets, /\*\*unverifiable\*\*: never report it as clean/);
   assert.match(secrets, /built-in secret scan on every landing kind/);
+  // what runners found: a check mark is no scan, a pipe hides the exit code, a heredoc breaks on a long file
+  assert.match(secrets, /green check mark, which is not a\s+scan/);
+  assert.match(md, /never through a pipe/);
+  assert.match(md, /a file-writing tool or a script file/);
   // a card's own falsifier runs first, and may read the charter's other repos
   const triage = md.slice(md.indexOf('2. **Triage.**'), md.indexOf('3. **Build**'));
   assert.match(triage, /`Falsified if` check first/);
