@@ -234,9 +234,9 @@ For each lens, print one progress line (`<lens>: gathering (tickets 42, code)`),
    machine has (`npm audit` for a `package-lock.json`, `osv-scanner` for a lockfile it reads,
    `pip-audit` for `requirements*.txt` or `pyproject.toml`) in the root and in each manifest
    directory up to three levels below it, read-only, 60 s each, and caches every finding on the
-   run. Directories it did not audit are listed under `not_audited`. Its output lists each auditor as `ran` (with `found`) or
-   `skipped` (with `reason`). Cite only the `ref` values it returns as `dep` evidence. A skipped
-   auditor is a gap: record the lens as `partial: <auditor> skipped (<reason>)`. Never report "no
+   run. Directories it did not audit are listed under `not_audited`. Its output lists each auditor as `ran` (with `found`), `partial` (with `found`,
+   and `reason` naming the manifests it could not audit) or `skipped` (with `reason`). Cite only the `ref` values it returns as `dep` evidence. A skipped or
+   partial auditor is a gap: record the lens as `partial: <auditor> skipped (<reason>)`. Never report "no
    vulnerable dependencies" for an auditor that did not run.
 4. **Gather tolerantly.** Do the pack's gather steps. A missing file, an empty grep or a source
    that errors is recorded and the lens goes on. It never aborts the run. Record each gap in
