@@ -161,7 +161,7 @@ export async function migrate(_event) {
   }
   try {
     const l = await backfillPageLinks(deps());
-    if (l.linked) console.log(JSON.stringify({ dowser: 'page-links-backfill', ...l }));
+    if (l.linked || l.more) console.log(JSON.stringify({ dowser: 'page-links-backfill', ...l }));
   } catch (e) {
     console.error(`dowser: page-links backfill failed (${String(/** @type {any} */ (e)?.message ?? e).slice(0, 200)})`);
   }
