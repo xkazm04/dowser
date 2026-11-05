@@ -766,6 +766,52 @@ test('repo start/land: bp rebases onto origin/master and pushes HEAD:master only
   assert.equal(main(['day', 'end'], w.ctx).code, 0);
 });
 
+test('repo paths --add: widens the personas entry through active-runs.mjs (check, then complete and register the same slug); a live conflict refuses', () => {
+  const w = world();
+  const { personas } = otherRepos(w);
+  const draft = join(w.work, 'draft.json');
+  put(draft, { repos: [{ name: 'dowser', path: w.root, inbox_key: 'dowser-temper', build: true },
+    { name: 'personas', path: personas, inbox_key: 'personas-temper', build: true, landing: { kind: 'commit-only' }, ledger: '.claude/active-runs.md', gates: ['npm run gate -- --cold'] }] });
+  assert.equal(main(['charter', 'init', '--from', draft, '--operator', 'Op'], w.ctx).code, 0);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  // the ledger script stand-in: check answers a live conflict for anything under src/hot/, and our own entry
+  /** @type {string[][]} */
+  const ledger = [];
+  const run = w.ctx.run;
+  w.ctx.run = (cmd, args, ro) => {
+    if (cmd !== 'node' || !args[0].endsWith('active-runs.mjs')) return run(cmd, args, ro);
+    ledger.push(args.slice(1));
+    assert.equal(ro?.cwd, personas, 'run in the personas checkout, so its own ledger is the one written');
+    if (args[1] !== 'check') return { status: 0, stdout: '' };
+    const asked = args.slice(args.indexOf('--paths') + 1);
+    const conflicts = [{ slug: 'temper-2026-11-05', ageHours: 0.1, overlap: ['src/a/**'] }, ...(asked.some((p) => p.startsWith('src/hot')) ? [{ slug: 'other-session', ageHours: 0.5, overlap: ['src/hot/**'] }] : [])];
+    return { status: args.includes('--json') ? 2 : 0, stdout: JSON.stringify({ conflicts }) };
+  };
+  assert.equal(main(['repo', 'start', '--repo', 'personas', '--paths', 'src/a/**'], w.ctx).code, 0);
+  ledger.length = 0;
+  assert.equal(main(['repo', 'paths', '--repo', 'personas'], w.ctx).code, 2, '--add is required');
+  const hot = main(['repo', 'paths', '--repo', 'personas', '--add', 'src/b/**,src/hot/**'], w.ctx);
+  assert.equal(hot.code, 1);
+  assert.match(hot.out.error, /a live session holds src\/hot\/\*\* \(other-session\)/);
+  assert.deepEqual(ledger.map((a) => a[0]), ['check'], 'a conflict refuses before anything is written');
+  ledger.length = 0;
+  const ok = main(['repo', 'paths', '--repo', 'personas', '--add', 'src/b/**,src/a/**'], w.ctx);
+  assert.equal(ok.code, 0, JSON.stringify(ok.out));
+  assert.deepEqual(ok.out.paths, ['src/a/**', 'src/b/**']);
+  assert.deepEqual(ok.out.added, ['src/b/**']);
+  assert.deepEqual(ledger.map((a) => a[0]), ['check', 'complete', 'register'], 'the ledger script is the only writer');
+  assert.deepEqual(ledger[0].slice(ledger[0].indexOf('--paths') + 1), ['src/b/**'], 'only the new paths are checked; our own entry is no conflict');
+  assert.equal(ledger[1][ledger[1].indexOf('--slug') + 1], 'temper-2026-11-05');
+  assert.deepEqual([ledger[2][ledger[2].indexOf('--slug') + 1], ...ledger[2].slice(ledger[2].indexOf('--paths') + 1)], ['temper-2026-11-05', 'src/a/**', 'src/b/**'], 'the same slug, not a second entry');
+  const day = JSON.parse(readFileSync(join(w.root, '.temper', 'day.json'), 'utf8'));
+  assert.deepEqual(day.repos.personas.paths, ['src/a/**', 'src/b/**']);
+  ledger.length = 0;
+  assert.deepEqual(main(['repo', 'paths', '--repo', 'personas', '--add', 'src/b/**'], w.ctx).out.added, []);
+  assert.deepEqual(ledger, [], 'nothing new: the ledger is not touched');
+  assert.equal(main(['repo', 'end', '--repo', 'personas'], w.ctx).code, 0);
+  assert.equal(main(['repo', 'paths', '--repo', 'personas', '--add', 'src/c/**'], w.ctx).code, 1, 'an ended run is not widened');
+});
+
 /** Dowser plus a bp build repo under one charter, the day started. @param {ReturnType<typeof world>} w */
 function twoRepoDay(w) {
   const { bp } = otherRepos(w);

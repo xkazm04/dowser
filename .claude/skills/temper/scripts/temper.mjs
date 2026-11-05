@@ -10,6 +10,8 @@
 //                                          the operator's answers on directions and need TEMPER_CHARTER_DIALOG=1 too
 //   day resume | day end
 //   repo start --repo <name> [--paths a,b] [--title t]   another build repo's branch in a worktree (+ its ledger)
+//   repo paths --repo <name> --add a,b   widen a ledger repo's registered paths (active-runs check, then the same
+//                                          entry completed and registered again with every path; a conflict refuses)
 //   repo end --repo <name> [--status t]
 //   cycle begin --target <module>|direction:<id> | --repo <name> --target <focus>
 //   cycle end --file <cycle.json> [--repo <r>]   npm ci where a lockfile is newer than its node_modules (root, forge,
@@ -449,9 +451,63 @@ function repoStart(ctx, f) {
     if (reg.status !== 0) throw new Refusal(`${r.name}: active-runs register failed (exit ${reg.status}); the worktree ${wt} is made`);
     registered = true;
   }
-  day.repos = { ...(day.repos ?? {}), [r.name]: { branch, worktree: wt, base, ...(registered ? { registered: slug } : {}), started_at: ctx.now().toISOString() } };
+  day.repos = { ...(day.repos ?? {}), [r.name]: { branch, worktree: wt, base, ...(registered ? { registered: slug, paths: pathsArg, title: typeof f.title === 'string' ? f.title : undefined } : {}), started_at: ctx.now().toISOString() } };
   writeJson(paths(ctx.root).day, day);
   return { repo: r.name, ...day.repos[r.name], landing: r.landing.kind, item_gates: r.gates.filter((g) => g.when === 'item').map((g) => g.run) };
+}
+
+/**
+ * Paths another session's live ledger entry holds among `paths` (active-runs check --json), the day's own entry left
+ * out. Refuses when the check itself fails. @param {Ctx} ctx @param {Repo} r @param {string[]} paths @param {string} [own]
+ * @returns {{slug: string, overlap: string[]}[]}
+ */
+function ledgerConflicts(ctx, r, paths, own) {
+  const c = ctx.run('node', [join(r.path, 'scripts', 'active-runs.mjs'), 'check', '--json', '--paths', ...paths], { cwd: r.path });
+  if (c.status === 0) return [];
+  if (c.status !== 2) throw new Refusal(`${r.name}: active-runs check failed (exit ${c.status})`);
+  let out;
+  try { out = JSON.parse(c.stdout); } catch { throw new Refusal(`${r.name}: active-runs check found a conflict, and its --json answer is unreadable`); }
+  return (Array.isArray(out?.conflicts) ? out.conflicts : []).filter((/** @type {any} */ x) => x?.slug !== own);
+}
+
+/**
+ * Widens the paths a ledger repo's day entry holds. The ledger has one writer (the repo's scripts/active-runs.mjs) and
+ * no update command, so the entry is completed and registered again under the same slug with every path: one active
+ * entry, its paths widened. A path another live entry holds refuses it before anything is written.
+ * @param {Ctx} ctx @param {Record<string, string | true>} f
+ */
+function repoPaths(ctx, f) {
+  const charter = needCharter(ctx);
+  const day = needDay(ctx);
+  if (typeof f.repo !== 'string') throw new UsageError('repo paths needs --repo <name>');
+  const r = repoOf(charter, f.repo);
+  const s = day.repos?.[r.name];
+  if (!r.ledger) throw new UsageError(`${r.name} keeps no active-runs ledger: its paths are not registered`);
+  if (!s?.registered || s.ended_at) throw new Refusal(`${r.name} has no registered run today (repo start --repo ${r.name} --paths a,b)`);
+  const add = list(f.add);
+  if (!add.length) throw new UsageError('repo paths needs --add a,b (the paths to add)');
+  /** @type {string[] | undefined} */
+  const had = Array.isArray(s.paths) ? s.paths : (f.paths !== undefined ? list(f.paths) : undefined);
+  if (!had?.length) throw new UsageError(`${r.name}'s day entry predates recorded paths: also pass --paths <the paths given at repo start>`);
+  const fresh = add.filter((p) => !had.includes(p));
+  if (!fresh.length) return { repo: r.name, slug: s.registered, paths: had, added: [] };
+  const conflicts = ledgerConflicts(ctx, r, fresh, s.registered);
+  if (conflicts.length) throw new Refusal(`${r.name}: a live session holds ${conflicts.map((c) => `${(c.overlap ?? []).join(', ')} (${c.slug})`).join('; ')}; pick other paths`);
+  const script = join(r.path, 'scripts', 'active-runs.mjs');
+  const all = [...had, ...fresh];
+  const title = s.title ?? `temper: the daily loop's builds (${day.date})`;
+  const done = ctx.run('node', [script, 'complete', '--slug', s.registered, '--status', `re-registered with paths widened (+${fresh.join(', ')})`], { cwd: r.path });
+  if (done.status !== 0) throw new Refusal(`${r.name}: active-runs complete failed (exit ${done.status}); the entry is unchanged`);
+  const reg = ctx.run('node', [script, 'register', '--slug', s.registered, '--title', title, '--paths', ...all], { cwd: r.path });
+  if (reg.status !== 0) {
+    s.ended_at = ctx.now().toISOString();
+    writeJson(paths(ctx.root).day, day);
+    throw new Refusal(`${r.name}: active-runs register failed (exit ${reg.status}) after the old entry was completed: the run is no longer registered; repo start again`);
+  }
+  s.paths = all;
+  s.title = title;
+  writeJson(paths(ctx.root).day, day);
+  return { repo: r.name, slug: s.registered, paths: all, added: fresh };
 }
 
 /** @param {Ctx} ctx @param {Record<string, string | true>} f */
@@ -1565,8 +1621,8 @@ function land(ctx, f) {
 
 // ------------------------------------------------------------------------------------------------- main
 
-const SPEC = { values: ['from', 'operator', 'date', 'approve', 'veto', 'target', 'file', 'verdicts', 'instruments', 'inbox', 'until', 'repo', 'paths', 'title', 'status', 'id', 'commit', 'note', 'n'], bool: ['dry-run', 'rate-limited'] };
-const USAGE = 'usage: temper.mjs charter init --from <json> --operator <name> | charter show | day start|resume|end | repo start|end --repo <r> | cycle begin --target <t> [--repo <r>] | cycle end --file <f> | cycle reverify --n <n> [--repo <r>] | triage check --verdicts <f> --inbox <k> | modules bar | proposals resolve --id <p> --commit <sha> [--note t] | clock | report | land [--repo <r>] [--dry-run]';
+const SPEC = { values: ['from', 'operator', 'date', 'approve', 'veto', 'target', 'file', 'verdicts', 'instruments', 'inbox', 'until', 'repo', 'paths', 'title', 'status', 'id', 'commit', 'note', 'n', 'add'], bool: ['dry-run', 'rate-limited'] };
+const USAGE = 'usage: temper.mjs charter init --from <json> --operator <name> | charter show | day start|resume|end | repo start|end --repo <r> | repo paths --repo <r> --add a,b | cycle begin --target <t> [--repo <r>] | cycle end --file <f> | cycle reverify --n <n> [--repo <r>] | triage check --verdicts <f> --inbox <k> | modules bar | proposals resolve --id <p> --commit <sha> [--note t] | clock | report | land [--repo <r>] [--dry-run]';
 
 /**
  * Runs one command. @param {string[]} argv @param {Ctx} [ctx]
@@ -1583,7 +1639,7 @@ export function main(argv, ctx = realCtx()) {
     const table = {
       'charter init': () => charterInit(ctx, f), 'charter show': () => needCharter(ctx),
       'day start': () => dayStart(ctx, f), 'day resume': () => dayResume(ctx), 'day end': () => dayEnd(ctx),
-      'repo start': () => repoStart(ctx, f), 'repo end': () => repoEnd(ctx, f),
+      'repo start': () => repoStart(ctx, f), 'repo paths': () => repoPaths(ctx, f), 'repo end': () => repoEnd(ctx, f),
       'cycle begin': () => cycleBegin(ctx, f), 'cycle end': () => cycleEnd(ctx, f), 'cycle reverify': () => cycleReverify(ctx, f), 'triage check': () => triageCheck(ctx, f),
       'modules bar': () => modulesBar(ctx, f), 'proposals resolve': () => proposalsResolve(ctx, f), 'clock ': () => clock(ctx, f), 'report ': () => report(ctx, f), 'land ': () => land(ctx, f),
     };

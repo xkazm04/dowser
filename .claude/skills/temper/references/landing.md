@@ -54,6 +54,11 @@ Production, tags and releases are never part of a landing. The guard denies them
 - `T repo start --repo personas --paths <globs>` runs `scripts/active-runs.mjs check` (a live conflict refuses), makes
   `temper/<date>` in a worktree, and registers the run. `T repo end` completes it. `day end` refuses while it is
   registered.
+- `T repo paths --repo personas --add a,b` widens the registered paths for a later cycle. It runs
+  `active-runs.mjs check --json` on the new paths (a live entry of another session refuses, before anything is
+  written), then, because the ledger script has no update command and is its only writer, completes the day's entry
+  and registers it again under the same slug with every path. The day keeps one active entry. `day.json` records the
+  paths; a day started before it did needs `--paths <the paths given at repo start>` as well.
 - Builders run `npm run verify:affected -- --files <files>` per item. `T land --repo personas` runs
   `npm run gate -- --cold` and records the result. It **never pushes**. The operator merges the branch.
 

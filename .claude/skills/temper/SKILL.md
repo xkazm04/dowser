@@ -25,7 +25,8 @@ scans that the loop starts keep theirs.
    The guard asks the operator to confirm it. Without direction answers, run plain `T day start`.
 3. Commit the records that rode onto the new branch: `chore(temper): the <yesterday> records`.
 4. For each other repo with `build: true`, run `T repo start --repo <name> [--paths a,b]`. A repo with a ledger
-   (personas) needs `--paths`, and its `check` must pass. Sibling sessions are active there.
+   (personas) needs `--paths`, and its `check` must pass. Sibling sessions are active there. A later cycle that needs
+   another area widens the entry with `T repo paths --repo <name> --add a,b` (refused when a live session holds one).
 
 ## 1. Cycle (repeat)
 
