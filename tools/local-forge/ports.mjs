@@ -51,7 +51,7 @@ const LOCAL_DDL = [
     status_category TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE (project_key, n))`,
   `CREATE TABLE IF NOT EXISTS local_jira_comments (id INTEGER PRIMARY KEY, issue_key TEXT NOT NULL, body_json TEXT NOT NULL, at TEXT NOT NULL)`,
   // Its own table, not a column, so a db file made before labels needs no ALTER (an issue from the sample inbox
-  // carries the label dowser-sample).
+  // carries the label dowser-sample, one a delegate accepted dowser-delegate).
   `CREATE TABLE IF NOT EXISTS local_jira_labels (issue_key TEXT NOT NULL, label TEXT NOT NULL, PRIMARY KEY (issue_key, label))`,
   `CREATE TABLE IF NOT EXISTS local_users (account_id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS local_sources (kind TEXT NOT NULL, ref TEXT NOT NULL, item_json TEXT NOT NULL, PRIMARY KEY (kind, ref))`,

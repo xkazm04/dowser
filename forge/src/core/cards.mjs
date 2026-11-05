@@ -194,6 +194,9 @@ export async function inboxSummaries(db, visible, inboxRows) {
       sample: sample || undefined,
       // What the sample is a scan of: the repo and commit its evidence links point at, and when that scan ran.
       source: sample && push ? omitAbsent({ repo_url: push.repo_url ?? i.repo_url, head_sha: push.head_sha, scanned_at: push.scanned_at }) : undefined,
+      // the delegation as set (core/delegate.mjs), all three keys or none
+      ...(i.delegate_until && i.delegate_accepts_per_day !== undefined && i.delegate_rejects_per_day !== undefined
+        ? { delegate_until: i.delegate_until, delegate_accepts_per_day: i.delegate_accepts_per_day, delegate_rejects_per_day: i.delegate_rejects_per_day } : {}),
     })));
   }
   return out;

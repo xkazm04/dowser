@@ -12,8 +12,9 @@ export const VERDICT_STATUSES = /** @type {const} */ (['accepted', 'rejected', '
 export const PUSH_RESULTS = /** @type {const} */ (['created', 'updated', 'merged-existing', 'refused']);
 /** `forbidden` (additive to forge-mcp-2): signed in, but not allowed to see this inbox or do this in Jira. */
 export const ERROR_CODES = /** @type {const} */ (['bad-input', 'bad-cursor', 'unknown-project', 'unauthorized', 'forbidden', 'unavailable']);
-/** Where a verdict was made; stored on the verdict row, never sent to the skill. */
-export const VIAS = /** @type {const} */ (['inbox', 'panel', 'rovo']);
+/** Where a verdict was made; stored on the verdict row, never sent to the skill. `mcp` = a delegate's
+ * `dowser_verdicts_record` (core/delegate.mjs). */
+export const VIAS = /** @type {const} */ (['inbox', 'panel', 'rovo', 'mcp']);
 /** Inbox ref format: `DW-<n>`, unique per installation. */
 export const REF_RE = /^DW-[1-9][0-9]*$/;
 /** Rule states as the skill keeps them (`offered` until a person decides). */
@@ -49,6 +50,19 @@ export const SAMPLE_KEY = 'dowser-sample';
 export const SAMPLE_LABEL = 'dowser-sample';
 /** The `bad-input` message a tool or Rovo write to SAMPLE_KEY answers. */
 export const SAMPLE_RESERVED = `${SAMPLE_KEY} is reserved for the sample inbox`;
+
+/**
+ * Delegated triage (core/delegate.mjs). A person switches it on per inbox in Settings (`settings.set`, never an MCP
+ * tool): until a day, at most N accepts and M other verdicts a UTC day. `dowser_verdicts_record` then records verdicts
+ * as DELEGATE_DECIDER, and an accept's Jira issue carries DELEGATE_LABEL.
+ */
+export const DELEGATE_KIND = 'delegate';
+export const DELEGATE_DECIDER = `${DELEGATE_KIND}:temper`;
+export const DELEGATE_LABEL = 'dowser-delegate';
+/** Highest per-day cap Settings accepts (0 is allowed: none of that verdict). */
+export const DELEGATE_CAP_MAX = 200;
+/** Verdicts one `dowser_verdicts_record` call takes. */
+export const RECORD_MAX = 50;
 
 /**
  * @typedef {typeof INBOX_STATUSES[number]} InboxStatus
@@ -102,6 +116,14 @@ export const SAMPLE_RESERVED = `${SAMPLE_KEY} is reserved for the sample inbox`;
  * @typedef {{focus?: string[], exclude?: string[], notes?: string, spaces?: string[]}} LensDirection
  * @typedef {{project_key: string, lens?: string}} DirectionInput  lens = one lens id, or `all` (the default)
  * @typedef {{lenses: Partial<Record<string, LensDirection>>}} DirectionOutput
+ *
+ * Delegated triage (additive to forge-mcp-2; tool 13). A delegate records verdicts while the inbox's delegation holds.
+ * @typedef {'accept' | 'reject' | 'snooze' | 'merge'} DelegateVerb
+ * @typedef {{ref: string, verdict: DelegateVerb, reason?: string, note?: string, into?: string, until?: string}} DelegateVerdict
+ * @typedef {{project_key: string, verdicts_json: string}} RecordInput  verdicts_json = JSON array of DelegateVerdict, at most RECORD_MAX
+ * @typedef {{ref: string, result: 'recorded' | 'refused', why?: string, issue_ref?: string}} RecordResult
+ * @typedef {{results: RecordResult[], more?: true}} RecordOutput  `more`: the time budget ran out; the verdicts after the
+ *   last result were not looked at, so send them again
  */
 
 /**
@@ -130,8 +152,10 @@ export const SAMPLE_RESERVED = `${SAMPLE_KEY} is reserved for the sample inbox`;
  * @typedef {{run_id: string, at: string, head_sha?: string, created: number, updated: number}} LastPush
  * @typedef {{repo_url?: string, head_sha?: string, scanned_at?: string}} SampleSource  what the sample is a scan of
  * @typedef {{project_key: string, repo_url?: string, jira_project_key?: string, issue_type_id?: string, open: number,
- *   by_status: Record<InboxStatus, number>, last_push?: LastPush, sample?: true, source?: SampleSource}} InboxSummary
- *   `sample` and `source` only on the sample inbox.
+ *   by_status: Record<InboxStatus, number>, last_push?: LastPush, sample?: true, source?: SampleSource,
+ *   delegate_until?: string, delegate_accepts_per_day?: number, delegate_rejects_per_day?: number}} InboxSummary
+ *   `sample` and `source` only on the sample inbox. The three `delegate_*` keys come together (the delegation as set,
+ *   also once `delegate_until` has passed) or not at all.
  */
 
 /**
@@ -169,7 +193,8 @@ export const SAMPLE_RESERVED = `${SAMPLE_KEY} is reserved for the sample inbox`;
  *   re-check (core/delivery.mjs); `still_in_code` = done in Jira while the quoted problem is still present
  * @typedef {{totals: Record<InboxStatus, number>, rejects: RejectCount[], notes: DecisionNote[], pushes: PushRetro[],
  *   lens_yield: LensYield[], rules: RuleRow[], candidates: OutcomeCandidate[], outcomes: (Outcome & {title: string, decided_by_name?: string})[],
- *   trust?: Trust & {updated_at: string}}} ReflectData
+ *   trust?: Trust & {updated_at: string}, verdicts_by: {human: Record<VerdictStatus, number>, delegate: Record<VerdictStatus, number>}}} ReflectData
+ *   verdicts_by: every verdict in the inbox's log, counted apart for people and for a delegate (`delegate:` decider).
  *   pushes: newest 8. notes: newest 10 that carry a note. candidates: done ones first, at most 20. trust: as the
  *   skill last synced it (omitted until it sends one).
  */
@@ -184,7 +209,8 @@ export const SAMPLE_RESERVED = `${SAMPLE_KEY} is reserved for the sample inbox`;
  *   'verdict.snooze': [{refs: string[], note?: string, until?: string}, {cards: Card[]}],
  *   'verdict.merge': [{ref: string, into: string}, {card: Card}],
  *   'settings.get': [{}, {inboxes: InboxSummary[]}],
- *   'settings.set': [{project_key: string, jira_project_key: string, issue_type_id: string}, {inbox: InboxSummary}],
+ *   'settings.set': [{project_key: string, jira_project_key?: string, issue_type_id?: string, delegate_until?: string,
+ *     delegate_accepts_per_day?: number, delegate_rejects_per_day?: number}, {inbox: InboxSummary}],
  *   'jira.projects': [{}, {projects: {key: string, name: string, issue_types: {id: string, name: string}[]}[]}],
  *   'panel.forIssue': [{issue_key: string}, {card?: Card, history: HistoryRow[]}],
  *   'map.data': [{project_key: string}, {areas: (Area & {proposals: {lens: string, open: number, accepted: number}[]})[], points: {ref: string, lens: string, effort: string, confidence: string, blast?: string}[]}],
@@ -200,6 +226,8 @@ export const SAMPLE_RESERVED = `${SAMPLE_KEY} is reserved for the sample inbox`;
  *   'setup.status': [{}, SetupStatus],
  * }} ResolverContract
  *   `direction.set` replaces the lens's direction whole; all four fields absent or empty clears it (`direction` omitted).
+ *   `settings.set` sets the accept target (`jira_project_key` with `issue_type_id`), the delegation (`delegate_until`
+ *   with both caps; `delegate_until: ''` alone switches it off), or both in one call.
  */
 
 export {};

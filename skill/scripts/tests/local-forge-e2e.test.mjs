@@ -136,14 +136,15 @@ const staleCandidate = (/** @type {Record<string, unknown>[]} */ evidence) => ca
 test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and outcomes round trip, idempotent', async () => {
   const filesBefore = listFiles(repo);
 
-  // --- MCP handshake: twelve tools, scalar inputs
+  // --- MCP handshake: thirteen tools, scalar inputs
   const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } });
   assert.equal(init.result.serverInfo.name, 'dowser-forge-local');
   server.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
   assert.deepEqual(await rpc('ping').then((r) => r.result), {});
   const tools = (await rpc('tools/list')).result.tools;
   assert.deepEqual(tools.map((/** @type {any} */ t) => t.name), ['dowser_sources_tickets', 'dowser_sources_pages', 'dowser_sources_goals',
-    'dowser_proposals_push', 'dowser_verdicts_pull', 'dowser_memory_pull', 'dowser_work_list', 'dowser_work_get', 'dowser_work_report', 'dowser_areas_push', 'dowser_reflect_sync', 'dowser_direction_get']);
+    'dowser_proposals_push', 'dowser_verdicts_pull', 'dowser_memory_pull', 'dowser_work_list', 'dowser_work_get', 'dowser_work_report', 'dowser_areas_push', 'dowser_reflect_sync', 'dowser_direction_get',
+    'dowser_verdicts_record']);
   for (const t of tools) for (const [k, v] of Object.entries(t.inputSchema.properties)) assert.ok(['string', 'integer'].includes(/** @type {any} */ (v).type), `${t.name}.${k}`);
   assert.equal((await rpc('nope/method')).error.code, -32601);
   assert.deepEqual((await tool('dowser_sources_tickets', { query: 'csv OR export', limit: 10 })).items.map((/** @type {any} */ i) => i.ref), ['SUP-7'], 'seeded sources answer through the core');
@@ -481,10 +482,92 @@ test('the sample inbox at the seam: both doubles refuse its key to every scan wr
   assert.equal((await invoke('settings.get')).inboxes.some((/** @type {any} */ i) => i.project_key === SAMPLE), false);
 });
 
+test('delegated triage at the seam: refused without a delegation, switched on over the Settings resolver only, decided under caps, labelled, pulled as delegate:temper, trust unchanged; the mock answers alike', async () => {
+  const filesBefore = listFiles(repo);
+  const di = cli('init').out;
+  const projectKey = di.project_key;
+  const run = cli('run', 'start', '--mode', 'full', '--harness', 'claude-code', '--model', 'm').out.run_id;
+  const [fa, fb, fc] = proposeFile(run, 'delegate.jsonl', ['a', 'b', 'c'].map((t) => candidate({
+    lens: 'opportunity', kind: 'missing-capability', topic: `delegate seam ${t}`, anchors: [`src/export.js#delegate-${t}`], title: `Delegate seam ${t}`,
+    evidence: [EXPORT], predicted_verdict: 'accept', predicted_why: 'like the CSV export' }))).map((/** @type {any} */ l) => l.fp);
+  assert.equal(cli('verify', '--run', run).code, 0);
+  const ob = cli('outbox', '--run', run);
+  const pushed = await tool('dowser_proposals_push', ob.out);
+  assert.equal(cli('ingest-push', '--file', save('push-delegate.json', pushed)).code, 0);
+  /** @type {Record<string, string>} */
+  const ref = Object.fromEntries(pushed.results.map((/** @type {any} */ r) => [r.fp, r.external_ref]));
+  /** @param {Record<string, string>} refs */
+  const verdicts = (refs) => JSON.stringify([
+    { ref: refs[fa], verdict: 'accept', note: 'The ticket and the code agree' },
+    { ref: refs[fb], verdict: 'reject', reason: 'not-worth-it' },
+    { ref: refs[fc], verdict: 'snooze' },
+  ]);
+
+  // 1. no delegation: the whole call is refused, and no MCP tool can switch one on
+  const none = await rpc('tools/call', { name: 'dowser_verdicts_record', arguments: { project_key: projectKey, verdicts_json: verdicts(ref) } });
+  assert.equal(none.result.isError, true);
+  const noneBody = JSON.parse(none.result.content[0].text);
+  assert.deepEqual([noneBody.error, noneBody.message], ['forbidden', `${projectKey} has no delegated triage; a person switches it on in Dowser Settings`]);
+  assert.equal((await rpc('tools/call', { name: 'settings.set', arguments: { project_key: projectKey, delegate_until: '2099-01-01' } })).error.code, -32602, 'settings.set is no MCP tool');
+
+  // 2. the person switches it on in Settings: the inbox page's resolver; the issue panel may not call it
+  await invoke('settings.set', { project_key: projectKey, jira_project_key: 'DOW', issue_type_id: '10001' });
+  const until = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  const delegation = { project_key: projectKey, delegate_until: until, delegate_accepts_per_day: 1, delegate_rejects_per_day: 1 };
+  const panel = await http('/invoke', { key: 'settings.set', payload: delegation, module: 'dowser-evidence' });
+  assert.equal(panel.body.error, 'bad-input', 'the issue panel cannot set a delegation');
+  const on = await invoke('settings.set', delegation);
+  assert.deepEqual([on.inbox.delegate_until, on.inbox.delegate_accepts_per_day, on.inbox.delegate_rejects_per_day], [until, 1, 1]);
+
+  // 3. the delegate decides: one accept, one reject, then the rejects cap refuses the snooze
+  const SLICE = 'product|opportunity|-|S';
+  const trustBefore = cli('trust', '--slice', SLICE).out.slices[0];
+  const rec = await tool('dowser_verdicts_record', { project_key: projectKey, verdicts_json: verdicts(ref) });
+  assert.deepEqual(rec.results.map((/** @type {any} */ r) => [r.ref, r.result]), [[ref[fa], 'recorded'], [ref[fb], 'recorded'], [ref[fc], 'refused']]);
+  assert.match(rec.results[2].why, /^today's delegate cap of 1 rejects, snoozes and merges is reached/);
+  const issue = (await http(`/browse/${rec.results[0].issue_ref}`)).body.issue;
+  assert.deepEqual(issue.labels, ['dowser-delegate'], 'the accept\'s issue says no person accepted it');
+  const got = await invoke('proposal.get', { ref: ref[fa] });
+  assert.deepEqual([got.history.at(-1).decided_by, got.history.at(-1).decided_by_name], ['delegate:temper', 'Temper (delegate)']);
+  const rd = await invoke('reflect.data', { project_key: projectKey });
+  assert.deepEqual([rd.verdicts_by.delegate.accepted, rd.verdicts_by.delegate.rejected, rd.verdicts_by.delegate.snoozed], [1, 1, 0]);
+  assert.ok(rd.verdicts_by.human.rejected > 0, 'people\'s verdicts are counted apart');
+
+  // 4. the pull brings them back as delegate:temper; ingest applies them, and trust does not move
+  const page = await tool('dowser_verdicts_pull', { project_key: projectKey, ...(di.verdicts_cursor ? { cursor: di.verdicts_cursor } : {}) });
+  assert.deepEqual(page.verdicts.map((/** @type {any} */ v) => [v.fp, v.status, v.decided_by]), [[fa, 'accepted', 'delegate:temper'], [fb, 'rejected', 'delegate:temper']]);
+  const iv = cli('ingest-verdicts', '--file', save('verdicts-delegate.json', page));
+  assert.equal(iv.code, 0, iv.stdout + iv.stderr);
+  assert.deepEqual(iv.out.verdicts.map((/** @type {any} */ v) => v.outcome), ['applied', 'applied']);
+  assert.equal(iv.out.trust_events, undefined);
+  assert.deepEqual(cli('trust', '--slice', SLICE).out.slices[0], trustBefore, 'delegate verdicts never count toward trust');
+  const showA = cli('show', fa).out;
+  assert.deepEqual([showA.card.status, showA.issue_ref, showA.transitions.at(-1).by, showA.transitions.at(-1).delegate], ['accepted', rec.results[0].issue_ref, 'delegate:temper', true]);
+  assert.equal(cli('show', fc).out.card.status, 'pushed', 'the refused snooze decided nothing');
+
+  // 5. the test double answers the same: refused without a delegation, the same results once a person switched it on
+  const b = emptyBackend();
+  const mockRef = Object.fromEntries(mockTool(b, 'dowser_proposals_push', ob.out).results.map((/** @type {any} */ r) => [r.fp, r.external_ref]));
+  assert.throws(() => mockTool(b, 'dowser_verdicts_record', { project_key: projectKey, verdicts_json: verdicts(mockRef) }),
+    (/** @type {any} */ e) => e.code === 'forbidden' && e.message === noneBody.message);
+  mockTool(b, 'mock_delegate', { project_key: projectKey, until, accepts_per_day: 1, rejects_per_day: 1 });
+  const mock = mockTool(b, 'dowser_verdicts_record', { project_key: projectKey, verdicts_json: verdicts(mockRef) });
+  /** @param {any[]} rs */
+  const shape = (rs) => rs.map((r) => [r.result, r.why, typeof r.issue_ref]);
+  assert.deepEqual(shape(mock.results), shape(rec.results));
+  assert.deepEqual(mockTool(b, 'dowser_verdicts_pull', { project_key: projectKey }).verdicts.map((/** @type {any} */ v) => [v.fp, v.status, v.decided_by]),
+    page.verdicts.map((/** @type {any} */ v) => [v.fp, v.status, v.decided_by]));
+  assert.deepEqual(mockTool(b, 'mock_inbox', { fp: fa }).item.labels, ['dowser-delegate']);
+  assert.throws(() => mockTool(b, 'dowser_verdicts_record', { project_key: 'dowser-sample', verdicts_json: verdicts(mockRef) }), (/** @type {any} */ e) => e.code === 'bad-input');
+  const sample = await rpc('tools/call', { name: 'dowser_verdicts_record', arguments: { project_key: 'dowser-sample', verdicts_json: verdicts(ref) } });
+  assert.deepEqual(JSON.parse(sample.result.content[0].text), { error: 'bad-input', message: 'dowser-sample is reserved for the sample inbox' });
+  assert.deepEqual(listFiles(repo), filesBefore, 'nothing written inside the repo');
+});
+
 test('local Forge tools/list is the manifest: every rovo:mcp tool, its inputs and descriptions; the mock serves the same names', () => {
   const text = readFileSync(MANIFEST, 'utf8');
   const listed = [...(/^ {2}rovo:mcp:\n(?: {4}.*\n)*? {6}tools:\n((?: {8}- \S+\n)+)/m.exec(text.replace(/\r\n/g, '\n'))?.[1] ?? '').matchAll(/- (\S+)/g)].map((m) => m[1]);
-  assert.equal(listed.length, 12);
+  assert.equal(listed.length, 13);
   assert.deepEqual([...listed].sort(), [...TOOL_NAMES].sort(), 'manifest rovo:mcp tools = core TOOL_NAMES');
   assert.deepEqual(TOOLS.map((t) => t.name).sort(), [...TOOL_NAMES].sort(), 'local tools/list = core TOOL_NAMES');
   assert.deepEqual(MOCK_TOOLS.map((/** @type {any} */ t) => t.name).filter((n) => n.startsWith('dowser_')).sort(), [...TOOL_NAMES].sort(), 'mock serves every tool');

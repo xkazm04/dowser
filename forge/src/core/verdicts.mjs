@@ -12,7 +12,7 @@ import { issueDescription, mergeComment } from './adf.mjs';
 import { cardOf, toCard, toVerdict } from './cards.mjs';
 import { writeIssueProperty } from './issue-property.mjs';
 import { counterValue, evidenceOfMany, findProposal, inboxRowsByKey, insertMany, isSampleKey, needInbox, nextCounter, nextCounterBlock, proposalsMatching, toProposal } from './store.mjs';
-import { NOTE_MAX, REF_RE, SAMPLE_LABEL, VERDICT_STATUSES } from './types.mjs';
+import { DELEGATE_KIND, DELEGATE_LABEL, NOTE_MAX, REF_RE, SAMPLE_LABEL, VERDICT_STATUSES } from './types.mjs';
 import { AppError, DuplicateKey, FP_RE, errTag, ISSUE_KEY_RE, isSchemaBehind, needStr, optStr, sqlv, str } from './util.mjs';
 
 /**
@@ -23,7 +23,7 @@ import { AppError, DuplicateKey, FP_RE, errTag, ISSUE_KEY_RE, isSchemaBehind, ne
  * @typedef {import('./types.mjs').Verdict} Verdict
  * @typedef {import('./types.mjs').Via} Via
  * @typedef {import('./types.mjs').VerdictStatus} VerdictStatus
- * @typedef {{by: string, via: Via}} Decider  `by` = `forge:<accountId>`
+ * @typedef {{by: string, via: Via}} Decider  `by` = `forge:<accountId>`, or `delegate:<name>` for a delegate (core/delegate.mjs)
  */
 
 /** Max verdicts per pull. */
@@ -187,13 +187,15 @@ export async function accept(deps, args, who) {
     issue = made;
   } else {
     const card = await cardOf(db, p);
-    // A sample card's issue is real but marked: the label and an opening line say it came from sample data.
+    // A sample card's issue is real but marked: the label and an opening line say it came from sample data. A
+    // delegate's accept is labelled too, so Jira shows which issues no person accepted.
     const sample = isSampleKey(p.project_key);
+    const labels = [...(sample ? [SAMPLE_LABEL] : []), ...(who.by.startsWith(`${DELEGATE_KIND}:`) ? [DELEGATE_LABEL] : [])];
     try {
       issue = await deps.jira.createIssue({
         projectKey: /** @type {string} */ (projectKey), issueTypeId: /** @type {string} */ (issueTypeId), summary: card.title,
         description: issueDescription(card, await links.inboxUrl(p.ref), { sample }),
-        ...(sample ? { labels: [SAMPLE_LABEL] } : {}),
+        ...(labels.length ? { labels } : {}),
       });
     } catch (e) {
       await db.exec('UPDATE proposals SET accept_claim = NULL WHERE id = ? AND accept_claim = ?', [p.id, claim]);
@@ -416,9 +418,10 @@ export async function merge(deps, args, who) {
 }
 
 /**
- * The Rovo `dowser_verdict_record` action and any single-item decision by status.
+ * The Rovo `dowser_verdict_record` action, a delegate's `dowser_verdicts_record` and any single-item decision by
+ * status. `until` is a snooze's return day (untilOf).
  * @param {Deps} deps
- * @param {{ref: unknown, status: unknown, reason?: unknown, note?: unknown, merged_into?: unknown}} args
+ * @param {{ref: unknown, status: unknown, reason?: unknown, note?: unknown, merged_into?: unknown, until?: unknown}} args
  * @param {Decider} who
  * @returns {Promise<{card: Card}>}
  */
@@ -427,7 +430,7 @@ export async function record(deps, args, who) {
   switch (args.status) {
     case 'accepted': return accept(deps, { ref, note: args.note }, who);
     case 'rejected': return { card: (await reject(deps, { refs: [ref], reason: args.reason, note: args.note }, who)).cards[0] };
-    case 'snoozed': return { card: (await snooze(deps, { refs: [ref], note: args.note }, who)).cards[0] };
+    case 'snoozed': return { card: (await snooze(deps, { refs: [ref], note: args.note, until: args.until }, who)).cards[0] };
     case 'merged': return merge(deps, { ref, into: args.merged_into }, who);
     default: throw new AppError('bad-input', `status must be one of ${VERDICT_STATUSES.join(', ')}`);
   }

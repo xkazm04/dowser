@@ -34,6 +34,7 @@ modules:
         - dowser_work_list
         - dowser_work_get
         - dowser_work_report
+        - dowser_verdicts_record
 
   action:
     - key: dowser_sources_tickets
@@ -111,6 +112,14 @@ modules:
         status: { title: Status, type: string, required: true, description: started, pr_open, done or blocked. }
         note: { title: Note, type: string, required: false, description: At most 2000 characters. }
         url: { title: Link, type: string, required: false, description: An https link to the pull request or build. }
+    - key: dowser_verdicts_record
+      name: Record delegate verdicts
+      function: mcp
+      actionVerb: UPDATE
+      description: Accept, reject, snooze or merge inbox items as the inbox's delegate, while a person has switched on delegated triage for it in Dowser Settings and within its daily caps. Answers one result per verdict, recorded or refused with why.
+      inputs:
+        project_key: { title: Project key, type: string, required: true, description: The inbox the items belong to. }
+        verdicts_json: { title: Verdicts, type: string, required: true, description: "JSON array of at most 50 {ref, verdict: accept|reject|snooze|merge, reason?, note?, into?, until?}. reason is required for reject, into for merge, until (YYYY-MM-DD) is optional for snooze." }
     - key: dowser_areas_push
       name: Push areas
       function: mcp

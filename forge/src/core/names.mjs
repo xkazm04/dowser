@@ -3,12 +3,20 @@
 // port, a failed batch or an account Jira will not name just leaves the name out (absent value: omit the key).
 import { logLine } from './observe.mjs';
 import { errTag } from './util.mjs';
+import { DELEGATE_KIND } from './types.mjs';
 
 /**
  * @typedef {import('./ports.mjs').Deps} Deps
  */
 
 const PREFIX = 'forge:';
+const DELEGATE_PREFIX = `${DELEGATE_KIND}:`;
+
+/** `delegate:temper` -> "Temper (delegate)". @param {string} by */
+export function delegateName(by) {
+  const name = by.slice(DELEGATE_PREFIX.length);
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} (delegate)`;
+}
 
 /**
  * The display names of the `forge:` deciders among `deciders`, keyed by the decider string.
@@ -20,6 +28,10 @@ export async function namesOf(deps, deciders) {
   const ids = [...new Set(deciders.filter((d) => typeof d === 'string' && d.startsWith(PREFIX)).map((d) => /** @type {string} */ (d).slice(PREFIX.length)))];
   /** @type {Record<string, string>} */
   const out = {};
+  // a delegate (core/delegate.mjs) is named by its decider, `delegate:temper` -> "Temper (delegate)": never a person's name
+  for (const d of deciders) {
+    if (typeof d === 'string' && d.startsWith(DELEGATE_PREFIX) && d.length > DELEGATE_PREFIX.length) out[d] = delegateName(d);
+  }
   if (!deps.users || ids.length === 0) return out;
   try {
     const byId = await deps.users.names(ids);

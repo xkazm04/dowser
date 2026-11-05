@@ -16,8 +16,9 @@
 //                  GET  /dev/state                       row counts per table
 //                  GET  /browse/<key>                    a local Jira issue with its comments
 //                CORS: any http://localhost / 127.0.0.1 origin.
-//     --stdio    an MCP server on stdin/stdout (JSON-RPC 2.0, newline-delimited; framing as the mock): the twelve
+//     --stdio    an MCP server on stdin/stdout (JSON-RPC 2.0, newline-delimited; framing as the mock): the thirteen
 //                forge-mcp-2 tools (TOOL_NAMES), their schemas read from forge/manifest.yml. stdout carries protocol only; every log line goes to stderr.
+//                The delegation `dowser_verdicts_record` needs is set over HTTP only (POST /invoke settings.set), as in Forge.
 //     --seed     JSON {tickets?, pages?, goals?, projects?: [{key, name, issue_types: [{id, name}]}], users?: {<accountId>: <name>}}
 //                loaded on start (replaces seeded rows by key). Project DOW (issue type 10001) and the person
 //                `local-user` -> "Local Operator" are always there.
@@ -100,7 +101,8 @@ export function toolsFromManifest(text, names) {
 
 /** The tool order of tools/list (the contract's order). */
 const TOOL_ORDER = ['dowser_sources_tickets', 'dowser_sources_pages', 'dowser_sources_goals', 'dowser_proposals_push', 'dowser_verdicts_pull',
-  'dowser_memory_pull', 'dowser_work_list', 'dowser_work_get', 'dowser_work_report', 'dowser_areas_push', 'dowser_reflect_sync', 'dowser_direction_get'];
+  'dowser_memory_pull', 'dowser_work_list', 'dowser_work_get', 'dowser_work_report', 'dowser_areas_push', 'dowser_reflect_sync', 'dowser_direction_get',
+  'dowser_verdicts_record'];
 export const TOOLS = toolsFromManifest(readFileSync(MANIFEST, 'utf8'), [...TOOL_ORDER.filter((n) => TOOL_NAMES.includes(/** @type {any} */ (n))),
   ...TOOL_NAMES.filter((n) => !TOOL_ORDER.includes(n))]);
 

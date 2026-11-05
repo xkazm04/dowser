@@ -15,11 +15,12 @@ import { sourcesGoals, sourcesPages, sourcesTickets } from './sources.mjs';
 import { directionGet, directionSet, directionTool } from './direction.mjs';
 import { getInbox, isSampleKey } from './store.mjs';
 import { accept, deciderOf, merge, pullVerdicts, record, reject, snooze } from './verdicts.mjs';
+import { DELEGATE, VERBS, delegationInput, recordVerdicts } from './delegate.mjs';
 import { accessFor } from './access.mjs';
 import { AppError, FP_RE, ISSUE_KEY_RE, errTag, isObj, isSchemaBehind, needStr, omitAbsent, optStr } from './util.mjs';
 
 export { isSchemaBehind };
-import { INBOX_STATUSES, REF_RE, SAMPLE_RESERVED } from './types.mjs';
+import { INBOX_STATUSES, REF_RE, SAMPLE_KEY, SAMPLE_RESERVED } from './types.mjs';
 import { LENSES, isOneOf } from '../shared/model.mjs';
 
 /**
@@ -31,10 +32,11 @@ import { LENSES, isOneOf } from '../shared/model.mjs';
  * @typedef {(deps: Deps, args: Record<string, any>, accountId: string, acc: Access) => Promise<object>} Handler
  */
 
-/** The twelve forge-mcp-2 tools (reflect_sync, direction_get, memory_pull and the three work tools are additive to the original six). */
+/** The thirteen forge-mcp-2 tools (reflect_sync, direction_get, memory_pull, the three work tools and verdicts_record are
+ * additive to the original six). */
 export const TOOL_NAMES = /** @type {const} */ (['dowser_sources_tickets', 'dowser_sources_pages', 'dowser_sources_goals',
   'dowser_proposals_push', 'dowser_verdicts_pull', 'dowser_areas_push', 'dowser_reflect_sync', 'dowser_direction_get', 'dowser_memory_pull',
-  'dowser_work_list', 'dowser_work_get', 'dowser_work_report']);
+  'dowser_work_list', 'dowser_work_get', 'dowser_work_report', 'dowser_verdicts_record']);
 /** The Rovo agent actions (dowser_sources_goals is shared with the MCP tools). */
 export const ROVO_ACTIONS = /** @type {const} */ (['dowser_inbox_list', 'dowser_proposal_explain', 'dowser_verdict_record']);
 
@@ -114,6 +116,38 @@ async function openMerge(acc, ref, into) {
   return { ref: p.ref, into };
 }
 
+/**
+ * One verdict by status through the shared decision path (core/verdicts.mjs record), after the same checks a person's
+ * decision gets: the item must be openable, an accept needs Create issues in the target project, a merge into a Jira
+ * issue needs Add comments there. The Rovo `dowser_verdict_record` action and a delegate's `dowser_verdicts_record`
+ * both decide through here; only the decider differs.
+ * @param {Deps} d @param {Access} acc
+ * @param {{ref: unknown, status: unknown, reason?: unknown, note?: unknown, merged_into?: unknown, until?: unknown}} a
+ * @param {import('./verdicts.mjs').Decider} by
+ */
+async function recordOne(d, acc, a, by) {
+  let { ref, merged_into: into } = a;
+  if (a.status === 'merged') ({ ref, into } = await openMerge(acc, a.ref, a.merged_into));
+  else if (a.status === 'accepted' && typeof a.ref === 'string') ref = await openAccept(d, acc, a.ref, undefined);
+  else [ref] = /** @type {unknown[]} */ (await openRefs(acc, [a.ref]));
+  return record(d, { ref, status: a.status, reason: a.reason, note: a.note, merged_into: into, until: a.until }, by);
+}
+
+/**
+ * `dowser_verdicts_record`: a delegate's verdicts in one inbox (core/delegate.mjs). The caller must be able to open the
+ * inbox, and each item must be one of its items; then each verdict goes through recordOne as DELEGATE.
+ * @type {Handler}
+ */
+async function verdictsRecord(d, a, _, acc) {
+  const inbox = await openProject(acc, a);
+  return recordVerdicts(d, inbox, a.verdicts_json, async (v) => {
+    const p = await acc.proposal(v.ref);
+    if (p.project_key !== inbox.project_key) throw new AppError('bad-input', `${p.ref} is in another inbox, not ${inbox.project_key}`);
+    const { card } = await recordOne(d, acc, { ref: p.ref, status: VERBS[v.verdict], reason: v.reason, note: v.note, merged_into: v.into, until: v.until }, DELEGATE);
+    return { issue_ref: card.issue_ref };
+  });
+}
+
 /** @type {Record<typeof TOOL_NAMES[number], Handler>} */
 const TOOLS = {
   dowser_sources_tickets: (d, a) => sourcesTickets(d, a),
@@ -135,6 +169,8 @@ const TOOLS = {
     if (p.issue_ref) await needJira(acc, 'ADD_COMMENTS', { issueKey: p.issue_ref });
     return workReport(d, args, deciderOf(id));
   },
+  // delegated triage: the inbox's delegation and caps gate the shared decision path; never sets the delegation
+  dowser_verdicts_record: verdictsRecord,
 };
 
 /** @param {string} accountId @param {Via} via */
@@ -182,7 +218,7 @@ const argsOf = (payload) => (isObj(payload) ? payload : {});
  * The tools that write to (or read on behalf of a scan from) one inbox: each refuses the sample inbox's reserved
  * key with `bad-input` before any access check, so a scan never lands in the sample (core/sample.mjs).
  */
-const SAMPLE_REFUSED = new Set(['dowser_proposals_push', 'dowser_areas_push', 'dowser_reflect_sync', 'dowser_direction_get']);
+const SAMPLE_REFUSED = new Set(['dowser_proposals_push', 'dowser_areas_push', 'dowser_reflect_sync', 'dowser_direction_get', 'dowser_verdicts_record']);
 
 /**
  * A forge-mcp-2 tool call.
@@ -280,10 +316,16 @@ export const RESOLVERS = {
   'setup.status': (d) => setupStatus(d),
 };
 
+/** The `settings.set` keys of the delegation (core/delegate.mjs). */
+const DELEGATE_KEYS = ['delegate_until', 'delegate_accepts_per_day', 'delegate_rejects_per_day'];
+
 /**
- * `settings.set`: the accept target of one inbox. Setting it also decides who may open the inbox from now on
- * (core/access.mjs), so the caller must be able to open the inbox now AND to browse and create issues in the new
- * project: nobody can move an inbox into a project they could not use themselves.
+ * `settings.set`: the accept target of one inbox, its delegated triage, or both. Setting the target also decides who
+ * may open the inbox from now on (core/access.mjs), so the caller must be able to open the inbox now AND to browse
+ * and create issues in the new project: nobody can move an inbox into a project they could not use themselves.
+ * The delegation (`delegate_until` with both caps, or `delegate_until: ''` to switch it off) needs only the inbox,
+ * and never the sample's. This resolver is its only writer: only the inbox global page may call it (MODULE_KEYS),
+ * and no MCP tool or Rovo action sets it.
  * @param {Deps} d
  * @param {Record<string, any>} p
  * @param {Access} acc
@@ -291,14 +333,30 @@ export const RESOLVERS = {
  */
 async function setSettings(d, p, acc) {
   const projectKey = needStr(p, 'project_key');
-  const jiraKey = needStr(p, 'jira_project_key');
-  const typeId = needStr(p, 'issue_type_id');
-  if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(jiraKey)) throw new AppError('bad-input', `${jiraKey} is not a Jira project key`);
-  if (!/^[0-9]{1,32}$/.test(typeId)) throw new AppError('bad-input', 'issue_type_id must be a Jira issue type id');
+  const withTarget = p.jira_project_key !== undefined || p.issue_type_id !== undefined;
+  const withDelegate = DELEGATE_KEYS.some((k) => p[k] !== undefined);
+  if (!withTarget && !withDelegate) throw new AppError('bad-input', 'settings.set takes jira_project_key and issue_type_id, the delegate_* fields, or both');
+  const delegation = withDelegate ? delegationInput(p, d.now()) : undefined;
+  if (delegation && isSampleKey(projectKey)) throw new AppError('bad-input', `${SAMPLE_KEY} takes no delegated triage`);
+  /** @type {[string, string] | undefined} */
+  let target;
+  if (withTarget) {
+    const jiraKey = needStr(p, 'jira_project_key');
+    const typeId = needStr(p, 'issue_type_id');
+    if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(jiraKey)) throw new AppError('bad-input', `${jiraKey} is not a Jira project key`);
+    if (!/^[0-9]{1,32}$/.test(typeId)) throw new AppError('bad-input', 'issue_type_id must be a Jira issue type id');
+    target = [jiraKey, typeId];
+  }
   await acc.inbox(projectKey);
-  if (!(await acc.may('BROWSE_PROJECTS', { projectKey: jiraKey }))) throw new AppError('forbidden', `You cannot browse Jira project ${jiraKey}, so it cannot be this inbox's project`);
-  await needJira(acc, 'CREATE_ISSUES', { projectKey: jiraKey });
-  await d.db.exec('UPDATE inboxes SET jira_project_key = ?, issue_type_id = ? WHERE project_key = ?', [jiraKey, typeId, projectKey]);
+  if (target) {
+    const [jiraKey, typeId] = target;
+    if (!(await acc.may('BROWSE_PROJECTS', { projectKey: jiraKey }))) throw new AppError('forbidden', `You cannot browse Jira project ${jiraKey}, so it cannot be this inbox's project`);
+    await needJira(acc, 'CREATE_ISSUES', { projectKey: jiraKey });
+    await d.db.exec('UPDATE inboxes SET jira_project_key = ?, issue_type_id = ? WHERE project_key = ?', [jiraKey, typeId, projectKey]);
+  }
+  if (delegation) {
+    await d.db.exec('UPDATE inboxes SET delegate_until = ?, delegate_accepts_per_day = ?, delegate_rejects_per_day = ? WHERE project_key = ?', [...delegation, projectKey]);
+  }
   const inbox = (await inboxSummaries(d.db, [projectKey]))[0];
   return { inbox: /** @type {import('./types.mjs').InboxSummary} */ (inbox) };
 }
@@ -388,11 +446,7 @@ const ROVO = {
   dowser_inbox_list: rovoList,
   dowser_proposal_explain: rovoExplain,
   dowser_verdict_record: async (d, a, id, acc) => {
-    let { ref, merged_into: into } = a;
-    if (a.status === 'merged') ({ ref, into } = await openMerge(acc, a.ref, a.merged_into));
-    else if (a.status === 'accepted' && typeof a.ref === 'string') ref = await openAccept(d, acc, a.ref, undefined);
-    else [ref] = /** @type {unknown[]} */ (await openRefs(acc, [a.ref]));
-    const { card } = await record(d, { ref, status: a.status, reason: a.reason, note: a.note, merged_into: into }, who(id, 'rovo'));
+    const { card } = await recordOne(d, acc, { ref: a.ref, status: a.status, reason: a.reason, note: a.note, merged_into: a.merged_into }, who(id, 'rovo'));
     return { recorded: card.status, card: brief(card) };
   },
 };
@@ -428,7 +482,7 @@ const has = (v, k) => isObj(v) && v[k] !== undefined && v[k] !== null;
  * Which tool or action a call is for. The action key comes from the invocation (`getAppContext().moduleKey`,
  * else a `moduleKey` the platform put on the context or payload). When none of those is a known name (the
  * rovo:mcp docs do not say which key a tool call carries), it is inferred from the argument shape, which is
- * unambiguous across the eight tools: proposals_json -> push, areas_json -> areas, rules_json -> reflect,
+ * unambiguous across the tools: verdicts_json -> record, proposals_json -> push, areas_json -> areas, rules_json -> reflect,
  * lens -> direction, query+limit -> tickets, query -> pages, project_key -> pull, nothing -> goals. A reflect
  * call without rules_json, or a direction call without lens, looks like a pull by shape alone, so callers send
  * `rules_json: "[]"` and `lens: "all"` (the skill does). Rovo: ref+status -> record, ref -> explain, else list.
@@ -442,6 +496,7 @@ export function actionName(surface, candidates, payload) {
   const known = surface === 'mcp' ? TOOL_NAMES : [...ROVO_ACTIONS, 'dowser_sources_goals'];
   for (const c of candidates) if (c && known.includes(c)) return c;
   if (surface === 'mcp') {
+    if (has(payload, 'verdicts_json')) return 'dowser_verdicts_record';
     if (has(payload, 'proposals_json')) return 'dowser_proposals_push';
     if (has(payload, 'areas_json')) return 'dowser_areas_push';
     if (has(payload, 'rules_json')) return 'dowser_reflect_sync';
