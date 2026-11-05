@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["skill/**/*.mjs", "tools/**/*.mjs"]
+  "include": ["skill/**/*.mjs", "tools/**/*.mjs", "e2e/**/*.mjs", "playwright.config.mjs"]
 }

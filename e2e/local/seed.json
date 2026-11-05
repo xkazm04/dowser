@@ -1,0 +1,6 @@
+{
+  "users": { "local-user": "Local Operator" },
+  "tickets": [
+    { "ref": "DOW-7", "title": "Show the proposal count on the page byline", "url": "http://jira.local/browse/DOW-7", "body": "Readers do not see that a page is affected.", "created_at": "2026-10-01T00:00:00.000Z" }
+  ]
+}
