@@ -13,7 +13,7 @@ import { cardOf, toCard, toVerdict } from './cards.mjs';
 import { writeIssueProperty } from './issue-property.mjs';
 import { counterValue, evidenceOfMany, findProposal, inboxRowsByKey, insertMany, isSampleKey, needInbox, nextCounter, nextCounterBlock, proposalsMatching, toProposal } from './store.mjs';
 import { NOTE_MAX, REF_RE, SAMPLE_LABEL, VERDICT_STATUSES } from './types.mjs';
-import { AppError, DuplicateKey, FP_RE, errTag, ISSUE_KEY_RE, needStr, optStr, sqlv, str } from './util.mjs';
+import { AppError, DuplicateKey, FP_RE, errTag, ISSUE_KEY_RE, isSchemaBehind, needStr, optStr, sqlv, str } from './util.mjs';
 
 /**
  * @typedef {import('./ports.mjs').Deps} Deps
@@ -142,6 +142,12 @@ const needOpen = (p) => {
 /**
  * Accept (F5): create the Jira issue as the app, then record status + verdict. An item already accepted
  * returns its card (and issue) unchanged.
+ *
+ * One accepted card maps to one Jira issue, even across failures. The issue key is stamped on the claimed row
+ * (`issue_ref`, `issue_url`, status still `open`) as soon as Jira answers, before the decision is recorded. If the
+ * record step then fails (a SQL error, or the invocation is cut), the answer names the issue, and the next accept
+ * finds the stamp and finishes the record instead of creating a second issue. Only a failure between Jira's answer
+ * and the stamp itself can still orphan an issue, and that answer names it too.
  * @param {Deps} deps
  * @param {{ref: string, jira_project_key?: string, issue_type_id?: string, note?: unknown}} args
  * @param {Decider} who
@@ -154,10 +160,12 @@ export async function accept(deps, args, who) {
   const p = await findProposal(db, needStr(args, 'ref'));
   if (p.status === 'accepted') return { card: await cardOf(db, p) };
   needOpen(p);
+  // An open item that already carries an issue: an earlier accept created it and did not get to record it.
+  const made = p.issue_ref && p.issue_url ? { key: p.issue_ref, url: p.issue_url } : undefined;
   const inbox = await needInbox(db, p.project_key);
   const projectKey = optStr(args, 'jira_project_key') ?? inbox.jira_project_key;
   const issueTypeId = optStr(args, 'issue_type_id') ?? inbox.issue_type_id;
-  if (!projectKey || !issueTypeId) {
+  if (!made && (!projectKey || !issueTypeId)) {
     throw new AppError('bad-input', `choose the Jira project and issue type for ${p.project_key} in Dowser settings, or pass them with the accept`);
   }
 
@@ -173,19 +181,30 @@ export async function accept(deps, args, who) {
     throw new AppError('bad-input', `an accept of ${p.ref} is already in progress; reload in a minute`);
   }
 
-  const card = await cardOf(db, p);
-  // A sample card's issue is real but marked: the label and an opening line say it came from sample data.
-  const sample = isSampleKey(p.project_key);
   /** @type {{key: string, url: string}} */
   let issue;
-  try {
-    issue = await deps.jira.createIssue({
-      projectKey, issueTypeId, summary: card.title, description: issueDescription(card, await links.inboxUrl(p.ref), { sample }),
-      ...(sample ? { labels: [SAMPLE_LABEL] } : {}),
-    });
-  } catch (e) {
-    await db.exec('UPDATE proposals SET accept_claim = NULL WHERE id = ? AND accept_claim = ?', [p.id, claim]);
-    throw new AppError('unavailable', `Jira did not create the issue (${errTag(e)}); ${p.ref} stays open`);
+  if (made) {
+    issue = made;
+  } else {
+    const card = await cardOf(db, p);
+    // A sample card's issue is real but marked: the label and an opening line say it came from sample data.
+    const sample = isSampleKey(p.project_key);
+    try {
+      issue = await deps.jira.createIssue({
+        projectKey: /** @type {string} */ (projectKey), issueTypeId: /** @type {string} */ (issueTypeId), summary: card.title,
+        description: issueDescription(card, await links.inboxUrl(p.ref), { sample }),
+        ...(sample ? { labels: [SAMPLE_LABEL] } : {}),
+      });
+    } catch (e) {
+      await db.exec('UPDATE proposals SET accept_claim = NULL WHERE id = ? AND accept_claim = ?', [p.id, claim]);
+      throw new AppError('unavailable', `Jira did not create the issue (${errTag(e)}); ${p.ref} stays open`);
+    }
+    try {
+      await db.exec("UPDATE proposals SET issue_ref = ?, issue_url = ? WHERE id = ? AND status = 'open' AND accept_claim = ?", [issue.key, issue.url, p.id, claim]);
+    } catch (e) {
+      // Not stamped: the claim stays (released only by age), so a quick retry cannot create a second issue either.
+      throw new AppError('unavailable', `Dowser did not record the accept of ${p.ref} (${errTag(e)}). Jira issue ${issue.key} was created; link or delete it by hand`);
+    }
   }
   try {
     const after = await decide(deps, p, { to: 'accepted', note, issue_ref: issue.key, issue_url: issue.url, claim }, who);
@@ -193,7 +212,10 @@ export async function accept(deps, args, who) {
     return { card: await cardOf(db, after) };
   } catch (e) {
     if (e instanceof AppError) throw new AppError(e.code, `${e.message}. Jira issue ${issue.key} was created; link or delete it by hand`);
-    throw e;
+    // Stamped: release the claim so accepting again finishes the record with this issue, now.
+    await db.exec('UPDATE proposals SET accept_claim = NULL WHERE id = ? AND accept_claim = ?', [p.id, claim]).catch(() => undefined);
+    if (isSchemaBehind(e)) throw e; // the entry point migrates and retries the call, which finds the stamp
+    throw new AppError('unavailable', `Dowser did not record the accept of ${p.ref} (${errTag(e)}). Jira issue ${issue.key} was created and is kept on the item: accept it again to finish, and no second issue is created`);
   }
 }
 

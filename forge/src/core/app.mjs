@@ -16,7 +16,9 @@ import { directionGet, directionSet, directionTool } from './direction.mjs';
 import { getInbox, isSampleKey } from './store.mjs';
 import { accept, deciderOf, merge, pullVerdicts, record, reject, snooze } from './verdicts.mjs';
 import { accessFor } from './access.mjs';
-import { AppError, FP_RE, ISSUE_KEY_RE, errTag, isObj, needStr, omitAbsent, optStr } from './util.mjs';
+import { AppError, FP_RE, ISSUE_KEY_RE, errTag, isObj, isSchemaBehind, needStr, omitAbsent, optStr } from './util.mjs';
+
+export { isSchemaBehind };
 import { INBOX_STATUSES, REF_RE, SAMPLE_RESERVED } from './types.mjs';
 import { LENSES, isOneOf } from '../shared/model.mjs';
 
@@ -28,25 +30,6 @@ import { LENSES, isOneOf } from '../shared/model.mjs';
  * @typedef {import('./access.mjs').Access} Access
  * @typedef {(deps: Deps, args: Record<string, any>, accountId: string, acc: Access) => Promise<object>} Handler
  */
-
-const SCHEMA_BEHIND_RE = /doesn't exist|no such table|Unknown table|no such column|Unknown column/i;
-
-/**
- * A missing table or column: the schema is not migrated yet (index.js runs the migrations once and retries).
- * A minor-version deploy fires no upgrade event, so a migration that only adds a column (v016, v017) reaches
- * the site this way too. Forge SQL throws `Unknown SQL execution error` with the real cause only in
- * `context.debug` (ER_NO_SUCH_TABLE 1146, ER_BAD_FIELD_ERROR 1054), node:sqlite puts it in the message, so
- * both are read.
- * @param {unknown} e
- * @returns {boolean}
- */
-export function isSchemaBehind(e) {
-  const err = /** @type {any} */ (e);
-  const debug = err?.context?.debug;
-  if (debug?.code === 'ER_NO_SUCH_TABLE' || debug?.errno === 1146) return true;
-  if (debug?.code === 'ER_BAD_FIELD_ERROR' || debug?.errno === 1054) return true;
-  return SCHEMA_BEHIND_RE.test(`${String(err?.message ?? err)} ${String(debug?.message ?? '')}`);
-}
 
 /** The twelve forge-mcp-2 tools (reflect_sync, direction_get, memory_pull and the three work tools are additive to the original six). */
 export const TOOL_NAMES = /** @type {const} */ (['dowser_sources_tickets', 'dowser_sources_pages', 'dowser_sources_goals',

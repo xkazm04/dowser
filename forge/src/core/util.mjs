@@ -45,6 +45,25 @@ export function errTag(e) {
   return name;
 }
 
+const SCHEMA_BEHIND_RE = /doesn't exist|no such table|Unknown table|no such column|Unknown column/i;
+
+/**
+ * A missing table or column: the schema is not migrated yet (index.js runs the migrations once and retries).
+ * A minor-version deploy fires no upgrade event, so a migration that only adds a column (v016, v017) reaches
+ * the site this way too. Forge SQL throws `Unknown SQL execution error` with the real cause only in
+ * `context.debug` (ER_NO_SUCH_TABLE 1146, ER_BAD_FIELD_ERROR 1054), node:sqlite puts it in the message, so
+ * both are read.
+ * @param {unknown} e
+ * @returns {boolean}
+ */
+export function isSchemaBehind(e) {
+  const err = /** @type {any} */ (e);
+  const debug = err?.context?.debug;
+  if (debug?.code === 'ER_NO_SUCH_TABLE' || debug?.errno === 1146) return true;
+  if (debug?.code === 'ER_BAD_FIELD_ERROR' || debug?.errno === 1054) return true;
+  return SCHEMA_BEHIND_RE.test(`${String(err?.message ?? err)} ${String(debug?.message ?? '')}`);
+}
+
 /** MySQL/TiDB `Duplicate entry ... for key` (errno 1062) and SQLite `UNIQUE constraint failed`. */
 export const DUPLICATE_RE = /Duplicate entry|UNIQUE constraint failed|PRIMARY KEY constraint failed|ER_DUP_ENTRY|\b1062\b/i;
 
