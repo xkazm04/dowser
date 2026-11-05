@@ -16,10 +16,14 @@
     "forge:build-ui": "npm --prefix forge run build:ui",
     "local:forge": "node tools/local-forge.mjs --http 4710",
     "local:ui": "npm --prefix forge/static/app run dev:local",
+    "e2e:fixture": "playwright test --project fixture",
+    "e2e:local": "playwright test --project local",
+    "e2e:live": "playwright test --project live",
     "sbom": "node tools/sbom.mjs",
     "check-update": "node skill/install.mjs --check --harness claude"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
     "@types/node": "~26.6.5",
     "typescript": "~7.0.2"
   }
