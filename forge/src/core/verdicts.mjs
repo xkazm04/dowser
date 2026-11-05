@@ -13,7 +13,7 @@ import { cardOf, toVerdict } from './cards.mjs';
 import { writeIssueProperty } from './issue-property.mjs';
 import { counterValue, findProposal, isSampleKey, needInbox, nextCounter, toProposal } from './store.mjs';
 import { NOTE_MAX, REF_RE, SAMPLE_LABEL, VERDICT_STATUSES } from './types.mjs';
-import { AppError, DuplicateKey, FP_RE, ISSUE_KEY_RE, needStr, optStr, sqlv, str } from './util.mjs';
+import { AppError, DuplicateKey, FP_RE, errTag, ISSUE_KEY_RE, needStr, optStr, sqlv, str } from './util.mjs';
 
 /**
  * @typedef {import('./ports.mjs').Deps} Deps
@@ -128,7 +128,7 @@ async function decide(deps, p, d, who) {
       await appendVerdict(db, after);
     } catch (e) {
       // The decision is stamped on the row; repairVerdicts appends it before the next pull.
-      console.warn(`dowser: verdict for ${p.ref} not logged yet (${/** @type {Error} */ (e).message}); the next pull repairs it`);
+      console.warn(`dowser: verdict for ${p.ref} not logged yet (${errTag(e)}); the next pull repairs it`);
     }
     return after;
   });
@@ -185,7 +185,7 @@ export async function accept(deps, args, who) {
     });
   } catch (e) {
     await db.exec('UPDATE proposals SET accept_claim = NULL WHERE id = ? AND accept_claim = ?', [p.id, claim]);
-    throw new AppError('unavailable', `Jira did not create the issue (${/** @type {Error} */ (e).message}); ${p.ref} stays open`);
+    throw new AppError('unavailable', `Jira did not create the issue (${errTag(e)}); ${p.ref} stays open`);
   }
   try {
     const after = await decide(deps, p, { to: 'accepted', note, issue_ref: issue.key, issue_url: issue.url, claim }, who);
@@ -305,7 +305,7 @@ export async function merge(deps, args, who) {
     try {
       await deps.jira.addComment(into, mergeComment(card, await deps.links.inboxUrl(p.ref)));
     } catch (e) {
-      throw new AppError('unavailable', `Jira did not take the comment on ${into} (${/** @type {Error} */ (e).message}); ${p.ref} stays open`);
+      throw new AppError('unavailable', `Jira did not take the comment on ${into} (${errTag(e)}); ${p.ref} stays open`);
     }
     const after = await decide(deps, p, { to: 'merged', merged_into: into }, who);
     await writeIssueProperty(deps, after, into, 'merged'); // best effort: logged, backfilled daily

@@ -10,7 +10,7 @@ import { namesOf } from './names.mjs';
 import { logLine } from './observe.mjs';
 import { findProposal, needInbox, refuseSampleKey, toProposal } from './store.mjs';
 import { INBOX_STATUSES, NOTE_MAX, OUTCOMES_MAX, OUTCOME_RATINGS, RULES_MAX, RULE_TEXT_MAX, RULE_TITLES_MAX, TRUST_EVENTS_MAX, TRUST_SLICES_MAX } from './types.mjs';
-import { AppError, DuplicateKey, isIso, isObj, needStr, omitAbsent, optStr, sqlv, str } from './util.mjs';
+import { AppError, DuplicateKey, errTag, isIso, isObj, needStr, omitAbsent, optStr, sqlv, str } from './util.mjs';
 import { deciderOf } from './verdicts.mjs';
 import { parseJsonArray } from './push.mjs';
 import { deliveriesOf, storeCodeDeliveries } from './delivery.mjs';
@@ -325,7 +325,7 @@ export async function candidatesOf(deps, projectKey) {
   let status = {};
   if (items.length && deps.jira) {
     try { status = await deps.jira.issueStatuses([...new Set(items.map((p) => /** @type {string} */ (p.issue_ref)))]); } catch (e) {
-      logLine(deps, { dowser: 'warn', what: 'jira issue statuses', message: String(/** @type {Error} */ (e)?.message ?? e).slice(0, 200) });
+      logLine(deps, { dowser: 'warn', what: 'jira issue statuses', error: errTag(e) });
     }
   }
   const all = items.map((p) => {

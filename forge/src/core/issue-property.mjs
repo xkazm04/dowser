@@ -8,7 +8,7 @@
 import { cardOf } from './cards.mjs';
 import { logLine } from './observe.mjs';
 import { counterValue, setCounter, toProposal } from './store.mjs';
-import { FP_RE, ISSUE_KEY_RE, omitAbsent } from './util.mjs';
+import { FP_RE, ISSUE_KEY_RE, errTag, omitAbsent } from './util.mjs';
 
 /** @typedef {import('./ports.mjs').Deps} Deps */
 /** @typedef {import('./types.mjs').Card} Card */
@@ -75,7 +75,7 @@ export async function writeIssueProperty(deps, p, issueKey, via) {
     await set(issueKey, ISSUE_PROPERTY_KEY, issuePropertyOf(await cardOf(deps.db, p), via));
   } catch (e) {
     const gone = /** @type {any} */ (e)?.status === 404;
-    logLine(deps, { dowser: 'warn', what: 'issue property', issue: issueKey, gone: gone || undefined, message: String(/** @type {Error} */ (e)?.message ?? e).slice(0, 200) });
+    logLine(deps, { dowser: 'warn', what: 'issue property', issue: issueKey, gone: gone || undefined, error: errTag(e) });
     if (gone) { await stamp(); return 'gone'; }
     return 'failed';
   }

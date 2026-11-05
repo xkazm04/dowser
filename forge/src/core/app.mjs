@@ -16,7 +16,7 @@ import { directionGet, directionSet, directionTool } from './direction.mjs';
 import { getInbox, isSampleKey } from './store.mjs';
 import { accept, deciderOf, merge, pullVerdicts, record, reject, snooze } from './verdicts.mjs';
 import { accessFor } from './access.mjs';
-import { AppError, FP_RE, ISSUE_KEY_RE, isObj, needStr, omitAbsent, optStr } from './util.mjs';
+import { AppError, FP_RE, ISSUE_KEY_RE, errTag, isObj, needStr, omitAbsent, optStr } from './util.mjs';
 import { INBOX_STATUSES, REF_RE, SAMPLE_RESERVED } from './types.mjs';
 import { LENSES, isOneOf } from '../shared/model.mjs';
 
@@ -265,7 +265,7 @@ export const RESOLVERS = {
     if (!d.jira) throw new AppError('unavailable', 'Jira is not reachable from this module');
     try { return { projects: await d.jira.listProjects() }; } catch (e) {
       if (isConsent(e)) throw e;
-      throw new AppError('unavailable', `Jira did not list projects (${/** @type {Error} */ (e).message})`);
+      throw new AppError('unavailable', `Jira did not list projects (${errTag(e)})`);
     }
   },
   // The panel shows an item only to someone who may open its inbox; anyone else sees the empty panel.

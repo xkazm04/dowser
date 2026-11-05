@@ -48,8 +48,15 @@ import { AppError, ISSUE_KEY_RE, omitAbsent } from '../core/util.mjs';
 async function json(res, what) {
   if (res.ok) return res.status === 204 ? {} : res.json();
   if (res.status === 401) throw new AppError('unauthorized', `${what} refused the credentials (401); sign in again`);
-  throw new Error(`${what} answered ${res.status}`);
+  throw httpError(`${what} answered ${res.status}`, res.status);
 }
+
+/**
+ * An Error naming a product call and its HTTP status, with `status` set so the core can say which status it was
+ * without quoting the message (core/util.mjs errTag).
+ * @param {string} message @param {number} status
+ */
+const httpError = (message, status) => Object.assign(new Error(message), { status });
 
 /**
  * Runs a user-context call; a missing user grant becomes `unauthorized`.
@@ -167,7 +174,7 @@ export const jira = {
       method: 'PUT', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(value),
     });
     // the status rides on the error: a 404 (issue deleted or moved) is final for core/issue-property.mjs
-    if (!res.ok) throw Object.assign(new Error(`Jira set issue property on ${issueKey} answered ${res.status}`), { status: res.status });
+    if (!res.ok) throw httpError(`Jira set issue property on ${issueKey} answered ${res.status}`, res.status);
   },
   // Read AS THE USER: the Learning tab must not show the status of an issue in a project the viewer cannot browse
   // (an accept may target any project the accepter could create in). A key the user cannot see is simply absent.
@@ -287,8 +294,9 @@ export const sources = {
       }
       const out = await json(res, 'Teamwork Graph');
       if (Array.isArray(out.errors) && out.errors.length) {
-        const msg = String(out.errors[0]?.message ?? 'error');
-        throw new AppError('unavailable', `Teamwork Graph did not answer the goals query (${msg}); if the app is not allowlisted for the Teamwork Graph API, request it from Atlassian support`);
+        // the error's own text stays out (core/util.mjs errTag): only its classification, when it is a plain token
+        const kind = [out.errors[0]?.extensions?.errorType, out.errors[0]?.extensions?.classification].find((k) => typeof k === 'string' && /^[A-Za-z0-9_.-]{1,64}$/.test(k));
+        throw new AppError('unavailable', `Teamwork Graph did not answer the goals query (${kind ?? 'an error'}); if the app is not allowlisted for the Teamwork Graph API, request it from Atlassian support`);
       }
       /** @type {SourceItem[]} */
       const items = [];

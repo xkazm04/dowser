@@ -12,7 +12,7 @@
 import { cardOf } from './cards.mjs';
 import { logLine } from './observe.mjs';
 import { counterValue, evidenceRefsOfMany, findProposal, nextCounter, setCounter, toProposal } from './store.mjs';
-import { AppError, DuplicateKey, needStr } from './util.mjs';
+import { AppError, DuplicateKey, errTag, needStr } from './util.mjs';
 
 /** @typedef {import('./ports.mjs').Deps} Deps */
 /** @typedef {import('./ports.mjs').Db} Db */
@@ -175,7 +175,7 @@ export async function draftFix(deps, args) {
   try {
     made = await deps.confluence.addFooterComment(pageId, fixComment(card, await deps.links.inboxUrl(p.ref)));
   } catch (e) {
-    throw new AppError('unavailable', `Confluence did not take the comment (${/** @type {Error} */ (e).message}); you may need permission to comment on this page`);
+    throw new AppError('unavailable', `Confluence did not take the comment (${errTag(e)}); you may need permission to comment on this page`);
   }
   return { comment: { page_id: pageId, id: made.id, ref: p.ref } };
 }

@@ -28,6 +28,23 @@ export class DuplicateKey extends Error {
   }
 }
 
+/**
+ * What may be said about an unexpected error, in a log line or in the text a caller reads: its HTTP status (a port
+ * sets `status`), else its code, else its name. Never its message: that can carry Jira or Confluence response text,
+ * SQL statement detail or the content of an issue (app.mjs `answer`, observe.mjs). An AppError's own text is
+ * Dowser's and is kept.
+ * @param {unknown} e
+ * @returns {string}  e.g. `HTTP 503`, `ER_LOCK_WAIT_TIMEOUT`, `TypeError`
+ */
+export function errTag(e) {
+  const err = /** @type {any} */ (e);
+  if (e instanceof AppError) return e.message;
+  if (Number.isInteger(err?.status)) return `HTTP ${err.status}`;
+  if (typeof err?.code === 'string' && /^[A-Za-z0-9_.-]{1,64}$/.test(err.code)) return err.code;
+  const name = typeof err?.name === 'string' && /^[A-Za-z0-9_]{1,64}$/.test(err.name) ? err.name : typeof e;
+  return name;
+}
+
 /** MySQL/TiDB `Duplicate entry ... for key` (errno 1062) and SQLite `UNIQUE constraint failed`. */
 export const DUPLICATE_RE = /Duplicate entry|UNIQUE constraint failed|PRIMARY KEY constraint failed|ER_DUP_ENTRY|\b1062\b/i;
 

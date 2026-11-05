@@ -2,7 +2,7 @@
 // The three read tools (forge-mcp-2 "Read tools"): validate the scalar inputs, build JQL / CQL, call the
 // Sources port, and return `{items}`. The port does the HTTP and maps the payloads (adapters/atlassian.mjs).
 import { adfToText, trimText } from './adf.mjs';
-import { AppError, isIso, needStr, omitAbsent, optStr } from './util.mjs';
+import { AppError, errTag, isIso, needStr, omitAbsent, optStr } from './util.mjs';
 
 /**
  * @typedef {import('./ports.mjs').Deps} Deps
@@ -88,7 +88,7 @@ export function ticketItem(issue, site) {
 async function guarded(what, fn) {
   try { return await fn(); } catch (e) {
     if (e instanceof AppError) throw e;
-    throw new AppError('unavailable', `${what} did not answer (${/** @type {Error} */ (e).message}); retry on the next run`);
+    throw new AppError('unavailable', `${what} did not answer (${errTag(e)}); retry on the next run`);
   }
 }
 
