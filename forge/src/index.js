@@ -6,6 +6,7 @@ import ResolverPkg from '@forge/resolver';
 import { getAppContext } from '@forge/api';
 import { RESOLVERS, actionName, isConsent, isSchemaBehind, resolverAllowed, runResolver, runRovo, runTool } from './core/app.mjs';
 import { forgeDb, runMigrations } from './adapters/forge-sql.mjs';
+import { schemaGuard } from './sql/schema.mjs';
 import { backfillIssueProperties } from './core/issue-property.mjs';
 import { onIssueEvent } from './core/delivery.mjs';
 import { backfillPageLinks, onPageEvent } from './core/doc-drift.mjs';
@@ -18,43 +19,11 @@ const Resolver = /** @type {any} */ (ResolverPkg).default ?? ResolverPkg;
 /** @typedef {import('./core/types.mjs').ResolverContract} ResolverContract */
 /** @typedef {import('./core/ports.mjs').Deps} Deps */
 
+// The in-request migrate-and-retry rule (sql/schema.mjs schemaGuard): once per installation in this runtime.
+const { ensureSchema, withSchema, markMigrated } = schemaGuard({ runMigrations, installationId, isSchemaBehind });
+
 /** @returns {Deps} */
 const deps = () => ({ db: forgeDb, jira, confluence, sources, links, users, perms, now: () => new Date(), ensureSchema });
-
-/** Installations this runtime has migrated (a warm runtime may serve more than one). */
-const migrated = new Set();
-
-/**
- * The Deps `ensureSchema` port: migrate once per installation when `e` says the schema is behind.
- * @param {unknown} e
- * @returns {Promise<boolean>} true when it migrated now
- */
-async function ensureSchema(e) {
-  const inst = installationId();
-  if (migrated.has(inst) || !isSchemaBehind(e)) return false;
-  migrated.add(inst);
-  await runMigrations();
-  return true;
-}
-
-/**
- * Runs `fn`; when it fails on a missing table or column, runs the migrations once per installation and retries.
- * The install trigger normally migrates; `avi:forge:upgraded:app` fires only on a major version (Forge SQL
- * docs), so this covers a minor upgrade that ships a new migration until the daily migrate runs.
- * @param {() => Promise<object>} fn
- * @returns {Promise<object>}
- */
-async function withSchema(fn) {
-  try {
-    return await fn();
-  } catch (e) {
-    const inst = installationId();
-    if (migrated.has(inst) || !isSchemaBehind(e)) throw e;
-    migrated.add(inst);
-    await runMigrations();
-    return fn();
-  }
-}
 
 /** @param {unknown} context @returns {string | undefined} the caller's Atlassian account id */
 function accountOf(context) {
@@ -178,7 +147,7 @@ export async function issueEvent(event) {
  */
 export async function migrate(_event) {
   const ran = await runMigrations();
-  migrated.add(installationId());
+  markMigrated();
   console.log(`dowser: migrations ran: ${ran.length ? ran.join(', ') : 'none (up to date)'}`);
   try {
     const b = await backfillIssueProperties(deps());

@@ -5,7 +5,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MCP_URL, ME, makeDeps, pushArgs, record } from './helpers.mjs';
-import { runResolver, runRovo, runTool } from '../src/core/app.mjs';
+import { isSchemaBehind, runResolver, runRovo, runTool } from '../src/core/app.mjs';
+import { schemaGuard } from '../src/sql/schema.mjs';
 import { SAMPLE_CHUNK, SAMPLE_KEY, checkSample, loadSample } from '../src/core/sample.mjs';
 import { pushProposals } from '../src/core/push.mjs';
 import { pushAreas } from '../src/core/areas.mjs';
@@ -347,12 +348,16 @@ test('a tool call on a store without tool_calls migrates through ensureSchema an
   const d = makeDeps();
   d.db.raw.exec('DROP TABLE tool_calls');
   let migrations = 0;
-  d.ensureSchema = async (/** @type {unknown} */ e) => {
-    if (migrations > 0 || !/no such table/i.test(String(/** @type {any} */ (e)?.message))) return false;
-    migrations += 1;
-    d.db.raw.exec('CREATE TABLE tool_calls (name VARCHAR(96) PRIMARY KEY, calls INT NOT NULL, last_at VARCHAR(32) NOT NULL)');
-    return true;
-  };
+  // the shipped guard (sql/schema.mjs) with the shipped schema-gap test; only the migration itself is faked
+  d.ensureSchema = schemaGuard({
+    installationId: () => 'inst',
+    isSchemaBehind,
+    runMigrations: async () => {
+      migrations += 1;
+      d.db.raw.exec('CREATE TABLE tool_calls (name VARCHAR(96) PRIMARY KEY, calls INT NOT NULL, last_at VARCHAR(32) NOT NULL)');
+      return [];
+    },
+  }).ensureSchema;
   const out = await runTool(d, 'dowser_verdicts_pull', { project_key: 'github-com-acme-shop' }, ME);
   assert.equal(migrations, 1);
   assert.equal(/** @type {any} */ (out).error === undefined || /** @type {any} */ (out).error === 'unknown-project', true);

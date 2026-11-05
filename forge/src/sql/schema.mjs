@@ -60,3 +60,51 @@ export async function runMigrationsWith(runner, record, migrations) {
   }
   throw new Error('migrations did not settle');
 }
+
+/**
+ * The in-request schema guard (index.js): when a call fails on a missing table or column, run the migrations once
+ * per installation in this runtime and retry. The install trigger normally migrates; `avi:forge:upgraded:app`
+ * fires only on a major version (Forge SQL docs), so this covers a minor upgrade that ships a new migration until
+ * the daily migrate runs. A warm runtime may serve more than one installation.
+ * @param {{runMigrations: () => Promise<unknown>, installationId: () => string, isSchemaBehind: (e: unknown) => boolean}} ports
+ */
+export function schemaGuard({ runMigrations, installationId, isSchemaBehind }) {
+  /** Installations this runtime has migrated. */
+  const migrated = new Set();
+
+  /**
+   * The Deps `ensureSchema` port: migrate once per installation when `e` says the schema is behind.
+   * @param {unknown} e
+   * @returns {Promise<boolean>} true when it migrated now
+   */
+  async function ensureSchema(e) {
+    const inst = installationId();
+    if (migrated.has(inst) || !isSchemaBehind(e)) return false;
+    migrated.add(inst);
+    await runMigrations();
+    return true;
+  }
+
+  /**
+   * Runs `fn`; when it fails on a missing table or column, migrates once per installation and retries.
+   * @template T
+   * @param {() => Promise<T>} fn
+   * @returns {Promise<T>}
+   */
+  async function withSchema(fn) {
+    try {
+      return await fn();
+    } catch (e) {
+      const inst = installationId();
+      if (migrated.has(inst) || !isSchemaBehind(e)) throw e;
+      migrated.add(inst);
+      await runMigrations();
+      return fn();
+    }
+  }
+
+  /** The migrate trigger ran the migrations for the current installation. */
+  const markMigrated = () => { migrated.add(installationId()); };
+
+  return { ensureSchema, withSchema, markMigrated };
+}

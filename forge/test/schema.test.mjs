@@ -4,10 +4,11 @@
 // can be replayed exactly.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { ForgeSQLAPIError, migrationRunner } from '@forge/sql';
 import { MIGRATIONS } from '../src/sql/migrations.mjs';
-import { isAlreadyApplied, runMigrationsWith } from '../src/sql/schema.mjs';
+import { isAlreadyApplied, runMigrationsWith, schemaGuard } from '../src/sql/schema.mjs';
 
 /** @typedef {{executeDDL: (q: string) => Promise<{rows: any[]}>, prepare: (q: string) => {bindParams: (...p: unknown[]) => {execute: () => Promise<{rows: any}>}}}} SqlClient */
 
@@ -105,4 +106,79 @@ test('isAlreadyApplied reads only a MigrationExecutionError caused by a duplicat
   const checkpoint = Object.assign(new Error('Failed to checkpoint after running migration with name v016'), { migrationName: 'v016', cause: tidbError("Duplicate column name 'a'", 1060) });
   assert.equal(isAlreadyApplied(checkpoint), false);
   assert.equal(isAlreadyApplied(undefined), false);
+});
+
+// ------------------------------------------------------------------------------------------- schemaGuard
+// The shipped in-request migrate-and-retry rule (index.js wires it with the real runner and installation id).
+
+/** @param {{fail?: number}} [opts] */
+function guardPorts(opts = {}) {
+  const s = { inst: 'inst-a', runs: 0, fail: opts.fail ?? 0, behind: new Set(['inst-a', 'inst-b']) };
+  const ports = {
+    installationId: () => s.inst,
+    isSchemaBehind: (/** @type {unknown} */ e) => /no such table/.test(String(/** @type {any} */ (e)?.message)),
+    runMigrations: async () => {
+      s.runs += 1;
+      await new Promise((r) => setImmediate(r));
+      if (s.fail > 0) { s.fail -= 1; throw new Error('Forge SQL 503'); }
+      s.behind.delete(s.inst);
+      return [];
+    },
+  };
+  /** a call that fails until this installation's schema is migrated */
+  const call = async () => { if (s.behind.has(s.inst)) throw new Error('no such table: tool_calls'); return { ok: true }; };
+  return { s, ports, call };
+}
+
+test('withSchema migrates once and retries when a call hits a missing table', async () => {
+  const { s, ports, call } = guardPorts();
+  const g = schemaGuard(ports);
+  assert.deepEqual(await g.withSchema(call), { ok: true });
+  assert.equal(s.runs, 1);
+  assert.deepEqual(await g.withSchema(call), { ok: true });
+  assert.equal(s.runs, 1);
+});
+
+test('withSchema rethrows an error that is not a schema gap, without migrating', async () => {
+  const { s, ports } = guardPorts();
+  const g = schemaGuard(ports);
+  await assert.rejects(g.withSchema(async () => { throw new Error('boom'); }), /boom/);
+  assert.equal(s.runs, 0);
+});
+
+test('a schema gap that survives the migration is not migrated again in this runtime', async () => {
+  const { s, ports } = guardPorts();
+  const g = schemaGuard(ports);
+  const gap = async () => { throw new Error('no such table: nowhere'); };
+  await assert.rejects(g.withSchema(gap), /no such table/);
+  await assert.rejects(g.withSchema(gap), /no such table/);
+  assert.equal(s.runs, 1);
+  assert.equal(await g.ensureSchema(new Error('no such table: nowhere')), false);
+});
+
+test('each installation a warm runtime serves migrates on its own', async () => {
+  const { s, ports, call } = guardPorts();
+  const g = schemaGuard(ports);
+  await g.withSchema(call);
+  s.inst = 'inst-b';
+  assert.deepEqual(await g.withSchema(call), { ok: true });
+  assert.equal(s.runs, 2);
+});
+
+test('ensureSchema migrates once for a schema gap and answers whether it did; markMigrated skips it', async () => {
+  const { s, ports } = guardPorts();
+  const g = schemaGuard(ports);
+  assert.equal(await g.ensureSchema(new Error('boom')), false);
+  assert.equal(await g.ensureSchema(new Error('no such table: x')), true);
+  assert.equal(await g.ensureSchema(new Error('no such table: x')), false);
+  s.inst = 'inst-b';
+  g.markMigrated();
+  assert.equal(await g.ensureSchema(new Error('no such table: x')), false);
+  assert.equal(s.runs, 1);
+});
+
+test('index.js wires the shipped guard, not its own copy of the rule', () => {
+  const src = readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
+  assert.match(src, /schemaGuard\(\{ runMigrations, installationId, isSchemaBehind \}\)/);
+  assert.doesNotMatch(src, /migrated\.add|new Set\(\)/);
 });
