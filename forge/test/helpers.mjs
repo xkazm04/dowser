@@ -131,9 +131,13 @@ export function fakeJira() {
     failProp: false,
     /** issue key -> property key -> value, as setIssueProperty wrote it. @type {Record<string, Record<string, unknown>>} */
     properties: {},
+    /** issue key -> the HTTP status setIssueProperty fails with for that issue (as the adapter throws it). @type {Record<string, number>} */
+    failPropFor: {},
     /** @param {string} issueKey @param {string} key @param {unknown} value */
     async setIssueProperty(issueKey, key, value) {
       if (j.failProp) throw new Error('Jira answered 503');
+      const status = j.failPropFor[issueKey];
+      if (status) throw Object.assign(new Error(`Jira set issue property on ${issueKey} answered ${status}`), { status });
       (j.properties[issueKey] ??= {})[key] = value;
     },
   };

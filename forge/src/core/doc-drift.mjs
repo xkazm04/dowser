@@ -11,7 +11,7 @@
 //    page body.
 import { cardOf } from './cards.mjs';
 import { logLine } from './observe.mjs';
-import { counterValue, evidenceRefsOfMany, findProposal, nextCounter, toProposal } from './store.mjs';
+import { counterValue, evidenceRefsOfMany, findProposal, nextCounter, setCounter, toProposal } from './store.mjs';
 import { AppError, DuplicateKey, needStr } from './util.mjs';
 
 /** @typedef {import('./ports.mjs').Deps} Deps */
@@ -95,23 +95,6 @@ export async function backfillPageLinks(deps, { budgetMs = BACKFILL_BUDGET_MS, p
   }
   await nextCounter(deps.db, BACKFILL_COUNTER);
   return { linked };
-}
-
-/**
- * Sets counter `name` to `value` (a progress cursor with one writer: the daily trigger).
- * @param {Db} db
- * @param {string} name
- * @param {number} value
- */
-async function setCounter(db, name, value) {
-  const r = await db.exec('UPDATE counters SET value = ? WHERE name = ?', [value, name]);
-  if (r.affectedRows > 0) return;
-  try {
-    await db.exec('INSERT INTO counters (name, value) VALUES (?, ?)', [name, value]);
-  } catch (e) {
-    if (!(e instanceof DuplicateKey)) throw e;
-    await db.exec('UPDATE counters SET value = ? WHERE name = ?', [value, name]);
-  }
 }
 
 /**
