@@ -61,6 +61,9 @@ Production, tags and releases are never part of a landing. The guard denies them
   paths; a day started before it did needs `--paths <the paths given at repo start>` as well.
 - Builders run `npm run verify:affected -- --files <files>` per item. `T land --repo personas` runs
   `npm run gate -- --cold` and records the result. It **never pushes**. The operator merges the branch.
+- personas' gates lint `src/` only: for a change to `scripts/*.mjs` the cold gate reports eslint `ok` with "no lintable
+  files". Those files are linted only by the pre-commit eslint-staged hook, so never read the cold gate as covering
+  them; say so in the cycle's `uat`.
 
 ## After a landing
 
