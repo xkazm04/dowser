@@ -393,7 +393,7 @@ export const sql = (v) => (v === undefined ? null : /** @type {import('node:sqli
 
 /**
  * Opens (and on first use creates) the store at `path`: WAL, busy timeout, the DDL in one BEGIN IMMEDIATE
- * transaction that re-reads user_version. An older known version (v1) is upgraded in place inside that same
+ * transaction that re-reads user_version. An older known version (1 through USER_VERSION - 1) is upgraded in place, one step at a time, inside that same
  * transaction (MIGRATIONS); a file with any other version is refused. Then reconcileChecks widens any stored CHECK
  * list the model grew (a table rebuild, user_version unchanged). Any failure is a DowserError with exit 3 (store
  * unavailable).

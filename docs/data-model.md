@@ -17,23 +17,28 @@ with no origin gets `local-` plus the first 12 hex of sha256(realpath(repo root)
 Nothing is ever written inside the scanned repo. Paths are compared by real path, and a store path inside
 the repo is refused with exit 3.
 
-The store is SQLite through `node:sqlite` (Node >= 22.13) with WAL and `PRAGMA user_version = 6` (v4 added `proposals.artifacts_json`, a card's supporting views; v5 added `proposals.snooze_until`, the date a snoozed item wakes on; v6 added the scan-finding/1 columns and the trust tables). The DDL
-runs in one `BEGIN IMMEDIATE` transaction that re-reads the version. A file with another version is
-refused.
+The store is SQLite through `node:sqlite` (Node >= 22.13) with WAL and `PRAGMA user_version = 8`
+(`store-core.mjs` `USER_VERSION`; what each version added is under Migration). The DDL runs in one
+`BEGIN IMMEDIATE` transaction that re-reads the version.
 
-**Migration.** Version 2 (forge-mcp-2) adds `proposals.issue_ref` and `proposals.issue_url`. `openStore`
-upgrades a version 1 file in place, inside the same `BEGIN IMMEDIATE` transaction, after re-reading the
-version: `ALTER TABLE proposals ADD COLUMN issue_ref TEXT`, the same for `issue_url`, then
-`PRAGMA user_version = 2`. No row is rewritten, and both columns start NULL (absent). A new file is created
-at the current version. Version 3 adds the `outcomes` table (below): `CREATE TABLE IF NOT EXISTS` plus its index and
-triggers, then `PRAGMA user_version = 3`. Version 4 adds `proposals.artifacts_json`. Version 5 adds
-`proposals.snooze_until` (`ALTER TABLE proposals ADD COLUMN snooze_until TEXT`, then `PRAGMA user_version = 5`); it
-starts NULL (absent) on every existing row. Version 7 adds the `deliveries` table (below) the same way, and version 8 the `edges` table. Version 6 adds the scan-finding/1 columns to `proposals` (`impact`,
-`impact_why`, `risk`, `category`, `score`, `score_parts_json`, `band`, `mvp`, `mvp_rule`, `mvp_why`, `predicted_verdict`,
-`predicted_why`, `predicted_by`, `pretriaged_by`; `store-core.mjs` `V6_COLUMNS`) and the `trust_state` and
-`trust_events` tables, then `PRAGMA user_version = 6`; every existing row stays unscored, unallocated and without a
-prediction (NULL, never 0). An existing file is upgraded one step at a time (1 -> 2 -> 3 -> 4 -> 5 -> 6) and
-no row is rewritten. Any version other than 0 (new), 1, 2, 3, 4, 5 or 6 is refused with exit 3.
+**Migration.** A new file is created at the current version. An existing file is upgraded in place, one step
+at a time (1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8), inside the same `BEGIN IMMEDIATE` transaction, after re-reading
+the version. Columns and tables are only ever added; no row is rewritten, and every added column starts NULL
+(absent) on existing rows. Any version other than 0 (new) through 8 is refused with exit 3 (a file from a newer
+Dowser included). The steps:
+
+- 2 (forge-mcp-2): `proposals.issue_ref` and `proposals.issue_url` (`ALTER TABLE proposals ADD COLUMN ... TEXT`).
+- 3: the `outcomes` table (below): `CREATE TABLE IF NOT EXISTS` plus its index and triggers.
+- 4: `proposals.artifacts_json`, a card's supporting views.
+- 5: `proposals.snooze_until`, the date a snoozed item wakes on.
+- 6: the scan-finding/1 columns on `proposals` (`impact`, `impact_why`, `risk`, `category`, `score`,
+  `score_parts_json`, `band`, `mvp`, `mvp_rule`, `mvp_why`, `predicted_verdict`, `predicted_why`, `predicted_by`,
+  `pretriaged_by`; `store-core.mjs` `V6_COLUMNS`) and the `trust_state` and `trust_events` tables; every existing
+  row stays unscored, unallocated and without a prediction (NULL, never 0).
+- 7: the `deliveries` table (below).
+- 8: the `edges` table (below).
+
+Each step ends by setting `PRAGMA user_version` to its number.
 
 **CHECK lists.** Every enum-backed CHECK (`runs.mode`, `runs.status`; `proposals.lens`, `confidence`, `status`,
 `reason`, `category`, `band`, `mvp_rule`, `predicted_verdict`; `evidence.type`) is generated from the `model.mjs`
@@ -43,7 +48,7 @@ compares each stored list with the model's. A list the model grew (a new lens, s
 verdict) is widened by a table rebuild: `PRAGMA foreign_keys = OFF` outside the transaction, `BEGIN IMMEDIATE`, then
 create at the target shape, copy every column, drop, rename, recreate the indexes and triggers, keep the
 AUTOINCREMENT high-water, require an empty `PRAGMA foreign_key_check`, `COMMIT`, foreign keys back on. The columns do
-not change, so `user_version` stays 6 and an older Dowser still opens the file. A stored row holding a value the
+not change, so `user_version` stays where it is and an older Dowser at the same version still opens the file. A stored row holding a value the
 model no longer lists is refused with exit 3, and nothing is rebuilt. A list that already matches costs one
 `sqlite_master` read.
 
