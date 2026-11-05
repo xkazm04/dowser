@@ -12,10 +12,10 @@ import { SAMPLE_KEY } from '../../../forge/src/core/types.mjs';
 import { findDowserServer, toolPrompt, writeMcpConfig } from '../../../tools/live-mcp.mjs';
 import { UsageError, checkProjectKey, parseFlags } from '../../../tools/temper-lib.mjs';
 import { listCards, scanStore } from '../../../tools/temper-cards.mjs';
-import { cardCounts, parseScanArgs, reportFile, scanPrompt, writeReport } from '../../../tools/temper-scan.mjs';
+import { cardCounts, parseScanArgs, reportFile, resolveScanRef, scanPrompt, writeReport } from '../../../tools/temper-scan.mjs';
 import { adfOf, closeTickets, dedupeJql, fileFindings, planFindings, findingFp, fpLabel, jiraClient, parseFindings, parseTicketArgs, summaryOf } from '../../../tools/temper-tickets.mjs';
 import { checkVerdict, parseVerdictArgs, parseVerdicts, recordVerdicts } from '../../../tools/temper-verdicts.mjs';
-import { scanArgs } from '../../../tools/scan-workspace.mjs';
+import { cloneRepo, scanArgs } from '../../../tools/scan-workspace.mjs';
 import { candidate, gitRepo, removeDir, tempDir } from './_fixture.mjs';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -82,15 +82,65 @@ test('temper-scan --dry-run: plans a clone keyed to the inbox and writes nothing
     const status = () => spawnSync('git', ['-C', repo, 'status', '--porcelain'], { encoding: 'utf8' }).stdout;
     const home = join(dir, 'temper');
     const r = spawnSync(process.execPath, [join(ROOT, 'tools/temper-scan.mjs'), '--repo', repo, '--project-key', 'bp-temper', '--dry-run'],
-      { encoding: 'utf8', env: { ...process.env, TEMPER_HOME: home, DOWSER_MCP_URL: 'https://example.invalid/mcp' } });
+      { encoding: 'utf8', env: { ...process.env, TEMPER_HOME: home, TEMPER_ROOT: join(dir, 'no-day'), DOWSER_MCP_URL: 'https://example.invalid/mcp' } });
     assert.equal(r.status, 0, r.stderr);
     const plan = JSON.parse(r.stdout);
     assert.equal(plan.dry_run, true);
     assert.equal(plan.project_key, 'bp-temper');
     assert.equal(plan.dowser_home, join(home, 'homes', 'bp-temper'));
     assert.deepEqual(plan.mcp, { type: 'http', url: 'https://example.invalid/mcp' });
+    assert.equal(plan.ref_from, 'head');
+    assert.match(plan.sha, /^[0-9a-f]{40}$/);
     assert.equal(status(), '');
     assert.throws(() => readFileSync(join(home, 'scans.jsonl')), 'a dry run appends no ledger row');
+  } finally { removeDir(dir); }
+});
+
+test("resolveScanRef: --ref wins; else the open day names Dowser's loop/<date> and a started repo's temper/<date>; else HEAD", () => {
+  const dir = tempDir('temper-ref');
+  try {
+    const root = join(dir, 'dowser'), bp = join(dir, 'bp'), wt = join(dir, 'wt', 'bp-2026-11-05'), other = join(dir, 'other');
+    mkdirSync(join(root, '.temper'), { recursive: true });
+    assert.deepEqual(resolveScanRef({ repo: root }, root), { from: 'head' }, 'no day file: HEAD');
+    assert.deepEqual(resolveScanRef({ repo: root, ref: 'x' }, root), { ref: 'x', from: 'flag' });
+    writeFileSync(join(root, '.temper', 'charter.json'), JSON.stringify({ repos: [{ name: 'dowser', path: root }, { name: 'bp', path: bp }, { name: 'other', path: other }] }));
+    const day = { date: '2026-11-05', branch: 'loop/2026-11-05', repos: { bp: { branch: 'temper/2026-11-05', worktree: wt } } };
+    writeFileSync(join(root, '.temper', 'day.json'), JSON.stringify(day));
+    assert.deepEqual(resolveScanRef({ repo: root }, root), { ref: 'loop/2026-11-05', from: 'day', repo_name: 'dowser' });
+    assert.deepEqual(resolveScanRef({ repo: `${bp}/` }, root), { ref: 'temper/2026-11-05', from: 'day', repo_name: 'bp' });
+    assert.deepEqual(resolveScanRef({ repo: wt }, root), { ref: 'temper/2026-11-05', from: 'day', repo_name: 'bp' }, 'the day worktree too');
+    assert.deepEqual(resolveScanRef({ repo: other }, root), { from: 'head' }, 'a repo not started today');
+    assert.deepEqual(resolveScanRef({ repo: bp, ref: 'master' }, root), { ref: 'master', from: 'flag' }, 'an explicit ref wins over the day');
+    writeFileSync(join(root, '.temper', 'day.json'), JSON.stringify({ ...day, ended_at: '2026-11-05T23:00:00Z' }));
+    assert.deepEqual(resolveScanRef({ repo: root }, root), { from: 'head' }, 'an ended day: HEAD');
+  } finally { removeDir(dir); }
+});
+
+test("cloneRepo --ref: clones the named branch (or commit), never the source's checked-out HEAD, and leaves the source untouched", () => {
+  const dir = tempDir('temper-clone');
+  try {
+    const src = join(dir, 'src');
+    mkdirSync(src, { recursive: true });
+    gitRepo(src, { 'a.js': 'export const a = 1;\n' });
+    const g = (/** @type {string[]} */ ...a) => spawnSync('git', ['-C', src, ...a], { encoding: 'utf8' }).stdout.trim();
+    g('branch', '-M', 'master');
+    g('checkout', '-q', '-b', 'loop/2026-11-05');
+    writeFileSync(join(src, 'a.js'), 'export const a = 2;\n');
+    g('commit', '-q', '-am', 'the day fix');
+    const day = g('rev-parse', 'HEAD');
+    g('checkout', '-q', 'master');
+    const before = g('status', '--porcelain') + g('rev-parse', 'HEAD') + g('branch', '--list');
+    const a = cloneRepo(src, join(dir, 'c1'), [], { origin: 'dowser-temper', ref: 'loop/2026-11-05' });
+    assert.equal(a.sha, day);
+    assert.equal(readFileSync(join(dir, 'c1', 'a.js'), 'utf8'), 'export const a = 2;\n');
+    assert.equal(spawnSync('git', ['-C', join(dir, 'c1'), 'remote', 'get-url', 'origin'], { encoding: 'utf8' }).stdout.trim(), 'dowser-temper', 'the inbox key stays the origin');
+    const m = cloneRepo(src, join(dir, 'c2'), [], {});
+    assert.equal(m.sha, g('rev-parse', 'master'), 'no ref: the source HEAD');
+    const c = cloneRepo(src, join(dir, 'c3'), [], { ref: day.slice(0, 10) });
+    assert.equal(c.sha, day, 'a commit becomes the detached HEAD');
+    assert.equal(readFileSync(join(dir, 'c3', 'a.js'), 'utf8'), 'export const a = 2;\n');
+    assert.throws(() => cloneRepo(src, join(dir, 'c4'), [], { ref: 'loop/1999-01-01' }), /has no ref loop\/1999-01-01/);
+    assert.equal(g('status', '--porcelain') + g('rev-parse', 'HEAD') + g('branch', '--list'), before, 'the source is only read');
   } finally { removeDir(dir); }
 });
 

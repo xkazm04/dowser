@@ -17,8 +17,10 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
 
 ## 2. Scan
 
-- Dowser: the `scan.dowser` command, `node tools/temper-scan.mjs --repo <dowser> --project-key <inbox> --focus "<focus>"`.
-  It is one scan per cycle, and its ledger row (`~/.temper/scans.jsonl`) is the scan-yield instrument of the bar.
+- Dowser: the `scan.dowser` command, `node tools/temper-scan.mjs --repo <dowser> --project-key <inbox> --ref loop/<date> --focus "<focus>"`.
+  Run the printed command as is: its `--ref` is the day branch (`loop/<date>`, or a started repo's `temper/<date>`),
+  so the scan reads the day's fixes and does not bring back cards they closed. The ledger row's `ref` and `head` say
+  what was scanned. It is one scan per cycle, and its ledger row (`~/.temper/scans.jsonl`) is the scan-yield instrument of the bar.
   The row's `report` names `~/.temper/scans/<stamp>-<inbox>.json`: the row, the scan's summary and every card it
   created or moved (`{fp, ref, status, lens, title, evidence, created}`). The clone is deleted after the scan.
 - Other repos: `scan.others_due` lists those with no scan today or yesterday, so each is scanned every second day,

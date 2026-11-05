@@ -118,13 +118,19 @@ or a verdict was refused) or 2 (bad arguments).
 ### temper-scan - a connected scan of a local repo
 
 ```
-node tools/temper-scan.mjs --repo <path> --project-key <k> [--focus "goal: .."|"area: .."] [--budget-usd n]
-                           [--model m] [--lenses a,b] [--hide <path>]... [--keep] [--dry-run]
+node tools/temper-scan.mjs --repo <path> --project-key <k> [--ref r] [--focus "goal: .."|"area: .."]
+                           [--budget-usd n] [--model m] [--lenses a,b] [--hide <path>]... [--keep] [--dry-run]
 ```
 
-- It uses dogfood's mechanics (`tools/scan-workspace.mjs`): a clone of the repo's committed HEAD in the OS temp
+- It uses dogfood's mechanics (`tools/scan-workspace.mjs`): a clone of one committed ref of the repo in the OS temp
   folder, with `--hide` paths left out by a sparse checkout, and the skill installed there at project scope. The run
   is one headless `claude -p` scan with `--setting-sources project,local`. **The scanned repo is never written.**
+- **The ref is the day's work, not master.** `--ref` names it. Without it, the scan reads the /temper day file of
+  the checkout the tool belongs to (`.temper/day.json`, with `.temper/charter.json` for the repos' paths;
+  `TEMPER_ROOT` overrides the checkout in tests): Dowser's `loop/<date>` when `--repo` is that checkout, and a started
+  build repo's `temper/<date>` (bp, personas) when `--repo` is its charter path or its day worktree. A repo not
+  started today, or no open day, scans HEAD. A day branch the repo lacks fails the scan. `cycle begin` prints every
+  scan command with its `--ref`, because a master scan brings back the cards the day already fixed.
 - `--project-key` is the live inbox key. It must pass the push's rule (`PROJECT_KEY_RE`), must not be the sample's
   reserved `dowser-sample`, and must be lowercase with single hyphens. The clone's origin is set to it, so the
   skill's project key is exactly this key. The inbox therefore carries no repo link (`repo_url` is absent).
@@ -132,8 +138,9 @@ node tools/temper-scan.mjs --repo <path> --project-key <k> [--focus "goal: .."|"
   `~/.temper`). The next scan of the same key pulls the verdicts and follows the rules.
 - The scan keeps every card (the delegate triages later, through `temper-verdicts`), pushes it to the inbox and
   sends the areas.
-- Each scan appends one row to `~/.temper/scans.jsonl`: `{ts, repo, head, project_key, focus?, ok, minutes,
-  cost_usd?, turns?, cards: {created, moved, pushed, by_status}, report}`. `report` is
+- Each scan appends one row to `~/.temper/scans.jsonl`: `{ts, repo, ref, ref_from, head, sha, project_key, focus?, ok, minutes,
+  cost_usd?, turns?, cards: {created, moved, pushed, by_status}, report}`. `ref` is the scanned branch (or commit),
+  `ref_from` how it was chosen (`flag`, `day` or `head`), `head` and `sha` the short and full commit. `report` is
   `~/.temper/scans/<stamp>-<project-key>.json`: the row, the scan's summary and each card the scan created or moved,
   `{fp, ref?, url?, status, lens, title, evidence: [{type, ref, path?, line?}], created}`.
 - To list a scan home's cards later, run `node tools/temper-cards.mjs --project-key <k> [--status s] [--lens l]

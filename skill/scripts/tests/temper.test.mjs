@@ -893,6 +893,11 @@ test('cycle begin --repo: the target is a focus in the store\'s form (area:<path
   assert.equal(ok.code, 0, JSON.stringify(ok.out));
   assert.equal(ok.out.focus, 'goal:faster triage');
   assert.match(ok.out.scan.bp, /--focus "goal:faster triage"/);
+  // the scan reads the day's work: bp's temper/<date>, Dowser's loop/<date>, never master
+  assert.match(ok.out.scan.bp, / --ref temper\/2026-11-05 /);
+  const d = main(['cycle', 'begin', '--target', 'tooling'], w.ctx);
+  assert.equal(d.code, 0, JSON.stringify(d.out));
+  assert.match(d.out.scan.dowser, / --ref loop\/2026-11-05 /);
 });
 
 test('secretScan: env files and token shapes in added lines, never .env.example, names only', () => {

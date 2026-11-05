@@ -660,12 +660,16 @@ function cycleBegin(ctx, f) {
     ...Object.values(openNow).filter((o) => o.cycle.date === day.date).map((o) => (Number.isInteger(o.cycle.n) ? o.cycle.n : 0))) + 1;
   const cycle = { n, date: day.date, repo: repo.name, target: f.target, begun_at: ctx.now().toISOString(), head };
   writeJson(cycleFile(ctx.root, repo.name), cycle);
-  const scan = (/** @type {string} */ path, /** @type {string} */ inbox, /** @type {unknown} */ focus) =>
-    `node tools/temper-scan.mjs --repo "${path}" --project-key ${inbox}${typeof focus === 'string' ? ` --focus "${focus}"` : ''} --budget-usd 8`;
+  // a scan reads the day's work, never the repo's master: Dowser's loop/<date>, a started repo's temper/<date>
+  const dayRef = (/** @type {string} */ name) => (name === 'dowser' ? day.branch : day.repos?.[name]?.branch);
+  const scan = (/** @type {string} */ name, /** @type {string} */ path, /** @type {string} */ inbox, /** @type {unknown} */ focus) => {
+    const ref = dayRef(name);
+    return `node tools/temper-scan.mjs --repo "${path}" --project-key ${inbox}${typeof ref === 'string' ? ` --ref ${ref}` : ''}${typeof focus === 'string' ? ` --focus "${focus}"` : ''} --budget-usd 8`;
+  };
   return {
     ...cycle, ...t, ...(repo.name === 'dowser' ? { branch: day.branch } : {}), clock: c,
-    scan: { [repo.name]: scan(repo.path, repo.inbox_key, t.focus),
-      others_due: otherReposDue(ctx, charter, day.date).filter((/** @type {any} */ r) => r.name !== repo.name).map((/** @type {any} */ r) => ({ ...r, command: scan(r.path, r.inbox_key, undefined) })) },
+    scan: { [repo.name]: scan(repo.name, repo.path, repo.inbox_key, t.focus),
+      others_due: otherReposDue(ctx, charter, day.date).filter((/** @type {any} */ r) => r.name !== repo.name).map((/** @type {any} */ r) => ({ ...r, command: scan(r.name, r.path, r.inbox_key, undefined) })) },
     triage: { min_reject_share: REJECT_SHARE, caps: repo.caps, check: `temper.mjs triage check --verdicts <file> --inbox ${repo.inbox_key}`, out_of_bounds: charter.out_of_bounds ?? [] },
   };
 }
@@ -1319,8 +1323,8 @@ export function renderReport(d) {
   }
   L.push('', '## Scans and costs', '');
   if (d.scans.length) {
-    L.push('| inbox | focus | cards created | minutes | cost |', '|---|---|---|---|---|');
-    for (const s of d.scans) L.push(`| ${s.project_key} | ${s.focus ?? 'full'} | ${s.cards?.created ?? ''} | ${s.minutes ?? ''} | ${typeof s.cost_usd === 'number' ? `$${s.cost_usd.toFixed(2)}` : ''} |`);
+    L.push('| inbox | focus | scanned | cards created | minutes | cost |', '|---|---|---|---|---|---|');
+    for (const s of d.scans) L.push(`| ${s.project_key} | ${s.focus ?? 'full'} | ${s.ref ? `${s.ref}@` : ''}${s.head ?? ''} | ${s.cards?.created ?? ''} | ${s.minutes ?? ''} | ${typeof s.cost_usd === 'number' ? `$${s.cost_usd.toFixed(2)}` : ''} |`);
     const cost = d.scans.reduce((n, s) => n + (typeof s.cost_usd === 'number' ? s.cost_usd : 0), 0);
     L.push('', `Total: ${d.scans.length} scans, $${cost.toFixed(2)} (the scan ledger).`);
   } else L.push('No scan today.');
