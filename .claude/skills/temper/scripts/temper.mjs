@@ -831,20 +831,23 @@ const countKinds = (vs) => {
 
 /**
  * The share floor and the day's caps of one inbox (as Forge counts them: snoozes and merges count against rejects),
- * over today's earlier verdicts plus these.
+ * over today's earlier verdicts plus these. The floor is per day per inbox, not per cycle: a cycle that decides one or
+ * two genuinely good cards could not meet it honestly. A card decided again today counts once there, at its newest
+ * verdict; the caps count every decision, as Forge does. `cycle` is these verdicts' own share, for the record.
  * @param {any[]} verdicts @param {any[]} earlier today's earlier verdicts of the same inbox @param {{accepts_per_day: number, rejects_per_day: number}} caps
  */
 export function triageLimits(verdicts, earlier, caps) {
   const c = countKinds(verdicts);
-  const q = rejectShare(c);
+  const redecided = new Set(verdicts.map((v) => v.ref).filter((r) => typeof r === 'string'));
+  const q = rejectShare(countKinds([...earlier.filter((e) => typeof e.ref !== 'string' || !redecided.has(e.ref)), ...verdicts]));
   const all = countKinds([...earlier, ...verdicts]);
   const accepts = all.accept ?? 0;
   const rejects = (all.reject ?? 0) + (all.snooze ?? 0) + (all.merge ?? 0);
   const why = [];
-  if (!q.ok) why.push(`only ${Math.round((q.share ?? 0) * 100)}% of ${q.decided} decided cards are rejected or snoozed; the floor is ${REJECT_SHARE * 100}%`);
+  if (!q.ok) why.push(`only ${Math.round((q.share ?? 0) * 100)}% of the ${q.decided} cards decided today in this inbox are rejected or snoozed; the floor is ${REJECT_SHARE * 100}% per day`);
   if (accepts > caps.accepts_per_day) why.push(`${accepts} accepts today, over the cap of ${caps.accepts_per_day}`);
   if (rejects > caps.rejects_per_day) why.push(`${rejects} rejects, snoozes and merges today, over the cap of ${caps.rejects_per_day}`);
-  return { counts: c, ...q, today: { accepts, rejects }, caps, ok: !why.length, why };
+  return { counts: c, ...q, floor_ok: q.ok, cycle: rejectShare(c), today: { accepts, rejects }, caps, ok: !why.length, why };
 }
 
 /** Today's earlier verdicts of an inbox, from the cycle rows. @param {string} root @param {string} date @param {string} inbox */
@@ -983,7 +986,7 @@ function cycleEnd(ctx, f) {
   for (const d of Object.values(dirs.proposed)) proposedPerModule[/** @type {any} */ (d).module] = (proposedPerModule[/** @type {any} */ (d).module] ?? 0) + 1;
   const metModules = Object.entries(bar?.modules ?? {}).filter(([, m]) => /** @type {any} */ (m).met).map(([k]) => k);
   const verdicts = validateCycleFile(raw, { target: open.target, metModules, proposedPerModule });
-  // the share floor per cycle, the caps per inbox per day
+  // the share floor and the caps, both per inbox per day
   /** @type {Record<string, any>} */
   const limits = {};
   for (const inbox of [...new Set(verdicts.map((v) => v.inbox))]) {
@@ -998,7 +1001,9 @@ function cycleEnd(ctx, f) {
   const head = gitIn(ctx, dir, 'rev-parse', 'HEAD');
   const v = verifyTree(ctx, repo, dir, Date.parse(open.begun_at));
   const quality = isDowser ? qualityRowOf(ctx, open) : undefined;
-  const quota = rejectShare(countKinds(verdicts));
+  // the cycle's own share for the record; ok is the day's floor in every inbox it decided in
+  const quota = { ...rejectShare(countKinds(verdicts)), ok: Object.values(limits).every((l) => l.floor_ok),
+    ...(Object.keys(limits).length ? { day: Object.fromEntries(Object.entries(limits).map(([k, l]) => [k, { decided: l.decided, ...(l.share !== undefined ? { share: l.share } : {}), ok: l.floor_ok }])) } : {}) };
   const { target: _t, repo: _r, ...claims } = raw;
   const green = v.green;
   const row = {
@@ -1319,7 +1324,7 @@ export function renderReport(d) {
   L.push('', `Cycles: ${d.cycles.length}, green ${d.cycles.filter((r) => r.green).length}.`);
   for (const r of d.cycles) {
     const re = r.reverified ? `, reverified at ${String(r.head).slice(0, 7)} (first ${r.reverified.first.green ? 'green' : `red: ${(r.reverified.first.red_because ?? []).join('; ')}`})` : '';
-    L.push(`- ${r.n} ${r.repo ?? 'dowser'} ${r.target}: ${r.green ? 'green' : `red (${(r.red_because ?? []).join('; ')})`}${re}${r.quota && !r.quota.ok ? ', reject share under 20%' : ''}`);
+    L.push(`- ${r.n} ${r.repo ?? 'dowser'} ${r.target}: ${r.green ? 'green' : `red (${(r.red_because ?? []).join('; ')})`}${re}${r.quota && !r.quota.ok ? ', the day\'s reject share under 20%' : ''}`);
   }
   L.push('', '## Scans and costs', '');
   if (d.scans.length) {

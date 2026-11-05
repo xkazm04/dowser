@@ -65,7 +65,7 @@ scans that the loop starts keep theirs.
 - The charter and direction answers are the operator's. Write them only through the start dialog's exact command.
 - No gate grades itself: a QA subagent writes the failing specs first, and the builder never edits them. UAT verdicts
   come from runner exit codes and result files, in three states. Unverifiable is never a pass.
-- Triage is honest: real reason codes, a reject or snooze share of at least 20% (`T triage check`), the day's caps,
+- Triage is honest: real reason codes, a reject or snooze share of at least 20% per inbox per day (`T triage check`), the day's caps,
   and accepts only for cards you checked against the code and that are in direction.
 - Scans are read-only. Only the charter's `build: true` repos get builds, and each lands under its own law.
 

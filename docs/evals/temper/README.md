@@ -30,7 +30,7 @@ other repos' worktrees are in the Temper home `~/.temper/` (`TEMPER_HOME`).
               "gates": {"typecheck": "pass", "test": "fail", "e2e:fixture": "pass", "e2e:local": "pass"},
               "uat": {"fixture": {"state": "fresh", "pass": 40, "fail": 0, "unverifiable": 0, "flaky": 0}, "local": {"state": "stale"}, "live": {"state": "missing"}},
               "quality": {"state": "appended", "head": "<sha>"}},
- "quota": {"decided": 5, "share": 0.4, "ok": true},
+ "quota": {"decided": 2, "share": 0, "ok": true, "day": {"dowser-temper": {"decided": 12, "share": 0.25, "ok": true}}},
  "self_reported": {"scan": {...}, "verdicts": [{"ref": "DW-50", "verdict": "reject", "reason": "duplicate", "inbox": "dowser-temper",
                    "recorded": "local", "decided_by": "delegate:temper"}], "built": [...], "outcomes": [...], "directions": [...], "parked": [...],
                    "skill_issues": [{"where": "temper.mjs cycleEnd", "what": "...", "evidence": "...", "fix": "..."}]}}
@@ -67,7 +67,8 @@ and appends a row of its own. The cycle row is never rewritten.
 - **Verdicts.** Every verdict is decided by `delegate:temper`. `recorded: "live"` means Forge recorded it through
   `temper-verdicts`. `recorded: "local"` means the inbox had no valid delegation (the tool answered forbidden), so the
   verdict is kept here only, and the live inbox keeps its cards undecided. Both obey a floor of 20% reject or snooze
-  per cycle and the charter's daily caps per inbox (`repos[].caps`, default 10 accepts and 30 rejects; snoozes and
+  per inbox per day (today's earlier verdicts plus this cycle's; a card decided again counts once, at its newest
+  verdict) and the charter's daily caps per inbox (`repos[].caps`, default 10 accepts and 30 rejects; snoozes and
   merges count against rejects). Delegate verdicts teach Dowser's memory but never count toward trust.
 - **The bar** is in `.claude/skills/temper/references/bar.md`. A part counts only when it is verified.
 

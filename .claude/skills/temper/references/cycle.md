@@ -37,7 +37,9 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
 - A subagent reads every new card against the code it quotes. Accept only a card that is real (the evidence holds
   at HEAD), in direction, and inside the charter's bounds. Reject with the honest reason code. Snooze what is real but
   not now. Merge duplicates into the accepted item.
-- At least 20% of decided cards are rejected or snoozed. Within the day's caps, check the verdicts file first with
+- At least 20% of the cards decided today in each inbox are rejected or snoozed: the floor is per inbox per day,
+  over the day's earlier verdicts plus this file (a card decided again counts once, at its newest verdict), so a cycle
+  that decides one or two good cards is not pushed into a dishonest reject. Within the day's caps, check the verdicts file first with
   `T triage check --verdicts <file> --inbox <key>`. Exit 1 means look again for the weak cards.
 - One verdicts file serves both tools: `[{ref, verdict, reason?, note?, into?, until?, inbox?, recorded?}]`. `reason` is a
   reject's code only (model.mjs REASONS); a snooze or an accept says why in `note`. `inbox` (when given) must be the

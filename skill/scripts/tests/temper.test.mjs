@@ -261,6 +261,16 @@ test('triage limits: the 20% reject/snooze floor and the day\'s caps, where snoo
   const caps = { accepts_per_day: 2, rejects_per_day: 2 };
   assert.match(triageLimits([...v('accept'), ...v('reject')], v('accept', 2), caps).why.join(), /3 accepts today, over the cap of 2/);
   assert.match(triageLimits([...v('snooze'), ...v('merge')], v('reject'), caps).why.join(), /3 rejects, snoozes and merges today/);
+  // the floor is per inbox per day: two good accepts pass after a day that rejected enough, and fail on a day that did not
+  const two = triageLimits(v('accept', 2), [...v('accept', 3), ...v('reject', 2)], DEFAULT_CAPS);
+  assert.equal(two.ok, true, '2 of 7 decided today');
+  assert.deepEqual([two.decided, two.share, two.cycle.share], [7, 0.286, 0]);
+  const lowDay = triageLimits(v('accept', 2), v('accept', 3), DEFAULT_CAPS);
+  assert.equal(lowDay.ok, false);
+  assert.match(lowDay.why[0], /0% of the 5 cards decided today in this inbox .* the floor is 20% per day/);
+  // a card decided again today counts once for the floor, at its newest verdict (the caps count every decision)
+  const re = triageLimits([{ ref: 'DW-1', verdict: 'accept' }], [{ ref: 'DW-1', verdict: 'snooze' }, { ref: 'DW-2', verdict: 'accept' }], DEFAULT_CAPS);
+  assert.deepEqual([re.decided, re.ok, re.today.accepts, re.today.rejects], [2, false, 2, 1]);
 });
 
 test('one verdicts file passes both triage check and temper-verdicts: inbox and recorded are optional, checked, never sent', () => {
