@@ -16,6 +16,8 @@
 //                                          cycle is the --repo's, else the file's repo's, else the only one open
 //   triage check --verdicts <json> --inbox <key>   reject/snooze share and the day's caps, before verdicts are recorded
 //   modules bar [--instruments <dir>]      the five-part bar per Dowser module; writes docs/evals/temper/modules.json
+//   proposals resolve --id <p> --commit <sha> [--note t]   a landed fix of a lens-scan proposal, for the bar
+//                                          (docs/evals/temper/resolved.json; the lens-scan store is never written)
 //   clock [--rate-limited --until <iso>]   {elapsed_min, remaining_min, ends_at, drain, stop}
 //   report [--date YYYY-MM-DD]             writes docs/evals/temper/<date>.md
 //   land [--repo <name>] [--dry-run]       the repo's own landing law (charter repos[].landing):
@@ -762,7 +764,7 @@ function triageCheck(ctx, f) {
 
 // --------------------------------------------------------------------------------------------- the bar
 
-/** @typedef {{e2e: Record<string, {rows: any[], stale: boolean} | undefined>, lens?: {proposals: any[], features: {slug: string, contexts: string[]}[]}, scans: any[], cycles: any[], quality: any[], coverage?: {ids: Record<string, string[]>}, inbox?: string}} Instruments */
+/** @typedef {{e2e: Record<string, {rows: any[], stale: boolean} | undefined>, lens?: {proposals: any[], features: {slug: string, contexts: string[]}[]}, resolved?: Record<string, {commit: string}>, scans: any[], cycles: any[], quality: any[], coverage?: {ids: Record<string, string[]>}, inbox?: string}} Instruments */
 
 /** @param {string} p @returns {Part} */
 const unverifiable = (p) => ({ state: 'unverifiable', ok: false, detail: p });
@@ -800,12 +802,16 @@ export function uatPart(mod, inst) {
 export function proposalsPart(mod, inst) {
   if (!inst.lens) return unverifiable('the lens-scan store or app-structure was not read');
   const feats = new Set(inst.lens.features.filter((f) => (f.contexts ?? []).some((c) => mod.contexts.includes(c))).map((f) => f.slug));
-  const open = inst.lens.proposals.filter((x) => feats.has(x.feature) && OPEN_LENS.has(x.status));
+  const mine = inst.lens.proposals.filter((x) => feats.has(x.feature) && OPEN_LENS.has(x.status));
+  // a fix that landed (resolved.json, its commit on HEAD's history) closes the proposal for the bar; one being executed stays open
+  const fixed = mine.filter((x) => x.status !== 'executing' && inst.resolved?.[x.id]);
+  const open = mine.filter((x) => !fixed.includes(x));
   const blocking = open.filter((x) => Number.isInteger(x.tier) && x.tier <= 2);
   if (blocking.length) return { state: 'verified', ok: false, detail: `open at tier 0-2: ${blocking.map((x) => `${x.id} (t${x.tier})`).join(', ')}` };
   const untriaged = open.filter((x) => !Number.isInteger(x.tier));
   if (untriaged.length) return unverifiable(`untriaged (rank them): ${untriaged.map((x) => x.id).join(', ')}`);
-  return { state: 'verified', ok: true, detail: `${open.length} open, none at tier 0-2 (${feats.size} features)` };
+  const by = fixed.length ? `; resolved by a landed commit: ${fixed.map((x) => `${x.id} (${inst.resolved?.[x.id].commit.slice(0, 7)})`).join(', ')}` : '';
+  return { state: 'verified', ok: true, detail: `${open.length} open, none at tier 0-2 (${feats.size} features)${by}` };
 }
 
 /** @param {string} name @param {Module} mod @param {Instruments} inst @returns {Part} */
@@ -877,9 +883,11 @@ export function readInstruments(ctx, { dir, inbox }) {
     const props = readJson(at('lens-proposals.json'));
     const st = readJson(at('app-structure.json'));
     const cov = readJson(at('coverage.json'));
+    const res = readJson(at('resolved.json'));
     return {
       e2e: Object.fromEntries(E2E_PROJECTS.map((p) => { const rows = readJson(at(join('e2e', `${p}.json`))); return [p, Array.isArray(rows) ? { rows, stale: false } : undefined]; })),
       ...(Array.isArray(props) && Array.isArray(st?.features) ? { lens: { proposals: props, features: st.features } } : {}),
+      ...(res && typeof res === 'object' ? { resolved: res } : {}),
       scans: readJsonl(at('scans.jsonl')), quality: readJsonl(at('quality.jsonl')),
       cycles: existsSync(at('cycles.jsonl')) ? readJsonl(at('cycles.jsonl')) : cycleRows(ctx.root),
       ...(cov ? { coverage: cov } : {}), ...(inbox ? { inbox } : {}),
@@ -893,10 +901,45 @@ export function readInstruments(ctx, { dir, inbox }) {
   try { cov = e2eCoverage({ root: ctx.root, against: 'none' }); } catch { cov = undefined; }
   return {
     e2e: Object.fromEntries(E2E_PROJECTS.map((p) => [p, res[p] ? { rows: res[p].rows, stale: res[p].mtimeMs < headMs } : undefined])),
-    ...(lens ? { lens } : {}),
+    ...(lens ? { lens } : {}), resolved: landedResolutions(ctx),
     scans: readJsonl(join(ctx.home, 'scans.jsonl')), quality: readJsonl(join(paths(ctx.root).records, 'quality.jsonl')), cycles: cycleRows(ctx.root),
     ...(cov ? { coverage: cov } : {}), ...(inbox ? { inbox } : {}),
   };
+}
+
+/**
+ * The recorded resolutions whose commit is still on HEAD's history (a reset or a red day's rollback drops them).
+ * @param {Ctx} ctx @returns {Record<string, {commit: string}>}
+ */
+function landedResolutions(ctx) {
+  const all = readJson(join(paths(ctx.root).records, 'resolved.json')) ?? {};
+  return Object.fromEntries(Object.entries(all).filter(([, v]) => typeof v?.commit === 'string' && gitOk(ctx, 'merge-base', '--is-ancestor', v.commit, 'HEAD')));
+}
+
+/**
+ * proposals resolve --id <p> --commit <sha> [--note t]: records that a landed commit fixed a lens-scan proposal, in
+ * docs/evals/temper/resolved.json, which the bar's proposals part honours. The lens-scan store is never written: its
+ * statuses are lens-scan's and the operator's. The commit must be on HEAD's history; when the store is readable, the
+ * proposal must be in it.
+ * @param {Ctx} ctx @param {Record<string, string | true>} f
+ */
+function proposalsResolve(ctx, f) {
+  if (typeof f.id !== 'string' || !/^p-[a-z0-9]+$/.test(f.id)) throw new UsageError('proposals resolve needs --id p-<id> (a lens-scan proposal id)');
+  if (typeof f.commit !== 'string' || !/^[0-9a-f]{7,40}$/i.test(f.commit)) throw new UsageError('proposals resolve needs --commit <sha> (the commit that fixed it)');
+  if (!gitOk(ctx, 'cat-file', '-e', `${f.commit}^{commit}`)) throw new Refusal(`${f.commit} is not a commit in ${ctx.root}`);
+  const commit = git(ctx, 'rev-parse', `${f.commit}^{commit}`);
+  if (!gitOk(ctx, 'merge-base', '--is-ancestor', commit, 'HEAD')) throw new Refusal(`${f.commit} is not on HEAD's history: only a landed fix resolves a proposal`);
+  const lens = readLens(ctx);
+  const prop = lens?.proposals.find((x) => x.id === f.id);
+  if (lens && !prop) throw new Refusal(`${f.id} is not in the lens-scan store`);
+  if (prop?.status === 'executing') throw new Refusal(`${f.id} is being executed (lens-scan): it resolves when that run ends`);
+  const file = join(paths(ctx.root).records, 'resolved.json');
+  const all = readJson(file) ?? {};
+  all[f.id] = { commit, subject: git(ctx, 'log', '-1', '--format=%s', commit), resolved_at: ctx.now().toISOString(), by: DECIDER,
+    ...(prop ? { status_then: prop.status, ...(Number.isInteger(prop.tier) ? { tier: prop.tier } : {}) } : { checked_in_store: false }),
+    ...(typeof f.note === 'string' ? { note: f.note } : {}) };
+  writeJson(file, all);
+  return { id: f.id, ...all[f.id], written: file };
 }
 
 /** The lens-scan proposals (its store CLI, read-only) and the app-structure's features. @param {Ctx} ctx */
@@ -1204,8 +1247,8 @@ function land(ctx, f) {
 
 // ------------------------------------------------------------------------------------------------- main
 
-const SPEC = { values: ['from', 'operator', 'date', 'approve', 'veto', 'target', 'file', 'verdicts', 'instruments', 'inbox', 'until', 'repo', 'paths', 'title', 'status'], bool: ['dry-run', 'rate-limited'] };
-const USAGE = 'usage: temper.mjs charter init --from <json> --operator <name> | charter show | day start|resume|end | repo start|end --repo <r> | cycle begin --target <t> [--repo <r>] | cycle end --file <f> | triage check --verdicts <f> --inbox <k> | modules bar | clock | report | land [--repo <r>] [--dry-run]';
+const SPEC = { values: ['from', 'operator', 'date', 'approve', 'veto', 'target', 'file', 'verdicts', 'instruments', 'inbox', 'until', 'repo', 'paths', 'title', 'status', 'id', 'commit', 'note'], bool: ['dry-run', 'rate-limited'] };
+const USAGE = 'usage: temper.mjs charter init --from <json> --operator <name> | charter show | day start|resume|end | repo start|end --repo <r> | cycle begin --target <t> [--repo <r>] | cycle end --file <f> | triage check --verdicts <f> --inbox <k> | modules bar | proposals resolve --id <p> --commit <sha> [--note t] | clock | report | land [--repo <r>] [--dry-run]';
 
 /**
  * Runs one command. @param {string[]} argv @param {Ctx} [ctx]
@@ -1224,7 +1267,7 @@ export function main(argv, ctx = realCtx()) {
       'day start': () => dayStart(ctx, f), 'day resume': () => dayResume(ctx), 'day end': () => dayEnd(ctx),
       'repo start': () => repoStart(ctx, f), 'repo end': () => repoEnd(ctx, f),
       'cycle begin': () => cycleBegin(ctx, f), 'cycle end': () => cycleEnd(ctx, f), 'triage check': () => triageCheck(ctx, f),
-      'modules bar': () => modulesBar(ctx, f), 'clock ': () => clock(ctx, f), 'report ': () => report(ctx, f), 'land ': () => land(ctx, f),
+      'modules bar': () => modulesBar(ctx, f), 'proposals resolve': () => proposalsResolve(ctx, f), 'clock ': () => clock(ctx, f), 'report ': () => report(ctx, f), 'land ': () => land(ctx, f),
     };
     const run = table[`${cmd} ${sub}`];
     if (!run) throw new UsageError(`unknown command ${[cmd, sub].filter(Boolean).join(' ') || '(none)'}`);

@@ -171,6 +171,40 @@ test('modules bar: five verified parts meet the bar; unverifiable, self-reported
   assert.equal(evaluateBar(defs, live).next !== 'insights-ui' || true, true);
 });
 
+test('proposals: a landed fix recorded with proposals resolve closes a tier 0-2 proposal for the bar; the lens-scan store is never written', () => {
+  const defs = loadModules();
+  const open = instruments({ lens: { ...instruments().lens, proposals: [{ id: 'p-a3b5bd', feature: 'map', status: 'proposed', tier: 1 }] } });
+  assert.match(evaluateBar(defs, open).modules['insights-ui'].parts.proposals.detail, /open at tier 0-2: p-a3b5bd \(t1\)/);
+  const fixed = evaluateBar(defs, { ...open, resolved: { 'p-a3b5bd': { commit: 'abcdef0123456789' } } }).modules['insights-ui'];
+  assert.equal(fixed.parts.proposals.ok, true);
+  assert.match(fixed.parts.proposals.detail, /resolved by a landed commit: p-a3b5bd \(abcdef0\)/);
+  assert.equal(fixed.met, true);
+  const running = { ...open, lens: { ...open.lens, proposals: [{ id: 'p-a3b5bd', feature: 'map', status: 'executing', tier: 1 }] }, resolved: { 'p-a3b5bd': { commit: 'abc' } } };
+  assert.equal(evaluateBar(defs, running).modules['insights-ui'].parts.proposals.ok, false, 'a proposal being executed stays open');
+  // the CLI: the commit must be on HEAD's history; the record goes to docs/evals/temper/resolved.json
+  const w = world();
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  put(join(w.root, 'fix.txt'), 'fixed\n');
+  g(w.root, 'add', 'fix.txt'); g(w.root, 'commit', '-q', '-m', 'fix: the git option injection');
+  const sha = g(w.root, 'rev-parse', 'HEAD');
+  g(w.root, 'checkout', '-q', '-b', 'side'); put(join(w.root, 'side.txt'), 's\n'); g(w.root, 'add', 'side.txt'); g(w.root, 'commit', '-q', '-m', 'side');
+  const side = g(w.root, 'rev-parse', 'HEAD');
+  g(w.root, 'checkout', '-q', 'loop/2026-11-05');
+  assert.equal(main(['proposals', 'resolve', '--id', 'p-a3b5bd'], w.ctx).code, 2);
+  assert.equal(main(['proposals', 'resolve', '--id', 'DW-1', '--commit', sha], w.ctx).code, 2);
+  assert.match(main(['proposals', 'resolve', '--id', 'p-a3b5bd', '--commit', 'deadbeef'], w.ctx).out.error, /not a commit/);
+  assert.match(main(['proposals', 'resolve', '--id', 'p-a3b5bd', '--commit', side], w.ctx).out.error, /not on HEAD's history/);
+  const r = main(['proposals', 'resolve', '--id', 'p-a3b5bd', '--commit', sha.slice(0, 8), '--note', 'v0.3.0'], w.ctx);
+  assert.equal(r.code, 0, JSON.stringify(r.out));
+  const rec = JSON.parse(readFileSync(join(w.root, 'docs', 'evals', 'temper', 'resolved.json'), 'utf8'));
+  assert.deepEqual([rec['p-a3b5bd'].commit, rec['p-a3b5bd'].subject, rec['p-a3b5bd'].note, rec['p-a3b5bd'].by], [sha, 'fix: the git option injection', 'v0.3.0', 'delegate:temper']);
+  assert.deepEqual(readInstruments({ ...w.ctx, env: { TEMPER_LENS_SCAN: join(w.work, 'none') } }, {}).resolved, { 'p-a3b5bd': rec['p-a3b5bd'] });
+  // a reset that drops the fix drops the resolution from the bar
+  g(w.root, 'reset', '-q', '--hard', 'master');
+  assert.deepEqual(readInstruments({ ...w.ctx, env: { TEMPER_LENS_SCAN: join(w.work, 'none') } }, {}).resolved, {});
+});
+
 test('modules bar CLI: reads an instruments folder and writes docs/evals/temper/modules.json', () => {
   const w = world();
   charter(w);
