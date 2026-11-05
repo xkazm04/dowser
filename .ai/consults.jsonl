@@ -7,3 +7,4 @@
 {"ts":"2026-11-04T17:20:00Z","bundle":"software-engineering","subjects":["demo-data-plane"],"techniques":["fake-surface-honesty-contract","mixed-plane-coexistence"],"deviations":0}
 {"ts":"2026-11-04T19:11:02Z","bundle":"software-engineering","subjects":["migrations","triage-queues"],"techniques":["transactional-ddl","bulk-triage"],"deviations":1}
 {"ts":"2026-11-04T19:54:52.142Z","bundle":"software-engineering","subjects":["packaging","agent-instruction-files"],"techniques":["installer-authoring"],"deviations":2}
+{"ts":"2026-11-04T20:12:34Z","bundle":"software-engineering","subjects":["remediation-roadmaps"],"techniques":["weighted-upside-ranking"],"deviations":0}
