@@ -266,9 +266,9 @@ first-run screen (resolver `sample.load`) files a real Dowser scan of Dowser's o
   the one sample, and a second person who presses Load gets it (`already: true`), not a refusal. A Jira write
   from it (accept, merge) still needs the person's own Jira permission.
 - **Remove.** `sample.remove` deletes every row of the sample in every table (proposals, evidence, verdicts,
-  pushes, areas, rules, outcomes, directions, trust, its verdict counter, the inbox). Only the person who
-  loaded it or a Jira admin may remove it. Issues that accepted sample cards created stay in Jira; the answer
-  counts them (`issues_kept`). DW numbers are not reused, so a reload numbers its cards anew.
+  pushes, areas, rules, outcomes, directions, trust, deliveries, work reports, page links, its verdict counter, the
+  inbox). Only the person who loaded it or a Jira admin may remove it. Issues that accepted sample cards created
+  stay in Jira; the answer counts them (`issues_kept`). DW numbers are not reused, so a reload numbers its cards anew.
 - **Load time.** A push files its cards as sets (see "Data (Forge SQL)" above), so a load costs about a dozen
   statements per push of 50 cards plus a few for the areas and the trust: 40 cards with 3 evidence rows each is
   under 40 statements, 1-2 s at 30-60 ms a statement, and finishes in one call. The 12 s budget stays as the

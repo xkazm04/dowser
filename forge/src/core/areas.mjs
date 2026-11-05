@@ -7,7 +7,7 @@ import { AREAS_MAX } from './types.mjs';
 import { PROJECT_KEY_RE, parseJsonArray } from './push.mjs';
 import { ensureInbox, needInbox, refuseSampleKey, toProposal } from './store.mjs';
 import { deciderOf } from './verdicts.mjs';
-import { AppError, isIso, isObj, needStr, num, omitAbsent, sqlv } from './util.mjs';
+import { AppError, DuplicateKey, isIso, isObj, needStr, num, omitAbsent, sqlv } from './util.mjs';
 
 /**
  * @typedef {import('./ports.mjs').Deps} Deps
@@ -72,11 +72,18 @@ export async function pushAreas(deps, args, accountId, o = {}) {
   for (const raw of areas) {
     const a = /** @type {Area} */ (raw);
     const vals = [a.files, a.churn_90d, sqlv(a.authors_90d), sqlv(a.last_change), runId];
-    const u = await db.exec('UPDATE areas SET files = ?, churn_90d = ?, authors_90d = ?, last_change = ?, run_id = ? WHERE project_key = ? AND path = ?',
+    const update = () => db.exec('UPDATE areas SET files = ?, churn_90d = ?, authors_90d = ?, last_change = ?, run_id = ? WHERE project_key = ? AND path = ?',
       [...vals, projectKey, a.path]);
-    if (u.affectedRows === 0) {
-      await db.exec('INSERT INTO areas (files, churn_90d, authors_90d, last_change, run_id, project_key, path) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [...vals, projectKey, a.path]);
+    if ((await update()).affectedRows === 0) {
+      try {
+        await db.exec('INSERT INTO areas (files, churn_90d, authors_90d, last_change, run_id, project_key, path) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [...vals, projectKey, a.path]);
+      } catch (e) {
+        // MySQL counts an UPDATE that changed nothing as 0 rows (a push re-run after one cut short writes the same
+        // values), and a concurrent push may have inserted first: the row exists either way, so write ours over it.
+        if (!(e instanceof DuplicateKey)) throw e;
+        await update();
+      }
     }
   }
   const keep = [...seen];
