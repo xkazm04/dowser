@@ -55,6 +55,9 @@ Production, tags and releases are never part of a landing. The guard denies them
 - `T repo start --repo personas --paths <globs>` runs `scripts/active-runs.mjs check` (a live conflict refuses), makes
   `temper/<date>` in a worktree, and registers the run. `T repo end` completes it. `day end` refuses while it is
   registered.
+- `T land --dry-run --repo personas` also answers `warnings` for commits that lack a trailer the repo's law asks for
+  (its `Agent-Session`, read from the law files with a small pattern). A warning, never a refusal: the real landing
+  does not read it.
 - `T repo paths --repo personas --add a,b` widens the registered paths for a later cycle. It runs
   `active-runs.mjs check --json` on the new paths (a live entry of another session refuses, before anything is
   written), then, because the ledger script has no update command and is its only writer, completes the day's entry

@@ -28,9 +28,25 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   While it runs, stderr gets a heartbeat every 60 s (`temper-scan <inbox>: <n> min elapsed, last step: <tool> ...`): no
   heartbeat for several minutes means a hung scan, not a slow one. Run it in the background and watch stderr.
 - Other repos: `scan.others_due` lists those with no scan today or yesterday, so each is scanned every second day,
-  read-only, into its own inbox.
-- A full four-lens scan costs about $8 (n=1, bp, 2026-11-05). A focused one-area scan costs far less: $2.91 and
-  9 minutes (n=1, dowser, `area:skill/lenses`, 2026-11-05). Budget a focused cycle from the focused figure. Never call
+  read-only, into its own inbox. An inbox whose accepts are spent is not listed.
+- **No accepts left, no scan.** A scan's cards can only be carried once the inbox's accepts are at the cap, so
+  `cycle begin` drops that inbox's scan command and answers `accepts_spent` (`accepts`, `cap`, `carried`, `why`,
+  `instead`) in both the answer and the runner block: triage what is undecided, then the spec-only cycle, or a repo with
+  accepts left. `--scan-anyway` keeps the command. `T clock` answers `inboxes_spent` and `all_inboxes_spent`; when every
+  build inbox is spent, the day ends early (SKILL.md section 1) and the report's Summary gives the reason.
+- What a scan costs, measured from `~/.temper/scans.jsonl` (all 15 rows of 2026-11-05, every one `ok`; n is small, so
+  these are the first night's evidence, not constants):
+
+  | inbox | scan | n | cost min / median / max | minutes min / median / max |
+  |---|---|---|---|---|
+  | bp | full | 1 | $7.86 | 33 |
+  | bp | focused | 4 | $3.92 / $4.23 / $4.64 | 10 / 11 / 15 |
+  | dowser | focused | 6 | $2.91 / $4.07 / $5.26 | 9 / 11 / 12 |
+  | personas | full | 1 | $4.02 | 9 |
+  | personas | focused | 3 | $4.67 / $5.24 / $5.37 | 14 / 14 / 14 |
+
+  Budget a focused cycle at $4 to $5.50 and up to 15 minutes, per repo as above. No full Dowser scan ran. The two full
+  rows are one run each and disagree by a factor of two, so plan a full scan at the $8 budget it runs under. Never call
   ScheduleWakeup inside a scan.
 
 ## 3. Triage (delegate:temper)
@@ -41,6 +57,10 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   A card the store keeps `pushed` may already be judged: each row carries `decided_local` or `decided_live`
   (`{verdict, cycle}`, from the day ledger), and `--undecided` lists only the cards with no verdict yet. Not `dowser.mjs list --repo <path>`: the scan keys the store by the inbox key (the clone's origin is set to
   it), so the real checkout maps to another project and lists nothing.
+- **The falsifier first.** Each card's own `Falsified if` check (the Evaluation section, `acceptance` in `--full`) runs
+  before anything else, and a true falsifier is a reject as `false-positive`. Scans push such cards (DW-176, 2026-11-05).
+  The charter's other repo paths (the block's `other_repos`) may be read to check one, and a card that says "outside
+  this repo" is checked there before it is carried (DW-151 and DW-156, closed by one grep of a sibling checkout).
 - A subagent reads every new card against the code it quotes. Accept only a card that is real (the evidence holds
   at HEAD), in direction, and inside the charter's bounds. Reject with the honest reason code. Snooze what is real but
   not now. Merge duplicates into the accepted item.
@@ -51,13 +71,14 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   `T triage check --verdicts <file> --inbox <key>`. Exit 1 means look again for the weak cards.
 - **The rejects cap counts snoozes and merges.** Forge counts a day's rejects, snoozes and merges together against
   `rejects_per_day`, and so do `triage check`, `cycle end` and the runner block's `caps.used.rejects` and
-  `caps.left.rejects`: a snooze or a merge spends the rejects cap as a reject does. A `deferred: "cap"` snooze does
+  `caps.left.rejects`: a snooze or a merge spends the rejects cap as a reject does (`today.rejects_by` and
+  `caps.used.rejects_by` tell them apart, so `rejects` reads as the cap's spend, not as cards rejected). A `deferred: "cap"` snooze does
   not: it is counted as `carried` (below), outside both the cap and the floor.
 - One verdicts file serves both tools: `[{ref, verdict, reason?, note?, into?, until?, inbox?, recorded?, deferred?}]`.
   `reason` is a reject's code only (model.mjs REASONS); a snooze or an accept says why in `note`. `inbox` (when given)
   must be the inbox checked, and `recorded` is `live` or `local`; temper-verdicts checks both and never sends them.
 - **Carried to tomorrow.** A real card that you would accept, but the day's accept cap is reached, is a snooze with
-  `deferred: "cap"` (and a `note`). It is counted apart, as `carried`: it does not count toward the reject-or-snooze
+  `deferred: "cap"` (and a `note`), and `until` the next day (YYYY-MM-DD): the next day's triage takes it first. It is counted apart, as `carried`: it does not count toward the reject-or-snooze
   floor or the rejects cap, because the cap made the call, not the triage. It is valid only once the inbox's accepts
   today reach the cap (`triage check` and `cycle end` refuse it under the cap). The report lists these cards under
   "Carried to tomorrow", and the next day's start dialog asks about them first. Forge still records a live one as a
@@ -89,6 +110,10 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   `git checkout` there). When it patches source to show a spec can pass, it does so in its own scratch worktree
   (`git worktree add <tmp> <branch>`, removed after) and never commits the patch: that the spec turns green on the
   build is the builder's to show.
+- A **gate-required tether test** is the one test a builder may write: a repo gate can demand a parity test once the
+  build mirrors a rule across languages (a census rule, for one), which QA could not foresee from the card. Brief QA to
+  write it when a card visibly mirrors a server rule. Otherwise the builder writes it, and `built[].specs` lists it with
+  `qa` naming who wrote it. It never replaces the item's red spec.
 - A pure docs card (doc drift inside the registered paths) has no natural test file. Its spec is a declared
   acceptance command (a quote or grep check that fails on the base and passes after), written by the QA subagent
   before the build and listed in `built[].specs` as the command, with `qa` saying who wrote it.
@@ -184,7 +209,8 @@ next cycle file's `flaky_gates`.
  "uat": {"pass": 40, "fail": 0}, "findings": ["DOW-12"], "outcomes": [{"ref": "DW-40", "rating": "right", "basis": "specs green on local; no finding"}],
  "directions": [], "parked": [{"item": "DW-49", "why": "needs the operator's call on scope"}], "notes": "...",
  "skill_issues": [{"where": "temper.mjs cycleEnd", "what": "...", "evidence": "file:line or a run's output", "fix": "..."}],
- "flaky_gates": [{"gate": "npm run check:x", "evidence": "151/152 then 152/152, no change; a fixed 2.5 s wait at x.ts:177"}]}
+ "flaky_gates": [{"gate": "npm run check:x", "evidence": "151/152 then 152/152, no change; a fixed 2.5 s wait at x.ts:177"}],
+ "chores": [{"what": "the README's section on the ledger, asked for by the director", "commits": ["9fef33e"]}]}
 ```
 
 The top-level keys are closed (an unknown one is a usage error). Inside them a runner may add informational keys,
@@ -193,6 +219,9 @@ stored as written. These are known and type-checked:
 - `scan`: `cost_usd` and `minutes` (numbers), `turns` (a whole number), `run_id` (text), `ref` (the branch scanned, the ledger row's `ref`), `head` (the commit
   scanned), `pushed` (the refs pushed to the inbox) and `lens_states` (text, each lens's state).
 - `built[]`: `slice` ("1/2"), `commits` and `specs` (lists), `qa` (who wrote the specs, e.g. `subagent`).
+- `chores`: `[{what, commits}]`, work with no accepted card behind it (a docs task the director asked for). `built[]`
+  is keyed by a card's ref, so such a commit has no place there. `what` is non-empty and `commits` a non-empty list of
+  commits; `cycle end` checks both, and the report lists them under Chores.
 - `uat` is free-form, and all of it is self-reported: the runner's own e2e counts, its gate results, where its
   result files are and `persona_pass` (its state, section 5). `cycle end` checks only the form of `persona_pass` and
   trusts none of it.

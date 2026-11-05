@@ -16,7 +16,8 @@ measures). Their rules bind you. This brief adds the order of work and the input
 | `loop_root` | the loop's checkout: every `node tools/...` and `T` command below runs from there |
 | `repo`, `path`, `inbox` | the repo of this cycle, its checkout and its inbox key |
 | `n`, `target`, `focus` | the cycle number, the module or focus, and the focus the scan takes (`goal:<text>` or `area:<path>`) |
-| `scan` | the scan command, with `--ref` (the day branch it reads) and the budget |
+| `scan` | the scan command, with `--ref` (the day branch it reads) and the budget. Absent when the inbox's accepts are spent |
+| `accepts_spent` | only at the accept cap: `accepts`, `cap`, `carried` (the carried cards' count), `why`, and `instead` (the work left) |
 | `caps` | the inbox's caps for the day, with what is `used` and `left` before this cycle |
 | `carried` | cards the previous day carried to today (cap-deferred snoozes): triage them first |
 | `work` | where you build: `worktree`, `branch`, `from`, and `create` when the director has not made it yet |
@@ -24,6 +25,8 @@ measures). Their rules bind you. This brief adds the order of work and the input
 | `item_gates` | the repo's per-item gates from the charter (none: the repo's own law names them) |
 | `out_of_bounds` | the charter's bounds: a card there is out of bounds, whatever its merit |
 | `laws` | the repo's own law files (`CLAUDE.md`, `AGENTS.md`, `.claude/CLAUDE.md`, those present) |
+| `commit_trailers` | `[{name, law}]`: the commit trailers a small pattern found the law asking for (empty: it found none; the law's own words still bind) |
+| `other_repos` | `[{name, path}]`: the charter's other repos, read-only, to check a card's falsifier in |
 | `scratch` | this cycle's own folder for every scratch file (`~/.temper/runs/c<n>/`, created by `cycle begin`) |
 | `cycle_file` | where you write the cycle file (`~/.temper/runs/cycle-<n>-<repo>.json`) |
 
@@ -44,6 +47,10 @@ never commits (secrets, a `.env`), its doc-sync and test rules, what it marks as
 this brief differ, follow the law and say so in `skill_issues`. Never push, tag, release, deploy, or touch any
 repo's master. Landing is the director's.
 
+Read the law for **commit-message requirements** too (trailers such as `Agent-Session`, subject form, sign-off) and
+apply them to every commit of the cycle, QA's included, on top of `Co-Authored-By`. Take the trailer's value from the
+law's own form. `land --dry-run` warns about a commit that lacks a trailer the law asks for.
+
 ## A fresh worktree has no node_modules
 
 `git worktree add` checks out the tracked files only: a fresh `work.worktree` (and a QA scratch worktree) has no
@@ -60,20 +67,35 @@ install missing, not the item: install, then run the gate again.
 ## Secret scanning
 
 The repo's own secret-scan hook may depend on a tool that is not installed here (gitleaks, for one): such a hook
-skips or fails without scanning. Then the repo's scan is **unverifiable**: never report it as clean, and say so in
+skips or fails without scanning, and a hook runner may still show that step with a green check mark, which is not a
+scan: read what the step printed, and tell QA and builders the same. Then the repo's scan is **unverifiable**: never report it as clean, and say so in
 `notes`. Do not install the tool or bypass the hook. `land` runs the built-in secret scan on every landing kind, so
 the director's landing still checks the diff; you still never commit a secret or a `.env`.
 
+## Exit codes and long files
+
+- A gate's verdict is its own exit code. Redirect it to a file in `scratch` and record its `$?`: never through a pipe
+  (`| tail` answers for `tail`) and never from a job's summary, and quote that line in the cycle file's `uat`.
+- Write the cycle file and other long JSON with a file-writing tool or a script file. A long inline heredoc can fail
+  to parse in the shell tool.
+
 ## Steps
 
-1. **Scan.** Skip it when the launch message says the scan ran. Otherwise run `scan` from `loop_root` as printed:
+1. **Scan.** Skip it when the launch message says the scan ran, or when the block has no `scan`: the inbox's accepts
+   are spent, so a scan could only carry more cards. Then do what `accepts_spent.instead` names: triage what is still
+   undecided, then the spec-only cycle below. Otherwise run `scan` from `loop_root` as printed:
    its `--ref` is the day branch, so the scan reads the day's fixes and does not bring back cards they closed. It
    is read-only on the repo. Record cost, minutes, cards created, `ref` and `head` from the ledger row (cycle.md
    section 2). When the scan fails, record why and go on with the cards the inbox already holds.
 2. **Triage.** List the cards with `node tools/temper-cards.mjs --project-key <inbox> [--status s] [--quotes]
    [--undecided] [--full]` (or the scan's `report`), never `dowser.mjs list --repo`. `--full` adds each card's
    rationale, sections and acceptance. Decide the `carried` cards first, then every new or still
-   undecided card (`--undecided` lists only those: a `pushed` card with `decided_local` or `decided_live` is judged). Read each card's quoted evidence against the code on the day branch. Accept only a card that is
+   undecided card (`--undecided` lists only those: a `pushed` card with `decided_local` or `decided_live` is judged).
+   Run each card's `Falsified if` check first (its `acceptance`, from `--full`): scans do push cards whose own falsifier
+   is already true, and a true falsifier is a reject with the reason `false-positive`, whatever else the card says. A
+   card that says its answer is "outside this repo" is not open on that account: the paths in `other_repos`, and the
+   `registry.local` of a repo's `.ai/manifest.yaml` (the lens-scan store lives there), may be read to check it, never
+   written. Then read each card's quoted evidence against the code on the day branch. Accept only a card that is
    real, in direction and inside the bounds. Reject with the honest reason code. Snooze what is real but not now.
    Merge duplicates. When the accept cap is reached, a card you would accept is a snooze with `deferred: "cap"`
    (cycle.md section 3): it is carried, not judged. Write **one verdicts file** and run
@@ -83,7 +105,8 @@ the director's landing still checks the diff; you still never commit a secret or
    `recorded: "local"`. Do not retry it this cycle.
 3. **Build** the accepted cards, highest value first, as many as fit in about 90 minutes, any size (an XL is staged
    in slices; build the first). Check every bound first (cycle.md section 4): `registered_paths`, a baseline the
-   fix moves, a file the repo marks as needing a human. Then, per item:
+   fix moves, a file the repo marks as needing a human, a file a card quotes that a script generates (edit its source;
+   the next regeneration erases the rest). Then, per item:
    - **QA first.** A separate QA subagent writes the failing spec from the card's Flow and acceptance criteria only
      (`node tools/temper-cards.mjs --project-key <inbox> --full` prints them: `sections.Flow`, `acceptance`),
      proves it fails on the base, and commits it alone. It greps the repo's test folders for the old behaviour (the
@@ -108,12 +131,12 @@ the director's landing still checks the diff; you still never commit a secret or
    Never run lens-scan cover: the director runs it from the main checkout after the merge.
 6. **Write the cycle file** at `cycle_file`, in the shape cycle.md gives: target, repo (when it is not the loop's
    own), scan, verdicts (the same verdicts, each with `inbox` and `recorded`), built `[{ref, size, slice, commits,
-   specs, qa}]`, uat, findings, outcomes, directions, parked, notes, skill_issues, flaky_gates. Then stop every server
+   specs, qa}]`, chores `[{what, commits}]` (work with no accepted card behind it), uat, findings, outcomes, directions, parked, notes, skill_issues, flaky_gates. Then stop every server
    you started.
 
 ## The spec-only cycle
 
-When the accept cap is reached, the cycle builds nothing and still turns what it learns into proof: its UAT findings
+When the accept cap is reached (the block's `accepts_spent`), the cycle scans nothing and builds nothing, and still turns what it learns into proof: its UAT findings
 become specs asserting the correct behaviour, so tomorrow's builder starts from a red spec, not a paragraph.
 
 1. File the finding first (step 4): its ticket is the spec's name.

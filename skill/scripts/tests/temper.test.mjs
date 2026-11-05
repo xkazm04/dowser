@@ -11,7 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   CAP_DAY_NOTE, DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, depDrift, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
-  capQuestions, checkFlakyGates, flakyQuestions, repoFixmes, commitGroups, commitKind, cycleRows, cycleScratch, envCause, environmentalRed, parkedGroups, supersede, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
+  capQuestions, checkChores, everyBuildInboxSpent, lawTrailers, repoTrailers, checkFlakyGates, flakyQuestions, repoFixmes, commitGroups, commitKind, cycleRows, cycleScratch, envCause, environmentalRed, parkedGroups, supersede, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
 } from '../../../.claude/skills/temper/scripts/temper.mjs';
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
 import { derivedIds } from '../../../tools/e2e-coverage.mjs';
@@ -236,6 +236,24 @@ test('modules bar CLI: reads an instruments folder and writes docs/evals/temper/
   assert.ok(file.next, 'the least-stable module is named');
 });
 
+test('--help: one command\'s flags and exit 0; no command: all of them; a real usage error still exits 2', () => {
+  const w = world();
+  const h = main(['triage', 'check', '--help'], w.ctx);
+  assert.deepEqual(h, { code: 0, out: { usage: 'usage: temper.mjs triage check --verdicts <f> --inbox <k>' } });
+  assert.equal(main(['land', '--help'], w.ctx).out.usage, 'usage: temper.mjs land [--repo <r>] [--dry-run]');
+  assert.equal(main(['day', 'end', '--help'], w.ctx).out.usage, 'usage: temper.mjs day end');
+  const all = main(['--help'], w.ctx);
+  assert.equal(all.code, 0);
+  assert.match(all.out.usage, /cycle begin --target <t> \[--repo <r>\] \[--scan-anyway\] \| cycle end/);
+  assert.equal(main(['triage', 'check', '--nope'], w.ctx).code, 2);
+});
+
+test('triage limits: today tells the rejects cap\'s spend apart: rejects, snoozes and merges', () => {
+  const v = (/** @type {string} */ verdict, /** @type {number} */ i) => ({ ref: `DW-${i}`, verdict, ...(verdict === 'merge' ? { into: 'DW-1' } : {}) });
+  const l = triageLimits([v('reject', 1), v('snooze', 2)], [v('snooze', 3), v('merge', 4), { ...v('snooze', 5), deferred: 'cap' }], DEFAULT_CAPS);
+  assert.deepEqual(l.today, { accepts: 0, rejects: 4, rejects_by: { reject: 1, snooze: 2, merge: 1 }, carried: 1 });
+});
+
 test('modules.json: 8 modules cover every context of the map, the supplement and the app-structure, and every e2e coverage id', () => {
   const { order, modules } = loadModules();
   assert.deepEqual(order, ['skill-store', 'lenses', 'triage', 'forge-core', 'inbox-ui', 'insights-ui', 'connections', 'tooling']);
@@ -351,6 +369,29 @@ test('cycle end: the runner\'s skill_issues are checked, stored in the row, and 
     rmSync(join(w.root, '.temper', 'cycle-dowser.json'));
   }
   assert.match(renderReport({ date: 'd', commits: {}, landings: {}, cycles: [], scans: [], directions: [], questions: [], later: [] }), /## Skill issues\n\nNone\./);
+});
+
+test('chores: cycle end checks {what, commits}, the row keeps them, and the report lists them for work with no accepted card', () => {
+  const w = world();
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  const file = join(w.work, 'c.json');
+  main(['cycle', 'begin', '--target', 'tooling'], w.ctx);
+  put(file, { target: 'tooling', built: [], chores: [{ what: 'the docs of DW-55 and DW-95 ', commits: ['9fef33e0d6', 'abc1234'] }] });
+  const a = main(['cycle', 'end', '--file', file], w.ctx);
+  assert.notEqual(a.code, 2, JSON.stringify(a.out));
+  assert.deepEqual(a.out.self_reported.chores[0].commits, ['9fef33e0d6', 'abc1234']);
+  const md = readFileSync(main(['report'], w.ctx).out.written, 'utf8');
+  assert.match(md, /## Chores\n\nWork with no accepted card behind it \(self-reported\)\.\n\n- c1 \(dowser\): the docs of DW-55 and DW-95 \(9fef33e, abc1234\)\n/);
+  for (const bad of ['none', [{ what: 'x' }], [{ what: ' ', commits: ['abc1234'] }], [{ what: 'x', commits: [] }], [{ what: 'x', commits: ['not a sha'] }], [{ what: 'x', commits: ['abc1234'], ref: 'DW-1' }]]) {
+    assert.throws(() => checkChores(bad), /chores/, JSON.stringify(bad));
+    main(['cycle', 'begin', '--target', 'tooling'], w.ctx);
+    put(file, { target: 'tooling', chores: bad });
+    const r = main(['cycle', 'end', '--file', file], w.ctx);
+    assert.equal(r.code, 2, JSON.stringify(bad));
+    rmSync(join(w.root, '.temper', 'cycle-dowser.json'));
+  }
+  assert.match(renderReport({ date: 'd', commits: {}, landings: {}, cycles: [], scans: [], directions: [], questions: [], later: [] }), /## Chores\n\nNone\./);
 });
 
 test('dependency drift: cycle end and land run npm ci where a lockfile is newer than its node_modules, and a failed install is red', () => {
@@ -868,6 +909,61 @@ test('repo start/land: bp rebases onto origin/master and pushes HEAD:master only
   assert.equal(main(['day', 'end'], w.ctx).code, 0);
 });
 
+test('lawTrailers: an imperative names a trailer; prose about one and a conditional one do not', () => {
+  // the law that found this (a repo's AGENTS.md, 2026-11-05), as written
+  const law = [
+    'Because several sessions commit here at once, name yours in a trailer so a regression can be traced',
+    'to the session that made it: `git commit --trailer "Agent-Session: <your active-runs slug>@<date>"`',
+    '(add `--trailer "Work-Package: <item id>"` when the work has one). `node scripts/git/by-session.mjs`',
+    'lists history by these and by the harness\'s `Claude-Session:` trailer.',
+  ].join('\n');
+  assert.deepEqual(lawTrailers(law), ['Agent-Session']);
+  assert.deepEqual(lawTrailers('Every commit must carry a `Signed-Off-By: name` trailer.'), ['Signed-Off-By']);
+  assert.deepEqual(lawTrailers('Commits need the trailer `Change-Id: x`.'), ['Change-Id']);
+  assert.deepEqual(lawTrailers('If the work has a ticket, add a `Work-Item: id` trailer.\nAdd an optional `Ticket-Ref: id` trailer.'), [], 'conditional, both ways');
+  assert.deepEqual(lawTrailers('Add tests. Keep the `Co-Authored-By: x` lines git adds.\n# Commit style\nUse conventional commits.'), [], 'no trailer asked for');
+  assert.deepEqual(lawTrailers(''), []);
+});
+
+test('land --dry-run, commit-only: warns when commits lack a trailer the repo law names, never refuses; the runner block names the trailers', () => {
+  const w = world();
+  const { personas } = otherRepos(w);
+  const LAW = 'Name your session: `git commit --trailer "Agent-Session: <slug>@<date>"`\n';
+  put(join(personas, 'AGENTS.md'), LAW);
+  g(personas, 'add', 'AGENTS.md');
+  g(personas, 'commit', '-qm', 'law');
+  const draft = join(w.work, 'draft-trailer.json');
+  put(draft, { repos: [{ name: 'dowser', path: w.root, inbox_key: 'dowser-temper', build: true },
+    { name: 'personas', path: personas, inbox_key: 'personas-temper', build: true, landing: { kind: 'commit-only' }, gates: ['npm run gate'] }] });
+  assert.equal(main(['charter', 'init', '--from', draft, '--operator', 'Op'], w.ctx).code, 0);
+  assert.equal(main(['day', 'start', '--date', '2026-11-05'], w.ctx).code, 0);
+  const started = main(['repo', 'start', '--repo', 'personas'], w.ctx).out;
+  const wt = started.worktree;
+  assert.deepEqual(repoTrailers(wt), [{ name: 'Agent-Session', law: 'AGENTS.md' }]);
+  const commit = (/** @type {string} */ name, /** @type {string} */ msg) => { put(join(wt, name), 'x\n'); g(wt, 'add', name); g(wt, 'commit', '-qm', msg); return g(wt, 'rev-parse', '--short', 'HEAD'); };
+  const kept = commit('a.txt', 'fix: a\n\nAgent-Session: temper-c1@2026-11-05\nCo-Authored-By: C <c@x>');
+  const lacks = commit('b.txt', 'fix: b\n\nCo-Authored-By: C <c@x>');
+  commit('c.txt', 'fix: c\n\nAgent-Session:\n');
+  const dry = main(['land', '--dry-run', '--repo', 'personas'], w.ctx);
+  assert.equal(dry.code, 0, JSON.stringify(dry.out));
+  assert.equal(dry.out.decision, 'commit-only', 'a warning, never a refusal');
+  assert.deepEqual(dry.out.reasons, []);
+  assert.equal(dry.out.warnings.length, 1);
+  assert.match(dry.out.warnings[0], /^AGENTS\.md asks for the Agent-Session trailer: 2 of 3 commits on temper\/2026-11-05 lack it \(/);
+  assert.ok(dry.out.warnings[0].includes(lacks), 'names the commit');
+  assert.ok(!dry.out.warnings[0].includes(kept), 'not the one that has it');
+  // the runner block carries them, so the runner applies them before it commits
+  const r = main(['cycle', 'begin', '--repo', 'personas', '--target', 'goal:x'], w.ctx).out.runner;
+  assert.deepEqual(r.commit_trailers, [{ name: 'Agent-Session', law: 'AGENTS.md' }]);
+  rmSync(join(w.root, '.temper', 'cycle-personas.json'));
+  const clean = join(w.work, 'clean');
+  mkdirSync(clean);
+  assert.deepEqual(repoTrailers(clean), [], 'no law, no trailer');
+  const real = main(['land', '--repo', 'personas'], w.ctx);
+  assert.equal(real.out.warnings, undefined, 'the warning is the dry run\'s');
+  assert.equal(real.out.ok, true);
+});
+
 test('repo paths --add: widens the personas entry through active-runs.mjs (check, then complete and register the same slug); a live conflict refuses', () => {
   const w = world();
   const { personas } = otherRepos(w);
@@ -1191,6 +1287,16 @@ test('runner.md: the brief is repo-agnostic, on tonight\'s tools, and SKILL.md s
   assert.match(secrets, /gitleaks/);
   assert.match(secrets, /\*\*unverifiable\*\*: never report it as clean/);
   assert.match(secrets, /built-in secret scan on every landing kind/);
+  // what runners found: a check mark is no scan, a pipe hides the exit code, a heredoc breaks on a long file
+  assert.match(secrets, /green check mark, which is not a\s+scan/);
+  assert.match(md, /never through a pipe/);
+  assert.match(md, /a file-writing tool or a script file/);
+  // a card's own falsifier runs first, and may read the charter's other repos
+  const triage = md.slice(md.indexOf('2. **Triage.**'), md.indexOf('3. **Build**'));
+  assert.match(triage, /`Falsified if` check first/);
+  assert.match(triage, /`false-positive`/);
+  assert.match(triage, /`other_repos`/);
+  assert.match(md, /\| `other_repos` \|/);
   const skill = readFileSync(join(ROOT, '.claude/skills/temper/SKILL.md'), 'utf8');
   const s1 = skill.slice(skill.indexOf('## 1. Cycle'), skill.indexOf('## 2.'));
   assert.match(s1, /references\/runner\.md/);
@@ -1279,6 +1385,73 @@ test('cap-deferred snoozes: counted apart (no floor, no rejects cap), only at th
   const { questions } = startQuestions({ date: '2026-11-06', charter: { delegation: { 'dowser-temper': { until: '2026-11-06' } } }, directions: [], cycles, liveState: 'signed-in' });
   assert.match(questions[0], /^1 cards were carried to today because the accept cap was reached \(dowser-temper: DW-30\)/, 'a card re-decided later that day is not carried');
   assert.match(questions[1], /delegation for dowser-temper/);
+});
+
+test('an inbox with no accepts left: cycle begin drops its scan and names the work left, unless --scan-anyway; clock and report say when every build inbox is spent', () => {
+  const w = world();
+  twoRepoDay(w);
+  const charterFile = join(w.root, '.temper', 'charter.json');
+  const ch = JSON.parse(readFileSync(charterFile, 'utf8'));
+  ch.repos.find((/** @type {any} */ r) => r.name === 'bp').caps = { accepts_per_day: 2, rejects_per_day: 30 };
+  put(charterFile, ch);
+  const v = (/** @type {string} */ ref, /** @type {string} */ inbox, x = {}) => ({ ref, verdict: 'accept', inbox, recorded: 'local', ...x });
+  const cap = { verdict: 'snooze', deferred: 'cap' };
+  const led = (/** @type {string} */ date, /** @type {any[]} */ verdicts) => put(join(w.root, 'docs', 'evals', 'temper', `${date}.jsonl`), `${JSON.stringify({ kind: 'cycle', n: 1, date, repo: 'bp', target: 'area:x', self_reported: { verdicts } })}\n`);
+  // under the cap: the scan stays, and nothing says spent
+  led('2026-11-05', [v('DW-1', 'bp-temper')]);
+  const under = main(['cycle', 'begin', '--repo', 'bp', '--target', 'goal:x'], w.ctx);
+  assert.match(under.out.runner.scan, /temper-scan/);
+  assert.equal(under.out.runner.accepts_spent, undefined);
+  rmSync(join(w.root, '.temper', 'cycle-bp.json'));
+  // at the cap: yesterday's DW-7 is still open, its DW-8 was decided today, DW-4 is carried today
+  led('2026-11-04', [v('DW-7', 'bp-temper', cap), v('DW-8', 'bp-temper', cap), v('DW-9', 'dowser-temper', cap)]);
+  led('2026-11-05', [v('DW-1', 'bp-temper'), v('DW-2', 'bp-temper'), v('DW-8', 'bp-temper', { verdict: 'reject', reason: 'not-worth-it' }), v('DW-4', 'bp-temper', cap)]);
+  const b = main(['cycle', 'begin', '--repo', 'bp', '--target', 'goal:x'], w.ctx);
+  assert.equal(b.code, 0, JSON.stringify(b.out));
+  assert.equal(b.out.runner.scan, undefined, 'the runner gets no scan command');
+  assert.equal(b.out.scan.bp, undefined, 'nor does the director');
+  const s = b.out.runner.accepts_spent;
+  assert.deepEqual(s, b.out.accepts_spent);
+  assert.deepEqual([s.accepts, s.cap, s.carried], [2, 2, 2], 'DW-4 today and DW-7 from yesterday; DW-8 was decided');
+  assert.match(s.why, /bp-temper has used 2 of 2 accepts today.*builds nothing/);
+  assert.match(s.instead[0], /the 2 carried cards/);
+  assert.match(s.instead[1], /spec-only cycle/);
+  assert.match(s.instead[2], /accepts left: dowser/);
+  assert.match(s.scan, /--scan-anyway/);
+  rmSync(join(w.root, '.temper', 'cycle-bp.json'));
+  const kept = main(['cycle', 'begin', '--repo', 'bp', '--target', 'goal:x', '--scan-anyway'], w.ctx);
+  assert.match(kept.out.runner.scan, /temper-scan/, '--scan-anyway keeps it');
+  assert.equal(kept.out.runner.scan, kept.out.scan.bp);
+  assert.match(kept.out.runner.accepts_spent.scan, /^kept/, 'and still says so');
+  rmSync(join(w.root, '.temper', 'cycle-bp.json'));
+  // a spent inbox is not due for the other-repos scan either
+  const d = main(['cycle', 'begin', '--target', 'tooling'], w.ctx);
+  assert.match(d.out.runner.scan, /temper-scan/, 'Dowser still has accepts');
+  assert.deepEqual(d.out.scan.others_due, [], 'bp is spent: no scan is due');
+  rmSync(join(w.root, '.temper', 'cycle-dowser.json'));
+  // one inbox spent: the clock says which, and the day goes on
+  const one = main(['clock'], w.ctx).out;
+  assert.deepEqual([one.inboxes_spent, one.all_inboxes_spent], [['bp-temper'], false]);
+  assert.doesNotMatch(readFileSync(main(['report'], w.ctx).out.written, 'utf8'), /ended early/);
+  // every build inbox spent: the clock and the report say so, with the reason
+  ch.repos.find((/** @type {any} */ r) => r.name === 'dowser').caps = { accepts_per_day: 0, rejects_per_day: 30 };
+  put(charterFile, ch);
+  const all = main(['clock'], w.ctx).out;
+  assert.deepEqual([all.inboxes_spent, all.all_inboxes_spent], [['dowser-temper', 'bp-temper'], true]);
+  const last = main(['cycle', 'begin', '--target', 'tooling'], w.ctx).out.runner.accepts_spent;
+  assert.match(last.instead[2], /end the day early/);
+  rmSync(join(w.root, '.temper', 'cycle-dowser.json'));
+  const md = readFileSync(main(['report'], w.ctx).out.written, 'utf8');
+  assert.match(md, /\*\*The day ended early\*\*: every build inbox's accepts are spent \(dowser-temper 0 of 0; bp-temper 2 of 2, 1 carried\), so another scan would build nothing; \d+ minutes of the day went unspent\./);
+  // a scan-only repo never holds the day open, and no build repo means nothing to spend
+  const repos = [{ inbox_key: 'a', build: true, caps: { accepts_per_day: 1, rejects_per_day: 1 } }, { inbox_key: 'b', build: false, caps: { accepts_per_day: 1, rejects_per_day: 1 } }];
+  assert.equal(everyBuildInboxSpent({ repos }, [{ self_reported: { verdicts: [{ ref: 'x', verdict: 'accept', inbox: 'a' }] } }]), true);
+  assert.equal(everyBuildInboxSpent({ repos: [repos[1]] }, []), false);
+  // the briefs state the rule
+  const skill = readFileSync(join(ROOT, '.claude/skills/temper/SKILL.md'), 'utf8');
+  assert.match(skill, /all_inboxes_spent/);
+  assert.match(skill, /the day ends early/);
+  assert.match(readFileSync(join(ROOT, '.claude/skills/temper/references/runner.md'), 'utf8'), /`accepts_spent`/);
 });
 
 test('an inbox at its accept cap: Needs you gives the numbers and asks for real caps in the charter', () => {
@@ -1467,10 +1640,11 @@ test('cycle begin prints the runner block: the brief, the launch inputs, the cap
   assert.deepEqual([r.repo, r.path, r.inbox, r.n, r.target, r.focus, r.loop_root], ['bp', bp, 'bp-temper', 2, 'goal:faster triage', 'goal:faster triage', w.root]);
   assert.equal(r.scan, b.out.scan.bp, 'the scan command, the same one');
   assert.match(r.scan, / --ref temper\/2026-11-05 /);
-  assert.deepEqual(r.caps, { ...DEFAULT_CAPS, used: { accepts: 2, rejects: 1, carried: 0 }, left: { accepts: 8, rejects: 29 } });
+  assert.deepEqual(r.caps, { ...DEFAULT_CAPS, used: { accepts: 2, rejects: 1, rejects_by: { reject: 1, snooze: 0, merge: 0 }, carried: 0 }, left: { accepts: 8, rejects: 29 } });
   assert.deepEqual(r.carried, [{ ref: 'DW-7', note: 'XS doc fix' }], 'yesterday\'s carried cards of this inbox only');
   assert.deepEqual([r.work.worktree, r.work.branch], [day.repos.bp.worktree, day.repos.bp.branch]);
   assert.deepEqual(r.laws, [join(bp, 'AGENTS.md')]);
+  assert.deepEqual(r.other_repos, [{ name: 'dowser', path: w.root }], 'the charter\'s other repos, to check a card\'s falsifier in');
   assert.equal(r.cycle_file, join(w.home, 'runs', 'cycle-2-bp.json'));
   assert.equal(r.scratch, join(w.home, 'runs', 'c2'), 'a scratch folder per cycle');
   assert.ok(existsSync(r.scratch), 'cycle begin creates it');

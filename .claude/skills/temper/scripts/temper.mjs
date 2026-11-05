@@ -13,8 +13,10 @@
 //   repo paths --repo <name> --add a,b   widen a ledger repo's registered paths (active-runs check, then the same
 //                                          entry completed and registered again with every path; a conflict refuses)
 //   repo end --repo <name> [--status t]
-//   cycle begin --target <module>|direction:<id> | --repo <name> --target <focus>   prints, with the rest, the `runner`
-//                                          block: the launch inputs of the cycle runner (references/runner.md)
+//   cycle begin --target <module>|direction:<id> | --repo <name> --target <focus> [--scan-anyway]   prints, with the rest,
+//                                          the `runner` block: the launch inputs of the cycle runner (references/runner.md).
+//                                          An inbox whose accepts are at the cap gets no scan command (a scan there builds
+//                                          nothing) but `accepts_spent`, the work left instead; --scan-anyway keeps the scan
 //   cycle end --file <cycle.json> [--repo <r>]   npm ci where a lockfile is newer than its node_modules (root, forge,
 //                                          forge/static/app), then the gates, reads the e2e results, appends the row; the open
 //                                          cycle is the --repo's, else the file's repo's, else the only one open
@@ -24,14 +26,15 @@
 //   modules bar [--instruments <dir>]      the five-part bar per Dowser module; writes docs/evals/temper/modules.json
 //   proposals resolve --id <p> --commit <sha> [--note t]   a landed fix of a lens-scan proposal, for the bar
 //                                          (docs/evals/temper/resolved.json; the lens-scan store is never written)
-//   clock [--rate-limited --until <iso>]   {elapsed_min, remaining_min, ends_at, drain, stop}
+//   clock [--rate-limited --until <iso>]   {elapsed_min, remaining_min, ends_at, drain, stop, inboxes_spent, all_inboxes_spent}
 //   report [--date YYYY-MM-DD]             writes docs/evals/temper/<date>.md (with the runners' skill issues, by where)
 //   land [--repo <name>] [--dry-run]       the repo's own landing law (charter repos[].landing):
 //                                          loop-ff (Dowser): gates + secret scan, ff master, push origin master, deploy
 //                                            Forge development when green; red: reset loop/<date> to the last green commit
 //                                          rebase-push (bp): rebase onto origin/master, gates + secret scan, push
 //                                            HEAD:master; red: nothing pushed
-//                                          commit-only (personas): gates + secret scan; never pushes
+//                                          commit-only (personas): gates + secret scan; never pushes. --dry-run warns about
+//                                            commits that lack a trailer the repo's law asks for (never a refusal)
 //
 // Verified vs self-reported: what this script reads from a tool's own output (the runner's exit code, e2e result
 // files, the scan ledger, quality-snapshot rows, e2e-coverage) is `verified`; what only the director's cycle file
@@ -72,7 +75,9 @@ export const QUALITY_KEYS = ['long_functions', 'dup_windows', 'lib_cycles', 'tod
 const PARTS = /** @type {const} */ (['uat', 'proposals', 'scan_yield', 'quality', 'coverage']);
 const CHARTER_KEYS = ['repos', 'until', 'out_of_bounds', 'limits', 'delegation', 'live'];
 const REPO_KEYS = ['name', 'path', 'inbox_key', 'build', 'landing', 'gates', 'ledger', 'caps'];
-const CYCLE_KEYS = ['target', 'repo', 'scan', 'other_scans', 'verdicts', 'built', 'uat', 'findings', 'outcomes', 'directions', 'parked', 'notes', 'skill_issues', 'flaky_gates'];
+const CYCLE_KEYS = ['target', 'repo', 'scan', 'other_scans', 'verdicts', 'built', 'uat', 'findings', 'outcomes', 'directions', 'parked', 'notes', 'skill_issues', 'flaky_gates', 'chores'];
+/** Work with no accepted card behind it (a docs task the director asked for): built[] is keyed by card ref. */
+const CHORE_KEYS = ['what', 'commits'];
 /** A gate that failed and then passed on rerun: a defect the report lists, never a pass. */
 const FLAKY_GATE_KEYS = ['gate', 'evidence'];
 /** What the cycle runner learned about the loop itself: each issue names where (a file, step or brief), what, the evidence and the fix. */
@@ -614,7 +619,10 @@ function clock(ctx, f) {
     day.rate_limited_until = new Date(Date.parse(f.until)).toISOString();
     writeJson(paths(ctx.root).day, day);
   }
-  return clockOf(ctx, day);
+  const charter = readJson(paths(ctx.root).charter);
+  if (!charter) return clockOf(ctx, day);
+  const rows = cycleRows(ctx.root, day.date);
+  return { ...clockOf(ctx, day), inboxes_spent: inboxesAtCap(charter, rows).map((h) => h.inbox), all_inboxes_spent: everyBuildInboxSpent(charter, rows) };
 }
 
 // ------------------------------------------------------------------------------------------------ cycles
@@ -651,10 +659,13 @@ export function cycleRows(root, date) {
   return newestVerdicts(dayRows(root, date));
 }
 
+/** The calendar day before. @param {string} date YYYY-MM-DD */
+const yesterdayOf = (date) => localDate(new Date(Date.parse(`${date}T12:00:00`) - 86400000));
+
 /** The other repos are scanned every second day: due when the ledger has no scan of the inbox today or yesterday. @param {Ctx} ctx @param {any} charter @param {string} date */
 function otherReposDue(ctx, charter, date) {
   const scans = readJsonl(join(ctx.home, 'scans.jsonl'));
-  const yesterday = localDate(new Date(Date.parse(`${date}T12:00:00`) - 86400000));
+  const yesterday = yesterdayOf(date);
   return (charter.repos ?? []).filter((/** @type {Repo} */ r) => r.name !== 'dowser' && !scans.some((s) => s.project_key === r.inbox_key && s.ok && typeof s.ts === 'string'
     && [date, yesterday].includes(localDate(new Date(s.ts))))).map((/** @type {Repo} */ r) => ({ name: r.name, path: r.path, inbox_key: r.inbox_key }));
 }
@@ -722,17 +733,110 @@ function cycleBegin(ctx, f) {
     return `node tools/temper-scan.mjs --repo "${path}" --project-key ${inbox}${typeof ref === 'string' ? ` --ref ${ref}` : ''}${typeof focus === 'string' ? ` --focus "${focus}"` : ''} --budget-usd 8`;
   };
   const command = scan(repo.name, repo.path, repo.inbox_key, t.focus);
+  const rows = cycleRows(ctx.root, day.date);
+  const atCap = inboxesAtCap(charter, rows);
+  const anyway = f['scan-anyway'] === true;
+  const spent = spentWork(charter, repo, atCap, rows, cycleRows(ctx.root, yesterdayOf(day.date)), anyway);
+  const others = otherReposDue(ctx, charter, day.date).filter((/** @type {any} */ r) => r.name !== repo.name);
+  const othersDue = others.filter((/** @type {any} */ r) => anyway || !atCap.some((h) => h.inbox === r.inbox_key));
+  const dropped = spent !== undefined && !anyway;
   return {
     ...cycle, ...t, ...(repo.name === 'dowser' ? { branch: day.branch } : {}), clock: c,
-    scan: { [repo.name]: command,
-      others_due: otherReposDue(ctx, charter, day.date).filter((/** @type {any} */ r) => r.name !== repo.name).map((/** @type {any} */ r) => ({ ...r, command: scan(r.name, r.path, r.inbox_key, undefined) })) },
+    ...(spent ? { accepts_spent: spent } : {}),
+    scan: { ...(dropped ? {} : { [repo.name]: command }),
+      others_due: othersDue.map((/** @type {any} */ r) => ({ ...r, command: scan(r.name, r.path, r.inbox_key, undefined) })) },
     triage: { min_reject_share: REJECT_SHARE, caps: repo.caps, check: `temper.mjs triage check --verdicts <file> --inbox ${repo.inbox_key}`, out_of_bounds: charter.out_of_bounds ?? [] },
-    runner: runnerBlock(ctx, { charter, day, repo, cycle, focus: t.focus, command, ...(Array.isArray(t.item_gates) ? { itemGates: t.item_gates } : {}) }),
+    runner: runnerBlock(ctx, { charter, day, repo, cycle, focus: t.focus, ...(dropped ? {} : { command }), ...(spent ? { spent } : {}), ...(Array.isArray(t.item_gates) ? { itemGates: t.item_gates } : {}) }),
+  };
+}
+
+/**
+ * What a cycle in an inbox with no accepts left does instead of scanning: a scan's cards can only be carried (bp spent
+ * $3.92 and $4.07 on two such scans, 2026-11-05, 16 cards carried). Undefined while the inbox has accepts left.
+ * `carried` is the cards carried so far: today's, and yesterday's that today has not decided yet.
+ * @param {any} charter @param {Repo} repo @param {{inbox: string, accepts: number, caps: {accepts_per_day: number}}[]} atCap
+ * @param {any[]} rows today's cycle rows @param {any[]} yesterdayRows @param {boolean} anyway --scan-anyway
+ */
+export function spentWork(charter, repo, atCap, rows, yesterdayRows, anyway) {
+  const hit = atCap.find((h) => h.inbox === repo.inbox_key);
+  if (!hit) return undefined;
+  const decided = new Set(rows.flatMap((r) => r.self_reported?.verdicts ?? []).filter((v) => v.inbox === repo.inbox_key).map((v) => v.ref));
+  const refs = new Set([...carriedOf(rows).filter((v) => v.inbox === repo.inbox_key).map((v) => v.ref),
+    ...carriedOf(yesterdayRows).filter((v) => v.inbox === repo.inbox_key && !decided.has(v.ref)).map((v) => v.ref)]);
+  const spent = new Set(atCap.map((h) => h.inbox));
+  const left = (charter.repos ?? []).filter((/** @type {Repo} */ r) => r.build && !spent.has(r.inbox_key)).map((/** @type {Repo} */ r) => r.name);
+  return {
+    accepts: hit.accepts, cap: hit.caps.accepts_per_day, carried: refs.size,
+    why: `${repo.inbox_key} has used ${hit.accepts} of ${hit.caps.accepts_per_day} accepts today: a scan's cards can only be carried, so it builds nothing`,
+    instead: [`the ${refs.size} carried cards wait for tomorrow's triage: add no more to them`,
+      'the spec-only cycle: findings become red specs marked test.fixme (references/runner.md, "The spec-only cycle")',
+      left.length ? `a cycle in a repo with accepts left: ${left.join(', ')}` : 'no build inbox has accepts left: end the day early (SKILL.md section 1)'],
+    scan: anyway ? 'kept: --scan-anyway' : 'dropped: --scan-anyway keeps it',
   };
 }
 
 /** The repo law files a runner reads, those present. */
 const LAW_FILES = ['CLAUDE.md', 'AGENTS.md', '.claude/CLAUDE.md'];
+
+const TRAILER_NAME = '[A-Z][A-Za-z]*(?:-[A-Za-z]+)+';
+/** A trailer a law line asks for: `--trailer "Name: v"`, or an imperative naming `Name: v` beside the word trailer. */
+const LAW_TRAILER_RES = [new RegExp(`--trailer[ =]["'\`]?(${TRAILER_NAME}):`, 'g'),
+  new RegExp(`\\b(?:[Mm]ust|[Rr]equires?|[Nn]eeds?|[Aa]sks? for|[Aa]dd|[Cc]arry|[Ii]nclude)\\b[^.\`]*\`(${TRAILER_NAME}):[^\`]*\`[^.]{0,20}\\btrailer`, 'g'),
+  new RegExp(`\\b(?:[Mm]ust|[Rr]equires?|[Nn]eeds?|[Aa]sks? for|[Aa]dd|[Cc]arry|[Ii]nclude)\\b[^.\`]*\\btrailer\\s+\`(${TRAILER_NAME}):`, 'g')];
+/** The sentence around a match says the trailer is conditional: "when the work has one", "if any", "optional". */
+const CONDITIONAL_RE = /\b(?:[Ww]hen|[Ii]f|[Oo]ptional(?:ly)?)\b/;
+
+/**
+ * The commit trailers a law file asks for. A small line pattern, never a parser: it reads the imperative forms only, so
+ * prose that merely mentions a trailer ("lists history by the `Claude-Session:` trailer") and a conditional one ("add
+ * --trailer ... when the work has one") are not requirements. What it finds is advice (a warning, a block key).
+ * @param {string} text @returns {string[]} the names, each once
+ */
+export function lawTrailers(text) {
+  const names = new Set();
+  for (const line of text.split(/\r?\n/)) {
+    for (const re of LAW_TRAILER_RES) {
+      for (const m of line.matchAll(re)) {
+        const end = (m.index ?? 0) + m[0].length;
+        const before = line.slice(0, m.index).split(/[.(:;] /).at(-1) ?? '';
+        const after = line.slice(end).split(/\)|\. /)[0];
+        if (![before, m[0], after].some((x) => CONDITIONAL_RE.test(x))) names.add(m[1]);
+      }
+    }
+  }
+  return [...names];
+}
+
+/** The trailers a checkout's law files ask for, each with the file that asks. @param {string} dir @returns {{name: string, law: string}[]} */
+export function repoTrailers(dir) {
+  /** @type {Map<string, string>} */
+  const found = new Map();
+  for (const law of LAW_FILES) {
+    const file = join(dir, law);
+    if (!existsSync(file)) continue;
+    for (const name of lawTrailers(readFileSync(file, 'utf8'))) if (!found.has(name)) found.set(name, law);
+  }
+  return [...found].map(([name, law]) => ({ name, law }));
+}
+
+/**
+ * land --dry-run's warnings about a commit-only branch: a trailer the repo's law asks for that commits lack. Advice only:
+ * it never adds a reason, and a git failure here answers no warning. Merges and reverts are exempt: git wrote those messages.
+ * @param {Ctx} ctx @param {string} wt @param {string} base @param {string} branch @returns {string[]}
+ */
+export function trailerWarnings(ctx, wt, base, branch) {
+  const trailers = repoTrailers(wt);
+  if (!trailers.length) return [];
+  const log = ctx.run('git', ['-C', wt, 'log', '--no-merges', '--format=%h%x1f%B%x1e', `${base}..HEAD`]);
+  if (log.status !== 0) return [];
+  const commits = log.stdout.split('\x1e').map((c) => c.trim()).filter(Boolean).map((c) => { const [sha, msg] = c.split('\x1f'); return { sha, msg: msg ?? '' }; })
+    .filter((c) => !/^Revert "/.test(c.msg));
+  return trailers.flatMap(({ name, law }) => {
+    const re = new RegExp(`^${name}:[ \\t]*\\S`, 'im');
+    const lack = commits.filter((c) => !re.test(c.msg)).map((c) => c.sha);
+    return lack.length ? [`${law} asks for the ${name} trailer: ${lack.length} of ${commits.length} commits on ${branch} lack it (${lack.slice(0, 5).join(', ')}${lack.length > 5 ? ', ...' : ''})`] : [];
+  });
+}
 
 /**
  * One cycle's scratch folder, created empty: concurrent runners overwrote each other's files in a shared one. Cycle
@@ -751,14 +855,13 @@ export function cycleScratch(ctx, n) {
  * Dowser builds in a worktree of its own off the day branch (temper/c<n>), which the director merges; another repo
  * builds in its day worktree from repo start, on its temper/<date> branch.
  * @param {Ctx} ctx
- * @param {{charter: any, day: any, repo: Repo, cycle: {n: number, date: string, target: string}, focus: unknown, command: string, itemGates?: unknown}} o
+ * @param {{charter: any, day: any, repo: Repo, cycle: {n: number, date: string, target: string}, focus: unknown, command?: string, spent?: unknown, itemGates?: unknown}} o
  */
-export function runnerBlock(ctx, { charter, day, repo, cycle, focus, command, itemGates }) {
+export function runnerBlock(ctx, { charter, day, repo, cycle, focus, command, spent, itemGates }) {
   const { n, date, target } = cycle;
   const isDowser = repo.name === 'dowser';
   const today = triageLimits([], verdictsToday(ctx.root, date, repo.inbox_key), repo.caps).today;
-  const yesterday = localDate(new Date(Date.parse(`${date}T12:00:00`) - 86400000));
-  const carried = carriedOf(cycleRows(ctx.root, yesterday)).filter((v) => v.inbox === repo.inbox_key)
+  const carried = carriedOf(cycleRows(ctx.root, yesterdayOf(date))).filter((v) => v.inbox === repo.inbox_key)
     .map((v) => ({ ref: v.ref, ...(typeof v.note === 'string' ? { note: v.note } : {}) }));
   let work;
   if (isDowser) {
@@ -771,11 +874,13 @@ export function runnerBlock(ctx, { charter, day, repo, cycle, focus, command, it
   }
   return {
     brief: join(SKILL_DIR, 'references', 'runner.md'), loop_root: ctx.root,
-    repo: repo.name, path: repo.path, inbox: repo.inbox_key, n, target, ...(typeof focus === 'string' ? { focus } : {}), scan: command,
+    repo: repo.name, path: repo.path, inbox: repo.inbox_key, n, target, ...(typeof focus === 'string' ? { focus } : {}), ...(command ? { scan: command } : {}), ...(spent ? { accepts_spent: spent } : {}),
     caps: { ...repo.caps, used: today, left: { accepts: Math.max(0, repo.caps.accepts_per_day - today.accepts), rejects: Math.max(0, repo.caps.rejects_per_day - today.rejects) } },
     carried, work, ...(Array.isArray(day.repos?.[repo.name]?.paths) ? { registered_paths: day.repos[repo.name].paths } : {}),
     ...(Array.isArray(itemGates) ? { item_gates: itemGates } : {}), out_of_bounds: charter.out_of_bounds ?? [],
     laws: LAW_FILES.map((f) => join(repo.path, f)).filter((f) => existsSync(f)),
+    commit_trailers: repoTrailers(repo.path),
+    other_repos: (charter.repos ?? []).filter((/** @type {Repo} */ r) => r.name !== repo.name).map((/** @type {Repo} */ r) => ({ name: r.name, path: r.path })),
     scratch: cycleScratch(ctx, n),
     cycle_file: join(ctx.home, 'runs', `cycle-${n}-${repo.name}.json`),
   };
@@ -1003,7 +1108,7 @@ export function triageLimits(verdicts, earlier, caps) {
   const carried = c.carried ?? 0;
   const deferral_ok = !carried || accepts >= caps.accepts_per_day;
   if (!deferral_ok) why.push(`${carried} snoozes say deferred: "cap", but only ${accepts} of ${caps.accepts_per_day} accepts are used today: accept them, or snooze them for a real reason`);
-  return { counts: c, ...q, floor_ok: q.ok, cycle: rejectShare(c), today: { accepts, rejects, carried: all.carried ?? 0 }, caps, deferral_ok, ok: !why.length, why };
+  return { counts: c, ...q, floor_ok: q.ok, cycle: rejectShare(c), today: { accepts, rejects, rejects_by: { reject: all.reject ?? 0, snooze: all.snooze ?? 0, merge: all.merge ?? 0 }, carried: all.carried ?? 0 }, caps, deferral_ok, ok: !why.length, why };
 }
 
 /** Today's earlier verdicts of an inbox, from the cycle rows. @param {string} root @param {string} date @param {string} inbox */
@@ -1068,6 +1173,22 @@ export function checkFlakyGates(arr) {
 }
 
 /**
+ * The cycle's chores: a list of {what, commits}, `what` a non-empty string and `commits` a non-empty list of commits, no
+ * other key. @param {unknown} arr
+ */
+export function checkChores(arr) {
+  const shape = `chores is a list of {${CHORE_KEYS.join(', ')}}: what the work was, and its commits`;
+  if (!Array.isArray(arr)) throw new UsageError(shape);
+  arr.forEach((x, i) => {
+    if (!x || typeof x !== 'object' || Array.isArray(x)) throw new UsageError(`chores[${i}] is an object: ${shape}`);
+    for (const k of Object.keys(x)) if (!CHORE_KEYS.includes(k)) throw new UsageError(`unknown key chores[${i}].${k} (${CHORE_KEYS.join(', ')})`);
+    if (typeof x.what !== 'string' || !x.what.trim()) throw new UsageError(`chores[${i}] needs what: ${shape}`);
+    if (!Array.isArray(x.commits) || !x.commits.length || !x.commits.every((/** @type {unknown} */ c) => typeof c === 'string' && /^[0-9a-f]{7,40}$/i.test(c))) throw new UsageError(`chores[${i}].commits is a non-empty list of commits: ${shape}`);
+  });
+  return arr;
+}
+
+/**
  * Checks the director's cycle file. @param {any} raw @param {{target: string, metModules: string[], proposedPerModule: Record<string, number>}} o
  */
 export function validateCycleFile(raw, o) {
@@ -1083,6 +1204,7 @@ export function validateCycleFile(raw, o) {
   for (const x of raw.parked ?? []) if (typeof x?.item !== 'string' || typeof x.why !== 'string') throw new UsageError('each parked entry is {item, why}');
   if (raw.skill_issues !== undefined) checkSkillIssues(raw.skill_issues);
   if (raw.flaky_gates !== undefined) checkFlakyGates(raw.flaky_gates);
+  if (raw.chores !== undefined) checkChores(raw.chores);
   const per = { ...o.proposedPerModule };
   for (const d of raw.directions ?? []) {
     for (const k of ['id', 'module', 'title', 'evidence', 'value', 'size', 'first_slice']) if (typeof d?.[k] !== 'string' || !d[k].trim()) throw new UsageError(`each direction has ${k}`);
@@ -1675,7 +1797,7 @@ export function refList(refs) {
 /**
  * The morning report's markdown (operator-facing; not a Dowser runner surface, so it has no guided form). Read in two
  * minutes: the summary per repo first, then what needs the operator, the commits by repo, the rest after.
- * @param {{date: string, commits: Record<string, Commit[]>, landings: Record<string, any>, branches?: Record<string, string>, charter?: any, cycles: any[], scans: any[], bar?: any, directions: any[], questions: string[], later: string[], fixmes?: Record<string, {at: string, ticket: string | null}[]>}} d
+ * @param {{date: string, commits: Record<string, Commit[]>, landings: Record<string, any>, branches?: Record<string, string>, charter?: any, cycles: any[], scans: any[], bar?: any, directions: any[], questions: string[], later: string[], spent?: {inboxes: any[], remaining_min: number}, fixmes?: Record<string, {at: string, ticket: string | null}[]>}} d
  */
 export function renderReport(d) {
   const L = [`# /temper - ${d.date}`, ''];
@@ -1696,6 +1818,12 @@ export function renderReport(d) {
     }
     const cost = d.scans.reduce((n, s) => n + (typeof s.cost_usd === 'number' ? s.cost_usd : 0), 0);
     L.push(`- **/temper itself**: ${groups.skill.length} skill-hardening commits; scans cost $${cost.toFixed(2)} in all.`);
+    if (d.spent) {
+      const each = d.spent.inboxes.map((/** @type {any} */ h) => `${h.inbox} ${h.accepts} of ${h.caps.accepts_per_day}${h.carried ? `, ${h.carried} carried` : ''}`).join('; ');
+      L.push(d.spent.remaining_min
+        ? `- **The day ended early**: every build inbox's accepts are spent (${each}), so another scan would build nothing; ${d.spent.remaining_min} minutes of the day went unspent.`
+        : `- **Every build inbox's accepts were spent** (${each}): a further scan would have built nothing.`);
+    }
   } else L.push('Nothing ran today.');
   L.push('', '## Needs you', '');
   if (d.questions.length) d.questions.forEach((q, i) => L.push(`${i + 1}. ${q}`)); else L.push('Nothing blocks the next day.');
@@ -1776,6 +1904,9 @@ export function renderReport(d) {
   L.push('', '## Direction proposals', '');
   if (d.directions.length) for (const x of d.directions) L.push(`- **${x.id}** (${x.module}, ${x.size}): ${x.title}. Value: ${x.value}. Evidence: ${x.evidence}. First slice: ${x.first_slice}.`);
   else L.push('None.');
+  L.push('', '## Chores', '');
+  const chores = [...d.cycles].sort((a, b) => a.n - b.n).flatMap((r) => (r.self_reported?.chores ?? []).map((/** @type {any} */ x) => `- c${r.n} (${r.repo ?? 'dowser'}): ${x.what.trim()} (${x.commits.map(short).join(', ')})`));
+  if (chores.length) L.push('Work with no accepted card behind it (self-reported).', '', ...chores); else L.push('None.');
   const parked = parkedGroups(d.cycles);
   L.push('', '## Parked', '');
   if (parked.repos.length) {
@@ -1838,17 +1969,7 @@ export const CAP_DAY_NOTE = ' Choosing them, note that these caps count the temp
  * caps do. @param {any} charter @param {any[]} cycles @returns {string[]} none or one question
  */
 export function capQuestions(charter, cycles) {
-  const vs = cycles.flatMap((r) => r.self_reported?.verdicts ?? []);
-  /** @type {{inbox: string, accepts: number, caps: {accepts_per_day: number, rejects_per_day: number}, carried: number, dflt: boolean}[]} */
-  const hits = (charter?.repos ?? []).flatMap((/** @type {Repo} */ r) => {
-    const caps = r.caps ?? DEFAULT_CAPS;
-    const mine = vs.filter((v) => v.inbox === r.inbox_key);
-    const accepts = mine.filter((v) => v.verdict === 'accept').length;
-    if (accepts < caps.accepts_per_day) return [];
-    const carried = mine.filter(isCarried).length;
-    const dflt = caps.accepts_per_day === DEFAULT_CAPS.accepts_per_day && caps.rejects_per_day === DEFAULT_CAPS.rejects_per_day;
-    return [{ inbox: r.inbox_key, accepts, caps, carried, dflt }];
-  });
+  const hits = inboxesAtCap(charter, cycles);
   if (!hits.length) return [];
   if (hits.length === 1) {
     const { inbox, accepts, caps, carried, dflt } = hits[0];
@@ -1861,6 +1982,35 @@ export function capQuestions(charter, cycles) {
   return [`${hits.length} inboxes reached their accept cap: ${each.join('; ')}. `
     + `${allDefault ? `The defaults (${DEFAULT_CAPS.accepts_per_day} accepts, ${DEFAULT_CAPS.rejects_per_day} rejects a day) are not a choice of yours: set` : 'Set'}`
     + ` real caps for each in the charter (repos[].caps, in the start dialog).${CAP_DAY_NOTE}`];
+}
+
+/**
+ * The inboxes whose accepts of the day are spent, with the cards still carried in each (a card carried and then decided
+ * is not). Accepts count every decision, as triageLimits does.
+ * @param {any} charter @param {any[]} cycles the day's cycle rows
+ * @returns {{inbox: string, accepts: number, caps: {accepts_per_day: number, rejects_per_day: number}, carried: number, dflt: boolean}[]}
+ */
+export function inboxesAtCap(charter, cycles) {
+  const vs = cycles.flatMap((r) => r.self_reported?.verdicts ?? []);
+  const carried = carriedOf(cycles);
+  return (charter?.repos ?? []).flatMap((/** @type {Repo} */ r) => {
+    const caps = r.caps ?? DEFAULT_CAPS;
+    const accepts = vs.filter((v) => v.inbox === r.inbox_key && v.verdict === 'accept').length;
+    if (accepts < caps.accepts_per_day) return [];
+    const dflt = caps.accepts_per_day === DEFAULT_CAPS.accepts_per_day && caps.rejects_per_day === DEFAULT_CAPS.rejects_per_day;
+    return [{ inbox: r.inbox_key, accepts, caps, carried: carried.filter((v) => v.inbox === r.inbox_key).length, dflt }];
+  });
+}
+
+/**
+ * True when every repo the charter builds has spent its accepts: no scan can lead to a build today, so the day ends
+ * early (SKILL.md section 1). A scan-only repo builds nothing, whatever its inbox holds.
+ * @param {any} charter @param {any[]} cycles
+ */
+export function everyBuildInboxSpent(charter, cycles) {
+  const builds = (charter?.repos ?? []).filter((/** @type {Repo} */ r) => r.build);
+  const spent = new Set(inboxesAtCap(charter, cycles).map((h) => h.inbox));
+  return builds.length > 0 && builds.every((/** @type {Repo} */ r) => spent.has(r.inbox_key));
 }
 
 /**
@@ -1986,7 +2136,8 @@ function report(ctx, f) {
   const liveState = live && live.rows.length && !live.rows.some((r) => r.state === 'unverifiable') ? 'signed-in' : 'unverifiable';
   const { questions, later } = startQuestions({ date, charter, directions, cycles, liveState });
   const landings = today ? { ...(day.landing ? { dowser: day.landing } : {}), ...(day.landings ?? {}) } : {};
-  const md = renderReport({ date, commits, landings, branches, charter, cycles, scans, bar, directions, questions, later, fixmes: repoFixmes(ctx, day, charter) });
+  const spent = everyBuildInboxSpent(charter, cycles) ? { inboxes: inboxesAtCap(charter, cycles), remaining_min: today ? clockOf(ctx, day).remaining_min : 0 } : undefined;
+  const md = renderReport({ date, commits, landings, branches, charter, cycles, scans, bar, directions, questions, later, spent, fixmes: repoFixmes(ctx, day, charter) });
   const file = join(paths(ctx.root).records, `${date}.md`);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, md);
@@ -2138,7 +2289,10 @@ export function repoLand(ctx, day, repo, dry) {
     checks.secret_scan = scan;
     if (!scan.clean) reasons.push(`the secret scan found ${scan.hits.map((h) => `${h.pattern} in ${h.file}`).join(', ')}`);
   }
-  if (repo.landing.kind === 'commit-only') return { ...out, decision: reasons.length ? 'red' : 'commit-only', head, checks, reasons, steps: [] };
+  if (repo.landing.kind === 'commit-only') {
+    const warnings = dry ? trailerWarnings(ctx, wt, base, s.branch) : [];
+    return { ...out, decision: reasons.length ? 'red' : 'commit-only', head, checks, reasons, ...(warnings.length ? { warnings } : {}), steps: [] };
+  }
   if (reasons.length) return { ...out, decision: 'red', head, checks, reasons, steps: [] };
   return { ...out, decision: 'land', head, checks, reasons, steps: [['git', 'push', 'origin', 'HEAD:master']] };
 }
@@ -2197,8 +2351,18 @@ function land(ctx, f) {
 
 // ------------------------------------------------------------------------------------------------- main
 
-const SPEC = { values: ['from', 'operator', 'date', 'approve', 'veto', 'target', 'file', 'verdicts', 'instruments', 'inbox', 'until', 'repo', 'paths', 'title', 'status', 'id', 'commit', 'note', 'n', 'add'], bool: ['dry-run', 'rate-limited'] };
-const USAGE = 'usage: temper.mjs charter init --from <json> --operator <name> | charter show | day start|resume|end | repo start|end --repo <r> | repo paths --repo <r> --add a,b | cycle begin --target <t> [--repo <r>] | cycle end --file <f> | cycle reverify --n <n> [--repo <r>] | triage check --verdicts <f> --inbox <k> | modules bar | proposals resolve --id <p> --commit <sha> [--note t] | clock | report | land [--repo <r>] [--dry-run]';
+const SPEC = { values: ['from', 'operator', 'date', 'approve', 'veto', 'target', 'file', 'verdicts', 'instruments', 'inbox', 'until', 'repo', 'paths', 'title', 'status', 'id', 'commit', 'note', 'n', 'add'], bool: ['dry-run', 'rate-limited', 'scan-anyway'] };
+/** Each command's flags: --help prints one command's line, and a usage error all of them. */
+const COMMANDS = {
+  'charter init': '--from <json> --operator <name>', 'charter show': '',
+  'day start': '[--date YYYY-MM-DD] [--approve a,b] [--veto c]', 'day resume': '', 'day end': '',
+  'repo start': '--repo <r> [--paths a,b] [--title t]', 'repo paths': '--repo <r> --add a,b', 'repo end': '--repo <r> [--status t]',
+  'cycle begin': '--target <t> [--repo <r>] [--scan-anyway]', 'cycle end': '--file <f> [--repo <r>]', 'cycle reverify': '--n <n> [--repo <r>]',
+  'triage check': '--verdicts <f> --inbox <k>', 'modules bar': '[--instruments <dir>]', 'proposals resolve': '--id <p> --commit <sha> [--note t]',
+  clock: '[--rate-limited --until <iso>]', report: '[--date YYYY-MM-DD]', land: '[--repo <r>] [--dry-run]',
+};
+const commandLine = (/** @type {string} */ name, /** @type {string} */ flags) => `temper.mjs ${name}${flags ? ` ${flags}` : ''}`;
+const USAGE = `usage: ${Object.entries(COMMANDS).map(([n, x]) => commandLine(n, x).replace('temper.mjs ', '')).join(' | ')}`;
 
 /**
  * Runs one command. @param {string[]} argv @param {Ctx} [ctx]
@@ -2209,6 +2373,11 @@ export function main(argv, ctx = realCtx()) {
     const [cmd, maybeSub] = argv;
     const single = ['clock', 'report', 'land'].includes(cmd);
     const sub = single ? '' : maybeSub ?? '';
+    if (argv.includes('--help')) {
+      const name = single ? cmd : `${cmd} ${sub}`;
+      const flags = /** @type {Record<string, string>} */ (COMMANDS)[name];
+      return { code: 0, out: { usage: flags === undefined ? USAGE : `usage: ${commandLine(name, flags)}` } };
+    }
     const { flags: f, rest } = parseFlags(argv.slice(single ? 1 : 2), SPEC);
     if (rest.length) throw new UsageError(`unexpected argument ${rest[0]}`);
     /** @type {Record<string, () => any>} */
