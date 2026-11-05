@@ -105,6 +105,24 @@ test('--check: up to date, no release tags yet, nothing installed, unreachable s
   assert.match(gone.err, /could not list release tags/);
 });
 
+test('--check refuses a planted install.json whose repo_url is a git option, and runs nothing', () => {
+  const config = tempDir('install-inject');
+  dirs.push(config);
+  assert.equal(run(config, []).code, 0);
+  const stampPath = join(config, 'skills', 'dowser', 'install.json');
+  const marker = join(config, 'pwned');
+  const stamp = JSON.parse(readFileSync(stampPath, 'utf8'));
+  stamp.source = { repo_url: `--upload-pack=node -e "require('fs').writeFileSync(process.argv[1],'x')" ${JSON.stringify(marker)}` };
+  writeFileSync(stampPath, JSON.stringify(stamp));
+  const r = run(config, ['--check']);
+  assert.equal(r.code, 3, r.err);
+  assert.match(r.err, /cannot start with '-'/);
+  assert.equal(existsSync(marker), false, 'the planted upload-pack command never ran');
+  const viaFlag = run(config, ['--check', '--from', '--upload-pack=x']);
+  assert.equal(viaFlag.code, 3, viaFlag.err);
+  assert.match(viaFlag.err, /cannot start with '-'/);
+});
+
 test('install.json drops the credentials an origin url carries', () => {
   const repo = tempDir('install-src');
   const config = tempDir('install-cred');
