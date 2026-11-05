@@ -29,25 +29,22 @@
 // Output: <out>/dogfood-<stamp>.json (run summary, every card with evidence and transitions, cost) and a .md of
 // the same with an empty verdict line per card for the judge. Env: CLAUDE_BIN (default `claude`).
 // Exit codes: 0 done (or dry run), 1 the scan failed, 2 bad arguments.
-import { execFileSync, spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LENSES, isOneOf } from '../skill/scripts/lib/model.mjs';
 import { dowserHome } from '../skill/scripts/lib/paths.mjs';
 import { seeded } from './mock-forge-mcp.mjs';
-import { resolveClaude, spawnClaude } from './claude-bin.mjs';
+import { resolveClaude } from './claude-bin.mjs';
+import { changedCards, cloneRepo, dowserCli as cli, installSkill, removeWork, runScan, scanArgs, stamp, statusMap } from './scan-workspace.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PLACEHOLDER = 'DOWSER_PROJECT';
-const CLI = join(ROOT, 'skill/scripts/dowser.mjs');
-const INSTALL = join(ROOT, 'skill/install.mjs');
 const MOCK = join(ROOT, 'tools/mock-forge-mcp.mjs');
 const CLAUDE = process.env.CLAUDE_BIN ?? 'claude';
 /** How CLAUDE is started here (an npm claude.cmd on Windows runs its target directly: tools/claude-bin.mjs). */
 const CLAUDE_CMD = resolveClaude(CLAUDE);
-const ALLOWED_TOOLS = ['Bash', 'Read', 'Grep', 'Glob', 'Write', 'Edit', 'Skill', 'mcp__dowser__*'];
 
 /** @typedef {{source: string, seed: string, hide: string[], lenses: string[], model?: string, budget?: string, out: string, campaign?: string, keep: boolean, dryRun: boolean}} Opts */
 
@@ -92,27 +89,6 @@ function parseArgs(argv) {
   };
 }
 
-/** @param {string} repo @param {string[]} args @param {Record<string, string>} [env] */
-const git = (repo, args, env = {}) => execFileSync('git', ['-C', repo, '-c', 'core.autocrlf=false', ...args],
-  { encoding: 'utf8', env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-
-/**
- * Clones the source's HEAD with the hidden paths left out of the working tree by a sparse checkout. HEAD stays the
- * source's real commit, so a campaign's incremental scans find the previous scan's head in the clone's history.
- * @param {string} source @param {string} repo @param {string[]} hide
- * @returns {{head: string, hidden: string[]}}
- */
-function cloneRepo(source, repo, hide) {
-  execFileSync('git', ['clone', '-q', '--no-hardlinks', '--no-checkout', source, repo], { stdio: ['ignore', 'pipe', 'pipe'] });
-  const head = git(repo, ['rev-parse', '--short', 'HEAD']);
-  const hidden = hide.filter((p) => git(repo, ['ls-tree', '-r', '--name-only', 'HEAD', '--', p]) !== '');
-  if (hidden.length) git(repo, ['sparse-checkout', 'set', '--no-cone', '/*', ...hidden.map((p) => `!/${p.replace(/\/+$/, '')}/`)]);
-  git(repo, ['checkout', '-q']);
-  // The project-scope install lands in .claude/skills/dowser; keep it out of the scan's git view.
-  appendFileSync(join(repo, '.git/info/exclude'), '\n.claude/skills/dowser/\n');
-  return { head, hidden };
-}
-
 /** @param {string} lenses @param {boolean} push */
 const prompt = (lenses, push) => [
   'Use the dowser skill to scan this repository. This is an unattended evaluation run: no person is present, so never ask a question and never wait for an answer.',
@@ -123,22 +99,6 @@ const prompt = (lenses, push) => [
   push ? '- Push the kept cards (section 8), as the skill says.' : '- Skip section 8 (push).',
   '- Finish the run (section 9) and print the summary.',
 ].join('\n');
-
-/** @param {{repo: string, home: string}} w @param {...string} args @returns {any} */
-function cli(w, ...args) {
-  const r = spawnSync(process.execPath, [CLI, ...args, '--repo', w.repo], { encoding: 'utf8', env: { ...process.env, DOWSER_HOME: w.home } });
-  if (r.status !== 0) throw new Error(`dowser ${args.join(' ')} -> ${r.status}\n${r.stderr}${r.stdout}`);
-  return JSON.parse(r.stdout);
-}
-
-/** @param {string} work @param {string} repo */
-function removeWork(work, repo) {
-  const link = join(repo, '.claude/skills/dowser');
-  try {
-    if (lstatSync(link).isSymbolicLink()) { try { unlinkSync(link); } catch { rmdirSync(link); } }
-  } catch { /* no install */ }
-  rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-}
 
 /** One card as markdown for the judge. @param {any} s the `show` output @param {number} i */
 function cardMd(s, i) {
@@ -182,8 +142,7 @@ let failed = false;
 try {
   const cloned = cloneRepo(o.source, w.repo, o.hide);
   mkdirSync(w.home, { recursive: true });
-  const install = spawnSync(process.execPath, [INSTALL, '--harness', 'claude', '--scope', 'project'], { cwd: w.repo, encoding: 'utf8' });
-  if (install.status !== 0) throw new Error(`install -> ${install.status}\n${install.stderr}`);
+  installSkill(w.repo);
   const { project_key: projectKey } = cli(w, 'init');
   cli(w, 'prefs', 'set', 'mode=dev');
   const seed = JSON.parse(readFileSync(o.seed, 'utf8'));
@@ -191,10 +150,7 @@ try {
   if (!o.dryRun) writeFileSync(stateFile, JSON.stringify(backendFor(seed, o.campaign ? stateFile : undefined), null, 2));
   writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { dowser: { type: 'stdio', command: process.execPath,
     args: [MOCK, '--state', stateFile] } } }, null, 2));
-  // --setting-sources without `user`: a user-scope dowser skill (~/.claude/skills/dowser, often a link to another
-  // checkout) otherwise wins over the project-scope copy installed above, and the scan runs that skill (as lens-eval)
-  const args = ['-p', prompt(o.lenses.join(', '), Boolean(o.campaign)), '--setting-sources', 'project,local', '--mcp-config', mcpConfig, '--strict-mcp-config', '--add-dir', tmpdir(),
-    '--allowedTools', ...ALLOWED_TOOLS, '--output-format', 'json', ...(o.model ? ['--model', o.model] : []), ...(o.budget ? ['--max-budget-usd', o.budget] : [])];
+  const args = scanArgs({ prompt: prompt(o.lenses.join(', '), Boolean(o.campaign)), mcpConfig, addDir: tmpdir(), model: o.model, budget: o.budget });
   const plan = {
     source: o.source, head: cloned.head, ...(o.campaign ? { campaign: o.campaign } : {}), hidden: cloned.hidden, work, project_key: projectKey, lenses: o.lenses,
     seed: { file: o.seed, tickets: seed.tickets?.length ?? 0, pages: seed.pages?.length ?? 0, goals: seed.goals?.length ?? 0, direction: Boolean(seed.directions?.[projectKey]) },
@@ -204,27 +160,21 @@ try {
   } else {
     console.error(`dogfood: scanning ${o.source}@${cloned.head} with ${o.lenses.join(', ')} in ${w.repo} (this calls Claude and costs tokens)`);
     // what the store held before: the report shows the cards this scan created or moved, not a campaign's history
-    const before = new Map(cli(w, 'list').proposals.map((/** @type {{fp: string, status: string}} */ p) => [p.fp, p.status]));
-    const started = Date.now();
-    const r = spawnClaude(args, { cwd: w.repo, env: { ...process.env, DOWSER_HOME: w.home }, encoding: 'utf8', timeout: 90 * 60000, maxBuffer: 64 * 1024 * 1024 }, CLAUDE_CMD);
-    writeFileSync(join(work, 'claude.json'), r.stdout ?? '');
-    writeFileSync(join(work, 'claude.stderr.txt'), r.stderr ?? '');
-    /** @type {any} */
-    let result = {};
-    try { result = JSON.parse(r.stdout); } catch { /* not JSON: reported below */ }
-    if (r.status !== 0 || result.is_error) {
+    const before = statusMap(w);
+    const scan = runScan(args, { work, w });
+    const result = scan.result;
+    if (!scan.ok) {
       failed = true;
-      console.error(`dogfood: the scan failed (exit ${r.status}${r.error ? `, ${r.error.message}` : ''}); see ${work}`);
+      console.error(`dogfood: the scan failed (exit ${scan.status}${scan.error ? `, ${scan.error}` : ''}); see ${work}`);
     } else {
       const status = cli(w, 'status', '--runs', '1');
-      const { proposals } = cli(w, 'list');
-      const cards = proposals.filter((/** @type {{fp: string, status: string}} */ p) => before.get(p.fp) !== p.status).map((/** @type {{fp: string}} */ p) => cli(w, 'show', p.fp));
-      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const report = { ts: new Date().toISOString(), ...plan, minutes: Math.round((Date.now() - started) / 60000),
+      const cards = changedCards(w, before);
+      const at = stamp();
+      const report = { ts: new Date().toISOString(), ...plan, minutes: scan.minutes,
         cost_usd: result.total_cost_usd, turns: result.num_turns, summary: result.result, status, cards };
       mkdirSync(o.out, { recursive: true });
-      const jsonFile = join(o.out, `dogfood-${stamp}.json`);
-      const mdFile = join(o.out, `dogfood-${stamp}.md`);
+      const jsonFile = join(o.out, `dogfood-${at}.json`);
+      const mdFile = join(o.out, `dogfood-${at}.md`);
       writeFileSync(jsonFile, JSON.stringify(report, null, 2));
       const live = cards.filter((/** @type {any} */ s) => !['dropped', 'merged'].includes(s.card.status));
       writeFileSync(mdFile, [
