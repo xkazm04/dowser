@@ -232,6 +232,18 @@ export const RATINGS = [
 export const RATING_LABELS = Object.fromEntries(RATINGS.map((r) => [r.code, r.label]));
 export const RATING_APPEARANCE = { right: 'success', partly: 'moved', wrong: 'removed' };
 
+/** A delegate's decider (`delegate:temper`, forge/src/core/delegate.mjs): it decided under a person's delegation. */
+export const isDelegate = (by) => typeof by === 'string' && by.startsWith('delegate:') && by.length > 'delegate:'.length;
+
+/** `delegate:temper` -> "Temper": the delegate's name as the chip says it. */
+export function delegateName(by) {
+  const name = String(by).slice('delegate:'.length);
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)}`;
+}
+
+/** The delegate chip's text: "Decided by Temper (delegate)". */
+export const delegateChip = (by) => `Decided by ${delegateName(by)} (delegate)`;
+
 /** `forge:<accountId>` / `human:<name>` -> a short label (a resolved display name wins when there is one). */
 export function deciderName(by, name) {
   if (name) return name;

@@ -289,7 +289,8 @@ GROUP_OF['DW-20'] = '2026-10-25T10-58-00Z-b2';
 PUSHES.push({ run_id: '2026-10-25T10-58-00Z-b2', at: '2026-10-25T11:00:00.000Z', project_key: 'github.com/acme/billing' });
 
 export const HISTORY = {
-  'DW-1': [{ fp: '293041526a7b8c9d', status: 'accepted', decided_by: 'forge:712020:7d1c', decided_at: '2026-10-14T10:05:00.000Z', external_ref: 'DW-1', issue_ref: 'SHOP-101', issue_url: 'https://acme.atlassian.net/browse/SHOP-101' }],
+  // accepted by the delegate (delegated triage, forge/src/core/delegate.mjs): the inbox and the panel show its chip
+  'DW-1': [{ fp: '293041526a7b8c9d', status: 'accepted', note: 'Shipping surprise is the top reason in the exit survey.', decided_by: 'delegate:temper', decided_by_name: 'Temper (delegate)', decided_at: '2026-10-14T10:05:00.000Z', external_ref: 'DW-1', issue_ref: 'SHOP-101', issue_url: 'https://acme.atlassian.net/browse/SHOP-101' }],
   'DW-6': [{ fp: 'c3d4e5f607182930', status: 'snoozed', note: 'Revisit after the Node 22 upgrade lands', decided_by: 'forge:712020:7d1c', decided_at: '2026-10-15T08:00:00.000Z', external_ref: 'DW-6' }],
 };
 
@@ -297,6 +298,8 @@ export const INBOXES = [
   {
     project_key: 'github.com/acme/shop', repo_url: REPO, jira_project_key: 'SHOP', issue_type_id: '10001',
     last_push: { run_id: PUSHES[0].run_id, at: PUSHES[0].at, head_sha: SHA1, created: 1, updated: 2 },
+    // delegated triage is on (Settings shows it; billing has none, so its block shows the off state)
+    delegate_until: '2099-12-31', delegate_accepts_per_day: 3, delegate_rejects_per_day: 10,
   },
   {
     project_key: 'github.com/acme/billing', repo_url: 'https://bitbucket.org/acme/billing',
@@ -343,6 +346,8 @@ export const AREAS = {
 export const REFLECT = {
   'github.com/acme/shop': {
     totals: { open: 7, accepted: 6, rejected: 9, snoozed: 3, merged: 1 },
+    // the verdict log counted apart: the delegate's verdicts and people's (reflect.data verdicts_by)
+    verdicts_by: { human: { accepted: 5, rejected: 6, snoozed: 3, merged: 1 }, delegate: { accepted: 1, rejected: 3, snoozed: 0, merged: 0 } },
     pushes: [
       { run_id: PUSHES[0].run_id, at: PUSHES[0].at, head_sha: SHA1, created: 1, updated: 2, dup_rate: 2 / 3, open: 3, accepted: 0, rejected: 0, snoozed: 0 },
       { run_id: PUSHES[1].run_id, at: PUSHES[1].at, head_sha: SHA2, created: 5, updated: 2, dup_rate: 2 / 7, open: 2, accepted: 2, rejected: 2, snoozed: 1 },
@@ -367,7 +372,7 @@ export const REFLECT = {
     notes: [
       { ref: 'DW-5', title: 'Add a loyalty points ledger', status: 'rejected', note: 'Loyalty is owned by the CRM vendor; we integrate, we do not build it.', decided_by_name: 'Priya Natarajan', decided_at: '2026-10-21T10:02:00.000Z' },
       { ref: 'DW-6', title: 'Upgrade the image library with a known decoder overflow', status: 'snoozed', note: 'Revisit after the Node 22 upgrade lands; the new sharp needs it.', decided_by_name: 'Tom Berger', decided_at: '2026-10-15T08:00:00.000Z' },
-      { ref: 'DW-1', title: 'Explain shipping costs before the payment step', status: 'accepted', note: 'Shipping surprise is the top reason in the exit survey.', decided_by_name: 'Priya Natarajan', decided_at: '2026-10-14T10:05:00.000Z' },
+      { ref: 'DW-1', title: 'Explain shipping costs before the payment step', status: 'accepted', note: 'Shipping surprise is the top reason in the exit survey.', decided_by_name: 'Temper (delegate)', decided_at: '2026-10-14T10:05:00.000Z' },
     ],
     rules: [
       { id: 'r-opp-loyalty', lens: 'opportunity', text: 'Do not propose features that the CRM vendor owns (loyalty, referrals, customer segments).', titles: ['Add a loyalty points ledger', 'Referral codes at checkout', 'Segment customers by spend'], state: 'offered', offered_at: '2026-10-27T09:14:10.000Z' },
@@ -472,6 +477,7 @@ export const SAMPLE_AREAS = [
 
 export const SAMPLE_REFLECT = {
   totals: { open: 5, accepted: 0, rejected: 0, snoozed: 0, merged: 0 },
+  verdicts_by: { human: { accepted: 0, rejected: 0, snoozed: 0, merged: 0 }, delegate: { accepted: 0, rejected: 0, snoozed: 0, merged: 0 } },
   pushes: [{ run_id: SAMPLE_PUSH.run_id, at: SAMPLE_AT, head_sha: SAMPLE_SHA, created: 5, updated: 0, dup_rate: 0, open: 5, accepted: 0, rejected: 0, snoozed: 0 }],
   lens_yield: [
     { lens: 'opportunity', proposed: 2, accepted: 0, rejected: 0, snoozed: 0, open: 2 },

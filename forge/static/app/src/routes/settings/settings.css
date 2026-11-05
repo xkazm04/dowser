@@ -35,7 +35,19 @@
 :root .dw-field .dw-dir__hint { margin: 0; }
 :root .dw-dir__act { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
+/* Delegated triage: one block per inbox; the state line says plainly what Temper may do now. */
+:root .dw-del { margin-top: 16px; padding: 12px; border: 1px solid var(--ds-border, #0B120E24); border-radius: 6px; }
+:root .dw-del + .dw-del { margin-top: 12px; }
+:root .dw-del__now { margin: 0 0 12px; }
+:root .dw-del__now--on { color: var(--ds-text, #292A2E); font-weight: 653; }
+:root .dw-del__now--off { color: var(--ds-text-subtle, #505258); }
+:root .dw-del__now--ended { color: var(--ds-text-warning, #A54800); }
+:root .dw-del__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 16px; }
+:root .dw-del__grid .dw-field { margin-bottom: 8px; }
+:root .dw-del__num { width: 96px; }
+
 @media (max-width: 640px) {
   :root .dw-dir__grid { grid-template-columns: minmax(0, 1fr); }
   :root .dw-dir__body { padding-left: 12px; }
+  :root .dw-del__grid { grid-template-columns: minmax(0, 1fr); }
 }

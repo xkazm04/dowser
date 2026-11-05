@@ -17,6 +17,8 @@
 //   DW-9 is machine pre-triaged (the toolbar's "Machine pre-triaged" filter keeps it alone).
 //   &fail=reflect.data | rule.decide | outcome.record | verdict.snooze | verdict.reject   that call fails
 //   #settings             accept targets and Lens direction (shop has Opportunity set)   &fail=direction.set
+//                         Delegated triage: shop is on (until 2099-12-31), billing off; &delegation=ended ends shop's
+//                         yesterday; &fail=settings.set fails a save. DW-1 (and the #panel) was accepted by the delegate.
 //   &page=<n>             inbox page size (default 4)     &mode=dark|light   colour mode (default: the OS)
 //   sample.load / sample.remove   add or drop the sample inbox (`sample: true`, `source`, five sample cards); &empty
 //                         hides only the acme inboxes, so `#inbox&empty` -> Load the sample -> the sample inbox
@@ -65,7 +67,11 @@ const directions = {
   },
 };
 const LENS_IDS = ['opportunity', 'ux-friction', 'doc-drift', 'security-cra'];
-const EMPTY_REFLECT = { totals: { open: 0, accepted: 0, rejected: 0, snoozed: 0, merged: 0 }, rejects: [], notes: [], pushes: [], lens_yield: [], rules: [], candidates: [], outcomes: [] };
+const NO_VERDICTS = { accepted: 0, rejected: 0, snoozed: 0, merged: 0 };
+const EMPTY_REFLECT = { totals: { open: 0, accepted: 0, rejected: 0, snoozed: 0, merged: 0 }, rejects: [], notes: [], pushes: [], lens_yield: [], rules: [], candidates: [], outcomes: [],
+  verdicts_by: { human: NO_VERDICTS, delegate: NO_VERDICTS } };
+// &delegation=ended: the shop inbox's delegated triage ended yesterday (Settings shows the ended state)
+if (params().get('delegation') === 'ended') INBOXES[0].delegate_until = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
 
 /** An inbox summary as inbox.list / settings.* return it: the open count and the count per status. */
 function summary(i) {
@@ -169,10 +175,29 @@ const handlers = {
   'settings.get'() {
     return { inboxes: allInboxes().map(summary) };
   },
-  'settings.set'({ project_key, jira_project_key, issue_type_id }) {
+  'settings.set'(p) {
+    const { project_key, jira_project_key, issue_type_id } = p;
     const i = allInboxes().find((x) => x.project_key === project_key);
     if (!i) throw err('unknown-project', `No inbox ${project_key}.`);
-    Object.assign(i, { jira_project_key, issue_type_id });
+    const target = jira_project_key !== undefined || issue_type_id !== undefined;
+    const delegate = ['delegate_until', 'delegate_accepts_per_day', 'delegate_rejects_per_day'].some((k) => p[k] !== undefined);
+    if (!target && !delegate) throw err('bad-input', 'settings.set takes jira_project_key and issue_type_id, the delegate_* fields, or both');
+    // the delegation, as forge/src/core/delegate.mjs delegationInput checks it
+    if (delegate) {
+      if (i.sample) throw err('bad-input', `${SAMPLE_KEY} takes no delegated triage`);
+      if (p.delegate_until === '') {
+        delete i.delegate_until; delete i.delegate_accepts_per_day; delete i.delegate_rejects_per_day;
+      } else {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(p.delegate_until))) throw err('bad-input', `delegate_until is a calendar date YYYY-MM-DD (got ${JSON.stringify(p.delegate_until)})`);
+        const earliest = new Date(Date.now() - 12 * 3_600_000).toISOString().slice(0, 10);
+        if (p.delegate_until < earliest) throw err('bad-input', `delegate_until must be today or later (${earliest}); got ${p.delegate_until}`);
+        for (const k of ['delegate_accepts_per_day', 'delegate_rejects_per_day']) {
+          if (!Number.isInteger(p[k]) || p[k] < 0 || p[k] > 200) throw err('bad-input', `${k} is a whole number from 0 to 200`);
+        }
+        Object.assign(i, { delegate_until: p.delegate_until, delegate_accepts_per_day: p.delegate_accepts_per_day, delegate_rejects_per_day: p.delegate_rejects_per_day });
+      }
+    }
+    if (target) Object.assign(i, { jira_project_key, issue_type_id });
     return { inbox: summary(i) };
   },
   'jira.projects'() { return { projects: PROJECTS }; },

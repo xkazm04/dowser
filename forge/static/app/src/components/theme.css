@@ -64,6 +64,9 @@ a:hover, .dw-link:hover { text-decoration: underline; }
 .dw-lozenge--inprogress { background: var(--ds-background-information, #E9F2FE); color: var(--ds-text-information, #1558BC); }
 /* The sample's chip: the accent orange the sample strip uses, so a card and its strip read as one mark. */
 .dw-lozenge--sample { background: var(--ds-background-accent-orange-subtler, #FCE4A6); color: var(--ds-text-accent-orange-bolder, #5F3811); }
+/* A delegate's decision (delegated triage): the accent purple, so it never reads as a person's name. Not uppercased:
+   the chip is a phrase ("Decided by Temper (delegate)"). */
+.dw-lozenge--delegate { background: var(--ds-background-accent-purple-subtler, #EED7FC); color: var(--ds-text-accent-purple-bolder, #48245D); text-transform: none; }
 
 .dw-lens { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 12px; line-height: 20px; font-weight: 500; }
 .dw-lens--opportunity { background: var(--ds-background-accent-blue-subtler, #CFE1FD); color: var(--ds-text-accent-blue, #1558BC); }

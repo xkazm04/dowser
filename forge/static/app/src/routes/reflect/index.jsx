@@ -102,6 +102,13 @@ export function digestLines(d) {
     const best = [...(d.lens_yield ?? [])].filter((y) => y.proposed >= 2 && y.accepted > 0).sort((a, b) => b.accepted / b.proposed - a.accepted / a.proposed)[0];
     lines.push(<>You have accepted <strong>{accepted} of {proposed}</strong> proposals so far{best ? <>; <strong>{LENS_LABELS[best.lens]}</strong> converts best ({best.accepted} of {best.proposed}).</> : '.'}</>);
   }
+  // a delegate's verdicts apart from people's (delegated triage); trust is earned by people's only
+  const del = d.verdicts_by?.delegate;
+  const sumOf = (o) => (o ? Object.values(o).reduce((n, x) => n + x, 0) : 0);
+  if (sumOf(del) > 0) {
+    const parts = ['accepted', 'rejected', 'snoozed', 'merged'].filter((s) => del[s] > 0).map((s) => `${del[s]} ${s}`).join(', ');
+    lines.push(<><strong>Temper (delegate)</strong> recorded <strong>{plural(sumOf(del), 'verdict')}</strong> ({parts}); people recorded {plural(sumOf(d.verdicts_by.human), 'verdict')}. Trust counts only people&rsquo;s.</>);
+  }
   const rejects = d.rejects ?? [];
   const totalRej = rejects.reduce((n, x) => n + x.count, 0);
   if (totalRej > 0) {
