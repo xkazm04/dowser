@@ -35,6 +35,19 @@ never commits (secrets, a `.env`), its doc-sync and test rules, what it marks as
 this brief differ, follow the law and say so in `skill_issues`. Never push, tag, release, deploy, or touch any
 repo's master. Landing is the director's.
 
+## A fresh worktree has no node_modules
+
+`git worktree add` checks out the tracked files only: a fresh `work.worktree` (and a QA scratch worktree) has no
+`node_modules`, so every gate, test and e2e run there fails on a missing module or an unknown command, not on the
+build. Install first, in the worktree, before any gate or e2e:
+
+- Dowser (the loop's own repo): `npm ci` in the root, in `forge` and in `forge/static/app`.
+- Another repo: the install its law or its README names (the lockfile's own: `npm ci`, `pnpm install
+  --frozen-lockfile`, and so on), in every package folder its gates run in.
+
+Say in `notes` what you installed. A red gate whose output says "Cannot find module" or "is not recognized" is the
+install missing, not the item: install, then run the gate again.
+
 ## Steps
 
 1. **Scan.** Skip it when the launch message says the scan ran. Otherwise run `scan` from `loop_root` as printed:

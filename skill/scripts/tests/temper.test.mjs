@@ -1097,7 +1097,13 @@ test('runner.md: the brief is repo-agnostic, on tonight\'s tools, and SKILL.md s
   assert.match(md, /greps the repo's test folders for the old behaviour/);
   assert.match(md, /--ref/);
   assert.match(md, /recorded: "local"/);
-  const skill = readFileSync(join(ROOT, '.claude/skills/temper/SKILL.md'), 'utf8');
+  // a fresh worktree has no node_modules: the runner installs before any gate or e2e
+  const fresh = md.slice(md.indexOf('## A fresh worktree has no node_modules'), md.indexOf('## Steps'));
+  assert.ok(fresh.length > 40, 'the section is there, before the steps');
+  assert.match(fresh, /`npm ci` in the root, in `forge` and in `forge\/static\/app`/);
+  assert.match(fresh, /the install its law or its README names/);
+  assert.match(fresh, /before any gate or e2e/);
+  const skill =readFileSync(join(ROOT, '.claude/skills/temper/SKILL.md'), 'utf8');
   const s1 = skill.slice(skill.indexOf('## 1. Cycle'), skill.indexOf('## 2.'));
   assert.match(s1, /references\/runner\.md/);
   assert.match(s1, /`runner` block/);
