@@ -261,6 +261,20 @@ test('triage limits: the 20% reject/snooze floor and the day\'s caps, where snoo
   const caps = { accepts_per_day: 2, rejects_per_day: 2 };
   assert.match(triageLimits([...v('accept'), ...v('reject')], v('accept', 2), caps).why.join(), /3 accepts today, over the cap of 2/);
   assert.match(triageLimits([...v('snooze'), ...v('merge')], v('reject'), caps).why.join(), /3 rejects, snoozes and merges today/);
+  // the floor is per inbox per day: two good accepts pass after a day that rejected enough, and fail on a day that did not
+  const two = triageLimits(v('accept', 2), [...v('accept', 3), ...v('reject', 2)], DEFAULT_CAPS);
+  assert.equal(two.ok, true, '2 of 7 decided today');
+  assert.deepEqual([two.decided, two.share, two.cycle.share], [7, 0.286, 0]);
+  const lowDay = triageLimits(v('accept', 2), v('accept', 3), DEFAULT_CAPS);
+  assert.equal(lowDay.ok, false);
+  assert.match(lowDay.why[0], /0% of the 5 cards decided today in this inbox .* the floor is 20% per day/);
+  // a card decided again today counts once for the floor, at its newest verdict (the caps count every decision)
+  const re = triageLimits([{ ref: 'DW-1', verdict: 'accept' }], [{ ref: 'DW-1', verdict: 'snooze' }, { ref: 'DW-2', verdict: 'accept' }], DEFAULT_CAPS);
+  assert.deepEqual([re.decided, re.ok, re.today.accepts, re.today.rejects], [2, false, 2, 1]);
+  // a merge is neither accept nor reject: out of the share, still against the reject cap (c5: 2 merges into DW-69)
+  const merged = triageLimits([...v('accept', 4), ...v('snooze'), ...v('merge', 2)], [], DEFAULT_CAPS);
+  assert.deepEqual([merged.decided, merged.share, merged.ok, merged.today.rejects], [5, 0.2, true, 3]);
+  assert.equal(triageLimits([...v('accept', 4), ...v('merge', 2)], [], DEFAULT_CAPS).ok, false, 'merges lift no share');
 });
 
 test('one verdicts file passes both triage check and temper-verdicts: inbox and recorded are optional, checked, never sent', () => {
@@ -514,12 +528,19 @@ test('cycle file: cycle 1\'s runner file (2026-11-05) is accepted as written, in
   const o = { target: 'lenses', metModules: [], proposedPerModule: {} };
   assert.equal(validateCycleFile(cycle1, o).length, 4);
   for (const [path, bad] of /** @type {[string, (c: any) => void][]} */ ([['scan.turns', (c) => { c.scan.turns = '49'; }], ['scan.head', (c) => { c.scan.head = 'HEAD'; }],
-    ['scan.pushed', (c) => { c.scan.pushed = 'DW-56'; }], ['built DW-58.qa', (c) => { c.built[0].qa = true; }], ['built DW-58.commits', (c) => { c.built[0].commits = 'c0feeb4'; }]])) {
+    ['scan.pushed', (c) => { c.scan.pushed = 'DW-56'; }], ['scan.ref', (c) => { c.scan.ref = 5; }], ['built DW-58.qa', (c) => { c.built[0].qa = true; }], ['built DW-58.commits', (c) => { c.built[0].commits = 'c0feeb4'; }]])) {
     const c = structuredClone(cycle1);
     bad(c);
     assert.throws(() => validateCycleFile(c, o), (e) => e instanceof Error && e.message.startsWith(path), path);
   }
   assert.throws(() => validateCycleFile({ ...cycle1, persona: 'x' }, o), /unknown cycle key persona/, 'the top level stays closed');
+  // the persona pass has explicit states; a server-only change is not-reachable, never a silent pass
+  for (const ok of ['run', 'run: 2 findings filed', 'skipped: no UI surface touched', 'not-reachable: Jira comment bodies only; forge/test covers them']) {
+    assert.equal(validateCycleFile({ ...cycle1, uat: { ...cycle1.uat, persona_pass: ok } }, o).length, 4, ok);
+  }
+  for (const bad of ['passed', 'not-reachable', 'not-reachable: ', 'skipped', true]) {
+    assert.throws(() => validateCycleFile({ ...cycle1, uat: { ...cycle1.uat, persona_pass: bad } }, o), /uat\.persona_pass is "run", .*"not-reachable: <why>"/, String(bad));
+  }
 });
 
 test('cycle end: appends the quality-snapshot row itself when none was written since the cycle began, so the instrument fills', () => {
@@ -749,8 +770,16 @@ test('repo start/land: bp rebases onto origin/master and pushes HEAD:master only
   assert.doesNotMatch(JSON.stringify(red.out), /sk-ant-abc/, 'the secret itself is never printed');
   // personas
   assert.equal(main(['repo', 'start', '--repo', 'personas'], w.ctx).code, 2, 'a ledger repo needs --paths');
-  const p = main(['repo', 'start', '--repo', 'personas', '--paths', 'src/features/x/**'], w.ctx);
+  // the repo marks .claude/CLAUDE.md read-only to agents, and a src/ fix moves its census baseline
+  put(join(personas, 'scripts/docs/check-doc-counts.mjs'), "export const READ_ONLY = new Set(['.claude/CLAUDE.md']);\n");
+  put(join(personas, 'scripts/census/rules.json'), '{}\n');
+  g(personas, 'add', '-A'); g(personas, 'commit', '-q', '-m', 'marks');
+  const p = main(['repo', 'start', '--repo', 'personas', '--paths', 'src/features/x/**,.claude/**'], w.ctx);
   assert.equal(p.code, 0, JSON.stringify(p.out));
+  assert.deepEqual(p.out.paths, ['src/features/x/**', '.claude/**', 'scripts/census/rules.json'], 'the census baseline rides with a src/ path');
+  assert.deepEqual(p.out.companions.map((/** @type {any} */ c) => c.path), ['scripts/census/rules.json']);
+  assert.equal(p.out.warnings.length, 1);
+  assert.match(p.out.warnings[0], /\.claude\/CLAUDE\.md is marked read-only for agents by the repo \(scripts\/docs\/check-doc-counts\.mjs:1\)/);
   assert.deepEqual(p.out.item_gates, ['npm run verify:affected -- --files {files}']);
   const ledger = w.calls.filter((c) => c.cmd === 'node').map((c) => c.args[1]);
   assert.deepEqual(ledger, ['check', 'register']);
@@ -761,6 +790,13 @@ test('repo start/land: bp rebases onto origin/master and pushes HEAD:master only
   assert.deepEqual(pl.out.steps, []);
   assert.ok(w.calls.some((c) => c.cmd === 'npm run gate -- --cold'));
   assert.ok(!w.calls.some((c) => c.cmd === 'npm run verify:affected -- --files {files}'), 'an item gate is the builder\'s, not land\'s');
+  assert.equal(pl.out.checks.secret_scan.clean, true, 'commit-only runs the built-in secret scan too');
+  // the repo's own hook may skip its scan (gitleaks missing): the built-in scan still turns a leak red
+  put(join(p.out.worktree, 'k.txt'), 'token AKIAABCDEFGHIJKLMNOP\n');
+  g(p.out.worktree, 'add', 'k.txt'); g(p.out.worktree, 'commit', '-q', '-m', 'oops');
+  const leak = main(['land', '--repo', 'personas', '--dry-run'], w.ctx);
+  assert.equal(leak.out.decision, 'red');
+  assert.match(leak.out.reasons.join(), /aws-access-key in k\.txt/);
   assert.equal(main(['day', 'end'], w.ctx).code, 1, 'a registered run must deregister first');
   assert.equal(main(['repo', 'end', '--repo', 'personas'], w.ctx).code, 0);
   assert.equal(w.calls.filter((c) => c.cmd === 'node').at(-1)?.args[1], 'complete');
@@ -809,6 +845,15 @@ test('repo paths --add: widens the personas entry through active-runs.mjs (check
   ledger.length = 0;
   assert.deepEqual(main(['repo', 'paths', '--repo', 'personas', '--add', 'src/b/**'], w.ctx).out.added, []);
   assert.deepEqual(ledger, [], 'nothing new: the ledger is not touched');
+  // widening onto a file the repo marks read-only warns; a src/ path brings the census baseline when the repo has one
+  put(join(personas, 'scripts/docs/check-doc-counts.mjs'), "export const READ_ONLY = new Set(['.claude/CLAUDE.md']);\n");
+  put(join(personas, 'scripts/census/rules.json'), '{}\n');
+  g(personas, 'add', '-A'); g(personas, 'commit', '-q', '-m', 'marks');
+  const wide = main(['repo', 'paths', '--repo', 'personas', '--add', '.claude/CLAUDE.md,src/c/**'], w.ctx);
+  assert.equal(wide.code, 0, JSON.stringify(wide.out));
+  assert.deepEqual(wide.out.added, ['.claude/CLAUDE.md', 'src/c/**', 'scripts/census/rules.json']);
+  assert.match(wide.out.warnings.join(), /\.claude\/CLAUDE\.md is marked read-only for agents/);
+  ledger.length = 0;
   assert.equal(main(['repo', 'end', '--repo', 'personas'], w.ctx).code, 0);
   assert.equal(main(['repo', 'paths', '--repo', 'personas', '--add', 'src/c/**'], w.ctx).code, 1, 'an ended run is not widened');
 });
@@ -893,6 +938,11 @@ test('cycle begin --repo: the target is a focus in the store\'s form (area:<path
   assert.equal(ok.code, 0, JSON.stringify(ok.out));
   assert.equal(ok.out.focus, 'goal:faster triage');
   assert.match(ok.out.scan.bp, /--focus "goal:faster triage"/);
+  // the scan reads the day's work: bp's temper/<date>, Dowser's loop/<date>, never master
+  assert.match(ok.out.scan.bp, / --ref temper\/2026-11-05 /);
+  const d = main(['cycle', 'begin', '--target', 'tooling'], w.ctx);
+  assert.equal(d.code, 0, JSON.stringify(d.out));
+  assert.match(d.out.scan.dowser, / --ref loop\/2026-11-05 /);
 });
 
 test('secretScan: env files and token shapes in added lines, never .env.example, names only', () => {
@@ -1017,4 +1067,15 @@ test('guard.mjs as a hook: stdin JSON in, the PreToolUse decision out, nothing f
   const settings = JSON.parse(readFileSync(join(ROOT, '.claude', 'settings.json'), 'utf8'));
   const hook = settings.hooks.PreToolUse.find((/** @type {any} */ h) => h.hooks.some((/** @type {any} */ x) => x.command.includes('temper/scripts/guard.mjs')));
   assert.equal(hook.matcher, 'Bash|PowerShell|Write|Edit');
+});
+
+test('cycle.md: QA updates the tests that encode the old behaviour in the spec commit, after the bounds are checked', () => {
+  const md = readFileSync(join(ROOT, '.claude/skills/temper/references/cycle.md'), 'utf8');
+  const build = md.slice(md.indexOf('## 4. Build'), md.indexOf('## 5.'));
+  assert.match(build, /Old behaviour in existing tests/);
+  assert.match(build, /QA greps for them before it commits/);
+  assert.match(build, /updates\s+each one in the same spec commit/);
+  assert.match(build, /encodes the old behaviour, updated here/);
+  assert.ok(build.indexOf('Check every bound before QA starts') < build.indexOf('A **QA subagent**'), 'the bounds come before QA');
+  assert.match(build, /QA never patches source to prove a spec can pass/);
 });

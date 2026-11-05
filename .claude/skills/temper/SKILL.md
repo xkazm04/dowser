@@ -27,6 +27,9 @@ scans that the loop starts keep theirs.
 4. For each other repo with `build: true`, run `T repo start --repo <name> [--paths a,b]`. A repo with a ledger
    (personas) needs `--paths`, and its `check` must pass. Sibling sessions are active there. A later cycle that needs
    another area widens the entry with `T repo paths --repo <name> --add a,b` (refused when a live session holds one).
+   Both add a path's companions (a `src/` path brings `scripts/census/rules.json` when the repo has it: a fix lowers
+   the census baseline) and answer `warnings` for a path the repo itself marks read-only for agents (a `READ_ONLY` or
+   "needs a human" source line). Such a path needs the operator: do not build cards there unless they lifted it.
 
 ## 1. Cycle (repeat)
 
@@ -65,7 +68,7 @@ scans that the loop starts keep theirs.
 - The charter and direction answers are the operator's. Write them only through the start dialog's exact command.
 - No gate grades itself: a QA subagent writes the failing specs first, and the builder never edits them. UAT verdicts
   come from runner exit codes and result files, in three states. Unverifiable is never a pass.
-- Triage is honest: real reason codes, a reject or snooze share of at least 20% (`T triage check`), the day's caps,
+- Triage is honest: real reason codes, a reject or snooze share of at least 20% per inbox per day (`T triage check`), the day's caps,
   and accepts only for cards you checked against the code and that are in direction.
 - Scans are read-only. Only the charter's `build: true` repos get builds, and each lands under its own law.
 

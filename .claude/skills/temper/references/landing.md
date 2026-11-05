@@ -60,7 +60,9 @@ Production, tags and releases are never part of a landing. The guard denies them
   and registers it again under the same slug with every path. The day keeps one active entry. `day.json` records the
   paths; a day started before it did needs `--paths <the paths given at repo start>` as well.
 - Builders run `npm run verify:affected -- --files <files>` per item. `T land --repo personas` runs
-  `npm run gate -- --cold` and records the result. It **never pushes**. The operator merges the branch.
+  `npm run gate -- --cold` and the built-in secret scan of the branch since its base, and records both. personas'
+  own pre-commit scan skips silently when gitleaks is not installed, so its hook is never read as the scan. It
+  **never pushes**. The operator merges the branch.
 - personas' gates lint `src/` only: for a change to `scripts/*.mjs` the cold gate reports eslint `ok` with "no lintable
   files". Those files are linted only by the pre-commit eslint-staged hook, so never read the cold gate as covering
   them; say so in the cycle's `uat`.

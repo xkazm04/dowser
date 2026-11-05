@@ -30,7 +30,7 @@
 //                                            when green; red: reset loop/<date> to the last green commit
 //                                          rebase-push (bp): rebase onto origin/master, gates + secret scan, push
 //                                            HEAD:master; red: nothing pushed
-//                                          commit-only (personas): gates only; never pushes
+//                                          commit-only (personas): gates + secret scan; never pushes
 //
 // Verified vs self-reported: what this script reads from a tool's own output (the runner's exit code, e2e result
 // files, the scan ledger, quality-snapshot rows, e2e-coverage) is `verified`; what only the director's cycle file
@@ -418,6 +418,52 @@ function dayEnd(ctx) {
 /** Where a build repo's day branch is checked out: outside every repo, under the Temper home. @param {Ctx} ctx @param {string} name @param {string} date */
 export const repoWorktree = (ctx, name, date) => join(ctx.home, 'worktrees', `${name}-${date}`);
 
+/**
+ * Files a registered path drags in: a fix there moves them too, so a run that cannot write them cannot land green.
+ * Each applies only when the repo has the file. personas: a UI fix lowers a census baseline (the ratchet), c6.
+ */
+export const PATH_COMPANIONS = [{ when: /^src\//, path: 'scripts/census/rules.json', why: 'a fix under src/ lowers the census baseline (the ratchet)' }];
+
+/** A registered path (a file, a dir, or a glob with * and **) as a test on repo-relative file paths. @param {string} p */
+export function pathMatcher(p) {
+  const s = p.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
+  if (!/[*?]/.test(s)) return (/** @type {string} */ f) => f === s || f.startsWith(`${s}/`);
+  const re = new RegExp(`^${s.split(/(\*\*\/?|\*|\?)/).map((t) => (t === '**' || t === '**/' ? '.*' : t === '*' ? '[^/]*' : t === '?' ? '[^/]' : t.replace(/[.+^${}()|[\]\\]/g, '\\$&'))).join('')}$`);
+  return (/** @type {string} */ f) => re.test(f);
+}
+
+/**
+ * Files the repo itself marks as read-only to agents: a quoted file path on a source line that says READ_ONLY or
+ * "needs a human" (personas: scripts/docs/check-doc-counts.mjs `READ_ONLY = new Set(['.claude/CLAUDE.md'])`).
+ * @param {Ctx} ctx @param {string} repoPath @returns {{path: string, at: string}[]}
+ */
+export function readOnlyMarks(ctx, repoPath) {
+  const r = ctx.run('git', ['-C', repoPath, 'grep', '-n', '-I', '-E', 'READ_ONLY|needs a human', '--', '*.mjs', '*.js', '*.cjs', '*.ts']);
+  if (r.status !== 0) return [];
+  /** @type {{path: string, at: string}[]} */
+  const out = [];
+  for (const line of r.stdout.split(/\r?\n/)) {
+    const m = line.match(/^([^:]+):(\d+):(.*)$/);
+    if (!m) continue;
+    for (const q of m[3].matchAll(/['"`]([\w.-][\w./-]*\.[A-Za-z0-9]+)['"`]/g)) if (q[1].includes('/') || q[1].startsWith('.')) out.push({ path: q[1], at: `${m[1]}:${m[2]}` });
+  }
+  return out;
+}
+
+/**
+ * The paths to register, with their companions added, and a warning for each one the repo marks as needing a human.
+ * @param {Ctx} ctx @param {string} repoPath @param {string[]} asked
+ * @returns {{paths: string[], companions: {path: string, why: string}[], warnings: string[]}}
+ */
+export function pathAdvice(ctx, repoPath, asked) {
+  const companions = PATH_COMPANIONS.filter((c) => asked.some((p) => c.when.test(p)) && !asked.some((p) => pathMatcher(p)(c.path)) && existsSync(join(repoPath, c.path)))
+    .map(({ path, why }) => ({ path, why }));
+  const all = [...asked, ...companions.map((c) => c.path)];
+  const warnings = readOnlyMarks(ctx, repoPath).filter((m) => asked.some((p) => pathMatcher(p)(m.path)))
+    .map((m) => `${m.path} is marked read-only for agents by the repo (${m.at}): a change there needs a human, unless the operator lifted it`);
+  return { paths: all, companions, warnings };
+}
+
 /** @param {Ctx} ctx @param {Record<string, string | true>} f */
 function repoStart(ctx, f) {
   const charter = needCharter(ctx);
@@ -427,8 +473,10 @@ function repoStart(ctx, f) {
   if (r.name === 'dowser') throw new UsageError('Dowser\'s branch is made by day start');
   if (!r.build) throw new Refusal(`${r.name} is scanned only (build: false in the charter)`);
   if (day.repos?.[r.name]) throw new Refusal(`${r.name} is already started today: ${day.repos[r.name].worktree}`);
-  const pathsArg = list(f.paths);
-  if (r.ledger && !pathsArg.length) throw new UsageError(`${r.name} keeps an active-runs ledger: name the paths you will touch (--paths a,b)`);
+  const asked = list(f.paths);
+  if (r.ledger && !asked.length) throw new UsageError(`${r.name} keeps an active-runs ledger: name the paths you will touch (--paths a,b)`);
+  const advice = asked.length ? pathAdvice(ctx, r.path, asked) : { paths: asked, companions: [], warnings: [] };
+  const pathsArg = advice.paths;
   const branch = r.landing.branch.replace('<date>', day.date);
   const wt = repoWorktree(ctx, r.name, day.date);
   let base;
@@ -453,7 +501,8 @@ function repoStart(ctx, f) {
   }
   day.repos = { ...(day.repos ?? {}), [r.name]: { branch, worktree: wt, base, ...(registered ? { registered: slug, paths: pathsArg, title: typeof f.title === 'string' ? f.title : undefined } : {}), started_at: ctx.now().toISOString() } };
   writeJson(paths(ctx.root).day, day);
-  return { repo: r.name, ...day.repos[r.name], landing: r.landing.kind, item_gates: r.gates.filter((g) => g.when === 'item').map((g) => g.run) };
+  return { repo: r.name, ...day.repos[r.name], landing: r.landing.kind, item_gates: r.gates.filter((g) => g.when === 'item').map((g) => g.run),
+    ...(advice.companions.length ? { companions: advice.companions } : {}), ...(advice.warnings.length ? { warnings: advice.warnings } : {}) };
 }
 
 /**
@@ -489,8 +538,10 @@ function repoPaths(ctx, f) {
   /** @type {string[] | undefined} */
   const had = Array.isArray(s.paths) ? s.paths : (f.paths !== undefined ? list(f.paths) : undefined);
   if (!had?.length) throw new UsageError(`${r.name}'s day entry predates recorded paths: also pass --paths <the paths given at repo start>`);
-  const fresh = add.filter((p) => !had.includes(p));
-  if (!fresh.length) return { repo: r.name, slug: s.registered, paths: had, added: [] };
+  const advice = pathAdvice(ctx, r.path, add);
+  const fresh = advice.paths.filter((p) => !had.includes(p));
+  const extra = { ...(advice.companions.length ? { companions: advice.companions } : {}), ...(advice.warnings.length ? { warnings: advice.warnings } : {}) };
+  if (!fresh.length) return { repo: r.name, slug: s.registered, paths: had, added: [], ...extra };
   const conflicts = ledgerConflicts(ctx, r, fresh, s.registered);
   if (conflicts.length) throw new Refusal(`${r.name}: a live session holds ${conflicts.map((c) => `${(c.overlap ?? []).join(', ')} (${c.slug})`).join('; ')}; pick other paths`);
   const script = join(r.path, 'scripts', 'active-runs.mjs');
@@ -507,7 +558,7 @@ function repoPaths(ctx, f) {
   s.paths = all;
   s.title = title;
   writeJson(paths(ctx.root).day, day);
-  return { repo: r.name, slug: s.registered, paths: all, added: fresh };
+  return { repo: r.name, slug: s.registered, paths: all, added: fresh, ...extra };
 }
 
 /** @param {Ctx} ctx @param {Record<string, string | true>} f */
@@ -660,12 +711,16 @@ function cycleBegin(ctx, f) {
     ...Object.values(openNow).filter((o) => o.cycle.date === day.date).map((o) => (Number.isInteger(o.cycle.n) ? o.cycle.n : 0))) + 1;
   const cycle = { n, date: day.date, repo: repo.name, target: f.target, begun_at: ctx.now().toISOString(), head };
   writeJson(cycleFile(ctx.root, repo.name), cycle);
-  const scan = (/** @type {string} */ path, /** @type {string} */ inbox, /** @type {unknown} */ focus) =>
-    `node tools/temper-scan.mjs --repo "${path}" --project-key ${inbox}${typeof focus === 'string' ? ` --focus "${focus}"` : ''} --budget-usd 8`;
+  // a scan reads the day's work, never the repo's master: Dowser's loop/<date>, a started repo's temper/<date>
+  const dayRef = (/** @type {string} */ name) => (name === 'dowser' ? day.branch : day.repos?.[name]?.branch);
+  const scan = (/** @type {string} */ name, /** @type {string} */ path, /** @type {string} */ inbox, /** @type {unknown} */ focus) => {
+    const ref = dayRef(name);
+    return `node tools/temper-scan.mjs --repo "${path}" --project-key ${inbox}${typeof ref === 'string' ? ` --ref ${ref}` : ''}${typeof focus === 'string' ? ` --focus "${focus}"` : ''} --budget-usd 8`;
+  };
   return {
     ...cycle, ...t, ...(repo.name === 'dowser' ? { branch: day.branch } : {}), clock: c,
-    scan: { [repo.name]: scan(repo.path, repo.inbox_key, t.focus),
-      others_due: otherReposDue(ctx, charter, day.date).filter((/** @type {any} */ r) => r.name !== repo.name).map((/** @type {any} */ r) => ({ ...r, command: scan(r.path, r.inbox_key, undefined) })) },
+    scan: { [repo.name]: scan(repo.name, repo.path, repo.inbox_key, t.focus),
+      others_due: otherReposDue(ctx, charter, day.date).filter((/** @type {any} */ r) => r.name !== repo.name).map((/** @type {any} */ r) => ({ ...r, command: scan(r.name, r.path, r.inbox_key, undefined) })) },
     triage: { min_reject_share: REJECT_SHARE, caps: repo.caps, check: `temper.mjs triage check --verdicts <file> --inbox ${repo.inbox_key}`, out_of_bounds: charter.out_of_bounds ?? [] },
   };
 }
@@ -791,9 +846,13 @@ function runRepoGates(ctx, repo, cwd) {
   return Object.fromEntries(repo.gates.filter((g) => g.when === 'land').map((g) => [g.run, ctx.run(g.run, [], { cwd, shell: true }).status === 0 ? 'pass' : 'fail']));
 }
 
-/** The reject/snooze share of decided cards. @param {Record<string, number>} c */
+/**
+ * The reject/snooze share of decided cards. A merge folds a card into another item: it is neither an accept nor a
+ * reject, so it stays out of the share (it still counts against Forge's reject cap, triageLimits).
+ * @param {Record<string, number>} c
+ */
 export function rejectShare(c) {
-  const decided = VERDICT_KINDS.reduce((n, k) => n + (c[k] ?? 0), 0);
+  const decided = (c.accept ?? 0) + (c.reject ?? 0) + (c.snooze ?? 0);
   const share = decided ? ((c.reject ?? 0) + (c.snooze ?? 0)) / decided : undefined;
   return { decided, ...(share !== undefined ? { share: Number(share.toFixed(3)) } : {}), ok: !decided || /** @type {number} */ (share) >= REJECT_SHARE };
 }
@@ -827,20 +886,23 @@ const countKinds = (vs) => {
 
 /**
  * The share floor and the day's caps of one inbox (as Forge counts them: snoozes and merges count against rejects),
- * over today's earlier verdicts plus these.
+ * over today's earlier verdicts plus these. The floor is per day per inbox, not per cycle: a cycle that decides one or
+ * two genuinely good cards could not meet it honestly. A card decided again today counts once there, at its newest
+ * verdict; the caps count every decision, as Forge does. `cycle` is these verdicts' own share, for the record.
  * @param {any[]} verdicts @param {any[]} earlier today's earlier verdicts of the same inbox @param {{accepts_per_day: number, rejects_per_day: number}} caps
  */
 export function triageLimits(verdicts, earlier, caps) {
   const c = countKinds(verdicts);
-  const q = rejectShare(c);
+  const redecided = new Set(verdicts.map((v) => v.ref).filter((r) => typeof r === 'string'));
+  const q = rejectShare(countKinds([...earlier.filter((e) => typeof e.ref !== 'string' || !redecided.has(e.ref)), ...verdicts]));
   const all = countKinds([...earlier, ...verdicts]);
   const accepts = all.accept ?? 0;
   const rejects = (all.reject ?? 0) + (all.snooze ?? 0) + (all.merge ?? 0);
   const why = [];
-  if (!q.ok) why.push(`only ${Math.round((q.share ?? 0) * 100)}% of ${q.decided} decided cards are rejected or snoozed; the floor is ${REJECT_SHARE * 100}%`);
+  if (!q.ok) why.push(`only ${Math.round((q.share ?? 0) * 100)}% of the ${q.decided} cards decided today in this inbox are rejected or snoozed; the floor is ${REJECT_SHARE * 100}% per day`);
   if (accepts > caps.accepts_per_day) why.push(`${accepts} accepts today, over the cap of ${caps.accepts_per_day}`);
   if (rejects > caps.rejects_per_day) why.push(`${rejects} rejects, snoozes and merges today, over the cap of ${caps.rejects_per_day}`);
-  return { counts: c, ...q, today: { accepts, rejects }, caps, ok: !why.length, why };
+  return { counts: c, ...q, floor_ok: q.ok, cycle: rejectShare(c), today: { accepts, rejects }, caps, ok: !why.length, why };
 }
 
 /** Today's earlier verdicts of an inbox, from the cycle rows. @param {string} root @param {string} date @param {string} inbox */
@@ -854,13 +916,21 @@ const isStrings = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string
  */
 const SCAN_INFO = /** @type {Record<string, [string, (v: unknown) => boolean]>} */ ({
   cost_usd: ['a number', (v) => typeof v === 'number'], minutes: ['a number', (v) => typeof v === 'number'], turns: ['a whole number', (v) => Number.isInteger(v)],
-  run_id: ['text', (v) => typeof v === 'string'], head: ['a commit', (v) => typeof v === 'string' && /^[0-9a-f]{7,40}$/i.test(v)],
+  run_id: ['text', (v) => typeof v === 'string'], ref: ['a branch or commit name (the ledger row ref)', (v) => typeof v === 'string' && v.trim() !== ''], head: ['a commit', (v) => typeof v === 'string' && /^[0-9a-f]{7,40}$/i.test(v)],
   pushed: ['a list of refs', isStrings], lens_states: ['text', (v) => typeof v === 'string'],
 });
 const BUILT_INFO = /** @type {Record<string, [string, (v: unknown) => boolean]>} */ ({
   slice: ['text like 1/2', (v) => typeof v === 'string'], commits: ['a list of commits', isStrings], specs: ['a list of paths', isStrings],
   qa: ['text (who wrote the specs: subagent, ...)', (v) => typeof v === 'string'],
 });
+/**
+ * The exploratory persona pass's states (references/cycle.md, Simulated UAT): `run` (with what it found after a colon),
+ * `skipped: <why>` (no UI surface touched), `not-reachable: <why>` (a UI-visible change that neither the fixture
+ * bridge nor the local doubles can reach, such as a server-only message or a Jira body). `not run: <why>` is the first
+ * runners' form, still read.
+ */
+const PERSONA_PASS_RE = /^(run(: \S.*)?|(skipped|not-reachable|not run): \S.*)$/s;
+const PERSONA_PASS_FORMS = '"run", "run: <what it found>", "skipped: <why>" or "not-reachable: <why>"';
 /** @param {any} o @param {Record<string, [string, (v: unknown) => boolean]>} spec @param {string} at */
 function checkInfo(o, spec, at) {
   for (const [k, [what, ok]] of Object.entries(spec)) if (o[k] !== undefined && !ok(o[k])) throw new UsageError(`${at}.${k} is ${what}`);
@@ -905,9 +975,11 @@ export function validateCycleFile(raw, o) {
     if (per[d.module] > MAX_DIRECTIONS) throw new Refusal(`at most ${MAX_DIRECTIONS} pending directions per module (${d.module})`);
   }
   if (raw.scan !== undefined) {
-    if (typeof raw.scan?.project_key !== 'string' || !Number.isInteger(raw.scan.created)) throw new UsageError('scan is {project_key, created, cost_usd?, minutes?, turns?, run_id?, head?, pushed?, lens_states?}');
+    if (typeof raw.scan?.project_key !== 'string' || !Number.isInteger(raw.scan.created)) throw new UsageError('scan is {project_key, created, cost_usd?, minutes?, turns?, run_id?, ref?, head?, pushed?, lens_states?}');
     checkInfo(raw.scan, SCAN_INFO, 'scan');
   }
+  const persona = raw.uat && typeof raw.uat === 'object' ? raw.uat.persona_pass : undefined;
+  if (persona !== undefined && (typeof persona !== 'string' || !PERSONA_PASS_RE.test(persona))) throw new UsageError(`uat.persona_pass is ${PERSONA_PASS_FORMS}`);
   return raw.verdicts === undefined ? [] : checkVerdicts(raw.verdicts);
 }
 
@@ -979,7 +1051,7 @@ function cycleEnd(ctx, f) {
   for (const d of Object.values(dirs.proposed)) proposedPerModule[/** @type {any} */ (d).module] = (proposedPerModule[/** @type {any} */ (d).module] ?? 0) + 1;
   const metModules = Object.entries(bar?.modules ?? {}).filter(([, m]) => /** @type {any} */ (m).met).map(([k]) => k);
   const verdicts = validateCycleFile(raw, { target: open.target, metModules, proposedPerModule });
-  // the share floor per cycle, the caps per inbox per day
+  // the share floor and the caps, both per inbox per day
   /** @type {Record<string, any>} */
   const limits = {};
   for (const inbox of [...new Set(verdicts.map((v) => v.inbox))]) {
@@ -994,7 +1066,9 @@ function cycleEnd(ctx, f) {
   const head = gitIn(ctx, dir, 'rev-parse', 'HEAD');
   const v = verifyTree(ctx, repo, dir, Date.parse(open.begun_at));
   const quality = isDowser ? qualityRowOf(ctx, open) : undefined;
-  const quota = rejectShare(countKinds(verdicts));
+  // the cycle's own share for the record; ok is the day's floor in every inbox it decided in
+  const quota = { ...rejectShare(countKinds(verdicts)), ok: Object.values(limits).every((l) => l.floor_ok),
+    ...(Object.keys(limits).length ? { day: Object.fromEntries(Object.entries(limits).map(([k, l]) => [k, { decided: l.decided, ...(l.share !== undefined ? { share: l.share } : {}), ok: l.floor_ok }])) } : {}) };
   const { target: _t, repo: _r, ...claims } = raw;
   const green = v.green;
   const row = {
@@ -1315,12 +1389,12 @@ export function renderReport(d) {
   L.push('', `Cycles: ${d.cycles.length}, green ${d.cycles.filter((r) => r.green).length}.`);
   for (const r of d.cycles) {
     const re = r.reverified ? `, reverified at ${String(r.head).slice(0, 7)} (first ${r.reverified.first.green ? 'green' : `red: ${(r.reverified.first.red_because ?? []).join('; ')}`})` : '';
-    L.push(`- ${r.n} ${r.repo ?? 'dowser'} ${r.target}: ${r.green ? 'green' : `red (${(r.red_because ?? []).join('; ')})`}${re}${r.quota && !r.quota.ok ? ', reject share under 20%' : ''}`);
+    L.push(`- ${r.n} ${r.repo ?? 'dowser'} ${r.target}: ${r.green ? 'green' : `red (${(r.red_because ?? []).join('; ')})`}${re}${r.quota && !r.quota.ok ? ', the day\'s reject share under 20%' : ''}`);
   }
   L.push('', '## Scans and costs', '');
   if (d.scans.length) {
-    L.push('| inbox | focus | cards created | minutes | cost |', '|---|---|---|---|---|');
-    for (const s of d.scans) L.push(`| ${s.project_key} | ${s.focus ?? 'full'} | ${s.cards?.created ?? ''} | ${s.minutes ?? ''} | ${typeof s.cost_usd === 'number' ? `$${s.cost_usd.toFixed(2)}` : ''} |`);
+    L.push('| inbox | focus | scanned | cards created | minutes | cost |', '|---|---|---|---|---|---|');
+    for (const s of d.scans) L.push(`| ${s.project_key} | ${s.focus ?? 'full'} | ${s.ref ? `${s.ref}@` : ''}${s.head ?? ''} | ${s.cards?.created ?? ''} | ${s.minutes ?? ''} | ${typeof s.cost_usd === 'number' ? `$${s.cost_usd.toFixed(2)}` : ''} |`);
     const cost = d.scans.reduce((n, s) => n + (typeof s.cost_usd === 'number' ? s.cost_usd : 0), 0);
     L.push('', `Total: ${d.scans.length} scans, $${cost.toFixed(2)} (the scan ledger).`);
   } else L.push('No scan today.');
@@ -1520,7 +1594,7 @@ export function landPlan(ctx, day, repo) {
 
 /**
  * Another repo's landing: rebase-push (rebase onto origin/master, gates, secret scan, push HEAD:master) or commit-only
- * (gates; never a push). In a dry run nothing is rebased; a branch behind origin/master is reported as "would rebase".
+ * (gates, secret scan; never a push). In a dry run nothing is rebased; a branch behind origin/master is reported as "would rebase".
  * @param {Ctx} ctx @param {any} day @param {Repo} repo @param {boolean} dry
  */
 export function repoLand(ctx, day, repo, dry) {
@@ -1556,11 +1630,11 @@ export function repoLand(ctx, day, repo, dry) {
     checks.gates = gates;
     if (!Object.keys(gates).length) reasons.push('the charter names no land gate for this repo');
     for (const [k, v] of Object.entries(gates)) if (v !== 'pass') reasons.push(`${k} failed`);
-    if (repo.landing.kind === 'rebase-push') {
-      const scan = secretScan(gitIn(ctx, wt, 'diff', '--name-only', 'origin/master...HEAD'), gitIn(ctx, wt, 'diff', '-U0', 'origin/master...HEAD'));
-      checks.secret_scan = scan;
-      if (!scan.clean) reasons.push(`the secret scan found ${scan.hits.map((h) => `${h.pattern} in ${h.file}`).join(', ')}`);
-    }
+    // every landing kind: a repo's own hook may skip its scan silently (personas: gitleaks not installed, c7)
+    const range = `${base}...HEAD`;
+    const scan = secretScan(gitIn(ctx, wt, 'diff', '--name-only', range), gitIn(ctx, wt, 'diff', '-U0', range));
+    checks.secret_scan = scan;
+    if (!scan.clean) reasons.push(`the secret scan found ${scan.hits.map((h) => `${h.pattern} in ${h.file}`).join(', ')}`);
   }
   if (repo.landing.kind === 'commit-only') return { ...out, decision: reasons.length ? 'red' : 'commit-only', head, checks, reasons, steps: [] };
   if (reasons.length) return { ...out, decision: 'red', head, checks, reasons, steps: [] };

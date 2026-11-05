@@ -17,8 +17,10 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
 
 ## 2. Scan
 
-- Dowser: the `scan.dowser` command, `node tools/temper-scan.mjs --repo <dowser> --project-key <inbox> --focus "<focus>"`.
-  It is one scan per cycle, and its ledger row (`~/.temper/scans.jsonl`) is the scan-yield instrument of the bar.
+- Dowser: the `scan.dowser` command, `node tools/temper-scan.mjs --repo <dowser> --project-key <inbox> --ref loop/<date> --focus "<focus>"`.
+  Run the printed command as is: its `--ref` is the day branch (`loop/<date>`, or a started repo's `temper/<date>`),
+  so the scan reads the day's fixes and does not bring back cards they closed. The ledger row's `ref` and `head` say
+  what was scanned. It is one scan per cycle, and its ledger row (`~/.temper/scans.jsonl`) is the scan-yield instrument of the bar.
   The row's `report` names `~/.temper/scans/<stamp>-<inbox>.json`: the row, the scan's summary and every card it
   created or moved (`{fp, ref, status, lens, title, evidence, created}`). The clone is deleted after the scan.
 - Other repos: `scan.others_due` lists those with no scan today or yesterday, so each is scanned every second day,
@@ -35,19 +37,36 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
 - A subagent reads every new card against the code it quotes. Accept only a card that is real (the evidence holds
   at HEAD), in direction, and inside the charter's bounds. Reject with the honest reason code. Snooze what is real but
   not now. Merge duplicates into the accepted item.
-- At least 20% of decided cards are rejected or snoozed. Within the day's caps, check the verdicts file first with
+- At least 20% of the cards decided today in each inbox are rejected or snoozed: the floor is per inbox per day,
+  over the day's earlier verdicts plus this file (a card decided again counts once, at its newest verdict; a merge stays out of the share but counts against the
+  reject cap), so a cycle
+  that decides one or two good cards is not pushed into a dishonest reject. Within the day's caps, check the verdicts file first with
   `T triage check --verdicts <file> --inbox <key>`. Exit 1 means look again for the weak cards.
 - One verdicts file serves both tools: `[{ref, verdict, reason?, note?, into?, until?, inbox?, recorded?}]`. `reason` is a
   reject's code only (model.mjs REASONS); a snooze or an accept says why in `note`. `inbox` (when given) must be the
   inbox checked, and `recorded` is `live` or `local`; temper-verdicts checks both and never sends them.
-- Record them live with `node tools/temper-verdicts.mjs --project-key <k> --verdicts <file>`. When it refuses with
-  `forbidden` (no valid delegation in Jira Settings), the verdicts are **local only**. Put them in the cycle file with
+- Record them live with `node tools/temper-verdicts.mjs --project-key <k> --verdicts <file>`. When it answers
+  `{forbidden: true, record_as: "local"}` and exit 1 (no valid delegation in Jira Settings), the verdicts are **local
+  only**. It remembers the answer for the inbox for the day, so later cycles get it without a `claude -p` call; pass
+  `--retry` once the operator has set up a delegation. Put them in the cycle file with
   `recorded: "local"`. The live inbox keeps its cards undecided, and the report counts them apart.
 
 ## 4. Build
 
+- **Check every bound before QA starts**: the registered paths (`repo paths --add` first), a baseline the fix moves
+  (personas: `scripts/census/rules.json`), a file the repo marks as needing a human. A spawned QA subagent cannot be
+  stopped mid-run, only messaged at its next tool round, so a bound found later leaves a committed red spec.
 - A **QA subagent** writes the item's specs or tests first, from the card's Flow and acceptance criteria. A defect
   spec must fail on the base (the red control). It commits them alone.
+- **Old behaviour in existing tests.** A behaviour change makes the tests that encode the old behaviour fail, and the
+  builder may not edit specs. So QA greps for them before it commits: the old message, value, flag or claim the
+  card changes, across the repo's test folders (Dowser: `skill/scripts/tests/`, `forge/test/`, `e2e/`). It updates
+  each one in the same spec commit, then runs the whole affected suite on the base and lists every red test as
+  "new spec", "encodes the old behaviour, updated here" or "unrelated: stop and report". A red test in the third
+  group stops the item.
+- One QA subagent per cycle writes every item's specs, one commit per item: QA agents in one shared worktree fight
+  over the index and one spec file. QA never patches source to prove a spec can pass (and never restores it with
+  `git checkout` in the shared worktree): that the spec turns green is the builder's to show.
 - A pure docs card (doc drift inside the registered paths) has no natural test file. Its spec is a declared
   acceptance command (a quote or grep check that fails on the base and passes after), written by the QA subagent
   before the build and listed in `built[].specs` as the command, with `qa` saying who wrote it.
@@ -73,7 +92,14 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
 - An exploratory persona pass (a subagent playing a product person on the fixture and local UI) runs when the cycle
   touched a UI surface (`forge/static/app/`, or a route or resolver a spec covers). A cycle that changed none (a
   CLI-only module, `"uat": "tests"` in modules.json) skips it and says so in `uat.persona_pass`
-  (`"skipped: no UI surface touched"`). The pass writes findings as
+  (`"skipped: no UI surface touched"`).
+- `"not-reachable: <why>"` is the state for a change a person would see, but that no UI surface the pass can drive
+  reaches: a server-only message or refusal the fixture bridge never produces, a Jira issue or comment body that the
+  local Jira double neither refuses nor renders. Name the paths and say which specs cover them instead. It is
+  neither a pass nor a skip: nobody walked the change. When a reachable UI path also changed, run the
+  pass on that path.
+- `uat.persona_pass` is one of `"run"` (or `"run: <what it found>"`), `"skipped: <why>"` or `"not-reachable: <why>"`;
+  `cycle end` refuses any other form. The pass writes findings as
   `{title, surface, steps, expected, actual, screenshot?, spec?}`. They are filed with
   `node tools/temper-tickets.mjs file --findings <json>` (deduped by fingerprint, labelled `temper-uat`).
 
@@ -120,11 +146,12 @@ held a port), is not fixed by reverting the build. Fix the cause, then run `T cy
 The top-level keys are closed (an unknown one is a usage error). Inside them a runner may add informational keys,
 stored as written. These are known and type-checked:
 
-- `scan`: `cost_usd` and `minutes` (numbers), `turns` (a whole number), `run_id` (text), `head` (the commit
+- `scan`: `cost_usd` and `minutes` (numbers), `turns` (a whole number), `run_id` (text), `ref` (the branch scanned, the ledger row's `ref`), `head` (the commit
   scanned), `pushed` (the refs pushed to the inbox) and `lens_states` (text, each lens's state).
 - `built[]`: `slice` ("1/2"), `commits` and `specs` (lists), `qa` (who wrote the specs, e.g. `subagent`).
 - `uat` is free-form, and all of it is self-reported: the runner's own e2e counts, its gate results, where its
-  result files are and `persona_pass` (run, or why not). `cycle end` reads none of it.
+  result files are and `persona_pass` (its state, section 5). `cycle end` checks only the form of `persona_pass` and
+  trusts none of it.
 
 `skill_issues` is what the runner learned about the loop itself (this skill, its scripts, the brief). Each entry
 has exactly `where`, `what`, `evidence` and `fix`, each a non-empty string. `cycle end` stores them in the row's

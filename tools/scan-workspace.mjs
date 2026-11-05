@@ -24,22 +24,36 @@ export const git = (repo, args, env = {}) => execFileSync('git', ['-C', repo, '-
   { encoding: 'utf8', env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 /**
- * Clones the source's HEAD with the hidden paths left out of the working tree by a sparse checkout. HEAD stays the
- * source's real commit, so a later incremental scan finds the previous scan's head in the clone's history. `origin`,
- * when given, replaces the clone's origin URL (the skill derives its project key from it: skill/scripts/lib/paths.mjs).
- * @param {string} source @param {string} repo @param {string[]} hide @param {{origin?: string}} [o]
- * @returns {{head: string, hidden: string[]}}
+ * Clones the source's HEAD (or `ref`: a branch of the source, else any commit it names) with the hidden paths left out
+ * of the working tree by a sparse checkout. HEAD stays the source's real commit, so a later incremental scan finds the
+ * previous scan's head in the clone's history. `origin`, when given, replaces the clone's origin URL (the skill derives
+ * its project key from it: skill/scripts/lib/paths.mjs). The source is only read.
+ * @param {string} source @param {string} repo @param {string[]} hide @param {{origin?: string, ref?: string}} [o]
+ * @returns {{head: string, sha: string, hidden: string[]}}
  */
 export function cloneRepo(source, repo, hide, o = {}) {
-  execFileSync('git', ['clone', '-q', '--no-hardlinks', '--no-checkout', source, repo], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const branch = o.ref !== undefined && gitOk(source, ['rev-parse', '--verify', '--quiet', `refs/heads/${o.ref}`]) ? o.ref : undefined;
+  /** a ref that is no branch (a tag, a sha): resolved in the source, then made the clone's detached HEAD */
+  let commit;
+  if (o.ref !== undefined && branch === undefined) {
+    try { commit = git(source, ['rev-parse', '--verify', '--quiet', `${o.ref}^{commit}`]); } catch { throw new Error(`${source} has no ref ${o.ref}`); }
+  }
+  execFileSync('git', ['clone', '-q', '--no-hardlinks', '--no-checkout', ...(branch ? ['--branch', branch] : []), source, repo], { stdio: ['ignore', 'pipe', 'pipe'] });
+  if (commit) git(repo, ['update-ref', '--no-deref', 'HEAD', commit]);
   const head = git(repo, ['rev-parse', '--short', 'HEAD']);
+  const sha = git(repo, ['rev-parse', 'HEAD']);
   const hidden = hide.filter((p) => git(repo, ['ls-tree', '-r', '--name-only', 'HEAD', '--', p]) !== '');
   if (hidden.length) git(repo, ['sparse-checkout', 'set', '--no-cone', '/*', ...hidden.map((p) => `!/${p.replace(/\/+$/, '')}/`)]);
   git(repo, ['checkout', '-q']);
   if (o.origin) git(repo, ['remote', 'set-url', 'origin', o.origin]);
   // The project-scope install lands in .claude/skills/dowser; keep it out of the scan's git view.
   appendFileSync(join(repo, '.git/info/exclude'), '\n.claude/skills/dowser/\n');
-  return { head, hidden };
+  return { head, sha, hidden };
+}
+
+/** True when git exits 0. @param {string} repo @param {string[]} args */
+export function gitOk(repo, args) {
+  try { git(repo, args); return true; } catch { return false; }
 }
 
 /** Installs this checkout's skill into the clone at project scope (a copy: tests/ left out). @param {string} repo */

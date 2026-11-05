@@ -30,7 +30,7 @@ other repos' worktrees are in the Temper home `~/.temper/` (`TEMPER_HOME`).
               "gates": {"typecheck": "pass", "test": "fail", "e2e:fixture": "pass", "e2e:local": "pass"},
               "uat": {"fixture": {"state": "fresh", "pass": 40, "fail": 0, "unverifiable": 0, "flaky": 0}, "local": {"state": "stale"}, "live": {"state": "missing"}},
               "quality": {"state": "appended", "head": "<sha>"}},
- "quota": {"decided": 5, "share": 0.4, "ok": true},
+ "quota": {"decided": 2, "share": 0, "ok": true, "day": {"dowser-temper": {"decided": 12, "share": 0.25, "ok": true}}},
  "self_reported": {"scan": {...}, "verdicts": [{"ref": "DW-50", "verdict": "reject", "reason": "duplicate", "inbox": "dowser-temper",
                    "recorded": "local", "decided_by": "delegate:temper"}], "built": [...], "outcomes": [...], "directions": [...], "parked": [...],
                    "skill_issues": [{"where": "temper.mjs cycleEnd", "what": "...", "evidence": "...", "fix": "..."}]}}
@@ -67,7 +67,8 @@ and appends a row of its own. The cycle row is never rewritten.
 - **Verdicts.** Every verdict is decided by `delegate:temper`. `recorded: "live"` means Forge recorded it through
   `temper-verdicts`. `recorded: "local"` means the inbox had no valid delegation (the tool answered forbidden), so the
   verdict is kept here only, and the live inbox keeps its cards undecided. Both obey a floor of 20% reject or snooze
-  per cycle and the charter's daily caps per inbox (`repos[].caps`, default 10 accepts and 30 rejects; snoozes and
+  per inbox per day (today's earlier verdicts plus this cycle's; a card decided again counts once, at its newest
+  verdict; a merge is neither accept nor reject and stays out of the share) and the charter's daily caps per inbox (`repos[].caps`, default 10 accepts and 30 rejects; snoozes and
   merges count against rejects). Delegate verdicts teach Dowser's memory but never count toward trust.
 - **The bar** is in `.claude/skills/temper/references/bar.md`. A part counts only when it is verified.
 
@@ -80,7 +81,8 @@ The loop lands only through `temper.mjs land --repo <name>`, under each repo's o
   when the day's gates and UAT are green. A red day is reset to its last green commit and stays on its branch.
 - bp (`rebase-push`) rebases `temper/<date>` onto origin/master. It pushes HEAD:master only when `npm run check` and
   the secret scan are clean.
-- personas (`commit-only`) commits on `temper/<date>` in a worktree and never pushes.
+- personas (`commit-only`) commits on `temper/<date>` in a worktree and never pushes. Its land runs the gates and
+  the same built-in secret scan (its own hook skips the scan when gitleaks is missing).
 
 Production deploys, tags and releases stay the operator's in every repo. The PreToolUse guard
 (`.claude/skills/temper/scripts/guard.mjs`) denies them, and it denies any push that a repo's landing does not permit.
@@ -118,13 +120,19 @@ or a verdict was refused) or 2 (bad arguments).
 ### temper-scan - a connected scan of a local repo
 
 ```
-node tools/temper-scan.mjs --repo <path> --project-key <k> [--focus "goal: .."|"area: .."] [--budget-usd n]
-                           [--model m] [--lenses a,b] [--hide <path>]... [--keep] [--dry-run]
+node tools/temper-scan.mjs --repo <path> --project-key <k> [--ref r] [--focus "goal: .."|"area: .."]
+                           [--budget-usd n] [--model m] [--lenses a,b] [--hide <path>]... [--keep] [--dry-run]
 ```
 
-- It uses dogfood's mechanics (`tools/scan-workspace.mjs`): a clone of the repo's committed HEAD in the OS temp
+- It uses dogfood's mechanics (`tools/scan-workspace.mjs`): a clone of one committed ref of the repo in the OS temp
   folder, with `--hide` paths left out by a sparse checkout, and the skill installed there at project scope. The run
   is one headless `claude -p` scan with `--setting-sources project,local`. **The scanned repo is never written.**
+- **The ref is the day's work, not master.** `--ref` names it. Without it, the scan reads the /temper day file of
+  the checkout the tool belongs to (`.temper/day.json`, with `.temper/charter.json` for the repos' paths;
+  `TEMPER_ROOT` overrides the checkout in tests): Dowser's `loop/<date>` when `--repo` is that checkout, and a started
+  build repo's `temper/<date>` (bp, personas) when `--repo` is its charter path or its day worktree. A repo not
+  started today, or no open day, scans HEAD. A day branch the repo lacks fails the scan. `cycle begin` prints every
+  scan command with its `--ref`, because a master scan brings back the cards the day already fixed.
 - `--project-key` is the live inbox key. It must pass the push's rule (`PROJECT_KEY_RE`), must not be the sample's
   reserved `dowser-sample`, and must be lowercase with single hyphens. The clone's origin is set to it, so the
   skill's project key is exactly this key. The inbox therefore carries no repo link (`repo_url` is absent).
@@ -132,8 +140,9 @@ node tools/temper-scan.mjs --repo <path> --project-key <k> [--focus "goal: .."|"
   `~/.temper`). The next scan of the same key pulls the verdicts and follows the rules.
 - The scan keeps every card (the delegate triages later, through `temper-verdicts`), pushes it to the inbox and
   sends the areas.
-- Each scan appends one row to `~/.temper/scans.jsonl`: `{ts, repo, head, project_key, focus?, ok, minutes,
-  cost_usd?, turns?, cards: {created, moved, pushed, by_status}, report}`. `report` is
+- Each scan appends one row to `~/.temper/scans.jsonl`: `{ts, repo, ref, ref_from, head, sha, project_key, focus?, ok, minutes,
+  cost_usd?, turns?, cards: {created, moved, pushed, by_status}, report}`. `ref` is the scanned branch (or commit),
+  `ref_from` how it was chosen (`flag`, `day` or `head`), `head` and `sha` the short and full commit. `report` is
   `~/.temper/scans/<stamp>-<project-key>.json`: the row, the scan's summary and each card the scan created or moved,
   `{fp, ref?, url?, status, lens, title, evidence: [{type, ref, path?, line?}], created}`.
 - To list a scan home's cards later, run `node tools/temper-cards.mjs --project-key <k> [--status s] [--lens l]
@@ -175,7 +184,7 @@ node tools/temper-tickets.mjs close <KEY>... [--project DOW]
 ### temper-verdicts - delegated triage through `dowser_verdicts_record`
 
 ```
-node tools/temper-verdicts.mjs --project-key <k> --verdicts <json> [--dry-run]
+node tools/temper-verdicts.mjs --project-key <k> --verdicts <json> [--retry] [--dry-run]
 ```
 
 - A verdicts file is an array of `{ref, verdict: accept|reject|snooze|merge, reason?, note?, into?, until?, inbox?,
@@ -189,4 +198,7 @@ node tools/temper-verdicts.mjs --project-key <k> --verdicts <json> [--dry-run]
 - Forge records each verdict as `delegate:temper`. It refuses a verdict when the inbox's delegation (Jira Settings)
   is absent or expired, when the day's caps are reached, or in the sample inbox. A refusal is reported with its
   `why` and the tool exits 1.
+- A `forbidden` answer (no valid delegation) prints `{project_key, recorded: 0, forbidden: true, record_as:
+  "local", why}` and exits 1. It is remembered per inbox per day in `~/.temper/verdicts-forbidden.json`, so a later
+  call that day answers the same without a `claude -p` run. `--retry` asks Forge again.
 - `--dry-run` prints the tool arguments without a call.
