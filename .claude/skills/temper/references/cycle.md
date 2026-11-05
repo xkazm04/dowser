@@ -50,8 +50,20 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
 
 ## 4. Build
 
+- **Check every bound before QA starts**: the registered paths (`repo paths --add` first), a baseline the fix moves
+  (personas: `scripts/census/rules.json`), a file the repo marks as needing a human. A spawned QA subagent cannot be
+  stopped mid-run, only messaged at its next tool round, so a bound found later leaves a committed red spec.
 - A **QA subagent** writes the item's specs or tests first, from the card's Flow and acceptance criteria. A defect
   spec must fail on the base (the red control). It commits them alone.
+- **Old behaviour in existing tests.** A behaviour change makes the tests that encode the old behaviour fail, and the
+  builder may not edit specs. So QA greps for them before it commits: the old message, value, flag or claim the
+  card changes, across the repo's test folders (Dowser: `skill/scripts/tests/`, `forge/test/`, `e2e/`). It updates
+  each one in the same spec commit, then runs the whole affected suite on the base and lists every red test as
+  "new spec", "encodes the old behaviour, updated here" or "unrelated: stop and report". A red test in the third
+  group stops the item.
+- One QA subagent per cycle writes every item's specs, one commit per item: QA agents in one shared worktree fight
+  over the index and one spec file. QA never patches source to prove a spec can pass (and never restores it with
+  `git checkout` in the shared worktree): that the spec turns green is the builder's to show.
 - A pure docs card (doc drift inside the registered paths) has no natural test file. Its spec is a declared
   acceptance command (a quote or grep check that fails on the base and passes after), written by the QA subagent
   before the build and listed in `built[].specs` as the command, with `qa` saying who wrote it.

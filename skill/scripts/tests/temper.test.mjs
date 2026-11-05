@@ -1040,3 +1040,14 @@ test('guard.mjs as a hook: stdin JSON in, the PreToolUse decision out, nothing f
   const hook = settings.hooks.PreToolUse.find((/** @type {any} */ h) => h.hooks.some((/** @type {any} */ x) => x.command.includes('temper/scripts/guard.mjs')));
   assert.equal(hook.matcher, 'Bash|PowerShell|Write|Edit');
 });
+
+test('cycle.md: QA updates the tests that encode the old behaviour in the spec commit, after the bounds are checked', () => {
+  const md = readFileSync(join(ROOT, '.claude/skills/temper/references/cycle.md'), 'utf8');
+  const build = md.slice(md.indexOf('## 4. Build'), md.indexOf('## 5.'));
+  assert.match(build, /Old behaviour in existing tests/);
+  assert.match(build, /QA greps for them before it commits/);
+  assert.match(build, /updates\s+each one in the same spec commit/);
+  assert.match(build, /encodes the old behaviour, updated here/);
+  assert.ok(build.indexOf('Check every bound before QA starts') < build.indexOf('A **QA subagent**'), 'the bounds come before QA');
+  assert.match(build, /QA never patches source to prove a spec can pass/);
+});
