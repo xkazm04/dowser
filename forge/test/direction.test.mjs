@@ -108,3 +108,20 @@ test('directions table: a missing table is reported as such, and the migration m
   assert.deepEqual((await res(d, 'direction.set', { project_key: PK, lens: 'opportunity', focus: ['x'] })).direction, { focus: ['x'] });
   assert.deepEqual(await res(d, 'direction.get', { project_key: PK }), { lenses: { opportunity: { focus: ['x'] } } });
 });
+
+test('Settings checks the direction limits before Save with the server limits, and names fields as the screen does', async () => {
+  const ui = await import(String(new URL('../static/app/src/routes/settings/direction.js', import.meta.url)));
+  const types = await import('../src/core/types.mjs');
+  assert.deepEqual([ui.ITEMS_MAX, ui.LINE_MAX, ui.SPACES_MAX], [types.DIRECTION_ITEMS_MAX, types.DIRECTION_LINE_MAX, types.DIRECTION_SPACES_MAX]);
+  const twelve = Array.from({ length: 12 }, (_, i) => `topic ${i}`);
+  assert.equal(ui.listProblem(twelve, 'topic'), '12 topics, at most 10: remove 2.');
+  assert.equal(ui.listProblem(['x'.repeat(121)], 'topic'), 'One line is longer than 120 characters.');
+  assert.equal(ui.listProblem([...twelve.slice(0, 9), 'topic 0', 'topic 1'], 'topic'), '', 'repeats count once, as the server counts them');
+  // the server's own refusal, relabelled
+  const d = makeDeps();
+  await runTool(d, 'dowser_proposals_push', pushArgs([record()]), ME);
+  const r = await res(d, 'direction.set', { project_key: PK, lens: 'opportunity', exclude: twelve });
+  assert.equal(r.error, 'bad-input');
+  assert.match(ui.labelled(r.message), /^Leave out holds 12 items/);
+  assert.equal(ui.labelled('each focus item is one line'), 'each Focus on item is one line');
+});

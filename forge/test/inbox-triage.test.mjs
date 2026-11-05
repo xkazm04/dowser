@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  checkedVisible, flatOf, initialTriage, phaseOf, phaseSets, snoozingRef, tallyOf, triage,
+  allPages, checkedVisible, flatOf, initialTriage, phaseOf, phaseSets, snoozingRef, tallyOf, triage,
 } from '../static/app/src/routes/inbox/triage.js';
 
 /** @param {string} ref @param {string} [status] @param {string} [project_key] */
@@ -150,4 +150,23 @@ test('select: a click on another row selects it; on the selected row in the narr
   assert.equal(triage(s0, { type: 'select', ref: A.ref, wide: true }).expanded, true);
   assert.equal(triage(start(''), { type: 'focusFirst', ref: A.ref }).focus, A.ref);
   assert.equal(triage(start(B.ref), { type: 'focusFirst', ref: A.ref }).focus, B.ref, 'a landed deep link is not overwritten');
+});
+
+test('allPages follows inbox.list next cursors (the Merge dialog finds the 55th accepted item), and says when it stops short', async () => {
+  const rows = Array.from({ length: 60 }, (_, i) => ({ ref: `DW-${i + 1}` }));
+  /** @type {(string | undefined)[]} */
+  const asked = [];
+  /** the core's paging (cards.mjs listInbox): 50 a page, `next` the next offset while more follow @param {string | undefined} cursor */
+  const page = async (cursor) => {
+    asked.push(cursor);
+    const off = cursor === undefined ? 0 : Number(cursor);
+    const slice = rows.slice(off, off + 51);
+    return { groups: [{ items: slice.slice(0, 50) }], ...(slice.length > 50 ? { next: String(off + 50) } : {}) };
+  };
+  const all = await allPages(page);
+  assert.deepEqual([all.items.length, all.more], [60, false]);
+  assert.ok(all.items.some((r) => r.ref === 'DW-55'));
+  assert.deepEqual(asked, [undefined, '50']);
+  const capped = await allPages(page, 1);
+  assert.deepEqual([capped.items.length, capped.more], [50, true]);
 });

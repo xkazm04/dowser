@@ -1,20 +1,24 @@
 #!/usr/bin/env node
 // @ts-check
 // mock-forge-mcp - a zero-dependency stdio MCP server that stands in for Dowser's Forge app (rovo:mcp), so the
-// skill and its scripts are testable end to end without a Jira site. It implements the eight tools of
-// docs/contracts/forge-mcp-2.md over an in-memory backend, plus five test-only tools: `mock_decide` simulates a
+// skill and its scripts are testable end to end without a Jira site. It implements the twelve tools of
+// docs/contracts/forge-mcp-2.md (every dowser_* tool of forge/manifest.yml: sources_tickets, sources_pages,
+// sources_goals, proposals_push, verdicts_pull, memory_pull, work_list, work_get, work_report, areas_push,
+// reflect_sync, direction_get) over an in-memory backend, plus five test-only tools: `mock_decide` simulates a
 // person's verdict in the inbox, `mock_inbox` reads an inbox item back (its status, whether it reopened, and the
 // scan-finding/1 score, band, mvp and pretriaged_by it was pushed with), `mock_decide_rule` simulates a person
 // accepting or declining an offered rule in Forge, `mock_outcome` simulates a person rating an accepted item's
 // built result, and `mock_trust` reads back the trust the last reflect sync stored.
 //
-// Tool 7, `dowser_reflect_sync` {project_key, rules_json?, trust_json?, outcomes_since?}: trust_json (the skill's per-slice trust
-// {slices, events}, at most 50 events) is stored whole; rules_json (a JSON array of at most 50 RuleOffer
+// `dowser_reflect_sync` {project_key, rules_json?, trust_json?, deliveries_json?, outcomes_since?}: a project with no
+// inbox is `unknown-project`; deliveries_json (the skill's re-check of accepted cards, {fp, state:
+// present|partly|resolved, ...}) is kept whole; trust_json (the skill's per-slice trust {slices, events}, at most
+// 200 slices and 50 events) is checked and stored whole; rules_json (absent or blank = no offers; a JSON array of at most 50 RuleOffer
 // {id, lens, text, titles?(<=10), offered_at}) is upserted - a new id is stored `offered`, an `offered` one takes
 // the new text and titles, a decided one is never reverted - and the reply is {rules, outcomes}: every rule a
 // person decided (RuleDecision) and the newest 200 outcomes (oldest first). Idempotent both ways.
 //
-// Tool 8, `dowser_direction_get` {project_key, lens?}: the lens direction a team set in Settings, from the seed's
+// `dowser_direction_get` {project_key, lens?}: the lens direction a team set in Settings, from the seed's
 // `directions` - {lenses: {[lens]: {focus?, exclude?, notes?, spaces?}}}; `lens` (one id, or `all`) narrows it.
 // A project with neither items nor a seeded direction is `unknown-project`, as in Forge.
 //
@@ -46,8 +50,8 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { evidenceKey } from '../skill/scripts/lib/fingerprint.mjs';
-import { LENSES, resurfaces } from '../skill/scripts/lib/model.mjs';
+import { evidenceKey, fingerprint } from '../skill/scripts/lib/fingerprint.mjs';
+import { LENSES, STORE_OWNED, resurfaces, validateCandidate } from '../skill/scripts/lib/model.mjs';
 
 /**
  * @typedef {Record<string, any>} Obj
@@ -84,8 +88,11 @@ const TITLES_MAX = 10;
 const OUTCOMES_MAX = 200;
 /** Decided items per memory page (forge/src/core/memory.mjs MEMORY_PAGE). */
 const MEMORY_PAGE = 50;
-/** trust_json caps (forge/src/core/types.mjs TRUST_EVENTS_MAX). */
+/** trust_json caps (forge/src/core/types.mjs TRUST_SLICES_MAX, TRUST_EVENTS_MAX). */
+const TRUST_SLICES_MAX = 200;
 const TRUST_EVENTS_MAX = 50;
+/** Keys a push drops before validating, as Forge's push.mjs DROP: the store's own fields and the Jira issue. */
+const PUSH_DROP = [...STORE_OWNED, 'issue_ref', 'issue_url'];
 const RATINGS = ['right', 'partly', 'wrong'];
 /** @type {readonly string[]} */
 const LENS_IDS = LENSES;
@@ -315,11 +322,21 @@ function dowserProposalsPush(b, args) {
     if (!str(r.fp)) return { fp: '', result: 'refused', why: 'missing fp' };
     if (!str(r.title) || !Array.isArray(r.evidence) || r.evidence.length === 0) return { fp: r.fp, result: 'refused', why: 'not a dowser-proposal/1 record (title and evidence are required)' };
     if (r.status !== 'verified' && r.status !== 'pushed') return { fp: r.fp, result: 'refused', why: `only verified or pushed records are filed, not ${String(r.status)}` };
+    // the record checks Forge runs (push.mjs checkRecord): the wire schema, then the fp from the identity
+    const cand = Object.fromEntries(Object.entries(r).filter(([k]) => !PUSH_DROP.includes(k)));
+    const v = validateCandidate(cand, { wire: true });
+    if (!v.ok) return { fp: r.fp, result: 'refused', why: `invalid record: ${v.why}` };
     // kind-in-lens, as Forge checks it (push.mjs checkRecord): only when the push carries lens_kinds_json
     if (lensKinds && !Object.hasOwn(lensKinds, String(r.lens))) return { fp: r.fp, result: 'refused', why: `the push declares no kinds for lens ${String(r.lens)} (lens_kinds_json)` };
     if (lensKinds && !lensKinds[String(r.lens)].includes(String(r.kind))) {
       return { fp: r.fp, result: 'refused', why: `kind ${JSON.stringify(r.kind)} is not one of ${String(r.lens)}'s kinds (${lensKinds[String(r.lens)].join(',')})` };
     }
+    /** @type {string} */
+    let fp;
+    try { fp = fingerprint({ lens: r.lens, kind: r.kind, topic: r.topic, anchors: r.anchors }, lensKinds ? lensKinds[String(r.lens)] : [String(r.kind)]); } catch (e) {
+      return { fp: r.fp, result: 'refused', why: `fingerprint: ${/** @type {Error} */ (e).message}` };
+    }
+    if (fp !== r.fp) return { fp: r.fp, result: 'refused', why: `fp ${r.fp} does not match its identity (lens, kind, topic, anchors hash to ${fp})` };
     const existing = p.items[r.fp];
     if (existing) {
       existing.record = r;
@@ -450,10 +467,49 @@ function dowserAreasPush(b, args) {
   return { stored: list.length };
 }
 
+/**
+ * Checks `trust_json` as Forge's reflect.mjs checkTrust does: {slices, events} within the caps, each slice with
+ * slice, level, ceiling, start (0-3), n (>= 0) and an optional agreement 0-1, each event with slice, from, to,
+ * reason, n, at. Absent or empty -> undefined.
+ * @param {unknown} raw
+ * @returns {Obj | undefined}
+ */
+function checkTrust(raw) {
+  if (raw === undefined || raw === '') return undefined;
+  if (typeof raw !== 'string') throw new ToolError('bad-input', 'trust_json must be a JSON object as a string');
+  /** @type {unknown} */
+  let t;
+  try { t = JSON.parse(raw); } catch { throw new ToolError('bad-input', 'trust_json is not valid JSON'); }
+  if (!isObj(t) || !Array.isArray(t.slices) || !Array.isArray(t.events)) throw new ToolError('bad-input', 'trust_json must be {"slices": [...], "events": [...]}');
+  if (t.slices.length > TRUST_SLICES_MAX || t.events.length > TRUST_EVENTS_MAX) {
+    throw new ToolError('bad-input', `trust_json holds at most ${TRUST_SLICES_MAX} slices and ${TRUST_EVENTS_MAX} events`);
+  }
+  const lvl = (/** @type {unknown} */ v) => Number.isInteger(v) && /** @type {number} */ (v) >= 0 && /** @type {number} */ (v) <= 3;
+  const cnt = (/** @type {unknown} */ v) => Number.isInteger(v) && /** @type {number} */ (v) >= 0;
+  const share = (/** @type {unknown} */ v) => v === undefined || (typeof v === 'number' && v >= 0 && v <= 1);
+  const line = (/** @type {unknown} */ v, /** @type {number} */ max) => str(v) && /** @type {string} */ (v).length <= max;
+  const iso = (/** @type {unknown} */ v) => typeof v === 'string' && !Number.isNaN(Date.parse(v));
+  t.slices.forEach((/** @type {any} */ s, /** @type {number} */ i) => {
+    if (!isObj(s) || !line(s.slice, 200) || !lvl(s.level) || !lvl(s.ceiling) || !lvl(s.start) || !cnt(s.n) || !share(s.agreement)) {
+      throw new ToolError('bad-input', `trust_json.slices[${i}] needs slice, level, ceiling, start (0-3), n (>= 0) and an optional agreement 0-1`);
+    }
+  });
+  t.events.forEach((/** @type {any} */ e, /** @type {number} */ i) => {
+    if (!isObj(e) || !line(e.slice, 200) || !lvl(e.from) || !lvl(e.to) || !line(e.reason, 500) || !cnt(e.n) || !share(e.agreement) || !iso(e.at)) {
+      throw new ToolError('bad-input', `trust_json.events[${i}] needs slice, from, to (0-3), reason, n, at and an optional agreement 0-1`);
+    }
+  });
+  return t;
+}
+
 /** `dowser_reflect_sync`. @param {Backend} b @param {Obj} args @returns {Obj} */
 function dowserReflectSync(b, args) {
   if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
-  const offers = args.rules_json === undefined ? [] : jsonArray(args.rules_json, 'rules_json', RULES_MAX);
+  // as Forge (reflect.mjs reflectSync): an absent or blank rules_json is no offers
+  const blank = args.rules_json === undefined || (typeof args.rules_json === 'string' && args.rules_json.trim() === '');
+  const offers = blank ? [] : jsonArray(args.rules_json, 'rules_json', RULES_MAX);
+  const trust = checkTrust(args.trust_json);
+  if (!b.projects[args.project_key]) throw new ToolError('unknown-project', `no inbox for project ${args.project_key}; push proposals first`);
   const p = project(b, args.project_key);
   if (args.deliveries_json !== undefined) {
     // the skill's re-check of accepted cards (Forge core/delivery.mjs); kept whole for tests to read back
@@ -463,14 +519,7 @@ function dowserReflectSync(b, args) {
     });
     project(b, args.project_key).deliveries = list;
   }
-  if (args.trust_json !== undefined) {
-    /** @type {unknown} */
-    let t;
-    try { t = JSON.parse(String(args.trust_json)); } catch { throw new ToolError('bad-input', 'trust_json is not valid JSON'); }
-    if (!isObj(t) || !Array.isArray(t.slices) || !Array.isArray(t.events)) throw new ToolError('bad-input', 'trust_json must be {"slices": [...], "events": [...]}');
-    if (t.events.length > TRUST_EVENTS_MAX) throw new ToolError('bad-input', `trust_json holds at most ${TRUST_EVENTS_MAX} events`);
-    p.trust = t; // stored whole, as Forge does; the levels are the skill's
-  }
+  if (trust) p.trust = trust; // stored whole, as Forge does; the levels are the skill's
   const rules = /** @type {Record<string, RuleRecord>} */ (p.rules);
   offers.forEach((raw, i) => {
     const at = `rules_json[${i}]`;

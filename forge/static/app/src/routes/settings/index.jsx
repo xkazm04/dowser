@@ -10,6 +10,7 @@ import { call } from '../../api.js';
 import { Button, ErrorState, SectionMessage, SkeletonList, useAsync } from '../../components/ui.jsx';
 import { LENSES, LENS_LABELS, plural } from '../../components/labels.js';
 import { LensDot } from '../inbox/parts.jsx';
+import { ITEMS_MAX, LINE_MAX, SPACES_MAX, labelled, listProblem } from './direction.js';
 import './settings.css';
 import { safeHref } from '../../safeHref.js';
 import { router } from '@forge/bridge';
@@ -133,6 +134,8 @@ function LensEditor({ inbox, lens, initial, idBase }) {
   const draft = { focus: linesOf(focus), exclude: linesOf(exclude), notes: notes.trim(), spaces: withSpaces ? linesOf(spaces) : [] };
   const dirty = textOf(draft.focus) !== textOf(saved?.focus) || textOf(draft.exclude) !== textOf(saved?.exclude)
     || draft.notes !== (saved?.notes ?? '') || textOf(draft.spaces) !== textOf(saved?.spaces);
+  const over = { focus: listProblem(draft.focus, 'topic'), exclude: listProblem(draft.exclude, 'topic'), spaces: withSpaces ? listProblem(draft.spaces, 'space', SPACES_MAX) : '' };
+  const anyOver = Boolean(over.focus || over.exclude || over.spaces);
   const edit = (set) => (e) => { set(e.target.value); if (state !== 'saving' && state !== 'clearing') setState('idle'); };
 
   /** @param {boolean} clear */
@@ -146,7 +149,7 @@ function LensEditor({ inbox, lens, initial, idBase }) {
       setFocus(textOf(d?.focus)); setExclude(textOf(d?.exclude)); setNotes(d?.notes ?? ''); setSpaces(textOf(d?.spaces));
       setState(d ? 'saved' : 'cleared');
     } catch (e) {
-      setState(String(e?.message ?? 'The direction could not be saved.'));
+      setState(labelled(String(e?.message ?? 'The direction could not be saved.')));
     }
   }
 
@@ -163,14 +166,16 @@ function LensEditor({ inbox, lens, initial, idBase }) {
         <div className="dw-dir__grid">
           <div className="dw-field">
             <label htmlFor={`${idBase}-f`}>Focus on</label>
-            <textarea id={`${idBase}-f`} className="dw-textarea" rows={3} value={focus} onChange={edit(setFocus)} aria-describedby={`${idBase}-lh`} />
+            <textarea id={`${idBase}-f`} className="dw-textarea" rows={3} value={focus} onChange={edit(setFocus)} aria-describedby={`${idBase}-lh ${idBase}-fo`} aria-invalid={over.focus ? true : undefined} />
+            <span id={`${idBase}-fo`} className="dw-dir__hint" role="status" style={over.focus ? { color: 'var(--ds-text-danger, #AE2E24)' } : undefined}>{over.focus}</span>
           </div>
           <div className="dw-field">
             <label htmlFor={`${idBase}-x`}>Leave out</label>
-            <textarea id={`${idBase}-x`} className="dw-textarea" rows={3} value={exclude} onChange={edit(setExclude)} aria-describedby={`${idBase}-lh`} />
+            <textarea id={`${idBase}-x`} className="dw-textarea" rows={3} value={exclude} onChange={edit(setExclude)} aria-describedby={`${idBase}-lh ${idBase}-xo`} aria-invalid={over.exclude ? true : undefined} />
+            <span id={`${idBase}-xo`} className="dw-dir__hint" role="status" style={over.exclude ? { color: 'var(--ds-text-danger, #AE2E24)' } : undefined}>{over.exclude}</span>
           </div>
         </div>
-        <p className="dw-dir__hint" id={`${idBase}-lh`}>One topic per line, up to 10, each up to 120 characters.</p>
+        <p className="dw-dir__hint" id={`${idBase}-lh`}>One topic per line, up to {ITEMS_MAX}, each up to {LINE_MAX} characters.</p>
         <div className="dw-field">
           <label htmlFor={`${idBase}-n`}>Notes for the scan</label>
           <textarea id={`${idBase}-n`} className="dw-textarea" rows={2} maxLength={2000} value={notes} onChange={edit(setNotes)}
@@ -179,12 +184,13 @@ function LensEditor({ inbox, lens, initial, idBase }) {
         {withSpaces && (
           <div className="dw-field">
             <label htmlFor={`${idBase}-s`}>Confluence spaces to search</label>
-            <textarea id={`${idBase}-s`} className="dw-textarea dw-dir__spaces" rows={2} value={spaces} onChange={edit(setSpaces)} aria-describedby={`${idBase}-sh`} />
-            <span className="dw-dir__hint" id={`${idBase}-sh`}>One space key per line, up to 10. Leave empty to search every space.</span>
+            <textarea id={`${idBase}-s`} className="dw-textarea dw-dir__spaces" rows={2} value={spaces} onChange={edit(setSpaces)} aria-describedby={`${idBase}-sh ${idBase}-so`} aria-invalid={over.spaces ? true : undefined} />
+            <span id={`${idBase}-so`} className="dw-dir__hint" role="status" style={over.spaces ? { color: 'var(--ds-text-danger, #AE2E24)' } : undefined}>{over.spaces}</span>
+            <span className="dw-dir__hint" id={`${idBase}-sh`}>One space key per line, up to {SPACES_MAX}. Leave empty to search every space.</span>
           </div>
         )}
         <div className="dw-dir__act">
-          <Button appearance="primary" onClick={() => send(false)} disabled={!dirty || busy} busy={state === 'saving'}>Save</Button>
+          <Button appearance="primary" onClick={() => send(false)} disabled={!dirty || busy || anyOver} busy={state === 'saving'}>Save</Button>
           {saved && <Button appearance="subtle" onClick={() => send(true)} disabled={busy} busy={state === 'clearing'}>Clear</Button>}
           <span aria-live="polite" className="dw-subtlest">
             {state === 'saved' && 'Saved.'}
@@ -205,6 +211,9 @@ function InboxRow({ inbox, projects, loading }) {
   const [state, setState] = useState(/** @type {'idle'|'saving'|'saved'|string} */ ('idle'));
   const types = projects?.find((p) => p.key === project)?.issue_types ?? [];
   const listed = Boolean(projects);
+  // a saved target the project list no longer carries (archived, renamed, or not visible to this person) is shown
+  // as itself with a warning, not as the empty placeholder, so a configured-but-broken default is visible here
+  const gone = listed && saved.jira_project_key && !(projects ?? []).some((p) => p.key === saved.jira_project_key) ? String(saved.jira_project_key) : '';
   const dirty = project !== (saved.jira_project_key ?? '') || issueType !== (saved.issue_type_id ?? '');
   const id = `dw-set-${inbox.project_key.replace(/[^A-Za-z0-9_-]/g, '_')}`;
 
@@ -231,13 +240,20 @@ function InboxRow({ inbox, projects, loading }) {
         <label className="dw-visually-hidden" htmlFor={`${id}-p`}>Jira project for {inbox.project_key}</label>
         <select id={`${id}-p`} className="dw-select" value={project} disabled={!listed} onChange={(e) => { setProject(e.target.value); setIssueType(''); setState('idle'); }}>
           <option value="">{listed ? 'Choose a project' : loading ? 'Loading projects…' : (saved.jira_project_key ?? 'Projects unavailable')}</option>
+          {gone && <option value={gone}>{gone} (not available to you, or archived)</option>}
           {(projects ?? []).map((p) => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
         </select>
+        {gone && project === gone && (
+          <div className="dw-subtlest" id={`${id}-gone`} style={{ color: 'var(--ds-text-warning, #A54800)' }}>
+            {gone} is not in the projects you can see. Accept will fail until you choose another project.
+          </div>
+        )}
       </td>
       <td>
         <label className="dw-visually-hidden" htmlFor={`${id}-t`}>Issue type for {inbox.project_key}</label>
         <select id={`${id}-t`} className="dw-select" value={issueType} onChange={(e) => { setIssueType(e.target.value); setState('idle'); }} disabled={!project || !listed}>
           <option value="">{listed ? 'Choose an issue type' : (saved.issue_type_id ? `Saved type ${saved.issue_type_id}` : 'Unavailable')}</option>
+          {gone && project === gone && saved.issue_type_id && <option value={saved.issue_type_id}>Saved type {saved.issue_type_id}</option>}
           {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
       </td>

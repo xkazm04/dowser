@@ -1,5 +1,6 @@
 // UI copy and closed vocabularies the Custom UI renders. English only. Reason codes and their labels mirror
-// skill/references/triage.md; lens names mirror the lens packs' `name` (skill/lenses/*.md).
+// skill/references/triage.md; lens names mirror the lens packs' `name` (skill/lenses/*.md). The reason, status,
+// evidence and lens lists are tested against the server's (forge/test/ui-vocab.test.mjs).
 
 export const LENSES = ['opportunity', 'ux-friction', 'doc-drift', 'security-cra'];
 export const LENS_LABELS = {
@@ -13,7 +14,7 @@ export const STATUSES = ['open', 'accepted', 'rejected', 'snoozed', 'merged'];
 export const STATUS_LABELS = { open: 'Open', accepted: 'Accepted', rejected: 'Rejected', snoozed: 'Snoozed', merged: 'Merged' };
 export const STATUS_APPEARANCE = { open: 'inprogress', accepted: 'success', rejected: 'removed', snoozed: 'moved', merged: 'default' };
 
-/** The six reject reason codes, exactly as the store and forge-mcp-2 know them. */
+/** The reject reason codes, exactly as the store and forge-mcp-2 know them (shared/model.mjs REASONS, same order). */
 export const REASONS = [
   { code: 'false-positive', label: 'False positive', help: 'The evidence does not show what the card claims.' },
   { code: 'already-known', label: 'Already known', help: 'The team already tracks it or already decided it.' },

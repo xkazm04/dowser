@@ -4,8 +4,11 @@
 // this bundle. vite.config.js aliases `@forge/bridge` to this file only in that mode, so a Forge build never has it.
 //
 // URL hash picks the surface, as in the fixture bridge: #inbox (default) | #map | #reflect | #settings |
-// #panel&issue=SHOP-101 | #byline&page=<id>; &ref=DW-n deep-links the inbox.
+// #panel&issue=SHOP-101 | #byline&page=<id> | #banner&page=<id>; &ref=DW-n, &project=, &lens= and &area= deep-link
+// the inbox (dev/link.js, shared with the fixture bridge). Every invoke names the surface's module, so the local
+// server answers a key the module may not call as Forge does.
 import { setGlobalTheme } from '@atlaskit/tokens/set-global-theme';
+import { linkQuery, moduleOf } from './link.js';
 
 const PORT = import.meta.env.VITE_DOWSER_LOCAL_PORT || '4710';
 const ENDPOINT = `http://127.0.0.1:${PORT}/invoke`;
@@ -15,7 +18,7 @@ const surface = () => (location.hash.slice(1).match(/^[a-z-]+/) ?? ['inbox'])[0]
 export async function invoke(key, payload = {}) {
   let res;
   try {
-    res = await fetch(ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key, payload, ...(surface() === 'panel' ? { module: 'dowser-evidence' } : {}) }) });
+    res = await fetch(ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key, payload, module: moduleOf(surface()) }) });
   } catch {
     return { error: 'unavailable', message: `The local Dowser server at ${ENDPOINT} did not answer. Is it running?` };
   }
@@ -33,14 +36,21 @@ export const view = {
       return { moduleKey: 'dowser-evidence', extension: { type: 'jira:issuePanel', issue: { key: params().get('issue') ?? 'SHOP-101', id: '10000' } } };
     }
     const base = { siteUrl: 'http://127.0.0.1', environmentId: 'local-env', localId: 'ari:cloud:ecosystem::extension/local-app/local-env/static/' };
+    if (s === 'banner') {
+      return {
+        ...base, localId: `${base.localId}dowser-doc-banner`, moduleKey: 'dowser-doc-banner',
+        extension: { type: 'confluence:pageBanner', content: { id: params().get('page') ?? '1', type: 'page' }, space: { key: 'LOCAL' } },
+      };
+    }
     if (s === 'byline') {
       return {
         ...base, localId: `${base.localId}dowser-doc-impact`, moduleKey: 'dowser-doc-impact',
         extension: { type: 'confluence:contentBylineItem', content: { id: params().get('page') ?? '1', type: 'page' }, space: { key: 'LOCAL' } },
       };
     }
-    return { ...base, localId: `${base.localId}dowser-inbox`, moduleKey: 'dowser-inbox', extension: { type: 'jira:globalPage', location: `http://127.0.0.1/jira/apps/local/dowser/${s}${params().has('ref') ? `?ref=${params().get('ref')}` : ''}` } };
+    return { ...base, localId: `${base.localId}dowser-inbox`, moduleKey: 'dowser-inbox', extension: { type: 'jira:globalPage', location: `http://127.0.0.1/jira/apps/local/dowser/${s}${linkQuery(params())}` } };
   },
+  close: async () => { console.info('[local] view.close'); },
   theme: { enable: async () => { await setGlobalTheme({ colorMode: /** @type {any} */ (params().get('mode') ?? 'auto') }); } },
 };
 
@@ -49,8 +59,7 @@ export const router = {
   navigate: async (to) => {
     const u = new URL(to);
     const route = u.pathname.split('/').filter(Boolean).pop() ?? 'inbox';
-    const ref = u.searchParams.get('ref');
-    location.hash = ref ? `${route}&ref=${ref}` : route;
+    location.hash = `${route}${linkQuery(u.searchParams).replace(/^\?/, '&')}`;
   },
   open: async (to) => { window.open(to, '_blank', 'noopener'); },
   reload: async () => location.reload(),

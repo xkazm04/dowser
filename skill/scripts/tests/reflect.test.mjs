@@ -250,7 +250,7 @@ test('mock round trip over stdio: offer, person decides in Forge, person rates t
   // the accepted item reached the mock inbox (the agent pushed it)
   const ob = cli('outbox', '--run', runId); // the security item is already `accepted`; push nothing it must not
   assert.equal(ob.code, 0, ob.stderr);
-  await tool('dowser_proposals_push', { project_key: projectKey, run_id: runId, proposals_json: JSON.stringify([{ fp: accepted, title: 'Password compared in plaintext', status: 'verified', evidence: [CODE] }]) });
+  await tool('dowser_proposals_push', { project_key: projectKey, run_id: runId, proposals_json: JSON.stringify([{ ...candidate({ lens: 'security-cra', kind: 'secret-exposure', topic: 'plaintext password', title: 'Password compared in plaintext', evidence: [CODE] }), fp: accepted, status: 'verified' }]) });
   await tool('mock_decide', { project_key: projectKey, fp: accepted, status: 'accepted', decided_by: 'forge:jane' });
   const ref = (await tool('mock_inbox', { fp: accepted })).item.external_ref;
 
@@ -315,6 +315,7 @@ test('outcomes are append-only at the database level, and unique per (fp, record
 
 test('mock backend: reflect_sync validates its input', () => {
   const b = emptyBackend();
+  b.projects.k = { items: {}, verdicts: [], areas: [] }; // an inbox exists (Forge refuses an unknown project; tested below)
   assert.throws(() => callTool(b, 'dowser_reflect_sync', {}), /project_key/);
   assert.throws(() => callTool(b, 'dowser_reflect_sync', { project_key: 'k', rules_json: '{}' }), /JSON array/);
   assert.throws(() => callTool(b, 'dowser_reflect_sync', { project_key: 'k', rules_json: JSON.stringify([{ id: 'a', lens: 'opportunity', text: 't' }]) }), /offered_at/);

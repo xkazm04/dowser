@@ -2,6 +2,7 @@
 // Ctrl/Cmd+Enter confirms and 1-6 pick the Reject reason. The help dialog lists the same keys.
 import { useEffect } from 'react';
 import { checkable, checkedVisible } from './triage.js';
+import { REASONS } from '../../components/labels.js';
 
 function isTyping(target) {
   if (!(target instanceof HTMLElement)) return false;
@@ -57,8 +58,9 @@ export function useInboxKeys({ tri, dispatch, flat, focusIndex, byRef, moveFocus
     if (!dialog) return undefined;
     const kind = dialog.kind;
     function onKey(e) {
-      // Reject dialog: 1-6 pick the reason (radios and the dialog itself, not the note field).
-      if (kind === 'reject' && /^[1-6]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey
+      // Reject dialog: 1 to REASONS.length pick the reason (radios and the dialog itself, not the note field).
+      const n = Number(e.key);
+      if (kind === 'reject' && /^[1-9]$/.test(e.key) && n <= REASONS.length && !e.ctrlKey && !e.metaKey && !e.altKey
         && !(isTyping(e.target) && !(e.target instanceof HTMLInputElement && e.target.type === 'radio'))) {
         const radio = document.querySelectorAll('dialog.dw-dialog[open] input[name="dw-reason"]')[Number(e.key) - 1];
         if (radio instanceof HTMLElement) { e.preventDefault(); radio.click(); radio.focus(); }

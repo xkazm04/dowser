@@ -7,13 +7,15 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { candidate, gitRepo, listFiles, removeDir, tempDir } from './_fixture.mjs';
 import { loadLensPack } from '../lib/memory.mjs';
-import { callTool as mockTool, emptyBackend } from '../../../tools/mock-forge-mcp.mjs';
+import { callTool as mockTool, emptyBackend, TOOLS as MOCK_TOOLS } from '../../../tools/mock-forge-mcp.mjs';
+import { MANIFEST, TOOLS, toolsFromManifest } from '../../../tools/local-forge.mjs';
+import { TOOL_NAMES } from '../../../forge/src/core/app.mjs';
 
 const CLI = fileURLToPath(new URL('../dowser.mjs', import.meta.url));
 const SERVER = fileURLToPath(new URL('../../../tools/local-forge.mjs', import.meta.url));
@@ -181,6 +183,10 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
   assert.equal(inbox.groups[0].run_id, run1);
   assert.equal(inbox.groups[0].items.length, 5);
   assert.deepEqual((await invoke('jira.projects')).projects.map((/** @type {any} */ p) => p.key), ['DOW']);
+  // module gating, as in Forge: the panel may not list the inbox; the global page may
+  const gated = await http('/invoke', { key: 'inbox.list', payload: { project_key: projectKey }, module: 'dowser-evidence' });
+  assert.deepEqual([gated.body.error, gated.body.message], ['bad-input', 'inbox.list is not available from this Dowser view']);
+  assert.equal((await http('/invoke', { key: 'jira.projects', payload: {}, module: 'dowser-inbox' })).body.error, undefined);
   // the map -> inbox link: over the areas the skill pushed, each map cell's open count is what inbox.list?area lists
   const map = await invoke('map.data', { project_key: projectKey });
   assert.ok(map.areas.length > 0, 'the skill pushed areas');
@@ -473,4 +479,22 @@ test('the sample inbox at the seam: both doubles refuse its key to every scan wr
   assert.match(issue.description.content[0].content[0].text, /^Created from Dowser sample data/);
   assert.deepEqual(await invoke('sample.remove'), { removed: true, issues_kept: 1 });
   assert.equal((await invoke('settings.get')).inboxes.some((/** @type {any} */ i) => i.project_key === SAMPLE), false);
+});
+
+test('local Forge tools/list is the manifest: every rovo:mcp tool, its inputs and descriptions; the mock serves the same names', () => {
+  const text = readFileSync(MANIFEST, 'utf8');
+  const listed = [...(/^ {2}rovo:mcp:\n(?: {4}.*\n)*? {6}tools:\n((?: {8}- \S+\n)+)/m.exec(text.replace(/\r\n/g, '\n'))?.[1] ?? '').matchAll(/- (\S+)/g)].map((m) => m[1]);
+  assert.equal(listed.length, 12);
+  assert.deepEqual([...listed].sort(), [...TOOL_NAMES].sort(), 'manifest rovo:mcp tools = core TOOL_NAMES');
+  assert.deepEqual(TOOLS.map((t) => t.name).sort(), [...TOOL_NAMES].sort(), 'local tools/list = core TOOL_NAMES');
+  assert.deepEqual(MOCK_TOOLS.map((/** @type {any} */ t) => t.name).filter((n) => n.startsWith('dowser_')).sort(), [...TOOL_NAMES].sort(), 'mock serves every tool');
+  const push = TOOLS.find((t) => t.name === 'dowser_proposals_push');
+  assert.deepEqual(push?.inputSchema.required, ['project_key', 'run_id', 'proposals_json']);
+  assert.match(String(push?.inputSchema.properties.lens_kinds_json.description), /closed kind list/, 'a quoted description is unquoted');
+  // a new optional input in the manifest reaches tools/list with no second copy to edit
+  const grown = text.replace(/(\n {8}head_sha: \{[^\n]*\})/, '$1\n        dry_run: { title: Dry run, type: boolean, required: false, description: Validate only. }');
+  const grownPush = toolsFromManifest(grown, ['dowser_proposals_push'])[0];
+  assert.deepEqual(grownPush.inputSchema.properties.dry_run, { type: 'boolean', description: 'Validate only.' });
+  assert.throws(() => toolsFromManifest(text.replace('limit: { title: Limit, type: integer', 'limit: { title: Limit, type: array'), TOOL_NAMES), /does not understand/);
+  assert.throws(() => toolsFromManifest(text, ['dowser_nope']), /no action dowser_nope/);
 });

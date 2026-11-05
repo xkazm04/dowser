@@ -10,7 +10,7 @@ import {
   deciderName, formatDate, formatDay, plural,
 } from '../../components/labels.js';
 import { BarTrend, HBars, StackedBar } from './charts.jsx';
-import { readDupRate } from './readouts.js';
+import { readDupRate, withOutcome, withRule } from './readouts.js';
 import './reflect.css';
 import './learn.css';
 import { LensDot } from '../inbox/parts.jsx';
@@ -31,7 +31,12 @@ function useReflect(projectKey) {
     );
   }, [projectKey]);
   useEffect(() => { fetchData(false); }, [fetchData]);
-  return { ...state, reload: () => fetchData(false), refresh: () => fetchData(true) };
+  /** Applies a write's own answer to the data shown (no refetch); a fetch still in flight is superseded. */
+  const patch = useCallback((/** @type {(data: any) => any} */ fn) => {
+    ++seq.current;
+    setState((prev) => (prev.status === 'ready' ? { status: 'ready', data: fn(prev.data) } : prev));
+  }, []);
+  return { ...state, reload: () => fetchData(false), refresh: () => fetchData(true), patch };
 }
 
 export default function Reflect({ context }) {
@@ -130,7 +135,7 @@ function Body({ projectKey }) {
           : <p className="dwr-muted">No push has reached this inbox yet. The digest appears after the first scan.</p>)}
       </section>
 
-      {r.status === 'ready' && <NeedsYou d={d} projectKey={projectKey} onChanged={r.refresh} />}
+      {r.status === 'ready' && <NeedsYou d={d} projectKey={projectKey} onPatch={r.patch} />}
 
       <h2 className="dwr-page__sub">Supporting detail</h2>
       <div className="dwr-learn__grid">
@@ -173,26 +178,43 @@ function Section({ id, title, hint, r, empty, emptyText, wide = false, children 
 
 // ---- needs you -----------------------------------------------------------------------------------------------
 
-function NeedsYou({ d, projectKey, onChanged }) {
+function NeedsYou({ d, projectKey, onPatch }) {
   const offers = (d.rules ?? []).filter((x) => x.state === 'offered');
   const cands = d.candidates ?? [];
   const n = offers.length + cands.length;
+  const listRef = useRef(/** @type {HTMLUListElement | null} */ (null));
+  const headRef = useRef(/** @type {HTMLHeadingElement | null} */ (null));
+  // after a decision the item leaves with the control that had focus: focus moves to the item now in its place
+  // (or the last one, or the heading when none is left) and a polite status says what happened
+  const [focusAt, setFocusAt] = useState(/** @type {number | null} */ (null));
+  const [said, setSaid] = useState('');
+  useEffect(() => {
+    if (focusAt === null) return;
+    setFocusAt(null);
+    const items = listRef.current ? [...listRef.current.children] : [];
+    const li = items[Math.min(focusAt, items.length - 1)];
+    const target = li?.querySelector('textarea, input, button, a[href]');
+    if (target instanceof HTMLElement) target.focus(); else headRef.current?.focus();
+  }, [focusAt]);
+  /** @param {number} at @param {string} message @param {(data: any) => any} fn */
+  const decided = (at, message, fn) => { setSaid(message); setFocusAt(at); onPatch(fn); };
   return (
     <section className="dwr-needs" aria-labelledby="dwr-needs-h">
-      <h2 className="dwr-page__sub" id="dwr-needs-h">Needs you <span className="dwr-count">{n}</span></h2>
+      <h2 className="dwr-page__sub" id="dwr-needs-h" ref={headRef} tabIndex={-1}>Needs you <span className="dwr-count">{n}</span></h2>
+      <p className="dwr-visually-hidden" role="status">{said}</p>
       {n === 0
         ? <p className="dwr-muted" role="status">Nothing to decide. Dowser drafts a rule when the same kind of proposal keeps getting the same answer, and lists an accepted item here once its Jira issue moves.</p>
         : (
-          <ul className="dwr-needs__list">
-            {offers.map((x) => <li key={x.id}><RuleOffer rule={x} projectKey={projectKey} onChanged={onChanged} /></li>)}
-            {cands.map((c) => <li key={c.ref}><Candidate cand={c} onChanged={onChanged} /></li>)}
+          <ul className="dwr-needs__list" ref={listRef}>
+            {offers.map((x, i) => <li key={x.id}><RuleOffer rule={x} projectKey={projectKey} onDecided={(res) => decided(i, `Rule ${res.rule.state}.`, (data) => withRule(data, res.rule))} /></li>)}
+            {cands.map((c, i) => <li key={c.ref}><Candidate cand={c} onRecorded={(res) => decided(offers.length + i, `Recorded ${c.ref}.`, (data) => withOutcome(data, res))} /></li>)}
           </ul>
         )}
     </section>
   );
 }
 
-function RuleOffer({ rule, projectKey, onChanged }) {
+function RuleOffer({ rule, projectKey, onDecided }) {
   const [text, setText] = useState(rule.text);
   const [busy, setBusy] = useState(/** @type {'' | 'accepted' | 'declined'} */ (''));
   const [error, setError] = useState('');
@@ -203,9 +225,10 @@ function RuleOffer({ rule, projectKey, onChanged }) {
     const payload = { project_key: projectKey, id: rule.id, state };
     if (state === 'accepted' && text.trim() && text.trim() !== rule.text) payload.text = text.trim();
     try {
-      await call('rule.decide', payload);
-      await onChanged();
+      // the answer is the decided rule: patched in place, so the offer leaves without a reflect.data refetch
+      const res = await call('rule.decide', payload);
       setBusy('');
+      onDecided(res);
     } catch (e) {
       setError(String(e?.message ?? 'The rule could not be saved.'));
       setBusy('');
@@ -250,7 +273,7 @@ function deliveryLine(cand) {
   return '';
 }
 
-function Candidate({ cand, onChanged }) {
+function Candidate({ cand, onRecorded }) {
   const [rating, setRating] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -262,9 +285,10 @@ function Candidate({ cand, onChanged }) {
     const payload = { ref: cand.ref, rating };
     if (note.trim()) payload.note = note.trim();
     try {
-      await call('outcome.record', payload);
-      await onChanged();
+      // the answer carries the outcome and the new candidate list: patched in, no reflect.data refetch
+      const res = await call('outcome.record', payload);
       setBusy(false);
+      onRecorded(res);
     } catch (e) {
       setError(String(e?.message ?? 'The outcome could not be saved.'));
       setBusy(false);

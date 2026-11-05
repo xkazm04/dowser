@@ -4,6 +4,8 @@
 // inbox sends them after the undo window (useCommitWindow).
 import React, { useEffect, useMemo, useState } from 'react';
 import { call } from '../../api.js';
+import { allPages } from './triage.js';
+import { COMMIT_MS } from '../../components/useCommitWindow.js';
 import { Button, Dialog, SectionMessage, Spinner } from '../../components/ui.jsx';
 import { DW_REF_RE, JIRA_KEY_RE, REASONS, issuePreview, plural } from '../../components/labels.js';
 import { Markdown } from '../../components/Markdown.jsx';
@@ -148,6 +150,7 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
 export function MergeDialog({ card, openCards, onClose, onDone, onFailed, onBeforeSubmit }) {
   // null while loading, 'error' when the accepted proposals could not load (then only open ones are listed)
   const [accepted, setAccepted] = useState(/** @type {any[] | null | 'error'} */ (null));
+  const [cutShort, setCutShort] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [query, setQuery] = useState('');
   const [picked, setPicked] = useState('');
@@ -158,8 +161,9 @@ export function MergeDialog({ card, openCards, onClose, onDone, onFailed, onBefo
   useEffect(() => {
     let live = true;
     setAccepted(null);
-    call('inbox.list', { project_key: card.project_key, status: 'accepted' }).then(
-      (res) => { if (live) setAccepted((res.groups ?? []).flatMap((g) => g.items ?? [])); },
+    // every page, not the first 50: an older accepted item must be findable, or a duplicate gets accepted instead
+    allPages((cursor) => call('inbox.list', { project_key: card.project_key, status: 'accepted', ...(cursor ? { cursor } : {}) })).then(
+      (res) => { if (live) { setAccepted(res.items); setCutShort(res.more); } },
       () => { if (live) setAccepted('error'); },
     );
     return () => { live = false; };
@@ -211,7 +215,12 @@ export function MergeDialog({ card, openCards, onClose, onDone, onFailed, onBefo
             <Button compact onClick={() => setAttempt((n) => n + 1)}>Retry</Button>
           </span>
         )}
-        {Array.isArray(accepted) && candidates.length === 0 && <span className="dw-subtle">No matching proposal.</span>}
+        {Array.isArray(accepted) && candidates.length === 0 && (
+          <span className="dw-subtle">{cutShort ? `No match among the first ${acceptedList.length} accepted proposals. Type its DW number in the field below.` : 'No matching proposal.'}</span>
+        )}
+        {Array.isArray(accepted) && cutShort && candidates.length > 0 && (
+          <span className="dw-subtlest">Showing the first {acceptedList.length} accepted proposals; type a DW number below to merge into an older one.</span>
+        )}
         {candidates.map((c) => (
           <label key={c.ref} className="dw-radio">
             <input type="radio" name="dw-merge-into" value={c.ref} checked={picked === c.ref} onChange={() => setPicked(c.ref)} />
@@ -222,7 +231,7 @@ export function MergeDialog({ card, openCards, onClose, onDone, onFailed, onBefo
       <div className="dw-field">
         <label htmlFor="dw-merge-key">Or merge into a Jira issue</label>
         <input id="dw-merge-key" className="dw-input" value={jiraKey} onChange={(e) => setJiraKey(e.target.value)} placeholder="SHOP-123" autoComplete="off" aria-invalid={keyInvalid || undefined} aria-describedby="dw-merge-key-help" />
-        <span id="dw-merge-key-help" className="dw-subtlest">{keyInvalid ? 'Type a Jira key such as SHOP-123.' : 'A typed key wins over the picked proposal.'}</span>
+        <span id="dw-merge-key-help" className="dw-subtlest">{keyInvalid ? 'Type a Jira key such as SHOP-123, or a DW number.' : 'A Jira key or a DW number. A typed key wins over the picked proposal.'}</span>
       </div>
       {error && <SectionMessage appearance="error"><p>{error}</p></SectionMessage>}
     </Dialog>
@@ -269,31 +278,7 @@ export function RejectDialog({ cards, onClose, onSubmit }) {
         <textarea id="dw-reject-note" className="dw-textarea" value={note} onChange={(e) => setNote(e.target.value)} aria-invalid={noteMissing || undefined} required={reason === 'other'} />
         {noteMissing && <span className="dw-subtlest">A note is required for Other.</span>}
       </div>
-      <p className="dw-subtlest">The reason teaches the next scan what to leave out. You get 6 seconds to undo.</p>
-    </Dialog>
-  );
-}
-
-const KEYS = [
-  ['j / k', 'Move to the next / previous proposal'],
-  ['x', 'Select or unselect the proposal'],
-  ['a', 'Accept'],
-  ['r', 'Reject (all selected, when some are selected)'],
-  ['s', 'Snooze, with an optional note and Until date (all selected, when some are selected: one date, no note)'],
-  ['m', 'Merge'],
-  ['u', 'Undo the last snooze or reject while its notice is showing'],
-  ['?', 'Show this help'],
-];
-
-export function HelpDialog({ onClose }) {
-  return (
-    <Dialog title="Keyboard shortcuts" onClose={onClose} footer={<Button appearance="primary" onClick={onClose} autoFocus>Close</Button>}>
-      <table className="dw-table">
-        <tbody>
-          {KEYS.map(([k, what]) => <tr key={k}><td><span className="dw-kbd">{k}</span></td><td>{what}</td></tr>)}
-        </tbody>
-      </table>
-      <p className="dw-subtlest">Shortcuts work when no dialog or text field has focus.</p>
+      <p className="dw-subtlest">The reason teaches the next scan what to leave out. You get {COMMIT_MS / 1000} seconds to undo, more while the notice is hovered or focused.</p>
     </Dialog>
   );
 }
@@ -331,7 +316,11 @@ export function SnoozeStep({ cardRef, label = cardRef, withNote = true, onSubmit
     <form
       className="dw-step" aria-label={`Snooze ${label}`}
       onSubmit={(e) => { e.preventDefault(); submit(); }}
-      onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onCancel(); } }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') { e.stopPropagation(); onCancel(); return; }
+        // Ctrl/Cmd+Enter confirms here too, from any control of the step, as it does in every dialog
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); e.stopPropagation(); e.currentTarget.requestSubmit(); }
+      }}
     >
       {withNote && <label htmlFor={id}>Revisit when / why not now? (optional)</label>}
       {withNote && <input id={id} className="dw-input" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} autoComplete="off" autoFocus placeholder="e.g. after the checkout rewrite" />}

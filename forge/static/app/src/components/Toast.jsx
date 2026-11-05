@@ -1,21 +1,30 @@
 // Toasts: a live region that slides notices in at the bottom left. An `undo` toast shows a timer bar for its
-// commit window and an Undo button; it pauses while hovered or focused. Errors stay until dismissed.
-import React, { useEffect } from 'react';
+// commit window and an Undo button; it pauses while hovered or focused. An info notice dismisses itself after
+// noticeMs, but never while it is hovered or holds focus (its link may be the only one to a new Jira issue, WCAG
+// 2.2.1): the timer starts again when the pointer and focus leave. Errors stay until dismissed.
+import React, { useEffect, useState } from 'react';
 
 /** @param {{toast: any, onUndo: (id: number) => void, onDismiss: (id: number) => void, onPause: (id: number) => void, onResume: (id: number) => void, noticeMs: number}} props */
 function Toast({ toast, onUndo, onDismiss, onPause, onResume, noticeMs }) {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const held = hovered || focused;
   useEffect(() => {
-    if (toast.kind !== 'info') return undefined;
+    if (toast.kind !== 'info' || held) return undefined;
     const t = setTimeout(() => onDismiss(toast.id), noticeMs);
     return () => clearTimeout(t);
-  }, [toast.id, toast.kind, noticeMs, onDismiss]);
+  }, [toast.id, toast.kind, noticeMs, onDismiss, held]);
   const undoable = toast.kind === 'undo';
+  const hold = (/** @type {(v: boolean) => void} */ set) => () => { set(true); if (undoable) onPause(toast.id); };
+  /** @param {(v: boolean) => void} set @param {boolean} other the other hold (hover or focus) */
+  const release = (set, other) => () => { set(false); if (undoable && !other) onResume(toast.id); };
   return (
     <div
       className={`dw-toast${toast.kind === 'error' ? ' dw-toast--error' : ''}`}
       role={toast.kind === 'error' ? 'alert' : undefined}
-      onMouseEnter={undoable ? () => onPause(toast.id) : undefined} onMouseLeave={undoable ? () => onResume(toast.id) : undefined}
-      onFocus={undoable ? () => onPause(toast.id) : undefined} onBlur={undoable ? () => onResume(toast.id) : undefined}
+      onMouseEnter={hold(setHovered)} onMouseLeave={release(setHovered, focused)}
+      onFocus={hold(setFocused)}
+      onBlur={(e) => { if (!e.currentTarget.contains(/** @type {Node | null} */ (e.relatedTarget))) release(setFocused, hovered)(); }}
     >
       <span className="dw-toast__msg">{toast.message}</span>
       {undoable && (

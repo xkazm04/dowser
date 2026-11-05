@@ -183,3 +183,27 @@ export function checkedVisible(state, byRef) {
 export function snoozingRef(state) {
   return state.step?.kind === 'card' ? state.step.ref : '';
 }
+
+/** At most this many inbox.list pages are followed for one list (50 items each). */
+export const PAGES_MAX = 20;
+
+/**
+ * Every item of a paged `inbox.list` answer: follows `next` until it is absent, or until PAGES_MAX pages (then
+ * `more: true`, so the caller can say the list is cut short instead of claiming an item does not exist).
+ * @param {(cursor: string | undefined) => Promise<{groups?: {items?: any[]}[], next?: string}>} page
+ * @param {number} [max]
+ * @returns {Promise<{items: any[], more: boolean}>}
+ */
+export async function allPages(page, max = PAGES_MAX) {
+  /** @type {any[]} */
+  const items = [];
+  /** @type {string | undefined} */
+  let cursor;
+  for (let n = 0; n < max; n++) {
+    const res = await page(cursor);
+    items.push(...(res.groups ?? []).flatMap((g) => g.items ?? []));
+    if (res.next === undefined) return { items, more: false };
+    cursor = res.next;
+  }
+  return { items, more: true };
+}

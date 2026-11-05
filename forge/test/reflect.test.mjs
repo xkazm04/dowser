@@ -407,3 +407,23 @@ test('reflect sync pages outcomes forward from outcomes_since, so more than 200 
   assert.ok(!('outcomes_more' in next), 'the last page says nothing more follows');
   assert.equal((await tool(d, 'dowser_reflect_sync', { ...sync([]), outcomes_since: 'yesterday' })).error, 'bad-input');
 });
+
+test('the Learning page patches from the write answers: rule.decide and outcome.record carry what reflect.data would show', async () => {
+  /** @type {{withRule: (d: any, r: any) => any, withOutcome: (d: any, r: any) => any}} */
+  const ui = await import(String(new URL('../static/app/src/routes/reflect/readouts.js', import.meta.url)));
+  const d = await seeded();
+  await tool(d, 'dowser_reflect_sync', sync([offer('rule-a'), offer('rule-b')]));
+  await res(d, 'verdict.accept', { ref: 'DW-1' });
+  await res(d, 'verdict.accept', { ref: 'DW-2' });
+  const before = await res(d, 'reflect.data', { project_key: PK });
+  d.clock.tick();
+  const dec = await res(d, 'rule.decide', { project_key: PK, id: 'rule-a', state: 'accepted' });
+  d.clock.tick();
+  const rec = await res(d, 'outcome.record', { ref: 'DW-1', rating: 'right' });
+  const patched = ui.withOutcome(ui.withRule(before, dec.rule), rec);
+  const fresh = await res(d, 'reflect.data', { project_key: PK });
+  const byId = (/** @type {any[]} */ l) => [...l].sort((a, b) => a.id.localeCompare(b.id));
+  assert.deepEqual(byId(patched.rules), byId(fresh.rules), 'the decided rule as reflect.data lists it');
+  assert.deepEqual(patched.candidates, fresh.candidates);
+  assert.deepEqual(patched.outcomes, fresh.outcomes);
+});
