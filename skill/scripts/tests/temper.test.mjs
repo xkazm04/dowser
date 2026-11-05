@@ -11,7 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   CAP_DAY_NOTE, DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, depDrift, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
-  capQuestions, everyBuildInboxSpent, lawTrailers, repoTrailers, checkFlakyGates, flakyQuestions, repoFixmes, commitGroups, commitKind, cycleRows, cycleScratch, envCause, environmentalRed, parkedGroups, supersede, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
+  capQuestions, checkChores, everyBuildInboxSpent, lawTrailers, repoTrailers, checkFlakyGates, flakyQuestions, repoFixmes, commitGroups, commitKind, cycleRows, cycleScratch, envCause, environmentalRed, parkedGroups, supersede, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
 } from '../../../.claude/skills/temper/scripts/temper.mjs';
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
 import { derivedIds } from '../../../tools/e2e-coverage.mjs';
@@ -351,6 +351,29 @@ test('cycle end: the runner\'s skill_issues are checked, stored in the row, and 
     rmSync(join(w.root, '.temper', 'cycle-dowser.json'));
   }
   assert.match(renderReport({ date: 'd', commits: {}, landings: {}, cycles: [], scans: [], directions: [], questions: [], later: [] }), /## Skill issues\n\nNone\./);
+});
+
+test('chores: cycle end checks {what, commits}, the row keeps them, and the report lists them for work with no accepted card', () => {
+  const w = world();
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  const file = join(w.work, 'c.json');
+  main(['cycle', 'begin', '--target', 'tooling'], w.ctx);
+  put(file, { target: 'tooling', built: [], chores: [{ what: 'the docs of DW-55 and DW-95 ', commits: ['9fef33e0d6', 'abc1234'] }] });
+  const a = main(['cycle', 'end', '--file', file], w.ctx);
+  assert.notEqual(a.code, 2, JSON.stringify(a.out));
+  assert.deepEqual(a.out.self_reported.chores[0].commits, ['9fef33e0d6', 'abc1234']);
+  const md = readFileSync(main(['report'], w.ctx).out.written, 'utf8');
+  assert.match(md, /## Chores\n\nWork with no accepted card behind it \(self-reported\)\.\n\n- c1 \(dowser\): the docs of DW-55 and DW-95 \(9fef33e, abc1234\)\n/);
+  for (const bad of ['none', [{ what: 'x' }], [{ what: ' ', commits: ['abc1234'] }], [{ what: 'x', commits: [] }], [{ what: 'x', commits: ['not a sha'] }], [{ what: 'x', commits: ['abc1234'], ref: 'DW-1' }]]) {
+    assert.throws(() => checkChores(bad), /chores/, JSON.stringify(bad));
+    main(['cycle', 'begin', '--target', 'tooling'], w.ctx);
+    put(file, { target: 'tooling', chores: bad });
+    const r = main(['cycle', 'end', '--file', file], w.ctx);
+    assert.equal(r.code, 2, JSON.stringify(bad));
+    rmSync(join(w.root, '.temper', 'cycle-dowser.json'));
+  }
+  assert.match(renderReport({ date: 'd', commits: {}, landings: {}, cycles: [], scans: [], directions: [], questions: [], later: [] }), /## Chores\n\nNone\./);
 });
 
 test('dependency drift: cycle end and land run npm ci where a lockfile is newer than its node_modules, and a failed install is red', () => {

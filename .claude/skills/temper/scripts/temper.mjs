@@ -75,7 +75,9 @@ export const QUALITY_KEYS = ['long_functions', 'dup_windows', 'lib_cycles', 'tod
 const PARTS = /** @type {const} */ (['uat', 'proposals', 'scan_yield', 'quality', 'coverage']);
 const CHARTER_KEYS = ['repos', 'until', 'out_of_bounds', 'limits', 'delegation', 'live'];
 const REPO_KEYS = ['name', 'path', 'inbox_key', 'build', 'landing', 'gates', 'ledger', 'caps'];
-const CYCLE_KEYS = ['target', 'repo', 'scan', 'other_scans', 'verdicts', 'built', 'uat', 'findings', 'outcomes', 'directions', 'parked', 'notes', 'skill_issues', 'flaky_gates'];
+const CYCLE_KEYS = ['target', 'repo', 'scan', 'other_scans', 'verdicts', 'built', 'uat', 'findings', 'outcomes', 'directions', 'parked', 'notes', 'skill_issues', 'flaky_gates', 'chores'];
+/** Work with no accepted card behind it (a docs task the director asked for): built[] is keyed by card ref. */
+const CHORE_KEYS = ['what', 'commits'];
 /** A gate that failed and then passed on rerun: a defect the report lists, never a pass. */
 const FLAKY_GATE_KEYS = ['gate', 'evidence'];
 /** What the cycle runner learned about the loop itself: each issue names where (a file, step or brief), what, the evidence and the fix. */
@@ -1170,6 +1172,22 @@ export function checkFlakyGates(arr) {
 }
 
 /**
+ * The cycle's chores: a list of {what, commits}, `what` a non-empty string and `commits` a non-empty list of commits, no
+ * other key. @param {unknown} arr
+ */
+export function checkChores(arr) {
+  const shape = `chores is a list of {${CHORE_KEYS.join(', ')}}: what the work was, and its commits`;
+  if (!Array.isArray(arr)) throw new UsageError(shape);
+  arr.forEach((x, i) => {
+    if (!x || typeof x !== 'object' || Array.isArray(x)) throw new UsageError(`chores[${i}] is an object: ${shape}`);
+    for (const k of Object.keys(x)) if (!CHORE_KEYS.includes(k)) throw new UsageError(`unknown key chores[${i}].${k} (${CHORE_KEYS.join(', ')})`);
+    if (typeof x.what !== 'string' || !x.what.trim()) throw new UsageError(`chores[${i}] needs what: ${shape}`);
+    if (!Array.isArray(x.commits) || !x.commits.length || !x.commits.every((/** @type {unknown} */ c) => typeof c === 'string' && /^[0-9a-f]{7,40}$/i.test(c))) throw new UsageError(`chores[${i}].commits is a non-empty list of commits: ${shape}`);
+  });
+  return arr;
+}
+
+/**
  * Checks the director's cycle file. @param {any} raw @param {{target: string, metModules: string[], proposedPerModule: Record<string, number>}} o
  */
 export function validateCycleFile(raw, o) {
@@ -1185,6 +1203,7 @@ export function validateCycleFile(raw, o) {
   for (const x of raw.parked ?? []) if (typeof x?.item !== 'string' || typeof x.why !== 'string') throw new UsageError('each parked entry is {item, why}');
   if (raw.skill_issues !== undefined) checkSkillIssues(raw.skill_issues);
   if (raw.flaky_gates !== undefined) checkFlakyGates(raw.flaky_gates);
+  if (raw.chores !== undefined) checkChores(raw.chores);
   const per = { ...o.proposedPerModule };
   for (const d of raw.directions ?? []) {
     for (const k of ['id', 'module', 'title', 'evidence', 'value', 'size', 'first_slice']) if (typeof d?.[k] !== 'string' || !d[k].trim()) throw new UsageError(`each direction has ${k}`);
@@ -1884,6 +1903,9 @@ export function renderReport(d) {
   L.push('', '## Direction proposals', '');
   if (d.directions.length) for (const x of d.directions) L.push(`- **${x.id}** (${x.module}, ${x.size}): ${x.title}. Value: ${x.value}. Evidence: ${x.evidence}. First slice: ${x.first_slice}.`);
   else L.push('None.');
+  L.push('', '## Chores', '');
+  const chores = [...d.cycles].sort((a, b) => a.n - b.n).flatMap((r) => (r.self_reported?.chores ?? []).map((/** @type {any} */ x) => `- c${r.n} (${r.repo ?? 'dowser'}): ${x.what.trim()} (${x.commits.map(short).join(', ')})`));
+  if (chores.length) L.push('Work with no accepted card behind it (self-reported).', '', ...chores); else L.push('None.');
   const parked = parkedGroups(d.cycles);
   L.push('', '## Parked', '');
   if (parked.repos.length) {

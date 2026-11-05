@@ -189,7 +189,8 @@ next cycle file's `flaky_gates`.
  "uat": {"pass": 40, "fail": 0}, "findings": ["DOW-12"], "outcomes": [{"ref": "DW-40", "rating": "right", "basis": "specs green on local; no finding"}],
  "directions": [], "parked": [{"item": "DW-49", "why": "needs the operator's call on scope"}], "notes": "...",
  "skill_issues": [{"where": "temper.mjs cycleEnd", "what": "...", "evidence": "file:line or a run's output", "fix": "..."}],
- "flaky_gates": [{"gate": "npm run check:x", "evidence": "151/152 then 152/152, no change; a fixed 2.5 s wait at x.ts:177"}]}
+ "flaky_gates": [{"gate": "npm run check:x", "evidence": "151/152 then 152/152, no change; a fixed 2.5 s wait at x.ts:177"}],
+ "chores": [{"what": "the README's section on the ledger, asked for by the director", "commits": ["9fef33e"]}]}
 ```
 
 The top-level keys are closed (an unknown one is a usage error). Inside them a runner may add informational keys,
@@ -198,6 +199,9 @@ stored as written. These are known and type-checked:
 - `scan`: `cost_usd` and `minutes` (numbers), `turns` (a whole number), `run_id` (text), `ref` (the branch scanned, the ledger row's `ref`), `head` (the commit
   scanned), `pushed` (the refs pushed to the inbox) and `lens_states` (text, each lens's state).
 - `built[]`: `slice` ("1/2"), `commits` and `specs` (lists), `qa` (who wrote the specs, e.g. `subagent`).
+- `chores`: `[{what, commits}]`, work with no accepted card behind it (a docs task the director asked for). `built[]`
+  is keyed by a card's ref, so such a commit has no place there. `what` is non-empty and `commits` a non-empty list of
+  commits; `cycle end` checks both, and the report lists them under Chores.
 - `uat` is free-form, and all of it is self-reported: the runner's own e2e counts, its gate results, where its
   result files are and `persona_pass` (its state, section 5). `cycle end` checks only the form of `persona_pass` and
   trusts none of it.

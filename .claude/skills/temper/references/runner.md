@@ -116,7 +116,7 @@ the director's landing still checks the diff; you still never commit a secret or
    Never run lens-scan cover: the director runs it from the main checkout after the merge.
 6. **Write the cycle file** at `cycle_file`, in the shape cycle.md gives: target, repo (when it is not the loop's
    own), scan, verdicts (the same verdicts, each with `inbox` and `recorded`), built `[{ref, size, slice, commits,
-   specs, qa}]`, uat, findings, outcomes, directions, parked, notes, skill_issues, flaky_gates. Then stop every server
+   specs, qa}]`, chores `[{what, commits}]` (work with no accepted card behind it), uat, findings, outcomes, directions, parked, notes, skill_issues, flaky_gates. Then stop every server
    you started.
 
 ## The spec-only cycle
