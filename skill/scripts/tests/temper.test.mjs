@@ -11,7 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
-  renderReport, secretScan, startQuestions, triageLimits, uatPart,
+  renderReport, secretScan, startQuestions, triageLimits, uatPart, viteServersIn,
 } from '../../../.claude/skills/temper/scripts/temper.mjs';
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
 import { derivedIds } from '../../../tools/e2e-coverage.mjs';
@@ -52,8 +52,14 @@ function world(o = {}) {
       if (ro?.shell) return { status: shell[cmd] ?? 0, stdout: '' };
       return { status: 0, stdout: '' };
     },
+    /** no real process is listed or killed in a test */
+    procs: { list: () => procs, kill: (/** @type {number} */ pid) => { killed.push(pid); return true; } },
   };
-  return { work, root, home, ctx, calls, at: (/** @type {number} */ ms) => { now = ms; } };
+  /** @type {{pid: number, cmd: string}[]} */
+  const procs = [];
+  /** @type {number[]} */
+  const killed = [];
+  return { work, root, home, ctx, calls, procs, killed, at: (/** @type {number} */ ms) => { now = ms; } };
 }
 
 /** @param {ReturnType<typeof world>} w @param {any} [extra] */
@@ -289,10 +295,11 @@ test('land --dry-run (Dowser): green is the ff merge + push + Forge development 
   put(join(w.root, 'e2e', 'results', 'local.json'), [row('b')]);
   const green = main(['land', '--dry-run'], w.ctx);
   assert.equal(green.out.decision, 'land', JSON.stringify(green.out.reasons));
-  assert.deepEqual(green.out.steps.slice(0, 4), ['git checkout -q master', 'git merge --ff-only loop/2026-11-05', 'git push origin master', 'npm run forge:build-ui']);
-  assert.match(green.out.steps[4], /forge deploy -e development --non-interactive/);
-  assert.match(green.out.steps[4], /GetEnvironmentVariable\('FORGE_API_TOKEN','User'\)/);
-  assert.match(green.out.steps[5], /forge install list --json/);
+  assert.deepEqual(green.out.steps.slice(0, 7), ['git checkout -q master', 'git merge --ff-only loop/2026-11-05', 'git push origin master', 'stop-vite',
+    'npm ci --prefix forge', 'npm ci --prefix forge/static/app', 'npm run forge:build-ui']);
+  assert.match(green.out.steps[7], /forge deploy -e development --non-interactive/);
+  assert.match(green.out.steps[7], /GetEnvironmentVariable\('FORGE_API_TOKEN','User'\)/);
+  assert.match(green.out.steps[8], /forge install list --json/);
   assert.ok(Object.keys(green.out.checks.gates).includes('forge:check-shared'));
   assert.equal(g(w.root, 'rev-parse', '--abbrev-ref', 'HEAD'), 'loop/2026-11-05', 'a dry run changes nothing');
   // record a green cycle at head, then a red commit
@@ -328,6 +335,59 @@ test('land (Dowser, executed): more than one Forge installation row is a failed 
   assert.deepEqual([r.out.landing.ok, r.out.landing.stage, r.out.landing.installations], [false, 'install list', 2]);
   assert.equal(installRows('[{"a":1}]'), 1);
   assert.equal(installRows('no json'), undefined);
+});
+
+test('land (Dowser, executed): leftover vite dev servers of this checkout stop first, and a failed npm ci or UI build refuses the deploy', () => {
+  const w = world();
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  put(join(w.root, 'forge', 'x.mjs'), 'export {};\n');
+  g(w.root, 'add', '-A'); g(w.root, 'commit', '-q', '-m', 'feat: forge');
+  const app = join(w.root, 'forge', 'static', 'app');
+  w.procs.push(
+    { pid: 101, cmd: `"C:\\Program Files\\nodejs\\node.exe" ${join(app, 'node_modules', 'vite', 'bin', 'vite.js')} --mode fixture` },
+    { pid: 102, cmd: `node ${join(w.work, 'other-checkout', 'node_modules', 'vite', 'bin', 'vite.js')}` },
+    { pid: 103, cmd: `node ${join(app, 'node_modules', 'vite', 'bin', 'vite.js')} build` },
+    { pid: 104, cmd: `node ${join(w.root, 'node_modules', 'vitest', 'vitest.mjs')}` });
+  assert.deepEqual(viteServersIn(w.procs, w.root).map((p) => p.pid), [101], 'only a dev server inside this checkout');
+  /** @param {string} failing @returns {{r: any, ran: string[]}} */
+  const landWith = (failing) => {
+    /** @type {string[]} */
+    const ran = [];
+    const ctx = { ...w.ctx, run: /** @type {import('../../../.claude/skills/temper/scripts/temper.mjs').Runner} */ ((c, a, o) => {
+      if (c === 'git' && a.includes('push')) { ran.push('push'); return { status: 0, stdout: '' }; }
+      if (c === 'npm' && (a[0] === 'ci' || a[1] === 'forge:build-ui')) { const s = a.join(' '); ran.push(s); return { status: s === failing ? 1 : 0, stdout: '' }; }
+      if (c === 'powershell.exe') { ran.push('deploy'); return { status: 0, stdout: '[{"id":"1"}]' }; }
+      return w.ctx.run(c, a, o);
+    }) };
+    return { r: main(['land'], ctx), ran };
+  };
+  put(join(w.root, 'e2e', 'results', 'fixture.json'), [row('a')]);
+  put(join(w.root, 'e2e', 'results', 'local.json'), [row('b')]);
+  const a = landWith('ci --prefix forge/static/app');
+  assert.equal(a.r.code, 1);
+  assert.deepEqual(w.killed, [101], 'the dev server stopped before the install');
+  assert.deepEqual(a.ran, ['push', 'ci --prefix forge', 'ci --prefix forge/static/app'], 'no build and no deploy after a failed install');
+  assert.deepEqual([a.r.out.landing.ok, a.r.out.landing.stage, a.r.out.landing.deployed, a.r.out.landing.stopped_vite], [false, 'npm ci --prefix forge/static/app', undefined, [101]]);
+  // the next landing (master already holds the branch, so a new commit makes one to land)
+  g(w.root, 'checkout', '-q', 'loop/2026-11-05');
+  put(join(w.root, 'forge', 'x.mjs'), 'export const y = 1;\n');
+  g(w.root, 'commit', '-q', '-am', 'feat: forge 2');
+  put(join(w.root, 'e2e', 'results', 'fixture.json'), [row('a')]);
+  put(join(w.root, 'e2e', 'results', 'local.json'), [row('b')]);
+  const b = landWith('run forge:build-ui');
+  assert.deepEqual(b.ran.at(-1), 'run forge:build-ui');
+  assert.ok(!b.ran.includes('deploy'), 'a stale UI bundle is never deployed');
+  assert.equal(b.r.out.landing.stage, 'build-ui');
+  // a dev server that will not stop is a failed landing before any install
+  g(w.root, 'checkout', '-q', 'loop/2026-11-05');
+  put(join(w.root, 'forge', 'x.mjs'), 'export const y = 2;\n');
+  g(w.root, 'commit', '-q', '-am', 'feat: forge 3');
+  put(join(w.root, 'e2e', 'results', 'fixture.json'), [row('a')]);
+  put(join(w.root, 'e2e', 'results', 'local.json'), [row('b')]);
+  const stuck = main(['land'], { ...w.ctx, procs: { list: () => w.procs, kill: () => false },
+    run: (c, a, o) => (c === 'git' && a.includes('push') ? { status: 0, stdout: '' } : w.ctx.run(c, a, o)) });
+  assert.deepEqual([stuck.out.landing.ok, stuck.out.landing.stage, stuck.out.landing.vite_left], [false, 'stop vite', [101]]);
 });
 
 test('land (Dowser, executed red): the branch resets to the last green head and the day records survive the reset', () => {

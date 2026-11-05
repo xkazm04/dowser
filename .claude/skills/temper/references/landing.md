@@ -13,10 +13,20 @@ Production, tags and releases are never part of a landing. The guard denies them
   forge/ changed, plus the charter's gates), and fixture and local e2e results newer than HEAD with a pass and no fail.
   A live fail blocks; live unverifiable does not.
 - **Green:** `git checkout master`, `git merge --ff-only loop/<date>`, `git push origin master`. When forge/ changed,
-  it then runs `npm run forge:build-ui`, `forge deploy -e development --non-interactive`, and
+  it then stops leftover vite dev servers, runs `npm ci --prefix forge`, `npm ci --prefix forge/static/app` and
+  `npm run forge:build-ui` (see below), then `forge deploy -e development --non-interactive`, and
   `forge install list --json`, in PowerShell with the User-scope `FORGE_EMAIL` and `FORGE_API_TOKEN` (the token is
   never printed). More than one installation row is a failed landing (`stage: install list`); report it, because the
   deploy is live on development.
+- **Install and build before the deploy.** A deploy ships what is installed and built at that moment. On 2026-11-05 a
+  deploy went out with a stale UI bundle because `npm ci --prefix forge/static/app` failed on files that leftover vite
+  dev servers held open. So the landing first stops every vite dev server whose command line is inside this checkout
+  (Windows: `Get-CimInstance Win32_Process` for node.exe, each stopped by its PID with its child tree; a `vite build`,
+  vitest, and other checkouts are left alone), records their PIDs (`stopped_vite`), then installs both packages and
+  builds the UI. A server that does not stop (`stage: stop vite`), a failed `npm ci` (`stage: npm ci --prefix <dir>`)
+  or a failed build (`stage: build-ui`) ends the landing there: master is pushed, nothing is deployed, and the landing
+  is `ok: false`. Fix the cause (stop the server, rerun the install), then deploy by hand from master only with the
+  operator's go-ahead.
 - **Red:** `git reset --hard <last green>`, where the last green is the last green cycle head that is still on the
   branch, else the day's base. The day records are put back after the reset, uncommitted. Commit them. A red day stays
   on its branch and never reaches master.

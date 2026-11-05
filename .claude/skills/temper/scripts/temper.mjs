@@ -84,7 +84,9 @@ export class Refusal extends Error {}
 
 /** @typedef {{status: number | null, stdout: string}} RunResult */
 /** @typedef {(cmd: string, args: string[], o?: {cwd?: string, shell?: boolean}) => RunResult} Runner */
-/** @typedef {{root: string, home: string, env: NodeJS.ProcessEnv, now: () => Date, run: Runner}} Ctx */
+/** @typedef {{pid: number, cmd: string}} Proc */
+/** @typedef {{list: () => Proc[], kill: (pid: number) => boolean}} Procs  the process lister and killer (injected in tests) */
+/** @typedef {{root: string, home: string, env: NodeJS.ProcessEnv, now: () => Date, run: Runner, procs?: Procs}} Ctx */
 /** @typedef {{contexts: string[], focus: string, uat: string[] | 'tests', coverage: string[]}} Module */
 /** @typedef {{state: 'verified' | 'self-reported' | 'unverifiable', ok: boolean, detail: string}} Part */
 /** @typedef {{kind: keyof typeof LANDINGS, branch: string, push: string[], deploy?: string}} Landing */
@@ -99,8 +101,33 @@ export const realRun = (cmd, args, o = {}) => {
   return { status: r.status, stdout: r.stdout ?? '' };
 };
 
+/**
+ * The real process lister and killer. Windows: node processes with their command lines from Win32_Process, each
+ * stopped by its PID with its child tree. Elsewhere: ps, and SIGTERM.
+ * @type {Procs}
+ */
+export const realProcs = {
+  list: () => {
+    if (process.platform === 'win32') {
+      const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+        "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress"], { encoding: 'utf8', windowsHide: true });
+      if (r.status !== 0 || !r.stdout.trim()) return [];
+      try {
+        const rows = JSON.parse(r.stdout);
+        return (Array.isArray(rows) ? rows : [rows]).filter((x) => x && typeof x.CommandLine === 'string').map((x) => ({ pid: Number(x.ProcessId), cmd: x.CommandLine }));
+      } catch { return []; }
+    }
+    const r = spawnSync('ps', ['-eo', 'pid=,args='], { encoding: 'utf8' });
+    return (r.stdout ?? '').split('\n').map((l) => l.trim().match(/^(\d+)\s+(.*)$/)).filter((m) => m !== null).map((m) => ({ pid: Number(m[1]), cmd: m[2] }));
+  },
+  kill: (pid) => {
+    if (process.platform === 'win32') return spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).status === 0;
+    try { process.kill(pid); return true; } catch { return false; }
+  },
+};
+
 /** @returns {Ctx} */
-export const realCtx = () => ({ root: REPO, home: temperHome(), env: process.env, now: () => new Date(), run: realRun });
+export const realCtx = () => ({ root: REPO, home: temperHome(), env: process.env, now: () => new Date(), run: realRun, procs: realProcs });
 
 // ------------------------------------------------------------------------------------------- small helpers
 
@@ -1088,6 +1115,17 @@ export const forgeShell = (forgeDir, cmd) => ['-NoProfile', '-NonInteractive', '
   "$env:FORGE_EMAIL=[Environment]::GetEnvironmentVariable('FORGE_EMAIL','User'); $env:FORGE_API_TOKEN=[Environment]::GetEnvironmentVariable('FORGE_API_TOKEN','User'); "
   + `Set-Location -LiteralPath '${forgeDir.replaceAll("'", "''")}'; ${cmd}; exit $LASTEXITCODE`];
 
+/**
+ * Vite dev servers whose command line is inside this checkout (not a build, not another checkout): left running, they
+ * lock files under node_modules, and `npm ci` then fails to replace them.
+ * @param {Proc[]} procs @param {string} root
+ */
+export function viteServersIn(procs, root) {
+  const dir = `${normPath(root)}/`;
+  return procs.filter((p) => p.pid !== process.pid && /(^|[\\/\s"])vite(\.js|\.cmd|\.mjs)?(["\s]|$)/i.test(p.cmd) && !/vite(\.js|\.cmd|\.mjs)?"?\s+build\b/i.test(p.cmd)
+    && p.cmd.replaceAll('\\', '/').toLowerCase().includes(dir));
+}
+
 /** The installation rows of `forge install list --json`, or undefined when unreadable. @param {string} stdout */
 export function installRows(stdout) {
   const a = stdout.indexOf('['), b = stdout.lastIndexOf(']');
@@ -1144,7 +1182,9 @@ export function landPlan(ctx, day, repo) {
   if (!reasons.length) {
     const forgeDir = join(ctx.root, 'forge');
     const steps = [['git', 'checkout', '-q', 'master'], ['git', 'merge', '--ff-only', branch], ['git', 'push', 'origin', 'master'],
-      ...(deploy ? [['npm', 'run', 'forge:build-ui'], ['powershell.exe', ...forgeShell(forgeDir, 'forge deploy -e development --non-interactive')],
+      // a deploy ships what is installed and built now: stop this checkout's leftover vite servers (they lock
+      // node_modules), install both Forge packages fresh, build the UI; any failure stops before the deploy
+      ...(deploy ? [['stop-vite'], ['npm', 'ci', '--prefix', 'forge'], ['npm', 'ci', '--prefix', 'forge/static/app'], ['npm', 'run', 'forge:build-ui'], ['powershell.exe', ...forgeShell(forgeDir, 'forge deploy -e development --non-interactive')],
         ['powershell.exe', ...forgeShell(forgeDir, 'forge install list --json')]] : [])];
     return { repo: 'dowser', landing: 'loop-ff', decision: 'land', branch, head, checks, reasons: [], steps, deploy: deploy ? 'development' : 'skipped: no forge/ change' };
   }
@@ -1223,8 +1263,16 @@ function land(ctx, f) {
   // a rollback must not lose the day's records: they are read before the reset and written back after it (uncommitted)
   const records = plan.decision === 'rollback' ? readRecords(ctx.root) : undefined;
   for (const [cmd, ...args] of plan.steps) {
+    if (cmd === 'stop-vite') {
+      const procs = ctx.procs ?? realProcs;
+      const vite = viteServersIn(procs.list(), ctx.root);
+      const failed = vite.filter((p) => !procs.kill(p.pid));
+      landing.stopped_vite = vite.filter((p) => !failed.includes(p)).map((p) => p.pid);
+      if (failed.length) { landing.ok = false; landing.stage = 'stop vite'; landing.vite_left = failed.map((p) => p.pid); break; }
+      continue;
+    }
     const r = ctx.run(cmd, cmd === 'git' ? ['-C', dir, ...args] : args, { cwd: cmd === 'git' ? undefined : ctx.root });
-    const stage = cmd === 'git' ? `git ${args[0]}` : args.includes('forge:build-ui') ? 'build-ui' : args.at(-1)?.includes('install list') ? 'install list' : 'deploy';
+    const stage = cmd === 'git' ? `git ${args[0]}` : cmd === 'npm' && args[0] === 'ci' ? `npm ci --prefix ${args[2]}` : args.includes('forge:build-ui') ? 'build-ui' : args.at(-1)?.includes('install list') ? 'install list' : 'deploy';
     if (r.status !== 0) { landing.ok = false; landing.stage = stage; break; }
     if (stage === 'git push') landing.pushed = args.at(-1);
     if (stage === 'install list') {
