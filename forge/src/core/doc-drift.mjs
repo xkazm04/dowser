@@ -108,7 +108,9 @@ export async function onPageEvent(deps, event) {
   if (!PAGE_ID_RE.test(pageId)) return { matched: 0 };
   const links = await deps.db.query('SELECT proposal_id FROM page_links WHERE page_id = ?', [pageId]);
   if (!links.length) return { matched: 0 };
-  const when = typeof event?.content?.version?.when === 'string' ? new Date(Date.parse(event.content.version.when)).toISOString() : deps.now().toISOString();
+  // an absent or unreadable version date is the time the event arrived (Date.parse answers NaN, which would throw)
+  const parsed = typeof event?.content?.version?.when === 'string' ? Date.parse(event.content.version.when) : Number.NaN;
+  const when = Number.isNaN(parsed) ? deps.now().toISOString() : new Date(parsed).toISOString();
   const version = Number.isInteger(event?.content?.version?.number) ? event.content.version.number : null;
   const by = typeof event?.atlassianId === 'string' ? `forge:${event.atlassianId}` : null;
   try {
