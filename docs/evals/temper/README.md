@@ -46,6 +46,11 @@ node tools/temper-scan.mjs --repo <path> --project-key <k> [--focus "goal: .."|"
   cost_usd?, turns?, cards: {created, moved, pushed, by_status}}`.
 - `--dry-run` clones, installs and prints the plan (inbox key, Dowser home, ledger, MCP server). It does not call
   Claude and writes nothing under the Temper home.
+- The scan denies `ScheduleWakeup`. A scan that set a 30-minute fallback heartbeat while its lens agents ran held
+  `claude -p` open long after the run was done.
+- First measurement (n=1, 2026-11-05): bp@93f30b0 into `bp-temper` with `--budget-usd 8`, all four lenses.
+  The scan cost $7.86, the run itself took 11 minutes, and the process ran for 33 minutes because of the heartbeat
+  above. It pushed 10 cards (DW-36 to DW-45). A full four-lens scan of a mid-size repo needs a budget near $8.
 
 ### temper-tickets - UAT findings as DOW issues
 

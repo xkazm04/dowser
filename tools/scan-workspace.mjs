@@ -68,12 +68,15 @@ export function removeWork(work, repo) {
  * The `claude -p` arguments of one scan. `--setting-sources` without `user`: a user-scope dowser skill
  * (~/.claude/skills/dowser, often a link to another checkout) otherwise wins over the project-scope copy installed in
  * the clone, and the scan runs that skill. `--strict-mcp-config`: only the server in `mcpConfig` is connected.
+ * ScheduleWakeup is denied: a scan that sets a fallback heartbeat while its lens agents run keeps `claude -p` alive
+ * until the wakeup fires (a 30-minute heartbeat held a finished 11-minute scan open for 33 minutes, 2026-11-05),
+ * and the answer is then the wakeup's turn, not the run summary.
  * @param {{prompt: string, mcpConfig: string, addDir: string, model?: string, budget?: string}} o
  * @returns {string[]}
  */
 export function scanArgs(o) {
   return ['-p', o.prompt, '--setting-sources', 'project,local', '--mcp-config', o.mcpConfig, '--strict-mcp-config', '--add-dir', o.addDir,
-    '--allowedTools', ...SCAN_TOOLS, '--output-format', 'json', ...(o.model ? ['--model', o.model] : []), ...(o.budget ? ['--max-budget-usd', o.budget] : [])];
+    '--allowedTools', ...SCAN_TOOLS, '--disallowedTools', 'ScheduleWakeup', '--output-format', 'json', ...(o.model ? ['--model', o.model] : []), ...(o.budget ? ['--max-budget-usd', o.budget] : [])];
 }
 
 /**

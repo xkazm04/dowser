@@ -14,6 +14,7 @@ import { UsageError, checkProjectKey, parseFlags } from '../../../tools/temper-l
 import { cardCounts, parseScanArgs, scanPrompt } from '../../../tools/temper-scan.mjs';
 import { adfOf, closeTickets, dedupeJql, fileFindings, planFindings, findingFp, fpLabel, jiraClient, parseFindings, parseTicketArgs, summaryOf } from '../../../tools/temper-tickets.mjs';
 import { checkVerdict, parseVerdictArgs, parseVerdicts, recordVerdicts } from '../../../tools/temper-verdicts.mjs';
+import { scanArgs } from '../../../tools/scan-workspace.mjs';
 import { gitRepo, removeDir, tempDir } from './_fixture.mjs';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -90,6 +91,16 @@ test('temper-scan --dry-run: plans a clone keyed to the inbox and writes nothing
     assert.equal(status(), '');
     assert.throws(() => readFileSync(join(home, 'scans.jsonl')), 'a dry run appends no ledger row');
   } finally { removeDir(dir); }
+});
+
+test('scanArgs: project and local settings only, the one MCP config, no ScheduleWakeup heartbeat, the budget passed on', () => {
+  const a = scanArgs({ prompt: 'p', mcpConfig: 'm.json', addDir: 'T', budget: '8' });
+  assert.deepEqual(a.slice(0, 4), ['-p', 'p', '--setting-sources', 'project,local']);
+  assert.equal(a[a.indexOf('--mcp-config') + 1], 'm.json');
+  assert.ok(a.includes('--strict-mcp-config'));
+  assert.equal(a[a.indexOf('--disallowedTools') + 1], 'ScheduleWakeup');
+  assert.equal(a[a.indexOf('--max-budget-usd') + 1], '8');
+  assert.ok(!scanArgs({ prompt: 'p', mcpConfig: 'm', addDir: 'T' }).includes('--max-budget-usd'));
 });
 
 test('cardCounts: created vs moved, pushed by external ref, per status', () => {
