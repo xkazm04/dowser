@@ -190,7 +190,7 @@ is its lens pack's default (opportunity and ux-friction `product`, doc-drift and
 `clamped`, so a relabel never lands a product card in a technical slice that skips the person.
 
 - A `technical` slice starts at **L1** (the contract's L2 start capped by Dowser's ceiling: technical items default to automation); a `product` slice starts at **L0** and reaches **L1** when its predicted verdicts agreed with the
-  person's on at least 90 % of its last 20 decisions (at least 20). Dowser's ceiling is L1:
+  person's on at least 90 % of its last 20 decided items (at least 20; an item counts once, by its latest decision). Dowser's ceiling is L1:
   a scan never writes into the repo, and a Jira issue leaves the system, so nothing is ever built
   or accepted by the machine. Build mode (SKILL.md section 12) builds only what a person
   accepted, when a person asks for it.
@@ -198,8 +198,8 @@ is its lens pack's default (opportunity and ux-friction `product`, doc-drift and
   `pretriaged_by: machine:dowser`. They skip the runner's pre-triage and go to the inbox marked
   "machine pre-triaged". No status moves: the person still accepts, rejects or snoozes each in
   Jira, and `verified -> accepted` stays a human-only move.
-- A person rejecting a machine pre-triaged card is a **reversal**: the slice drops one level (to L0) and its
-  window starts over.
+- A person rejecting or snoozing a machine pre-triaged card is a **reversal**: the slice drops one level (to L0) and its
+  window starts over. A reversal at L0 restarts the window too, so it never counts toward the next promotion.
 - Every level change is an append-only `trust_events` row; `trust` prints the slices and the
   events, and `reflect export` sends them to the inbox's Learning tab.
 

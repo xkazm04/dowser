@@ -228,3 +228,51 @@ test('pretriage: a stale machine mark is re-checked; a card that resurfaces on a
     assert.equal('pretriaged_by' in /** @type {any} */ (getProposal(s.db, a)), false, 'the stale mark is cleared, not kept');
   } finally { s.done(); }
 });
+
+test('trust window: an item counts once, by its latest decision (snoozed, resurfaced, accepted = one agreeing item)', () => {
+  const s = fresh();
+  try {
+    const SLICE = 'product|opportunity|-|S';
+    const a = s.verified({ lens: 'opportunity', kind: 'gap', topic: 'export csv now', anchors: ['src/e.js'], predicted_verdict: 'accept' });
+    move(s.db, a, 'pushed', { by: 'skill:dowser-sync' });
+    move(s.db, a, 'snoozed', { by: 'forge:jane' });
+    move(s.db, a, 'verified', { by: 'skill:dowser' });
+    move(s.db, a, 'pushed', { by: 'skill:dowser-sync' });
+    move(s.db, a, 'accepted', { by: 'forge:jane' });
+    const sl = trustReport(s.db, { slice: SLICE }).slices[0];
+    assert.deepEqual([sl.n, sl.agreement], [1, 1]);
+    // 19 more agreeing items reach the minimum of 20 items, not 21 decisions
+    decide(s, 18, 'reject', 'rejected', 'b');
+    assert.deepEqual(syncTrust(s.db), [], '19 items');
+    decide(s, 1, 'reject', 'rejected', 'c');
+    assert.deepEqual(syncTrust(s.db).map((e) => [e.from, e.to, e.n, e.agreement]), [[0, 1, 20, 1]]);
+  } finally { s.done(); }
+});
+
+test('trust lose rule: a snooze of a machine pre-triaged card is a reversal, and a reversal at L0 restarts the window', () => {
+  const s = fresh();
+  try {
+    const SLICE = 'product|opportunity|-|S';
+    decide(s, 20, 'reject', 'rejected', 'a');
+    syncTrust(s.db);
+    const cards = ['one', 'two', 'three'].map((t) => s.verified({ lens: 'opportunity', kind: 'gap', topic: `export ${t} now`, anchors: [`src/${t}.js`], impact: 9, impact_why: 'x', predicted_verdict: 'accept' }));
+    allocateRun(s.db, s.run);
+    assert.equal(pretriageRun(s.db, s.run).pretriaged.length, 3);
+    for (const fp of cards) move(s.db, fp, 'pushed', { by: 'skill:dowser-sync' });
+    move(s.db, cards[0], 'snoozed', { by: 'forge:jane' });
+    const ev = syncTrust(s.db);
+    assert.deepEqual(ev.map((e) => [e.from, e.to, e.item_id]), [[1, 0, cards[0]]], 'the person deferred what the machine passed');
+    assert.match(String(ev[0].reason), /^reversal: forge:jane snoozed [0-9a-f]{16}, which machine:dowser pre-triaged$/);
+    // still marked in the inbox: rejected at L0, then 19 agreeing items do not promote, because the window restarted
+    move(s.db, cards[1], 'rejected', { by: 'forge:jane', reason: 'false-positive' });
+    assert.deepEqual(syncTrust(s.db), [], 'no level below L0, so no event');
+    const st = trustReport(s.db, { slice: SLICE }).slices[0];
+    assert.deepEqual([st.level, st.n], [0, 0], 'the window restarted after the L0 reversal');
+    assert.match(String(st.reason), /^window reset: forge:jane rejected [0-9a-f]{16}, which machine:dowser pre-triaged, at L0$/);
+    move(s.db, cards[2], 'accepted', { by: 'forge:jane' });
+    decide(s, 18, 'reject', 'rejected', 'b');
+    assert.deepEqual(syncTrust(s.db), [], '19 items since the reset');
+    decide(s, 1, 'reject', 'rejected', 'c');
+    assert.deepEqual(syncTrust(s.db).map((e) => [e.from, e.to, e.n]), [[0, 1, 20]]);
+  } finally { s.done(); }
+});
