@@ -1,0 +1,28 @@
+{"lens":"bounty-hunter","context":"forge-insights-ui","findings":0,"checked":["map default inbox effect; reflect projectKey reset after sample removal","HeatGrid CellCount modifier-click passthrough"]}
+{"lens":"parity-auditor","context":"forge-insights-ui","findings":0,"checked":["reflect writes vs ReflectData contract (filed under code-optimizer)","direction client hint vs server limits (filed under copy-auditor)"]}
+{"lens":"error-handler","context":"forge-insights-ui","findings":1,"checked":["silent refresh swallow in useReflect (finding)","Settings InboxRow/LensEditor inline save errors"]}
+{"lens":"observability-auditor","context":"forge-insights-ui","findings":0,"checked":["no client telemetry surface; resolver-side observed() covers writes"]}
+{"lens":"risk-assessor","context":"forge-insights-ui","findings":0,"checked":["Settings writes are per-row, explicit Save; low blast"]}
+{"lens":"code-optimizer","context":"forge-insights-ui","findings":1,"checked":["reflect.data refetch after every write (finding)","Settings loads direction.get per inbox: N calls, acceptable for few inboxes"]}
+{"lens":"ux-reviewer","context":"forge-insights-ui","findings":0,"checked":["Needs you queue flow","EffortConfidence list fallback + readout","Settings unsaved direction edits lost on tab switch (weak, not filed)"]}
+{"lens":"visual-craft","context":"forge-insights-ui","findings":0,"checked":["viz.css, reflect.css, settings.css: every colour is a --ds token with fallback; legends print values (not colour-only)"]}
+{"lens":"state-coverage","context":"forge-insights-ui","findings":1,"checked":["saved target missing from project list (finding)","map/reflect/settings loading-error-empty states present"]}
+{"lens":"copy-auditor","context":"forge-insights-ui","findings":1,"checked":["direction limit errors (finding)","map EMPTY copy reused for no-inbox and no-areas: acceptable"]}
+{"lens":"accessibility-checker","context":"forge-insights-ui","findings":1,"checked":["focus loss after Needs you decisions (finding)","scatter dots role=button + keyboard + list fallback","heat cells aria-label"]}
+{"lens":"test-strategist","context":"forge-insights-ui","findings":0,"checked":["reflect digestLines exported but only fixture-exercised; forge/test/reflect.test.mjs covers server side"]}
+{"lens":"security-auditor","context":"forge-insights-ui","findings":0,"checked":["repo_url/issue_url through safeHref in settings and reflect; map navigation via inboxUrl from extension.location"]}
+{"lens":"architecture-analyst","context":"forge-insights-ui","no_surface":"route-level files only; composition reviewed under ux/state lenses"}
+{"lens":"dependency-auditor","context":"forge-insights-ui","no_surface":"no package manifest in this context"}
+{"lens":"mobile-specialist","context":"forge-insights-ui","no_surface":"Forge Custom UI global pages, issue panel and Confluence byline; the inbox already has a <900px accordion layout and panel is 360px - checked, nothing to file"}
+{"lens":"onboarding-designer","context":"forge-insights-ui","no_surface":"first-run lives in FirstRun.jsx/SetupChecklist; installer next-steps already known; nothing new in these files"}
+{"lens":"feature-scout","context":"forge-insights-ui","no_surface":"stabilize round; \"Decide by precedent\" (known) is the open feature idea for this UI"}
+{"lens":"monetization-advisor","context":"forge-insights-ui","no_surface":"no pricing or plan surface in the Custom UI"}
+{"lens":"analytics-planner","context":"forge-insights-ui","no_surface":"no product analytics in the Custom UI; resolver-side observed() is the metering point"}
+{"lens":"documentation-auditor","context":"forge-insights-ui","no_surface":"no docs in this context; header comments checked under copy-auditor"}
+{"lens":"growth-hacker","context":"forge-insights-ui","no_surface":"internal triage tool inside Jira/Confluence; no acquisition surface"}
+{"lens":"tech-debt-tracker","context":"forge-insights-ui","no_surface":"checked dead exports in map/reflect/settings (grep): none found"}
+{"lens":"innovation-catalyst","context":"forge-insights-ui","no_surface":"stabilize round; moonshot items built 2026-11-04 already cover the new ideas here"}
+{"lens":"integration-planner","context":"forge-insights-ui","no_surface":"integrations sit in forge/src adapters, not in these UI files"}
+{"lens":"devops-optimizer","context":"forge-insights-ui","no_surface":"no build or deploy config in this context"}
+{"lens":"business-strategist","context":"forge-insights-ui","no_surface":"no strategy surface in UI components"}
+{"lens":"registry-conformance","context":"forge-insights-ui","no_surface":"optional; skipped to spend the time box on the deep lenses"}

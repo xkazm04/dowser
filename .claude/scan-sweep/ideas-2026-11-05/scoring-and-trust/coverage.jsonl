@@ -1,0 +1,28 @@
+{"lens":"bounty-hunter","context":"scoring-and-trust","findings":1,"checked":["trust.mjs pretriageRun stale mark (probe, filed)","budget.mjs allocateRun MVP / free-slot / lift passes","scan-score.mjs reference values (scan-score.test.mjs pins them)"]}
+{"lens":"parity-auditor","context":"scoring-and-trust","findings":2,"checked":["scan-score.mjs vs ai-registry skills/scan-sweep/scripts/score.mjs: identical formula and weights","scan-score.mjs vs docs/contracts/scan-finding-1.md formula + 4 reference values: match","forge/src has no scan-score copy (grep scanScore|CONFIDENCE_W: 0 hits): consumer only","trust.mjs earn/lose vs contract (2 findings)","direction.mjs caps vs forge/src/core/direction.mjs + types.mjs: equal","trust ceiling L1 and start min(START, CEILING) vs contract: match"]}
+{"lens":"error-handler","context":"scoring-and-trust","findings":0,"checked":["scanScore throws RangeError on a bad scale; scoreOf passes the judge effort.score into it (fails at the producer, as designed)","ingestDirection skips and reports a bad lens"]}
+{"lens":"observability-auditor","context":"scoring-and-trust","findings":0,"checked":["trust_events rows carry slice/from/to/reason/agreement/n/at per contract","quality.mjs carries n with every count"]}
+{"lens":"risk-assessor","context":"scoring-and-trust","findings":1,"checked":["wire score check (filed)","categoryOf clamps a product lens relabelled technical"]}
+{"lens":"code-optimizer","context":"scoring-and-trust","findings":0,"checked":["trustReport filters all decisions per slice (O(slices x decisions)); small n","pretriageRun runs levelOf per row (one query each)"]}
+{"lens":"ux-reviewer","context":"scoring-and-trust","no_surface":"CLI library modules with JSON output; no rendered UI surface"}
+{"lens":"visual-craft","context":"scoring-and-trust","no_surface":"CLI library modules with JSON output; no rendered UI surface"}
+{"lens":"state-coverage","context":"scoring-and-trust","findings":0,"checked":["unscored cards rank after scored (byRank -1)","absent risk 0.75, absent confidence low","quality rates absent at n = 0"]}
+{"lens":"copy-auditor","context":"scoring-and-trust","findings":0,"checked":["trust event reason strings","NO_PRECEDENT wording"]}
+{"lens":"accessibility-checker","context":"scoring-and-trust","no_surface":"CLI library modules with JSON output; no rendered UI surface"}
+{"lens":"test-strategist","context":"scoring-and-trust","findings":0,"checked":["scan-score.test.mjs pins the contract reference values (ground truth)","no test covers a resurfaced pre-triaged card (gap in finding 1)","core-hardening.test.mjs pretriage/trust cases read"]}
+{"lens":"security-auditor","context":"scoring-and-trust","findings":0,"checked":["no I/O beyond store SQL; prepared statements"]}
+{"lens":"architecture-analyst","context":"scoring-and-trust","findings":0,"checked":["predict.mjs imports store-core only as documented; score.mjs vs scan-score.mjs name clash called out in both headers"]}
+{"lens":"dependency-auditor","context":"scoring-and-trust","findings":0,"checked":["node builtins only"]}
+{"lens":"mobile-specialist","context":"scoring-and-trust","no_surface":"CLI library modules with JSON output; no rendered UI surface"}
+{"lens":"onboarding-designer","context":"scoring-and-trust","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"feature-scout","context":"scoring-and-trust","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"monetization-advisor","context":"scoring-and-trust","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"analytics-planner","context":"scoring-and-trust","findings":0,"checked":["quality.mjs ledger per lens|version|model: decided/by_band/prediction/outcomes/delivery covers the measurement; no gap"]}
+{"lens":"documentation-auditor","context":"scoring-and-trust","findings":0,"checked":["trust.mjs header states a reject-only reversal (in the parity finding)","budget.mjs header matches passes 1-5"]}
+{"lens":"growth-hacker","context":"scoring-and-trust","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"tech-debt-tracker","context":"scoring-and-trust","findings":0,"checked":["score.mjs vs scan-score.mjs confusable names, documented"]}
+{"lens":"innovation-catalyst","context":"scoring-and-trust","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"integration-planner","context":"scoring-and-trust","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"devops-optimizer","context":"scoring-and-trust","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"business-strategist","context":"scoring-and-trust","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"registry-conformance","context":"scoring-and-trust","findings":0,"checked":["registry-map subjects for these paths not opened (time box)"]}

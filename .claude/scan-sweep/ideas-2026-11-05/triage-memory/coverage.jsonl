@@ -1,0 +1,28 @@
+{"lens":"bounty-hunter","context":"triage-memory","findings":2,"checked":["memory.mjs offerRules over transitions (probe: later-accepted item counted)","reflect.mjs outcomeCounts/outcomeNotes MAX(id) vs Forge newest-first first page (probe)","memory.mjs contextPack near/suppressed/exemplars queries","triage.mjs numbered() section order vs pretriaged_by"]}
+{"lens":"parity-auditor","context":"triage-memory","findings":0,"checked":["reflect.mjs TRUST_EVENTS_MAX/RULES_MAX/DELIVERIES_MAX vs forge/src/core/types.mjs: equal","reflect.mjs latest-outcome rule vs quality.mjs recorded_at rule: disagree (filed under bounty-hunter)","reflect decider() forge: prefix vs DECIDER_RE"]}
+{"lens":"error-handler","context":"triage-memory","findings":1,"checked":["triage.mjs parseDecisions split on ; (probe, filed)","triage.mjs applyDecisions validate-all-then-move, MoveRefused per line","reflect.mjs ingestReflect invalid entries exit 1, rest applied","memory.mjs readPrefs/setPrefs atomic write + inside-repo refusal"]}
+{"lens":"observability-auditor","context":"triage-memory","findings":0,"checked":["triage apply returns applied/refused/kept + trust_events","ingestReflect summary counts; no silent drops found"]}
+{"lens":"risk-assessor","context":"triage-memory","findings":0,"checked":["decideRule human-only guard; applyDecisions --by human: only","rule offers gated on a human accept"]}
+{"lens":"code-optimizer","context":"triage-memory","findings":0,"checked":["triageSheet -> lookalike -> similar(): full proposals scan per row (O(rows x N)); not measured, below the bar","exportOffers per-fp title query inside the RULES_MAX loop (<= 500 queries)"]}
+{"lens":"ux-reviewer","context":"triage-memory","no_surface":"CLI library modules with JSON output; no rendered UI surface"}
+{"lens":"visual-craft","context":"triage-memory","no_surface":"CLI library modules with JSON output; no rendered UI surface"}
+{"lens":"state-coverage","context":"triage-memory","findings":0,"checked":["outcomes absent vs zero (outcomeCounts undefined)","offerRules earlier offers","triage refused cards after a concurrent decision"]}
+{"lens":"copy-auditor","context":"triage-memory","findings":0,"checked":["triage problem text says \"line N\" for ;-entries (in the error-handler finding)","rule draft text \"rejected Nx\" (in the bounty-hunter finding)"]}
+{"lens":"accessibility-checker","context":"triage-memory","no_surface":"CLI library modules with JSON output; no rendered UI surface"}
+{"lens":"test-strategist","context":"triage-memory","findings":0,"checked":["skill/scripts/tests/triage-sheet.test.mjs exists; no test feeds ingestReflect newest-first outcomes (gap named in the finding)","the mock returns outcomes oldest-first, masking the order bug"]}
+{"lens":"security-auditor","context":"triage-memory","findings":0,"checked":["readPrefs refuses a prefs file inside the scanned repo","SQL via prepared statements; json_each for IN lists","no shell/exec in these files"]}
+{"lens":"architecture-analyst","context":"triage-memory","findings":0,"checked":["memory.mjs imports reflect/predict/direction/store one way; no cycle seen"]}
+{"lens":"dependency-auditor","context":"triage-memory","findings":0,"checked":["node builtins only"]}
+{"lens":"mobile-specialist","context":"triage-memory","no_surface":"CLI library modules with JSON output; no rendered UI surface"}
+{"lens":"onboarding-designer","context":"triage-memory","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"feature-scout","context":"triage-memory","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"monetization-advisor","context":"triage-memory","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"analytics-planner","context":"triage-memory","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"documentation-auditor","context":"triage-memory","findings":0,"checked":["skill/SKILL.md:378-381 decision line vs parseDecisions","header comments of triage/reflect/memory vs code: match"]}
+{"lens":"growth-hacker","context":"triage-memory","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"tech-debt-tracker","context":"triage-memory","findings":0,"checked":["two unquote helpers (memory.mjs, triage.mjs) with different semantics; minor, not filed"]}
+{"lens":"innovation-catalyst","context":"triage-memory","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"integration-planner","context":"triage-memory","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"devops-optimizer","context":"triage-memory","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"business-strategist","context":"triage-memory","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"registry-conformance","context":"triage-memory","findings":0,"checked":[".ai/registry-map.json core/triage-memory -> agent-memory; golden path not opened (time box)"]}

@@ -1,0 +1,106 @@
+{
+  "a": {
+    "name": "lens packs + trust/triage + eval runner",
+    "n": [
+      1,
+      2,
+      7,
+      8,
+      28,
+      29,
+      74,
+      49,
+      3,
+      12,
+      23,
+      33,
+      42,
+      57,
+      90,
+      52,
+      15
+    ]
+  },
+  "b": {
+    "name": "skill store, evidence, CLI, installer",
+    "n": [
+      6,
+      9,
+      14,
+      19,
+      50,
+      51,
+      53,
+      54,
+      65,
+      73,
+      87
+    ],
+    "extra": [
+      "install.mjs:201 git option injection (lens-scan p + dowser efdb84c7)"
+    ]
+  },
+  "c": {
+    "name": "forge entry, migrations, backfills",
+    "n": [
+      21,
+      25,
+      26,
+      38,
+      39,
+      40,
+      72,
+      76,
+      4,
+      92,
+      31,
+      82
+    ],
+    "extra": [
+      "byline.draftFix missing from forge/src/index.js KEYS (dowser 0d4b3205)"
+    ]
+  },
+  "d": {
+    "name": "forge core",
+    "n": [
+      13,
+      18,
+      30,
+      43,
+      47,
+      63,
+      71,
+      77,
+      78,
+      79,
+      91,
+      16,
+      56,
+      66
+    ]
+  },
+  "e": {
+    "name": "forge Custom UI + dev tools",
+    "n": [
+      27,
+      37,
+      60,
+      64,
+      69,
+      70,
+      81,
+      85,
+      89,
+      80,
+      84,
+      48,
+      17,
+      24,
+      34,
+      59,
+      68,
+      75,
+      86
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+{"lens":"bounty-hunter","context":"skill-tests","findings":0,"checked":["_fixture.mjs listFiles slash normalisation","deps.test PATH separator branch","timer-based waits (10 s rpc timeouts)"]}
+{"lens":"parity-auditor","context":"skill-tests","findings":0,"checked":["_fixture KINDS are invented kinds passed explicitly to propose (by design); real packs loaded in cli/memory/procedure-sync tests","local-forge-e2e literal tool list (filed in dev-tooling parity finding)"]}
+{"lens":"error-handler","context":"skill-tests","findings":0,"checked":["after() hooks restore DOWSER_HOME and remove temp dirs","removeDir retries"]}
+{"lens":"observability-auditor","context":"skill-tests","findings":0,"checked":["rpc timeouts include stderr in the message"]}
+{"lens":"risk-assessor","context":"skill-tests","findings":0,"checked":["tests mutate process.env.DOWSER_HOME/PATH and restore in after(); node --test runs files in separate processes"]}
+{"lens":"code-optimizer","context":"skill-tests","findings":1,"checked":["full suite timing 38.7 s, per-test durations","single CLI spawn ~180 ms"]}
+{"lens":"ux-reviewer","context":"skill-tests","no_surface":"test code"}
+{"lens":"visual-craft","context":"skill-tests","no_surface":"test code"}
+{"lens":"state-coverage","context":"skill-tests","findings":0,"checked":["ABANDONED_AFTER_MS boundary covered (run-status 2 h, core-hardening/sync 25 h)","snooze until today/past/invalid covered"]}
+{"lens":"copy-auditor","context":"skill-tests","no_surface":"test code"}
+{"lens":"accessibility-checker","context":"skill-tests","no_surface":"test code"}
+{"lens":"test-strategist","context":"skill-tests","findings":2,"checked":["ls skill/scripts/lib vs test imports: triage.mjs only module not imported","time dependence: inDays/future use local clock with >=1 day margins; midnight walk-through safe","Windows paths: listFiles normalises; suite passes on Windows (225/225)","git config isolation (probed)","tests/fixtures/lens-fixture planted defects ignored by design"]}
+{"lens":"security-auditor","context":"skill-tests","findings":0,"checked":["fixture remotes are fake https URLs; no network in tests (sbom uses --package-lock-only)"]}
+{"lens":"architecture-analyst","context":"skill-tests","findings":0,"checked":["tests import tools/mock-forge-mcp.mjs (6 files) and tools/local-forge.mjs"]}
+{"lens":"dependency-auditor","context":"skill-tests","findings":0,"checked":["tests use node:test and built-ins only"]}
+{"lens":"mobile-specialist","context":"skill-tests","no_surface":"test code"}
+{"lens":"onboarding-designer","context":"skill-tests","findings":0,"checked":["_fixture.mjs header explains it is not a test file"]}
+{"lens":"feature-scout","context":"skill-tests","no_surface":"test code"}
+{"lens":"monetization-advisor","context":"skill-tests","no_surface":"test code"}
+{"lens":"analytics-planner","context":"skill-tests","no_surface":"test code"}
+{"lens":"documentation-auditor","context":"skill-tests","findings":0,"checked":["test headers name the card/case they pin"]}
+{"lens":"growth-hacker","context":"skill-tests","no_surface":"test code"}
+{"lens":"tech-debt-tracker","context":"skill-tests","findings":0,"checked":["rpc() helper copied across direction/reflect/sync-mcp/local-forge-e2e tests (same 10 s timeout pattern); small, not filed"]}
+{"lens":"innovation-catalyst","context":"skill-tests","findings":0,"checked":["considered property tests for fingerprint; existing table tests adequate"]}
+{"lens":"integration-planner","context":"skill-tests","no_surface":"test code"}
+{"lens":"devops-optimizer","context":"skill-tests","findings":0,"checked":["no CI runs the suite (filed in dev-tooling devops finding)"]}
+{"lens":"business-strategist","context":"skill-tests","no_surface":"test code"}
+{"lens":"registry-conformance","context":"skill-tests","findings":0,"checked":[".ai/registry-map.json has no row naming skill-tests; no golden path opened"]}

@@ -1,0 +1,28 @@
+{"lens":"bounty-hunter","context":"forge-inbox-ui","findings":1,"checked":["byline/index.jsx DraftFix vs core/doc-drift.mjs draftFix idempotency (finding)","useCommitWindow flush on pagehide/unmount for deferred reject/snooze","appendGroups pinned-card dedupe in useInboxData.js","useInboxFocus deep-link pin vs filters"]}
+{"lens":"parity-auditor","context":"forge-inbox-ui","findings":0,"checked":["two HelpDialog KEYS lists (filed under tech-debt-tracker)","Banner vs Byline both read byline.forPage; drift filter consistent","byline.draftFix missing from index.js KEYS: already known, not re-filed"]}
+{"lens":"error-handler","context":"forge-inbox-ui","findings":0,"checked":["AcceptDialog/MergeDialog failure kept in dialog + onFailed","useVerdicts failDeferred restores cards with error toast","Banner renders nothing on error by design (comment at Banner.jsx:1-4)","Panel ErrorState with Retry"]}
+{"lens":"observability-auditor","context":"forge-inbox-ui","findings":0,"checked":["UI has no telemetry; resolver side observed() covers calls - no client surface worth adding"]}
+{"lens":"risk-assessor","context":"forge-inbox-ui","findings":0,"checked":["DraftFix posts as the person (covered by bounty finding)","bulk reject via undo window commits on pagehide (best effort, documented)"]}
+{"lens":"code-optimizer","context":"forge-inbox-ui","findings":0,"checked":["useHistory 180 ms debounce and per card+status cache","useInboxKeys document listener re-bound every render (no deps): negligible, not filed"]}
+{"lens":"ux-reviewer","context":"forge-inbox-ui","findings":0,"checked":["Decide bar, reading pane, narrow accordion","Merge target search (filed under state-coverage)","decided card shows only \"Already decided.\""]}
+{"lens":"visual-craft","context":"forge-inbox-ui","no_surface":"tokens audited in forge-ui-shell (theme.css/brand.css); route CSS uses the same tokens"}
+{"lens":"state-coverage","context":"forge-inbox-ui","findings":1,"checked":["loading/error/empty/first-run in inbox/index.jsx","MergeDialog accepted paging (finding)","Byline empty/error states","Panel no-card state"]}
+{"lens":"copy-auditor","context":"forge-inbox-ui","findings":1,"checked":["help text vs key handling, reject 6 s literal (finding)","Panel and Byline empty copy"]}
+{"lens":"accessibility-checker","context":"forge-inbox-ui","findings":0,"checked":["roving tabindex rows InboxList.jsx Row","Reject 1-6 radios, Ctrl+Enter in Dialog","aria-hidden on leaving rows (200 ms; not filed)","Banner region label, Dismiss button"]}
+{"lens":"test-strategist","context":"forge-inbox-ui","findings":0,"checked":["triage.js covered by forge/test/inbox-triage.test.mjs; dialogs untested (UI, no harness)"]}
+{"lens":"security-auditor","context":"forge-inbox-ui","findings":0,"checked":["every href in byline/inbox goes through safeHref or is built from siteUrl matched ^https","Markdown component renders text nodes (no dangerouslySetInnerHTML: grep clean)"]}
+{"lens":"architecture-analyst","context":"forge-inbox-ui","findings":0,"checked":["inbox/index.jsx composition over hooks is clean; no finding"]}
+{"lens":"dependency-auditor","context":"forge-inbox-ui","no_surface":"no package manifest in this context"}
+{"lens":"mobile-specialist","context":"forge-inbox-ui","no_surface":"Forge Custom UI global pages, issue panel and Confluence byline; the inbox already has a <900px accordion layout and panel is 360px - checked, nothing to file"}
+{"lens":"onboarding-designer","context":"forge-inbox-ui","no_surface":"first-run lives in FirstRun.jsx/SetupChecklist; installer next-steps already known; nothing new in these files"}
+{"lens":"feature-scout","context":"forge-inbox-ui","no_surface":"stabilize round; \"Decide by precedent\" (known) is the open feature idea for this UI"}
+{"lens":"monetization-advisor","context":"forge-inbox-ui","no_surface":"no pricing or plan surface in the Custom UI"}
+{"lens":"analytics-planner","context":"forge-inbox-ui","no_surface":"no product analytics in the Custom UI; resolver-side observed() is the metering point"}
+{"lens":"documentation-auditor","context":"forge-inbox-ui","findings":0,"checked":["file header comments match behaviour for useInboxKeys/useInboxFocus/useVerdicts"]}
+{"lens":"growth-hacker","context":"forge-inbox-ui","no_surface":"internal triage tool inside Jira/Confluence; no acquisition surface"}
+{"lens":"tech-debt-tracker","context":"forge-inbox-ui","findings":1,"checked":["unused HelpDialog in dialogs.jsx (finding)"]}
+{"lens":"innovation-catalyst","context":"forge-inbox-ui","no_surface":"stabilize round; moonshot items built 2026-11-04 already cover the new ideas here"}
+{"lens":"integration-planner","context":"forge-inbox-ui","no_surface":"integrations sit in forge/src adapters, not in these UI files"}
+{"lens":"devops-optimizer","context":"forge-inbox-ui","no_surface":"no build or deploy config in this context"}
+{"lens":"business-strategist","context":"forge-inbox-ui","no_surface":"no strategy surface in UI components"}
+{"lens":"registry-conformance","context":"forge-inbox-ui","no_surface":"optional; skipped to spend the time box on the deep lenses"}

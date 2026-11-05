@@ -1,0 +1,28 @@
+{"lens":"bounty-hunter","context":"forge-ui-shell","findings":0,"checked":["useCommitWindow schedule/flush/undo ordering","useAsync seq guard","MAX_TOASTS slice can evict an undo toast while its window runs: only via 3 notices inside 6 s, not filed"]}
+{"lens":"parity-auditor","context":"forge-ui-shell","findings":2,"checked":["labels.js vs shared/model.mjs (finding)","bridge.js vs http-bridge.js link keys (finding)","api.js call keys vs index.js KEYS (filed under test-strategist; draftFix instance already known)","fixture shapes vs ResolverContract: inbox.list, outcome.record, byline.forPage match types.mjs:179-199"]}
+{"lens":"error-handler","context":"forge-ui-shell","findings":0,"checked":["api.js ApiError mapping of {error,message}","router.jsx getContext failure message","main.jsx theme.enable catch"]}
+{"lens":"observability-auditor","context":"forge-ui-shell","findings":0,"checked":["no client telemetry; Forge resolver logs module-denied (index.js:105)"]}
+{"lens":"risk-assessor","context":"forge-ui-shell","findings":0,"checked":["vite.config.js fixture/local aliases gated by mode; comment warns never to deploy them"]}
+{"lens":"code-optimizer","context":"forge-ui-shell","findings":0,"checked":["Toast timers, useCommitWindow refs; nothing material"]}
+{"lens":"ux-reviewer","context":"forge-ui-shell","findings":0,"checked":["Dialog primitive Ctrl+Enter, Escape, focus return","SampleStrip remove confirm","SetupChecklist"]}
+{"lens":"visual-craft","context":"forge-ui-shell","findings":0,"checked":["theme.css and brand.css: only literal colours are the brand vars with dark variants and stated contrast; all else --ds tokens with fallbacks (grep for hex outside var(--ds-*, #...) found only brand.css:10-27)"]}
+{"lens":"state-coverage","context":"forge-ui-shell","findings":0,"checked":["ErrorState/SkeletonList/SectionMessage primitives used by every surface","CardDialog loading/error"]}
+{"lens":"copy-auditor","context":"forge-ui-shell","findings":0,"checked":["ErrorState \"<what> could not load.\" pattern consistent"]}
+{"lens":"accessibility-checker","context":"forge-ui-shell","findings":1,"checked":["info toast timing (finding)","Dialog aria-labelledby, showModal focus trap, opener focus restore","Dialog JSDoc labelId prop documented but unused (XS, not filed)"]}
+{"lens":"test-strategist","context":"forge-ui-shell","findings":1,"checked":["UI keys vs registration (finding)","safeHref covered by forge/test/limits.test.mjs:64-68"]}
+{"lens":"security-auditor","context":"forge-ui-shell","findings":0,"checked":["safeHref coverage: every rendered external href grep-checked (ProposalCard, SampleStrip commit link, byline, Detail, InboxDialogs, reflect, settings); internal hrefs from pageUrl/inboxUrl/inboxHref derive from Forge context","markdown.js builds React nodes, no HTML injection"]}
+{"lens":"architecture-analyst","context":"forge-ui-shell","findings":0,"checked":["router.jsx module/page dispatch; one bundle for all modules - fine"]}
+{"lens":"dependency-auditor","context":"forge-ui-shell","findings":0,"checked":["package.json: react, @forge/bridge, @atlaskit/tokens (dev bridges only), vite; no audit run (no network)"]}
+{"lens":"mobile-specialist","context":"forge-ui-shell","no_surface":"Forge Custom UI global pages, issue panel and Confluence byline; the inbox already has a <900px accordion layout and panel is 360px - checked, nothing to file"}
+{"lens":"onboarding-designer","context":"forge-ui-shell","no_surface":"first-run lives in FirstRun.jsx/SetupChecklist; installer next-steps already known; nothing new in these files"}
+{"lens":"feature-scout","context":"forge-ui-shell","no_surface":"stabilize round; \"Decide by precedent\" (known) is the open feature idea for this UI"}
+{"lens":"monetization-advisor","context":"forge-ui-shell","no_surface":"no pricing or plan surface in the Custom UI"}
+{"lens":"analytics-planner","context":"forge-ui-shell","no_surface":"no product analytics in the Custom UI; resolver-side observed() is the metering point"}
+{"lens":"documentation-auditor","context":"forge-ui-shell","findings":0,"checked":["docs/concepts/project-status-and-next-steps.md:141 names dead ProposalCard.jsx (folded into tech-debt finding)"]}
+{"lens":"growth-hacker","context":"forge-ui-shell","no_surface":"internal triage tool inside Jira/Confluence; no acquisition surface"}
+{"lens":"tech-debt-tracker","context":"forge-ui-shell","findings":1,"checked":["dead ProposalCard/LazyHistory/EvidenceList/deepLinkRef (finding)"]}
+{"lens":"innovation-catalyst","context":"forge-ui-shell","no_surface":"stabilize round; moonshot items built 2026-11-04 already cover the new ideas here"}
+{"lens":"integration-planner","context":"forge-ui-shell","no_surface":"integrations sit in forge/src adapters, not in these UI files"}
+{"lens":"devops-optimizer","context":"forge-ui-shell","findings":0,"checked":["vite build config minimal; dist via base ./"]}
+{"lens":"business-strategist","context":"forge-ui-shell","no_surface":"no strategy surface in UI components"}
+{"lens":"registry-conformance","context":"forge-ui-shell","no_surface":"optional; skipped to spend the time box on the deep lenses"}

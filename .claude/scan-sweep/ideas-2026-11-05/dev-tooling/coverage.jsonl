@@ -1,0 +1,28 @@
+{"lens":"bounty-hunter","context":"dev-tooling","findings":1,"checked":["tools/quality-snapshot.mjs --append path join","tools/dogfood-decide.mjs argv parsing and rule lookup","tools/forge-live-e2e.mjs JSON extraction regex","tools/sbom.mjs tree_problems [] when no lines match (minor, not filed)"]}
+{"lens":"parity-auditor","context":"dev-tooling","findings":1,"checked":["local-forge TOOLS vs forge/manifest.yml vs TOOL_NAMES vs e2e test list","tools/sbom.mjs header file name vs code","lens-eval prompt vs dogfood prompt"]}
+{"lens":"error-handler","context":"dev-tooling","findings":0,"checked":["dogfood/lens-eval failure path keeps work dir","local-forge readBody size cap and JSON errors","sample-capture exit codes","sbom fail() paths","dogfood --dry-run with --campaign runs init/prefs in the campaign home (side effect, low value; not filed)"]}
+{"lens":"observability-auditor","context":"dev-tooling","findings":1,"checked":["quality-snapshot gate parsing","local-forge stderr logging","lens-eval eval row fields"]}
+{"lens":"risk-assessor","context":"dev-tooling","findings":1,"checked":["spawn of CLAUDE_BIN on Windows","lens-eval npm shim quoting","removeWork unlinking a dev-link junction before rmSync"]}
+{"lens":"code-optimizer","context":"dev-tooling","findings":0,"checked":["quality-snapshot dup-window map size","local-forge serializer","ports.mjs prepared statements per call"]}
+{"lens":"ux-reviewer","context":"dev-tooling","findings":0,"checked":["usage/error messages of the 9 tools: each names the flag and the usage line"]}
+{"lens":"visual-craft","context":"dev-tooling","no_surface":"CLI dev tools with JSON output; no visual surface"}
+{"lens":"state-coverage","context":"dev-tooling","findings":0,"checked":["local-forge HTTP 400/404/403 paths","dogfood-decide missing campaign state message"]}
+{"lens":"copy-auditor","context":"dev-tooling","findings":0,"checked":["local-forge header tool count (filed under parity-auditor)","tool usage strings"]}
+{"lens":"accessibility-checker","context":"dev-tooling","no_surface":"no UI in tools/"}
+{"lens":"test-strategist","context":"dev-tooling","findings":1,"checked":["git grep tests per tool: 5 of 9 untested (dogfood, dogfood-decide, forge-live-e2e, quality-snapshot, sample-capture)","local-forge covered by local-forge-e2e, sbom by sbom.test, ports via e2e"]}
+{"lens":"security-auditor","context":"dev-tooling","findings":1,"checked":["local-forge HTTP origin/host/content-type (probed)","local-forge db inside repo refused (local-forge.mjs:305)","sample-capture credentialed repo-url refused","npm shim argument quoting with shell:true (args JSON-quoted; % expansion theoretical, not filed)"]}
+{"lens":"architecture-analyst","context":"dev-tooling","findings":0,"checked":["tools import forge/src/core and skill/scripts/lib directly; forge-live-e2e imports tests/_fixture.mjs (test helper used by a tool, acceptable)"]}
+{"lens":"dependency-auditor","context":"dev-tooling","findings":0,"checked":["tools use node built-ins only; dependabot covers 3 lockfiles"]}
+{"lens":"mobile-specialist","context":"dev-tooling","no_surface":"developer CLI tools"}
+{"lens":"onboarding-designer","context":"dev-tooling","findings":0,"checked":["AGENTS.md describes local:forge/local:ui; tool headers document flags"]}
+{"lens":"feature-scout","context":"dev-tooling","findings":0,"checked":["dogfood campaign loop complete (scan, decide, rescan)"]}
+{"lens":"monetization-advisor","context":"dev-tooling","no_surface":"internal dev tooling"}
+{"lens":"analytics-planner","context":"dev-tooling","findings":0,"checked":["lens-eval evals.jsonl and quality-snapshot rows already form the measurement record"]}
+{"lens":"documentation-auditor","context":"dev-tooling","findings":0,"checked":["local-forge header drift filed under parity-auditor","SECURITY.md release steps vs sbom.mjs agree"]}
+{"lens":"growth-hacker","context":"dev-tooling","no_surface":"internal dev tooling"}
+{"lens":"tech-debt-tracker","context":"dev-tooling","findings":1,"checked":["dogfood vs lens-eval vs forge-live-e2e helper duplication"]}
+{"lens":"innovation-catalyst","context":"dev-tooling","findings":0,"checked":["considered a recorded-replay of claude output for lens-eval regression; not filed (no evidence of need)"]}
+{"lens":"integration-planner","context":"dev-tooling","findings":0,"checked":["CLAUDE_BIN and mock/local Forge seams"]}
+{"lens":"devops-optimizer","context":"dev-tooling","findings":1,"checked":[".github contents (dependabot only, no workflows)","package.json scripts vs AGENTS.md gates","SECURITY.md release steps"]}
+{"lens":"business-strategist","context":"dev-tooling","no_surface":"internal dev tooling"}
+{"lens":"registry-conformance","context":"dev-tooling","findings":0,"checked":[".ai/registry-map.json has no row naming dev-tooling; no golden path opened"]}

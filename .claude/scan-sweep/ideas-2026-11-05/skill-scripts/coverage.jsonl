@@ -1,0 +1,28 @@
+{"lens":"bounty-hunter","context":"skill-scripts","findings":0,"checked":["sync.mjs ingestPush/pushOne CAS paths","sync.mjs verdictOne idempotency key fp@decided_at","mock outcomes order vs Forge (filed in triage-memory)"]}
+{"lens":"parity-auditor","context":"skill-scripts","findings":1,"checked":["tools/mock-forge-mcp.mjs input schemas vs forge/manifest.yml: 12 tools, inputs match","mock push/reflect/trust validation vs forge/src/core/push.mjs and reflect.mjs (filed)","mock sample-key refusal list vs Forge"]}
+{"lens":"error-handler","context":"skill-scripts","findings":0,"checked":["sync.mjs readResponse unwraps MCP envelopes, isError -> exit 2","ingestVerdicts: a link conflict after an applied move is reported as link_conflict but counted applied (exit 0); low impact, not filed","ingestPush unknown/invalid/conflict never forced","mock serve(): non-ToolError -> -32603"]}
+{"lens":"observability-auditor","context":"skill-scripts","findings":0,"checked":["ingest* summaries per outcome; fresh_store note"]}
+{"lens":"risk-assessor","context":"skill-scripts","findings":0,"checked":["withheldQuotes masks quoted lines in MASKED_FIELDS under quotes=omit"]}
+{"lens":"code-optimizer","context":"skill-scripts","findings":0,"checked":["outbox evidenceSnapshot per verified/pushed row inside one tx; acceptable"]}
+{"lens":"ux-reviewer","context":"skill-scripts","no_surface":"CLI library modules with JSON output; no rendered UI surface"}
+{"lens":"visual-craft","context":"skill-scripts","no_surface":"CLI library modules with JSON output; no rendered UI surface"}
+{"lens":"state-coverage","context":"skill-scripts","findings":0,"checked":["fresh store unknown verdicts -> code 0 with note","outbox more:true paging"]}
+{"lens":"copy-auditor","context":"skill-scripts","findings":0,"checked":["mock header tool count (filed under documentation-auditor)"]}
+{"lens":"accessibility-checker","context":"skill-scripts","no_surface":"CLI library modules with JSON output; no rendered UI surface"}
+{"lens":"test-strategist","context":"skill-scripts","findings":0,"checked":["sync.test.mjs, sync-mcp.test.mjs, local-forge-e2e.test.mjs rely on the mock; the mock runs no validateCandidate, so wire refusals are untested end to end"]}
+{"lens":"security-auditor","context":"skill-scripts","findings":0,"checked":["mock --state atomic tmp+rename; sync.mjs never touches network/auth (the agent owns OAuth)","quote_sha path keeps quotes local"]}
+{"lens":"architecture-analyst","context":"skill-scripts","findings":0,"checked":["mock imports the skill model/fingerprint (shared code available to close the parity gap)"]}
+{"lens":"dependency-auditor","context":"skill-scripts","findings":0,"checked":["mock: node builtins only, no MCP SDK"]}
+{"lens":"mobile-specialist","context":"skill-scripts","no_surface":"CLI library modules with JSON output; no rendered UI surface"}
+{"lens":"onboarding-designer","context":"skill-scripts","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"feature-scout","context":"skill-scripts","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"monetization-advisor","context":"skill-scripts","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"analytics-planner","context":"skill-scripts","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"documentation-auditor","context":"skill-scripts","findings":1,"checked":["mock header vs HANDLERS and contract (filed)","docs/contracts/scan-finding-1.md byte-copy marker present"]}
+{"lens":"growth-hacker","context":"skill-scripts","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"tech-debt-tracker","context":"skill-scripts","findings":0,"checked":["mock re-declares caps as literals (PUSH_MAX, OUTCOMES_MAX...) rather than importing forge/src/core/types.mjs"]}
+{"lens":"innovation-catalyst","context":"skill-scripts","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"integration-planner","context":"skill-scripts","findings":0,"checked":["docs/contracts/forge-mcp-2.md additive tools without a version bump: documented"]}
+{"lens":"devops-optimizer","context":"skill-scripts","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"business-strategist","context":"skill-scripts","no_surface":"internal library context; no product surface of its own (covered by the skill and Forge UI contexts)"}
+{"lens":"registry-conformance","context":"skill-scripts","findings":0,"checked":["registry-map row for sync/mock/contracts not opened (time box)"]}

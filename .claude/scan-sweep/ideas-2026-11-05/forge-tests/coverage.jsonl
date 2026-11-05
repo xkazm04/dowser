@@ -1,0 +1,28 @@
+{"lens":"bounty-hunter","context":"forge-tests","findings":0,"checked":["npm --prefix forge test: 155 tests, 155 pass, 0 fail, 1.9 s"]}
+{"lens":"parity-auditor","context":"forge-tests","findings":1,"checked":["helpers.mjs sqliteDb tx (BEGIN/ROLLBACK) vs forge-sql.mjs tx (none)","helpers DUPLICATE_RE mapping mirrors forge-sql rethrow: same","helpers fakePerms vs perms.mine 404 semantics"]}
+{"lens":"error-handler","context":"forge-tests","findings":0,"checked":["failNext injection used for verdict and tool_calls failures (core.test.mjs:210, sample.test.mjs:242)"]}
+{"lens":"observability-auditor","context":"forge-tests","findings":0,"checked":["tests capture deps.log lines (helpers logs[])"]}
+{"lens":"risk-assessor","context":"forge-tests","findings":0,"checked":["no test touches network or real time; all through ports"]}
+{"lens":"code-optimizer","context":"forge-tests","findings":0,"checked":["suite runs in 1.9 s; statement counting (CountingDb) already guards set-based reads"]}
+{"lens":"ux-reviewer","context":"forge-tests","no_surface":"test files"}
+{"lens":"visual-craft","context":"forge-tests","no_surface":"test files"}
+{"lens":"state-coverage","context":"forge-tests","findings":0,"checked":["resolver key census: 20/21 keys tested (jira.projects missing, filed under test-strategist)","tool census: all 12 TOOL_NAMES and 3 ROVO_ACTIONS appear in tests"]}
+{"lens":"copy-auditor","context":"forge-tests","no_surface":"test files"}
+{"lens":"accessibility-checker","context":"forge-tests","no_surface":"test files"}
+{"lens":"test-strategist","context":"forge-tests","findings":7,"checked":["core modules vs direct test imports: access, direction, names, work, ports-only are reached via app.mjs (no direct import) - acceptable","no test imports src/index.js or src/adapters/*","manifest.yml read by no test","shared.test iterates SHARED (implementation list)","sample.test.mjs:350 fakes ensureSchema","append-only migration rule unenforced","accept claim race untested","flaky time/order: clock() fixed at 2026-10-27 (helpers.mjs:185), no Date.now/Math.random/setTimeout in tests; observe.mjs Date.now only feeds ms","already known: TWG goals mapping untested (atlassian.mjs:233)"]}
+{"lens":"security-auditor","context":"forge-tests","findings":0,"checked":["access.test.mjs covers resolverAllowed, consent, per-inbox access on tools and resolvers","adapter-identity.test strips comments before regex (no comment can satisfy it)"]}
+{"lens":"architecture-analyst","context":"forge-tests","findings":0,"checked":["helpers.mjs ports mirror core/ports.mjs typedefs"]}
+{"lens":"dependency-auditor","context":"forge-tests","findings":0,"checked":["tests use node:test, node:sqlite only; no test deps"]}
+{"lens":"mobile-specialist","context":"forge-tests","no_surface":"test files"}
+{"lens":"onboarding-designer","context":"forge-tests","no_surface":"test files"}
+{"lens":"feature-scout","context":"forge-tests","no_surface":"test files"}
+{"lens":"monetization-advisor","context":"forge-tests","no_surface":"test files"}
+{"lens":"analytics-planner","context":"forge-tests","no_surface":"test files"}
+{"lens":"documentation-auditor","context":"forge-tests","findings":0,"checked":["test headers state what each file proves; helpers header accurate except the atomic tx it does not mention (parity finding)"]}
+{"lens":"growth-hacker","context":"forge-tests","no_surface":"test files"}
+{"lens":"tech-debt-tracker","context":"forge-tests","findings":0,"checked":["21 test files import helpers.mjs; no duplicated fixtures found in the sampled files"]}
+{"lens":"innovation-catalyst","context":"forge-tests","no_surface":"test files"}
+{"lens":"integration-planner","context":"forge-tests","no_surface":"test files"}
+{"lens":"devops-optimizer","context":"forge-tests","findings":0,"checked":["forge test script node --test \"test/*.test.mjs\"; root forge:test wires it; no CI workflow in repo"]}
+{"lens":"business-strategist","context":"forge-tests","no_surface":"test files"}
+{"lens":"registry-conformance","context":"forge-tests","findings":0,"checked":["skipped the golden-path read (optional); test-harness subject not opened in the time box"]}

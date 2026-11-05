@@ -1,0 +1,28 @@
+{"lens":"bounty-hunter","context":"forge-core","findings":2,"checked":["verdicts.mjs accept claim/createIssue/decide failure paths","delivery.mjs jiraStateOf resolution logic","push.mjs settle reopen CAS and merged redirect","store.mjs nextCounterBlock CAS","openMerge vs merge DW-ref/Jira-key precedence (consistent)"]}
+{"lens":"parity-auditor","context":"forge-core","findings":1,"checked":["forge/scripts/sync-shared.mjs SHARED list vs skill/scripts/lib","wire caps duplicated in types.mjs/delivery.mjs vs skill sync.mjs/reflect.mjs/direction.mjs","forge/test/shared.test.mjs scope","openAccept target vs accept target (agree)","openMerge vs merge routing (agree)"]}
+{"lens":"error-handler","context":"forge-core","findings":2,"checked":["issue-property.mjs backfill failure handling","doc-drift.mjs onPageEvent date parsing (probed)","areas.mjs concurrent INSERT DuplicateKey","app.mjs answer() mapping"]}
+{"lens":"observability-auditor","context":"forge-core","findings":1,"checked":["observe.mjs logging policy vs every logLine/console call in core","grep (e).message across forge/src/core"]}
+{"lens":"risk-assessor","context":"forge-core","findings":2,"checked":["delivery.mjs storeCodeDeliveries per-row cost at DELIVERIES_MAX (probed 50)","doc-drift.mjs backfillPageLinks resumability","index.js migrate sequencing"]}
+{"lens":"code-optimizer","context":"forge-core","findings":4,"checked":["verdict.reject 50 refs statement count (probed 550)","areas push 200 statement count (probed 406)","byline.forPage perm calls on unlinked page (probed 20)","cards.mjs inboxSummaries N+1","push.mjs fileAll already set-based","bylineForPage cardOf loop (already known)"]}
+{"lens":"ux-reviewer","context":"forge-core","findings":1,"checked":["sample load/remove access for a second user","access.mjs denied() copy","FirstRun.jsx error path"]}
+{"lens":"visual-craft","context":"forge-core","no_surface":"core business logic, no rendering"}
+{"lens":"state-coverage","context":"forge-core","findings":1,"checked":["work.mjs list paging and more without cursor","memory.mjs cursor paging (ok)","verdicts pull cursor and gap rule (ok)","reflect outcomes_since paging (ok)"]}
+{"lens":"copy-auditor","context":"forge-core","findings":0,"checked":["AppError messages in access.mjs, verdicts.mjs, work.mjs, sample.mjs; the sample \"first pushed\" wording is folded into the ux-reviewer finding"]}
+{"lens":"accessibility-checker","context":"forge-core","no_surface":"core business logic, no UI markup (ADF builders only)"}
+{"lens":"test-strategist","context":"forge-core","findings":0,"checked":["forge/test file list vs core modules: every module has a test file","statements.test.mjs covers push/inbox counts but not verdict.reject or areas push counts (folded into the code-optimizer findings)","limits.test.mjs"]}
+{"lens":"security-auditor","context":"forge-core","findings":1,"checked":["access.mjs vs every RESOLVERS/TOOLS/ROVO caller in app.mjs: every inbox/proposal handler opens through acc","needJira before app-identity writes (accept, merge, work_report)","settings.set browse+create check","sample.remove creator/admin check","jira.projects and issueStatuses asUser","JQL/CQL term escaping in sources.mjs","push repo_url scheme/credential check","findProposal existence oracle"]}
+{"lens":"architecture-analyst","context":"forge-core","findings":0,"checked":["ports.mjs Forge-free core boundary holds: no @forge import in forge/src/core"]}
+{"lens":"dependency-auditor","context":"forge-core","no_surface":"core imports only node:crypto and repo modules"}
+{"lens":"mobile-specialist","context":"forge-core","no_surface":"server-side core, no client surface"}
+{"lens":"onboarding-designer","context":"forge-core","findings":0,"checked":["sample.mjs first-run and setup.status; finding filed under ux-reviewer"]}
+{"lens":"feature-scout","context":"forge-core","findings":0,"checked":["work queue, memory pull, doc-drift; ideas overlap the already-built moonshot list"]}
+{"lens":"monetization-advisor","context":"forge-core","no_surface":"no pricing or entitlement surface in the core"}
+{"lens":"analytics-planner","context":"forge-core","findings":0,"checked":["observe.mjs call lines and tool_calls counter; reflect.mjs Learning metrics"]}
+{"lens":"documentation-auditor","context":"forge-core","findings":0,"checked":["module headers vs code: doc-drift.mjs:89 never-throws (filed as error-handler), areas.mjs areasOfProposal comment says code/doc evidence only but pathsOf also counts anchors (minor, not filed)","forge-mcp-2.md work queue section"]}
+{"lens":"growth-hacker","context":"forge-core","no_surface":"no acquisition surface in the core"}
+{"lens":"tech-debt-tracker","context":"forge-core","findings":0,"checked":["push.mjs:192 filters results on a \"reopened\" result PUSH_RESULTS never holds (dead branch, harmless; not filed)"]}
+{"lens":"innovation-catalyst","context":"forge-core","findings":0,"checked":["no idea beyond the already-built moonshot list"]}
+{"lens":"integration-planner","context":"forge-core","findings":0,"checked":["Jira/Confluence/TWG ports in ports.mjs; goals mapping test gap already known"]}
+{"lens":"devops-optimizer","context":"forge-core","findings":0,"checked":["manifest triggers and daily migrate; no timeoutSeconds (cited in the risk-assessor backfill finding)"]}
+{"lens":"business-strategist","context":"forge-core","no_surface":"core logic, no business-model surface"}
+{"lens":"registry-conformance","context":"forge-core","no_surface":".ai/registry-map.json forge-app row has no paths (dead; the context-map rebuild is already known), so no governing subject is mapped to forge/src/core"}
