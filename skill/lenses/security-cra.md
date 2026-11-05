@@ -74,9 +74,9 @@ supplies its SARIF or CycloneDX output, cite it and propose the work it implies.
    line only up to the value (`const stripeKey = '`); `verify` matches a fragment. A hit in
    `test/`, fixtures, `*.example`, `*.sample` or docs, or a documented placeholder or test-mode
    key, is class E0: record it, no card. `-i` and the name's suffix are there for `apiKey`, `API_KEY`, `STRIPE_SECRET_KEY`.
-6. **Risky patterns.** `git grep -n -E "eval\(|new Function\(|child_process|execSync\(|shell: ?true|shell=True|os\.system|innerHTML|dangerouslySetInnerHTML|v-html|(SELECT|INSERT|UPDATE|DELETE) .*(['\"] *\+|\$\{)|pickle\.loads|yaml\.load\(|verify ?= ?False|rejectUnauthorized: ?false|Math\.random\(\).*(token|secret)" -- ':!*test*' ':!*fixtures/*' ':!*.md'`.
+6. **Risky patterns.** `git grep -n -E "eval\(|new Function\(|child_process|execSync\(|shell: ?true|shell=True|os\.system|innerHTML|dangerouslySetInnerHTML|v-html|(SELECT|INSERT|UPDATE|DELETE) .*(['\"] *\+|[$]\{)|pickle\.loads|yaml\.load\(|verify ?= ?False|rejectUnauthorized: ?false|Math\.random\(\).*(token|secret)" -- ':!*test*' ':!*fixtures/*' ':!*.md'`.
    No bare `exec(` (in JS it is mostly `RegExp.exec`): `child_process` finds the imports, then
-   read their calls. For each hit, read where its input comes from and give it an exposure class.
+   read their calls. `[$]\{` is interpolation under any shell (`\$\{` in bash quotes matches nothing). For each hit, read where its input comes from and give it an exposure class.
 7. **CRA surface (docs and repo).** `SECURITY.md`, `.well-known/security.txt`, a
    vulnerability-disclosure section in README or docs, `CHANGELOG*` with security entries, an
    SBOM step in CI (`.github/workflows/*`, `.gitlab-ci.yml`, `bitbucket-pipelines.yml`: grep

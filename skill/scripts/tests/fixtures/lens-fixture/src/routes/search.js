@@ -9,7 +9,7 @@ function searchProducts(req, res) {
   if (url.searchParams.get('suggest') === '1') {
     return res.json({ suggestions: suggestTerms(q) });
   }
-  const rows = query("SELECT sku, name, price FROM products WHERE name LIKE '%" + q + "%' ORDER BY name LIMIT 50");
+  const rows = query(`SELECT sku, name, price FROM products WHERE name LIKE '%${q}%' ORDER BY name LIMIT 50`);
   res.json({ results: rows });
 }
 
