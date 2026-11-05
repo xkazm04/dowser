@@ -1196,6 +1196,19 @@ test('runner.md: the brief is repo-agnostic, on tonight\'s tools, and SKILL.md s
   assert.match(s1, /`runner` block/);
 });
 
+test('runner block: a repo with a ledger carries its registered paths from the day, as widened; a repo without has no such key', () => {
+  const w = world();
+  twoRepoDay(w);
+  const dayFile = join(w.root, '.temper', 'day.json');
+  const noPaths = main(['cycle', 'begin', '--repo', 'bp', '--target', 'goal:x'], w.ctx).out.runner;
+  assert.equal('registered_paths' in noPaths, false);
+  rmSync(join(w.root, '.temper', 'cycle-bp.json'));
+  const day = JSON.parse(readFileSync(dayFile, 'utf8'));
+  day.repos.bp.paths = ['scripts/a', 'scripts/b'];
+  put(dayFile, day);
+  assert.deepEqual(main(['cycle', 'begin', '--repo', 'bp', '--target', 'goal:x'], w.ctx).out.runner.registered_paths, ['scripts/a', 'scripts/b']);
+});
+
 test('cycleScratch: a folder per cycle, created; files of an earlier day under the same number are moved aside, not read as this cycle', () => {
   const home = temp('scratch');
   const ctx = /** @type {any} */ ({ home, now: () => new Date(1000) });
@@ -1209,6 +1222,8 @@ test('cycleScratch: a folder per cycle, created; files of an earlier day under t
   const md = readFileSync(join(ROOT, '.claude/skills/temper/references/runner.md'), 'utf8');
   assert.match(md, /\| `scratch` \|/);
   assert.match(md, /Every scratch file of this cycle goes in `scratch`/);
+  assert.match(md, /`registered_paths`/);
+  assert.ok(md.includes('[--undecided] [--full]'));
 });
 
 test('cap-deferred snoozes: counted apart (no floor, no rejects cap), only at the cap, carried to tomorrow in the report and asked first', () => {

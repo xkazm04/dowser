@@ -20,6 +20,7 @@ measures). Their rules bind you. This brief adds the order of work and the input
 | `caps` | the inbox's caps for the day, with what is `used` and `left` before this cycle |
 | `carried` | cards the previous day carried to today (cap-deferred snoozes): triage them first |
 | `work` | where you build: `worktree`, `branch`, `from`, and `create` when the director has not made it yet |
+| `registered_paths` | the paths the repo's active-runs ledger holds for today (only a repo with a ledger): build inside them, or have the director widen them with `T repo paths --add` first |
 | `item_gates` | the repo's per-item gates from the charter (none: the repo's own law names them) |
 | `out_of_bounds` | the charter's bounds: a card there is out of bounds, whatever its merit |
 | `laws` | the repo's own law files (`CLAUDE.md`, `AGENTS.md`, `.claude/CLAUDE.md`, those present) |
@@ -69,8 +70,9 @@ the director's landing still checks the diff; you still never commit a secret or
    its `--ref` is the day branch, so the scan reads the day's fixes and does not bring back cards they closed. It
    is read-only on the repo. Record cost, minutes, cards created, `ref` and `head` from the ledger row (cycle.md
    section 2). When the scan fails, record why and go on with the cards the inbox already holds.
-2. **Triage.** List the cards with `node tools/temper-cards.mjs --project-key <inbox> [--status s] [--quotes]` (or
-   the scan's `report`), never `dowser.mjs list --repo`. Decide the `carried` cards first, then every new or still
+2. **Triage.** List the cards with `node tools/temper-cards.mjs --project-key <inbox> [--status s] [--quotes]
+   [--undecided] [--full]` (or the scan's `report`), never `dowser.mjs list --repo`. `--full` adds each card's
+   rationale, sections and acceptance. Decide the `carried` cards first, then every new or still
    undecided card (`--undecided` lists only those: a `pushed` card with `decided_local` or `decided_live` is judged). Read each card's quoted evidence against the code on the day branch. Accept only a card that is
    real, in direction and inside the bounds. Reject with the honest reason code. Snooze what is real but not now.
    Merge duplicates. When the accept cap is reached, a card you would accept is a snooze with `deferred: "cap"`
@@ -80,7 +82,7 @@ the director's landing still checks the diff; you still never commit a secret or
    `{forbidden: true, record_as: "local"}` (exit 1) means no delegation tonight: mark every verdict
    `recorded: "local"`. Do not retry it this cycle.
 3. **Build** the accepted cards, highest value first, as many as fit in about 90 minutes, any size (an XL is staged
-   in slices; build the first). Check every bound first (cycle.md section 4): the registered paths, a baseline the
+   in slices; build the first). Check every bound first (cycle.md section 4): `registered_paths`, a baseline the
    fix moves, a file the repo marks as needing a human. Then, per item:
    - **QA first.** A separate QA subagent writes the failing spec from the card's Flow and acceptance criteria only
      (`node tools/temper-cards.mjs --project-key <inbox> --full` prints them: `sections.Flow`, `acceptance`),
