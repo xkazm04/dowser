@@ -28,7 +28,12 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   While it runs, stderr gets a heartbeat every 60 s (`temper-scan <inbox>: <n> min elapsed, last step: <tool> ...`): no
   heartbeat for several minutes means a hung scan, not a slow one. Run it in the background and watch stderr.
 - Other repos: `scan.others_due` lists those with no scan today or yesterday, so each is scanned every second day,
-  read-only, into its own inbox.
+  read-only, into its own inbox. An inbox whose accepts are spent is not listed.
+- **No accepts left, no scan.** A scan's cards can only be carried once the inbox's accepts are at the cap, so
+  `cycle begin` drops that inbox's scan command and answers `accepts_spent` (`accepts`, `cap`, `carried`, `why`,
+  `instead`) in both the answer and the runner block: triage what is undecided, then the spec-only cycle, or a repo with
+  accepts left. `--scan-anyway` keeps the command. `T clock` answers `inboxes_spent` and `all_inboxes_spent`; when every
+  build inbox is spent, the day ends early (SKILL.md section 1) and the report's Summary gives the reason.
 - A full four-lens scan costs about $8 (n=1, bp, 2026-11-05). A focused one-area scan costs far less: $2.91 and
   9 minutes (n=1, dowser, `area:skill/lenses`, 2026-11-05). Budget a focused cycle from the focused figure. Never call
   ScheduleWakeup inside a scan.

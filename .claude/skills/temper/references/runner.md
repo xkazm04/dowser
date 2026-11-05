@@ -16,7 +16,8 @@ measures). Their rules bind you. This brief adds the order of work and the input
 | `loop_root` | the loop's checkout: every `node tools/...` and `T` command below runs from there |
 | `repo`, `path`, `inbox` | the repo of this cycle, its checkout and its inbox key |
 | `n`, `target`, `focus` | the cycle number, the module or focus, and the focus the scan takes (`goal:<text>` or `area:<path>`) |
-| `scan` | the scan command, with `--ref` (the day branch it reads) and the budget |
+| `scan` | the scan command, with `--ref` (the day branch it reads) and the budget. Absent when the inbox's accepts are spent |
+| `accepts_spent` | only at the accept cap: `accepts`, `cap`, `carried` (the carried cards' count), `why`, and `instead` (the work left) |
 | `caps` | the inbox's caps for the day, with what is `used` and `left` before this cycle |
 | `carried` | cards the previous day carried to today (cap-deferred snoozes): triage them first |
 | `work` | where you build: `worktree`, `branch`, `from`, and `create` when the director has not made it yet |
@@ -66,7 +67,9 @@ the director's landing still checks the diff; you still never commit a secret or
 
 ## Steps
 
-1. **Scan.** Skip it when the launch message says the scan ran. Otherwise run `scan` from `loop_root` as printed:
+1. **Scan.** Skip it when the launch message says the scan ran, or when the block has no `scan`: the inbox's accepts
+   are spent, so a scan could only carry more cards. Then do what `accepts_spent.instead` names: triage what is still
+   undecided, then the spec-only cycle below. Otherwise run `scan` from `loop_root` as printed:
    its `--ref` is the day branch, so the scan reads the day's fixes and does not bring back cards they closed. It
    is read-only on the repo. Record cost, minutes, cards created, `ref` and `head` from the ledger row (cycle.md
    section 2). When the scan fails, record why and go on with the cards the inbox already holds.
@@ -113,7 +116,7 @@ the director's landing still checks the diff; you still never commit a secret or
 
 ## The spec-only cycle
 
-When the accept cap is reached, the cycle builds nothing and still turns what it learns into proof: its UAT findings
+When the accept cap is reached (the block's `accepts_spent`), the cycle scans nothing and builds nothing, and still turns what it learns into proof: its UAT findings
 become specs asserting the correct behaviour, so tomorrow's builder starts from a red spec, not a paragraph.
 
 1. File the finding first (step 4): its ticket is the spec's name.

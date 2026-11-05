@@ -34,10 +34,14 @@ scans that the loop starts keep theirs.
 ## 1. Cycle (repeat)
 
 1. `T clock`. When `drain` is true, go to section 2. When `rate_limited_until` is set, follow the wait in
-   references/long-run.md.
-2. `T modules bar`. Pick the target: an approved `direction:<id>`, else the bar's `next` module. A build in another
+   references/long-run.md. When `all_inboxes_spent` is true, the day ends early: go to section 2 now, with the time
+   unspent. A scan with no accepts left only carries cards, and the report's Summary gives the reason.
+2. `T modules bar`. Pick the target: an approved `direction:<id>`, else the bar's `next` module, never a repo whose inbox is in
+   `inboxes_spent` while another has accepts left. Stop scanning an inbox whose accepts are spent. A build in another
    repo is `--repo <name> --target area:<path>` (or `goal:<text>`; no space after the colon).
-3. `T cycle begin --target <t> [--repo <r>]`, then run the cycle as references/cycle.md says. Its steps are scan,
+3. `T cycle begin --target <t> [--repo <r>]`. In an inbox at its accept cap the answer has no scan command but
+   `accepts_spent`: the carried cards' count and the work left instead, a spec-only cycle or another repo. Only
+   `--scan-anyway` keeps the scan, for a reason you put in the cycle file's `notes`. Then run the cycle as references/cycle.md says. Its steps are scan,
    triage, build, simulated UAT and update. Launch one runner subagent for them with references/runner.md (the
    brief) and the `runner` block that `cycle begin` printed: your launch message is a copy of that block (the brief's
    path, repo, path, inbox, n, target, focus, the scan command with its `--ref`, the caps used and left today, the

@@ -11,7 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   CAP_DAY_NOTE, DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, depDrift, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
-  capQuestions, checkFlakyGates, flakyQuestions, repoFixmes, commitGroups, commitKind, cycleRows, cycleScratch, envCause, environmentalRed, parkedGroups, supersede, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
+  capQuestions, everyBuildInboxSpent, checkFlakyGates, flakyQuestions, repoFixmes, commitGroups, commitKind, cycleRows, cycleScratch, envCause, environmentalRed, parkedGroups, supersede, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
 } from '../../../.claude/skills/temper/scripts/temper.mjs';
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
 import { derivedIds } from '../../../tools/e2e-coverage.mjs';
@@ -1279,6 +1279,73 @@ test('cap-deferred snoozes: counted apart (no floor, no rejects cap), only at th
   const { questions } = startQuestions({ date: '2026-11-06', charter: { delegation: { 'dowser-temper': { until: '2026-11-06' } } }, directions: [], cycles, liveState: 'signed-in' });
   assert.match(questions[0], /^1 cards were carried to today because the accept cap was reached \(dowser-temper: DW-30\)/, 'a card re-decided later that day is not carried');
   assert.match(questions[1], /delegation for dowser-temper/);
+});
+
+test('an inbox with no accepts left: cycle begin drops its scan and names the work left, unless --scan-anyway; clock and report say when every build inbox is spent', () => {
+  const w = world();
+  twoRepoDay(w);
+  const charterFile = join(w.root, '.temper', 'charter.json');
+  const ch = JSON.parse(readFileSync(charterFile, 'utf8'));
+  ch.repos.find((/** @type {any} */ r) => r.name === 'bp').caps = { accepts_per_day: 2, rejects_per_day: 30 };
+  put(charterFile, ch);
+  const v = (/** @type {string} */ ref, /** @type {string} */ inbox, x = {}) => ({ ref, verdict: 'accept', inbox, recorded: 'local', ...x });
+  const cap = { verdict: 'snooze', deferred: 'cap' };
+  const led = (/** @type {string} */ date, /** @type {any[]} */ verdicts) => put(join(w.root, 'docs', 'evals', 'temper', `${date}.jsonl`), `${JSON.stringify({ kind: 'cycle', n: 1, date, repo: 'bp', target: 'area:x', self_reported: { verdicts } })}\n`);
+  // under the cap: the scan stays, and nothing says spent
+  led('2026-11-05', [v('DW-1', 'bp-temper')]);
+  const under = main(['cycle', 'begin', '--repo', 'bp', '--target', 'goal:x'], w.ctx);
+  assert.match(under.out.runner.scan, /temper-scan/);
+  assert.equal(under.out.runner.accepts_spent, undefined);
+  rmSync(join(w.root, '.temper', 'cycle-bp.json'));
+  // at the cap: yesterday's DW-7 is still open, its DW-8 was decided today, DW-4 is carried today
+  led('2026-11-04', [v('DW-7', 'bp-temper', cap), v('DW-8', 'bp-temper', cap), v('DW-9', 'dowser-temper', cap)]);
+  led('2026-11-05', [v('DW-1', 'bp-temper'), v('DW-2', 'bp-temper'), v('DW-8', 'bp-temper', { verdict: 'reject', reason: 'not-worth-it' }), v('DW-4', 'bp-temper', cap)]);
+  const b = main(['cycle', 'begin', '--repo', 'bp', '--target', 'goal:x'], w.ctx);
+  assert.equal(b.code, 0, JSON.stringify(b.out));
+  assert.equal(b.out.runner.scan, undefined, 'the runner gets no scan command');
+  assert.equal(b.out.scan.bp, undefined, 'nor does the director');
+  const s = b.out.runner.accepts_spent;
+  assert.deepEqual(s, b.out.accepts_spent);
+  assert.deepEqual([s.accepts, s.cap, s.carried], [2, 2, 2], 'DW-4 today and DW-7 from yesterday; DW-8 was decided');
+  assert.match(s.why, /bp-temper has used 2 of 2 accepts today.*builds nothing/);
+  assert.match(s.instead[0], /the 2 carried cards/);
+  assert.match(s.instead[1], /spec-only cycle/);
+  assert.match(s.instead[2], /accepts left: dowser/);
+  assert.match(s.scan, /--scan-anyway/);
+  rmSync(join(w.root, '.temper', 'cycle-bp.json'));
+  const kept = main(['cycle', 'begin', '--repo', 'bp', '--target', 'goal:x', '--scan-anyway'], w.ctx);
+  assert.match(kept.out.runner.scan, /temper-scan/, '--scan-anyway keeps it');
+  assert.equal(kept.out.runner.scan, kept.out.scan.bp);
+  assert.match(kept.out.runner.accepts_spent.scan, /^kept/, 'and still says so');
+  rmSync(join(w.root, '.temper', 'cycle-bp.json'));
+  // a spent inbox is not due for the other-repos scan either
+  const d = main(['cycle', 'begin', '--target', 'tooling'], w.ctx);
+  assert.match(d.out.runner.scan, /temper-scan/, 'Dowser still has accepts');
+  assert.deepEqual(d.out.scan.others_due, [], 'bp is spent: no scan is due');
+  rmSync(join(w.root, '.temper', 'cycle-dowser.json'));
+  // one inbox spent: the clock says which, and the day goes on
+  const one = main(['clock'], w.ctx).out;
+  assert.deepEqual([one.inboxes_spent, one.all_inboxes_spent], [['bp-temper'], false]);
+  assert.doesNotMatch(readFileSync(main(['report'], w.ctx).out.written, 'utf8'), /ended early/);
+  // every build inbox spent: the clock and the report say so, with the reason
+  ch.repos.find((/** @type {any} */ r) => r.name === 'dowser').caps = { accepts_per_day: 0, rejects_per_day: 30 };
+  put(charterFile, ch);
+  const all = main(['clock'], w.ctx).out;
+  assert.deepEqual([all.inboxes_spent, all.all_inboxes_spent], [['dowser-temper', 'bp-temper'], true]);
+  const last = main(['cycle', 'begin', '--target', 'tooling'], w.ctx).out.runner.accepts_spent;
+  assert.match(last.instead[2], /end the day early/);
+  rmSync(join(w.root, '.temper', 'cycle-dowser.json'));
+  const md = readFileSync(main(['report'], w.ctx).out.written, 'utf8');
+  assert.match(md, /\*\*The day ended early\*\*: every build inbox's accepts are spent \(dowser-temper 0 of 0; bp-temper 2 of 2, 1 carried\), so another scan would build nothing; \d+ minutes of the day went unspent\./);
+  // a scan-only repo never holds the day open, and no build repo means nothing to spend
+  const repos = [{ inbox_key: 'a', build: true, caps: { accepts_per_day: 1, rejects_per_day: 1 } }, { inbox_key: 'b', build: false, caps: { accepts_per_day: 1, rejects_per_day: 1 } }];
+  assert.equal(everyBuildInboxSpent({ repos }, [{ self_reported: { verdicts: [{ ref: 'x', verdict: 'accept', inbox: 'a' }] } }]), true);
+  assert.equal(everyBuildInboxSpent({ repos: [repos[1]] }, []), false);
+  // the briefs state the rule
+  const skill = readFileSync(join(ROOT, '.claude/skills/temper/SKILL.md'), 'utf8');
+  assert.match(skill, /all_inboxes_spent/);
+  assert.match(skill, /the day ends early/);
+  assert.match(readFileSync(join(ROOT, '.claude/skills/temper/references/runner.md'), 'utf8'), /`accepts_spent`/);
 });
 
 test('an inbox at its accept cap: Needs you gives the numbers and asks for real caps in the charter', () => {
