@@ -99,23 +99,29 @@ export const TRANSITIONS = Object.freeze({
 
 /**
  * Moves only some decider kinds may make: `<from>><to>` -> the allowed kinds. A move not listed is open to
- * every kind. `verified -> accepted` is a person's offline call; `pushed -> accepted` arrives as `forge:`. A
- * rejection or a snooze is a person's too (SKILL.md "Never self-approve", references/triage.md): pre-triage records
- * it as `human:`, a pulled verdict as `forge:`, never an agent or the store. Waking a snooze (snoozed -> verified)
- * and the store's own moves stay open.
+ * every kind. `verified -> accepted` is a person's offline call; `pushed -> accepted` arrives as `forge:` (or
+ * `delegate:`). A rejection or a snooze is a person's too (SKILL.md "Never self-approve", references/triage.md):
+ * pre-triage records it as `human:`, a pulled verdict as `forge:`, never an agent or the store. The one exception is
+ * a `delegate:` verdict pulled from Jira: a person switched the delegate on for that inbox in Dowser Settings, and it
+ * arrives only through `ingest-verdicts` (so only from `pushed`). Waking a snooze (snoozed -> verified) and the
+ * store's own moves stay open.
  * @type {Readonly<Record<string, readonly string[]>>}
  */
 export const DECIDER_GUARDS = Object.freeze({
   'verified>accepted': Object.freeze(['human']),
   'verified>rejected': Object.freeze(['human', 'forge']),
   'verified>snoozed': Object.freeze(['human', 'forge']),
-  'pushed>rejected': Object.freeze(['human', 'forge']),
-  'pushed>snoozed': Object.freeze(['human', 'forge']),
+  'pushed>rejected': Object.freeze(['human', 'forge', 'delegate']),
+  'pushed>snoozed': Object.freeze(['human', 'forge', 'delegate']),
 });
+
+/** The decider kind of a delegate verdict (`delegate:temper`): decided in Jira under a person's delegation, never a person. */
+export const DELEGATE_KIND = 'delegate';
 
 /**
  * A decider is `<kind>:<name>`: `human:<name>` for people, `agent:<harness>` for the scanning agent,
- * `forge:<jira-user>` for verdicts pulled from Jira, `skill:dowser` / `skill:dowser-verify` for the store's own moves.
+ * `forge:<jira-user>` for verdicts pulled from Jira, `delegate:<name>` for a delegate's verdicts pulled from Jira,
+ * `skill:dowser` / `skill:dowser-verify` for the store's own moves.
  */
 export const DECIDER_RE = /^[a-z][a-z-]*:[A-Za-z0-9._@:-]+$/;
 

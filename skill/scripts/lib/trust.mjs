@@ -17,7 +17,9 @@
 //    click (model.mjs DECIDER_GUARDS is untouched), and the inbox keeps every machine pre-triage open to reject.
 // A person's decision is a transition to accepted / rejected / snoozed by a `human:` or `forge:` decider; it agrees
 // when DECIDED[status] equals the card's predicted_verdict. Cards without a prediction (dowser-proposal/1) do not
-// count. Every level change appends one trust_events row (append-only, triggers refuse UPDATE and DELETE).
+// count. A `delegate:` verdict (a delegate deciding in Jira under a person's delegation) is not a person's decision:
+// it neither earns agreement nor reverses a pre-triage, so the ladder stays human-earned; the memory (precedents,
+// rules) still learns from it. Every level change appends one trust_events row (append-only, triggers refuse UPDATE and DELETE).
 // sync_state `trust_through` is the last transition id replayed, so a replay adds nothing.
 import { MACHINE_DECIDER, sliceKey } from './model.mjs';
 import { DECIDED } from './predict.mjs';
@@ -48,7 +50,7 @@ function decisions(db) {
   return /** @type {Row[]} */ (db.prepare(
     `SELECT t.id, t.fp, t.to_status, t.by, p.lens, p.category, p.effort_json, p.predicted_verdict, p.pretriaged_by
      FROM transitions t JOIN proposals p ON p.fp = t.fp
-     WHERE t.to_status IN ('accepted', 'rejected', 'snoozed') AND (t.by LIKE 'human:%' OR t.by LIKE 'forge:%')
+     WHERE t.to_status IN ('accepted', 'rejected', 'snoozed') AND (t.by LIKE 'human:%' OR t.by LIKE 'forge:%') -- never delegate:%
        AND p.predicted_verdict IS NOT NULL ORDER BY t.id`,
   ).all()).map((r) => ({
     id: Number(r.id), fp: String(r.fp), by: String(r.by), to: String(r.to_status),
