@@ -150,7 +150,8 @@ number and not an impression.
   The mock answers `dowser_direction_get` with the fixture's direction, re-keyed to the temp
   copy's project key. `--dry-run` builds the workspace and prints the plan, including the
   direction the mock will answer for the lens, without calling Claude. A real run costs
-  tokens.
+  tokens. The scan loads only the project-scope copy it installed (`--setting-sources project,local`: a user-scope
+  dowser skill would otherwise win), and a run whose cards carry another `lens_version` fails without a row.
 - **The numbers.** A card counts for the one expected item its anchors land on most strongly.
   The headline is `recall_at_budget`: seeded items found over the smaller of the seeded count
   and the pack's budget (capped at 1), counted over the cards the store **ranked**

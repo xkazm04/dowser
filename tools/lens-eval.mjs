@@ -267,7 +267,9 @@ try {
     args: [MOCK, '--seed', seedFile, '--state', join(work, 'forge-state.json')] } } }, null, 2));
   const realNpm = o.lens === 'security-cra' ? writeNpmShim(bin, w.repo) : undefined;
   const env = { ...process.env, DOWSER_HOME: w.home, ...(o.lens === 'security-cra' ? { PATH: `${bin}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH ?? ''}` } : {}) };
-  const args = ['-p', prompt(o.lens), '--mcp-config', mcpConfig, '--strict-mcp-config', '--add-dir', tmpdir(),
+  // --setting-sources without `user`: a user-scope dowser skill (~/.claude/skills/dowser, often a link to another
+  // checkout) otherwise wins over the project-scope copy installed above, and the scan measures that skill's packs
+  const args = ['-p', prompt(o.lens), '--setting-sources', 'project,local', '--mcp-config', mcpConfig, '--strict-mcp-config', '--add-dir', tmpdir(),
     '--allowedTools', ...ALLOWED_TOOLS, '--output-format', 'json', ...(o.model ? ['--model', o.model] : []), ...(o.budget ? ['--max-budget-usd', o.budget] : [])];
 
   if (o.dryRun) {
@@ -297,7 +299,7 @@ try {
         `score the cards that survived verify against ${q(join(FIXTURE, '_expected.json'))} (skill/scripts/lib/score.mjs)`,
         `append {ts, lens, lens_version, recall?, precision?, decoy_hits, artifacts_valid, artifacts_total, verify_dropped, n, budget?, recall_at_budget?, budget_scope?, priority1_found?, priority1_total?, focus_found?, focus_total?, reserve_hits?, direction_violations} to ${q(o.evals)}`,
       ],
-      warnings: existsSync(userSkill) ? [`a user-scope dowser skill exists at ${userSkill}; the scan may load it instead of the project-scope copy`] : [],
+      warnings: existsSync(userSkill) ? [`a user-scope dowser skill exists at ${userSkill}; --setting-sources project,local keeps it out, and a card whose lens_version is not ${version} fails the run`] : [],
       kept: o.keep,
     }, null, 2));
   } else {
@@ -314,6 +316,11 @@ try {
     } else {
       const { proposals } = cli(w, 'list', '--lens', o.lens);
       const shown = proposals.map((/** @type {{fp: string}} */ p) => cli(w, 'show', p.fp));
+      // the cards must come from the pack under evaluation: another installed copy of the skill is another pack
+      const versions = [...new Set(shown.map((/** @type {any} */ x) => String(x.card.provenance?.lens_version)))];
+      if (versions.some((v) => v !== version)) {
+        throw new Error(`the scan wrote cards with lens_version ${versions.join(', ')}, not ${version}: it loaded another copy of the skill; no row appended (see ${work})`);
+      }
       // survivors carry the store's band, so recall_at_budget measures the ranked cards (budget_scope: ranked)
       const { emitted, dropped } = emittedOf(shown);
       const expected = JSON.parse(readFileSync(join(FIXTURE, '_expected.json'), 'utf8'));
