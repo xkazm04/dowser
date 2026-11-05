@@ -194,7 +194,7 @@ unmeasured. A missing `bus_factor` means it was not computed. A count of 0 is a 
 
 ```
 (new) --propose--> candidate --verify--> verified --triage--> rejected(reason) | snoozed | merged(into) | pushed
-                       \--verify--> dropped (note verify-failed:<ref> | ref-not-ingested:<type>:<ref>)
+                       \--verify--> dropped (note verify-failed:<ref> | ref-not-ingested:<type>:<ref> | no-checkable-evidence)
                                                                                pushed --Forge--> accepted | rejected | merged | snoozed
 verified --> accepted (offline acceptance; decider kind human only)
 snoozed  --> verified (unsnooze; or run start once snooze_until <= today, by skill:dowser) | candidate (resurfaced)
@@ -276,8 +276,10 @@ appended.
 `verify --run <id>` checks every `candidate` whose `last_run_id` is the run. It checks only the evidence
 the fingerprint's newest propose line carried (`store.assertedEvidence`), with that line's ref and line hint.
 A quote an earlier line carried and the newest line no longer does is stale and is never re-checked. Every
-such `code`/`doc` quote must be a whitespace-normalized substring of the file at the ref's path in the current
-working tree.
+such `code`/`doc` quote must be a whitespace-normalized substring of the file at the ref's path **at the run's
+head commit** (the commit the pushed links point at), when the run has one git can read; otherwise (a root that is
+not a git repo, or a head sha git no longer has) the current working tree is read. A quote found only in the
+working tree, an uncommitted edit, fails as `uncommitted`: the card's links would show a file without it.
 
 - With a `:line` hint, the result is `near-line` (within ±30 lines) or `in-file` (anywhere in the file). Each
   check's `line` is the line the quote was **found** on (the occurrence nearest the hint), `claimed_line` is the
@@ -287,12 +289,14 @@ working tree.
   into `delivery_risk.bus_factor` (a measured value wins over the card's; no commit in the window keeps the card's).
   After the moves, `verify` allocates the run's slots ("Budget, score and trust" above) and prints the result as
   `allocation`, beside `per_lens`: `{<lens>: {emitted, verified, dropped}}` for the candidates this call checked.
-- If any quote is missing, the item becomes `dropped` with note `verify-failed:<ref>`.
+- If any quote is missing (`quote-not-found`, `file-missing`, `uncommitted`, ...), the item becomes `dropped` with
+  note `verify-failed:<ref>`.
 - `ticket`, `page`, `goal` and `dep` refs must have been fetched by this run: each is looked up in the run's
   `sources_cache` (written by `ingest-sources` and `deps`). A ref that is not there drops the item with note
   `ref-not-ingested:<type>:<ref>`, so an unconnected run can never verify a card citing a ticket. When several
   refs fail, the first in evidence order names the note.
-- Only `git` and `sarif` evidence is passed through as `unchecked`. The agent judges it.
+- `git` and `sarif` evidence is passed through as `unchecked`; the agent judges it. A card whose evidence is only
+  `git`/`sarif` has nothing verify can check and is `dropped` with note `no-checkable-evidence`.
 
 ## Areas (`areas --run <id> [--top 40]`)
 
