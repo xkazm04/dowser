@@ -11,6 +11,7 @@ import { backfillIssueProperties } from './core/issue-property.mjs';
 import { onIssueEvent } from './core/delivery.mjs';
 import { backfillPageLinks, onPageEvent } from './core/doc-drift.mjs';
 import { confluence, installationId, jira, links, perms, sources, users } from './adapters/atlassian.mjs';
+import { errTag } from './core/util.mjs';
 
 // @forge/resolver is CommonJS: tsc (nodenext) sees module.exports, the Forge bundler sees the class.
 /** @type {typeof import('@forge/resolver').default} */
@@ -123,7 +124,7 @@ export async function pageEvent(event) {
   try {
     await withSchema(async () => onPageEvent(deps(), event));
   } catch (e) {
-    console.error(`dowser: page event failed (${String(/** @type {any} */ (e)?.message ?? e).slice(0, 200)})`);
+    console.error(`dowser: page event failed (${errTag(e)})`);
   }
 }
 
@@ -137,7 +138,7 @@ export async function issueEvent(event) {
   try {
     await withSchema(async () => onIssueEvent(deps(), event));
   } catch (e) {
-    console.error(`dowser: issue event failed (${String(/** @type {any} */ (e)?.message ?? e).slice(0, 200)})`);
+    console.error(`dowser: issue event failed (${errTag(e)})`);
   }
 }
 
@@ -157,12 +158,12 @@ export async function migrate(_event) {
     const b = await backfillIssueProperties(deps());
     if (b.written || b.failed) console.log(JSON.stringify({ dowser: 'issue-property-backfill', ...b }));
   } catch (e) {
-    console.error(`dowser: issue-property backfill failed (${String(/** @type {any} */ (e)?.message ?? e).slice(0, 200)})`);
+    console.error(`dowser: issue-property backfill failed (${errTag(e)})`);
   }
   try {
     const l = await backfillPageLinks(deps());
     if (l.linked || l.more) console.log(JSON.stringify({ dowser: 'page-links-backfill', ...l }));
   } catch (e) {
-    console.error(`dowser: page-links backfill failed (${String(/** @type {any} */ (e)?.message ?? e).slice(0, 200)})`);
+    console.error(`dowser: page-links backfill failed (${errTag(e)})`);
   }
 }
