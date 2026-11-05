@@ -10,7 +10,9 @@
 // level `function` declarations and `const x = (...) =>` blocks, ended by the first `}` at the same indent);
 // duplicated windows of DUP_WINDOW non-trivial lines across code files; import cycles among skill/scripts/lib;
 // the words an agent reads (SKILL.md, references, lens packs); TODO/FIXME count; CLI command count; tests and gate
-// results. With --append, prints the delta against the file's last row.
+// results: `tests*` are the skill suite (npm test), `forge_tests*` the Forge suite (forge/test/*.test.mjs), counted
+// the same way. A row written before forge_tests existed has none: not measured, never 0. With --append, prints the
+// delta against the file's last row.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync, realpathSync } from 'node:fs';
 import { join, posix, resolve } from 'node:path';
@@ -47,6 +49,37 @@ export function testSummary(stdout, status) {
   if (tests !== undefined) out.tests = tests;
   if (fail !== undefined) out.tests_fail = fail;
   return out;
+}
+
+/**
+ * The Forge suite's gate fields (forge/test/*.test.mjs), counted as testSummary counts the skill suite, under their
+ * own keys: forge_tests_status, forge_tests?, forge_tests_fail?.
+ * @param {string} stdout
+ * @param {number | null} status
+ * @returns {{forge_tests_status: 'pass' | 'fail', forge_tests?: number, forge_tests_fail?: number}}
+ */
+export function forgeTestSummary(stdout, status) {
+  const t = testSummary(stdout, status);
+  return { forge_tests_status: t.tests_status, ...(t.tests !== undefined ? { forge_tests: t.tests } : {}), ...(t.tests_fail !== undefined ? { forge_tests_fail: t.tests_fail } : {}) };
+}
+
+/**
+ * The delta lines of the test counts between two rows. A count absent from either row (an old row, a crashed suite)
+ * was not measured there: no delta, never a drop from or to 0.
+ * @param {Record<string, unknown>} prev @param {Record<string, unknown>} row @returns {Record<string, string>}
+ */
+export function testDeltas(prev, row) {
+  /** @type {Record<string, string>} */
+  const delta = {};
+  for (const k of ['tests', 'forge_tests']) {
+    const a = prev[k], b = row[k];
+    if (typeof a === 'number' && typeof b === 'number' && a !== b) delta[k] = `${a} -> ${b} (${b - a > 0 ? '+' : ''}${b - a})`;
+  }
+  for (const k of ['tests_status', 'forge_tests_status']) {
+    const a = prev[k], b = row[k];
+    if (typeof a === 'string' && typeof b === 'string' && a !== b) delta[k] = `${a} -> ${b}`;
+  }
+  return delta;
 }
 
 /**
@@ -159,6 +192,8 @@ async function main() {
     g.typecheck = tc.status === 0 ? 'pass' : 'fail';
     const t = spawnSync('npm test', { cwd: ROOT, encoding: 'utf8', shell: true });
     Object.assign(g, testSummary(t.stdout, t.status));
+    const ft = spawnSync('node --test "test/*.test.mjs"', { cwd: join(ROOT, 'forge'), encoding: 'utf8', shell: true });
+    Object.assign(g, forgeTestSummary(ft.stdout, ft.status));
   }
 
   const row = {
@@ -184,8 +219,7 @@ async function main() {
       for (const k of Object.keys(agentWords)) d(`agent_words.${k}`, prev.agent_words?.[k] ?? 0, agentWords[k]);
       d('todos', prev.todos, row.todos);
       d('cli_commands', prev.cli_commands, row.cli_commands);
-      if (typeof prev.tests === 'number' && typeof g.tests === 'number') d('tests', prev.tests, g.tests);
-      if (typeof prev.tests_status === 'string' && typeof g.tests_status === 'string' && prev.tests_status !== g.tests_status) delta.tests_status = `${prev.tests_status} -> ${g.tests_status}`;
+      Object.assign(delta, testDeltas(prev, g));
       console.log(JSON.stringify({ row, delta_since: prev.label ?? prev.head, delta }, null, 2));
     } else console.log(JSON.stringify({ row }, null, 2));
   } else console.log(JSON.stringify(row, null, 2));

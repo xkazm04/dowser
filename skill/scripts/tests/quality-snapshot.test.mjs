@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { appendPath, testSummary } from '../../../tools/quality-snapshot.mjs';
+import { appendPath, forgeTestSummary, testDeltas, testSummary } from '../../../tools/quality-snapshot.mjs';
 import { removeDir, tempDir } from './_fixture.mjs';
 
 const TOOL = fileURLToPath(new URL('../../../tools/quality-snapshot.mjs', import.meta.url));
@@ -34,4 +34,14 @@ test('quality-snapshot --append writes to an absolute path as given, not under t
     assert.deepEqual(rows.map((r) => r.label), ['w0', 'w1']);
     assert.equal(existsSync(join(fileURLToPath(new URL('../../../', import.meta.url)), dir.replace(/^[A-Za-z]:/, ''))), false, 'nothing glued under the repo');
   } finally { removeDir(dir); }
+});
+
+test('quality-snapshot counts the Forge suite apart, the same way, and an old row without it is not measured, never 0', () => {
+  assert.deepEqual(forgeTestSummary('ℹ tests 256\nℹ pass 256\nℹ fail 0\n', 0), { forge_tests_status: 'pass', forge_tests: 256, forge_tests_fail: 0 });
+  assert.deepEqual(forgeTestSummary('# tests 10\n# fail 2\n', 1), { forge_tests_status: 'fail', forge_tests: 10, forge_tests_fail: 2 });
+  assert.deepEqual(forgeTestSummary('Error: Cannot find module\n', 1), { forge_tests_status: 'fail' });
+  const old = { tests: 318, tests_status: 'pass' };
+  const now = { tests: 320, tests_status: 'pass', forge_tests: 256, forge_tests_status: 'pass' };
+  assert.deepEqual(testDeltas(old, now), { tests: '318 -> 320 (+2)' }, 'no forge delta against a row that never measured it');
+  assert.deepEqual(testDeltas({ ...now, forge_tests: 251 }, { ...now, forge_tests_status: 'fail' }), { forge_tests: '251 -> 256 (+5)', forge_tests_status: 'pass -> fail' });
 });
