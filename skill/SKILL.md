@@ -240,8 +240,8 @@ For each lens, print one progress line (`<lens>: gathering (tickets 42, code)`),
    `pip-audit` for `requirements*.txt` or `pyproject.toml`) in the root and in each manifest
    directory up to three levels below it, read-only, 60 s each, and caches every finding on the
    run. Directories it did not audit are listed under `not_audited`. Its output lists each auditor as `ran` (with `found`), `partial` (with `found`,
-   and `reason` naming the manifests it could not audit) or `skipped` (with `reason`). Cite only the `ref` values it returns as `dep` evidence. A skipped or
-   partial auditor is a gap: record the lens as `partial: <auditor> skipped (<reason>)`. Never report "no
+   and `reason` naming the manifests it could not audit) or `skipped` (with `reason`). Cite only the `ref` values it returns as `dep` evidence. A partial auditor, or one
+   skipped with a manifest left unaudited (`not installed`, a failed run), is a gap: record the lens as `partial: <auditor> skipped (<reason>)`. One skipped with nothing to audit (the repo has no files of its ecosystem there: the pack names those reasons) is not a gap and does not make the lens partial. Never report "no
    vulnerable dependencies" for an auditor that did not run.
 4. **Gather tolerantly.** Do the pack's gather steps. A missing file, an empty grep or a source
    that errors is recorded and the lens goes on. It never aborts the run. Record each gap in

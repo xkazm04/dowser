@@ -1,6 +1,6 @@
 ---
 id: security-cra
-version: 0.3.3
+version: 0.3.4
 name: Security and CRA
 kinds: [vulnerable-dependency, risky-pattern, secret-exposure, vulnerability-handling-gap, sbom-gap, update-mechanism-gap]
 sources: [code, docs, git, deps, sarif]
@@ -53,16 +53,16 @@ supplies its SARIF or CycloneDX output, cite it and propose the work it implies.
    `composer.lock`, `*.csproj`, `packages.lock.json`. Note each ecosystem, lockfile and folder.
 2. **Advisories: `deps --run <run_id>`.** This is the lens's only dependency source. It audits
    the root and every manifest directory up to three levels below it (an `auditors` entry below
-   the root carries `dir`). Each `ref` is `<lockfile path>#<package>@<version>`; its `title` is
+   the root carries `dir`). Each `ref` is `<manifest or lockfile>#<package>@<version>` (npm and osv-scanner name the
+   lockfile, pip-audit the `requirements*.txt` or `pyproject.toml` it audited); its `title` is
    `<advisory> <severity>`, and it carries `url` and, when the auditor knows it, `fixed_in`.
-   Every `skipped` auditor makes the lens `partial: <tool> skipped (<reason>)`. An unaudited
+   A `skipped` auditor makes the lens `partial: <tool> skipped (<reason>)` when it left a manifest unaudited (`not installed`, `package.json without package-lock.json; ...`, a failed run). One skipped with nothing to audit (exactly `no requirements*.txt or pyproject.toml`, `no lockfile osv-scanner reads`, `no package.json or package-lock.json`: the repo has no files of its ecosystem there) is not a gap: list it in the report, not as partial. An unaudited
    ecosystem, a `not_audited` directory (test or fixture paths, past the cap) or a deeper
-   manifest leaves H1 unchecked there; the report says which. Never run an auditor yourself,
-   never install, never guess CVEs from memory.
-3. **Scope and reach of each dep ref.** Dev-only: in the lockfile the ref names (`<lockfile>`, the path before `#`) the entry
-   `"node_modules/<pkg>"` carries `"dev": true` (`git grep -n -A6 '"node_modules/<pkg>"' -- <lockfile>`),
-   or the package sits under `devDependencies` of the manifest beside it, `requirements-dev*.txt` or a poetry dev group.
-   Transitive: find the parent with `git grep -n '"<pkg>"' -- <lockfile>`. Import sites:
+   manifest leaves H1 unchecked there; the report says which. Never run an auditor yourself, never install, never guess CVEs from memory.
+3. **Scope and reach of each dep ref.** Dev-only: in the file the ref names (`<file>`, the path before `#`): for a lockfile the entry
+   `"node_modules/<pkg>"` carries `"dev": true` (`git grep -n -A6 '"node_modules/<pkg>"' -- <file>`), or the package sits under
+   `devDependencies` of the manifest beside it; for a Python manifest the ref names a `requirements-dev*.txt` file or the package sits in a dev group of `pyproject.toml`.
+   Transitive: find the parent with `git grep -n '"<pkg>"' -- <file>`. Import sites:
    `git grep -n -E "(require\(|from |import )['\"]<pkg or parent>['\"/]" -- . ":!test" ":!tests" ":!**/*.test.*"`.
    Follow each import site to its entry point (route, upload, webhook, CLI argv, job) and give it
    an exposure class (Ranking).
