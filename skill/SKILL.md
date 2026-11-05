@@ -140,10 +140,11 @@ each new offer once, in section 7 step 5. So `rules offer` runs there and **not*
 in this section starts at `reflect export`, and the one in section 8 comes after the offers were
 presented.
 
-1. `reflect export`. It prints the tool arguments `{project_key, rules_json?, trust_json?, outcomes_since?, more?}`:
+1. `reflect export`. It prints the tool arguments `{project_key, rules_json, trust_json?, outcomes_since?, more?}`:
    the rules still `offered` (oldest first, at most 50, each with up to 10 titles of the items
    behind it), and the per-slice trust with its newest 50 events for the inbox's Learning tab.
-   `rules_json` is omitted when nothing is offered, `trust_json` when no slice has history. Call the tool anyway: decisions
+   `rules_json` is `"[]"` when nothing is offered (always sent, so a transport with no tool name still routes the call
+   to the reflect tool), and `trust_json` is omitted when no slice has history. Call the tool anyway: decisions
    and outcomes come back in the same response. Export is read-only and repeatable.
 2. Call `dowser_reflect_sync` with every field except `more`, exactly as printed. Save the
    response verbatim to `<work>/reflect.json`.

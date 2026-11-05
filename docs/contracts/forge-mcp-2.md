@@ -377,7 +377,7 @@ Input: `{project_key, rules_json?, trust_json?, outcomes_since?, deliveries_json
 | field | type | rule |
 |---|---|---|
 | `project_key` | string | required. The inbox must exist (a push creates it), else `unknown-project`; the caller must be able to open it, else `forbidden` |
-| `rules_json` | string | optional. A JSON array of at most 50 offered rules. Send `"[]"` (or omit it) to only read. When a transport gives no tool name, a call with `rules_json` is routed here by its shape, so send `"[]"` rather than omitting it |
+| `rules_json` | string | optional. A JSON array of at most 50 offered rules. Send `"[]"` to only read (the skill's `reflect export` always does). When a transport gives no tool name, a call with `rules_json` is routed here by its shape and one without it is a verdict pull, so send `"[]"` rather than omitting it |
 | `rules_json[].id` | string | required, 1-64 characters of letters, digits and `. _ : -`. Unique per `project_key` |
 | `rules_json[].lens` | string | required: `opportunity`, `ux-friction`, `doc-drift` or `security-cra` |
 | `rules_json[].text` | string | required, 1-2000 characters. The draft wording |

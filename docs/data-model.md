@@ -78,12 +78,13 @@ The seam is the `dowser_reflect_sync` Forge tool (additive tool 7 of forge-mcp-2
 `forge/src/core/types.mjs`). Like every Forge tool the skill never calls it: the agent does, and the CLI prints and
 reads the payloads.
 
-- `reflect export` prints `{project_key, rules_json?, trust_json?, more?}`, the tool's arguments: `trust_json` is the
+- `reflect export` prints `{project_key, rules_json, trust_json?, more?}`, the tool's arguments: `trust_json` is the
   per-slice trust (`trust` below) with its newest 50 events, omitted when no slice has history; the rules in state `offered`,
   oldest first, at most 50, each `{id, lens, text, titles?, offered_at}` with at most 10 titles. It writes nothing. It
   does not create offers (`rules offer` does, in the triage dialog; it also returns the offers still `offered` from earlier runs under
   `earlier`, each marked `earlier: true`), so run `rules offer` first. `rules_json` is
-  omitted when nothing is offered; the call is still made, because decisions and outcomes come back in its answer.
+  `"[]"` when nothing is offered (always sent: without it, a transport with no tool name would route the call to the
+  verdict pull); the call is still made, because decisions and outcomes come back in its answer.
   `more: true` means over 50 are offered; the agent does not pass it on.
 - `reflect ingest --file <json>` applies the answer `{rules, outcomes}` and prints
   `{rules_applied, rules_skipped, outcomes_added, outcomes_seen}` (plus `invalid` and exit 1 for a malformed entry;

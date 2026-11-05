@@ -409,7 +409,7 @@ export const COMMANDS = {
   reflect: {
     subs: {
       export: {
-        help: '-> {project_key, rules_json?, trust_json?, more?}: the dowser_reflect_sync arguments (rules in state `offered`, oldest ' +
+        help: '-> {project_key, rules_json, trust_json?, more?}: the dowser_reflect_sync arguments (rules in state `offered`, oldest ' +
           'first, at most 50, and the per-slice trust with its newest 50 events; read-only; run `rules offer` first)',
         run: (_a, ctx) => ({ out: reflectLib.exportOffers(ctx.open(), projectKey(ctx.root)) }),
       },
