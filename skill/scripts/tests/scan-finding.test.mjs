@@ -290,7 +290,7 @@ test('wire: a score its own breakdown and impact do not produce is refused; the 
   const s = fresh();
   try {
     for (const [i, c] of /** @type {const} */ ([[8, 'medium', 'M', 'low'], [7, 'high', 'S', 'low'], [10, 'low', 'XL', 'high'], [1, 'high', 'XS', 'medium']]).entries()) {
-      const fp = String(s.prop({ topic: `scored ${i}`, anchors: [`src/s${i}.js`], impact: c[0], impact_why: 'x', confidence: c[1], effort: { size: c[2] }, delivery_risk: { blast: c[3] } }).fp);
+      const fp = s.verified({ topic: `scored ${i}`, anchors: [`src/s${i}.js`], impact: c[0], impact_why: 'x', confidence: c[1], effort: { size: c[2] }, delivery_risk: { blast: c[3] } });
       // as Forge's push checks it: the store-owned fields (status, ...) are dropped first
       const rec = Object.fromEntries(Object.entries(proposalRecord(s.db, fp)).filter(([k]) => !STORE_OWNED.includes(k)));
       const r = validateCandidate(rec, { wire: true });
