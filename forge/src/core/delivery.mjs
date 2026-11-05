@@ -23,21 +23,32 @@ const ABANDONED_RESOLUTIONS = new Set(["won't do", "won't fix", 'duplicate', 'ca
 export const DELIVERIES_MAX = 500;
 
 /**
- * The Jira fate an issue event says, or undefined when the event carries no status.
+ * The Jira fate an issue event says, or undefined when the event carries no status. In the done category the
+ * resolution decides delivered vs abandoned: the issue's current resolution (`issue.fields.resolution`) when the
+ * event carries the field, else the resolution this event set (its changelog). With neither (a move between two done
+ * statuses, Resolved -> Closed, that leaves the resolution alone) the resolution is unknown: `sure` is false and
+ * onIssueEvent keeps a stored abandoned state rather than calling Won't Do work delivered.
  * @param {Record<string, any>} event
- * @returns {{state: typeof JIRA_STATES[number], status: string} | undefined}
+ * @returns {{state: typeof JIRA_STATES[number], status: string, sure: boolean} | undefined}
  */
 export function jiraStateOf(event) {
-  if (event?.eventType === 'avi:jira:deleted:issue') return { state: 'abandoned', status: 'Deleted' };
+  if (event?.eventType === 'avi:jira:deleted:issue') return { state: 'abandoned', status: 'Deleted', sure: true };
   const st = event?.issue?.fields?.status;
   const cat = st?.statusCategory?.key;
   if (typeof cat !== 'string') return undefined;
   const status = String(st.name ?? cat);
   if (cat === 'done') {
-    const res = (event?.changelog?.items ?? []).find((/** @type {any} */ i) => i?.field === 'resolution')?.toString;
-    return { state: typeof res === 'string' && ABANDONED_RESOLUTIONS.has(res.toLowerCase()) ? 'abandoned' : 'delivered', status };
+    const fields = event?.issue?.fields ?? {};
+    const item = (event?.changelog?.items ?? []).find((/** @type {any} */ i) => i?.field === 'resolution');
+    /** @type {unknown} */
+    let res;
+    let sure = true;
+    if (Object.hasOwn(fields, 'resolution')) res = fields.resolution?.name;
+    else if (item) res = item.toString;
+    else sure = false;
+    return { state: typeof res === 'string' && ABANDONED_RESOLUTIONS.has(res.toLowerCase()) ? 'abandoned' : 'delivered', status, sure };
   }
-  return { state: cat === 'indeterminate' ? 'in_progress' : 'open', status };
+  return { state: cat === 'indeterminate' ? 'in_progress' : 'open', status, sure: true };
 }
 
 /**
@@ -72,7 +83,9 @@ export async function onIssueEvent(deps, event) {
   const rows = await ownersOf(deps.db, key);
   for (const r of rows) {
     await ensureRow(deps.db, Number(r.id), String(r.project_key));
-    await deps.db.exec('UPDATE deliveries SET jira_state = ?, jira_status = ?, jira_at = ? WHERE proposal_id = ?', [fate.state, fate.status, at, Number(r.id)]);
+    // an unknown resolution on a done status keeps a stored abandoned (Won't Do stays abandoned when Resolved -> Closed)
+    const state = fate.sure ? '?' : "CASE WHEN jira_state = 'abandoned' THEN 'abandoned' ELSE ? END";
+    await deps.db.exec(`UPDATE deliveries SET jira_state = ${state}, jira_status = ?, jira_at = ? WHERE proposal_id = ?`, [fate.state, fate.status, at, Number(r.id)]);
   }
   if (rows.length) logLine(deps, { dowser: 'delivery', issue: key, state: fate.state, items: rows.length });
   return { matched: rows.length };

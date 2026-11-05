@@ -39,8 +39,8 @@ test('an inbox bound to a Jira project is open to whoever may browse it, and clo
   assert.equal((await res(d, 'direction.set', { project_key: PK, lens: 'opportunity', focus: ['x'] }, OTHER)).error, 'forbidden');
   const rej = await res(d, 'verdict.reject', { refs: ['DW-1'], reason: 'not-worth-it' }, OTHER);
   assert.equal(rej.error, 'forbidden');
-  assert.match(rej.message, /Jira project SHOP/, 'the answer says what would open it');
-  assert.doesNotMatch(rej.message, /csv/, 'and nothing of the item');
+  assert.match(rej.message, /Browse permission of its Jira project/, 'the answer says what would open it');
+  assert.doesNotMatch(rej.message, /csv|SHOP|Acme/, 'and nothing of the item, its inbox or its project');
   d.perms.deny.clear(); // the fake answers for everyone: look as someone who may
   assert.equal((await res(d, 'proposal.get', { ref: 'DW-1' })).card.status, 'open', 'nothing was decided');
   d.perms.deny.add('BROWSE_PROJECTS:SHOP').add('ADMINISTER');
@@ -62,7 +62,7 @@ test('without a Jira project an inbox is open to its creator and Jira admins onl
   d.perms.deny.add('ADMINISTER');
   assert.equal((await res(d, 'inbox.list', {})).groups[0].items.length, 2, 'the creator (first pusher) sees it');
   assert.equal((await res(d, 'inbox.list', { project_key: PK }, OTHER)).error, 'forbidden');
-  assert.match((await res(d, 'proposal.get', { ref: 'DW-1' }, OTHER)).message, /only the person who first pushed/);
+  assert.match((await res(d, 'proposal.get', { ref: 'DW-1' }, OTHER)).message, /only the person who created it and Jira admins/);
   d.perms.deny.delete('ADMINISTER');
   assert.equal((await res(d, 'inbox.list', { project_key: PK }, OTHER)).groups[0].items.length, 2, 'a Jira admin sees it');
 
@@ -111,6 +111,29 @@ test('a merge stays inside its inbox, and a settings change cannot move an inbox
   d.perms.deny.add('CREATE_ISSUES:RO');
   assert.equal((await res(d, 'settings.set', { project_key: PK, jira_project_key: 'RO', issue_type_id: '10001' })).error, 'forbidden');
   assert.equal((await res(d, 'settings.get', {})).inboxes.find((/** @type {any} */ i) => i.project_key === PK).jira_project_key, 'SHOP', 'unchanged');
+});
+
+test('a closed inbox reveals nothing: a missing ref and a hidden one answer the same, and an fp resolves among open inboxes', async () => {
+  const d = await seeded();
+  // the same finding in a second inbox, bound to a project OTHER may not browse
+  const same = record({ topic: 'csv export' });
+  await tool(d, 'dowser_proposals_push', pushArgs([same], { project_key: 'github-com-Acme-Hr' }));
+  assert.equal((await res(d, 'settings.set', { project_key: 'github-com-Acme-Hr', jira_project_key: 'HR', issue_type_id: '10001' })).inbox.jira_project_key, 'HR');
+  d.perms.deny.add('BROWSE_PROJECTS:HR').add('ADMINISTER');
+
+  const hiddenRef = await res(d, 'proposal.get', { ref: 'DW-3' }, OTHER);
+  const missingRef = await res(d, 'proposal.get', { ref: 'DW-99' }, OTHER);
+  assert.deepEqual(hiddenRef, { ...missingRef, message: missingRef.message.replace('DW-99', 'DW-3') }, 'existence is not told apart');
+  assert.equal(hiddenRef.error, 'forbidden');
+  assert.doesNotMatch(hiddenRef.message, /HR|Hr/);
+
+  // the fp sits in SHOP (open to OTHER) and in HR (closed): it is the SHOP item, not an ambiguity naming two inboxes
+  const byFp = await res(d, 'proposal.get', { ref: same.fp }, OTHER);
+  assert.equal(byFp.card.ref, 'DW-1');
+  const rej = await res(d, 'verdict.reject', { refs: [same.fp], reason: 'already-known' }, OTHER);
+  assert.deepEqual(rej.cards.map((/** @type {any} */ c) => c.ref), ['DW-1'], 'the decision lands on the open item');
+  d.perms.deny.clear();
+  assert.equal((await res(d, 'proposal.get', { ref: 'DW-3' })).card.status, 'open', 'the hidden twin is untouched');
 });
 
 test('the panel and the byline show an item only to someone who may open its inbox', async () => {

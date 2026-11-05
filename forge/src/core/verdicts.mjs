@@ -9,11 +9,11 @@
 // FIRST; a Jira failure writes nothing and the item stays open.
 import { REASONS, decisionProblem, isOneOf } from '../shared/model.mjs';
 import { issueDescription, mergeComment } from './adf.mjs';
-import { cardOf, toVerdict } from './cards.mjs';
+import { cardOf, toCard, toVerdict } from './cards.mjs';
 import { writeIssueProperty } from './issue-property.mjs';
-import { counterValue, findProposal, isSampleKey, needInbox, nextCounter, toProposal } from './store.mjs';
+import { counterValue, evidenceOfMany, findProposal, inboxRowsByKey, insertMany, isSampleKey, needInbox, nextCounter, nextCounterBlock, proposalsMatching, toProposal } from './store.mjs';
 import { NOTE_MAX, REF_RE, SAMPLE_LABEL, VERDICT_STATUSES } from './types.mjs';
-import { AppError, DuplicateKey, FP_RE, ISSUE_KEY_RE, needStr, optStr, sqlv, str } from './util.mjs';
+import { AppError, DuplicateKey, FP_RE, errTag, ISSUE_KEY_RE, isSchemaBehind, needStr, optStr, sqlv, str } from './util.mjs';
 
 /**
  * @typedef {import('./ports.mjs').Deps} Deps
@@ -128,7 +128,7 @@ async function decide(deps, p, d, who) {
       await appendVerdict(db, after);
     } catch (e) {
       // The decision is stamped on the row; repairVerdicts appends it before the next pull.
-      console.warn(`dowser: verdict for ${p.ref} not logged yet (${/** @type {Error} */ (e).message}); the next pull repairs it`);
+      console.warn(`dowser: verdict for ${p.ref} not logged yet (${errTag(e)}); the next pull repairs it`);
     }
     return after;
   });
@@ -142,6 +142,12 @@ const needOpen = (p) => {
 /**
  * Accept (F5): create the Jira issue as the app, then record status + verdict. An item already accepted
  * returns its card (and issue) unchanged.
+ *
+ * One accepted card maps to one Jira issue, even across failures. The issue key is stamped on the claimed row
+ * (`issue_ref`, `issue_url`, status still `open`) as soon as Jira answers, before the decision is recorded. If the
+ * record step then fails (a SQL error, or the invocation is cut), the answer names the issue, and the next accept
+ * finds the stamp and finishes the record instead of creating a second issue. Only a failure between Jira's answer
+ * and the stamp itself can still orphan an issue, and that answer names it too.
  * @param {Deps} deps
  * @param {{ref: string, jira_project_key?: string, issue_type_id?: string, note?: unknown}} args
  * @param {Decider} who
@@ -154,10 +160,12 @@ export async function accept(deps, args, who) {
   const p = await findProposal(db, needStr(args, 'ref'));
   if (p.status === 'accepted') return { card: await cardOf(db, p) };
   needOpen(p);
+  // An open item that already carries an issue: an earlier accept created it and did not get to record it.
+  const made = p.issue_ref && p.issue_url ? { key: p.issue_ref, url: p.issue_url } : undefined;
   const inbox = await needInbox(db, p.project_key);
   const projectKey = optStr(args, 'jira_project_key') ?? inbox.jira_project_key;
   const issueTypeId = optStr(args, 'issue_type_id') ?? inbox.issue_type_id;
-  if (!projectKey || !issueTypeId) {
+  if (!made && (!projectKey || !issueTypeId)) {
     throw new AppError('bad-input', `choose the Jira project and issue type for ${p.project_key} in Dowser settings, or pass them with the accept`);
   }
 
@@ -173,19 +181,30 @@ export async function accept(deps, args, who) {
     throw new AppError('bad-input', `an accept of ${p.ref} is already in progress; reload in a minute`);
   }
 
-  const card = await cardOf(db, p);
-  // A sample card's issue is real but marked: the label and an opening line say it came from sample data.
-  const sample = isSampleKey(p.project_key);
   /** @type {{key: string, url: string}} */
   let issue;
-  try {
-    issue = await deps.jira.createIssue({
-      projectKey, issueTypeId, summary: card.title, description: issueDescription(card, await links.inboxUrl(p.ref), { sample }),
-      ...(sample ? { labels: [SAMPLE_LABEL] } : {}),
-    });
-  } catch (e) {
-    await db.exec('UPDATE proposals SET accept_claim = NULL WHERE id = ? AND accept_claim = ?', [p.id, claim]);
-    throw new AppError('unavailable', `Jira did not create the issue (${/** @type {Error} */ (e).message}); ${p.ref} stays open`);
+  if (made) {
+    issue = made;
+  } else {
+    const card = await cardOf(db, p);
+    // A sample card's issue is real but marked: the label and an opening line say it came from sample data.
+    const sample = isSampleKey(p.project_key);
+    try {
+      issue = await deps.jira.createIssue({
+        projectKey: /** @type {string} */ (projectKey), issueTypeId: /** @type {string} */ (issueTypeId), summary: card.title,
+        description: issueDescription(card, await links.inboxUrl(p.ref), { sample }),
+        ...(sample ? { labels: [SAMPLE_LABEL] } : {}),
+      });
+    } catch (e) {
+      await db.exec('UPDATE proposals SET accept_claim = NULL WHERE id = ? AND accept_claim = ?', [p.id, claim]);
+      throw new AppError('unavailable', `Jira did not create the issue (${errTag(e)}); ${p.ref} stays open`);
+    }
+    try {
+      await db.exec("UPDATE proposals SET issue_ref = ?, issue_url = ? WHERE id = ? AND status = 'open' AND accept_claim = ?", [issue.key, issue.url, p.id, claim]);
+    } catch (e) {
+      // Not stamped: the claim stays (released only by age), so a quick retry cannot create a second issue either.
+      throw new AppError('unavailable', `Dowser did not record the accept of ${p.ref} (${errTag(e)}). Jira issue ${issue.key} was created; link or delete it by hand`);
+    }
   }
   try {
     const after = await decide(deps, p, { to: 'accepted', note, issue_ref: issue.key, issue_url: issue.url, claim }, who);
@@ -193,7 +212,10 @@ export async function accept(deps, args, who) {
     return { card: await cardOf(db, after) };
   } catch (e) {
     if (e instanceof AppError) throw new AppError(e.code, `${e.message}. Jira issue ${issue.key} was created; link or delete it by hand`);
-    throw e;
+    // Stamped: release the claim so accepting again finishes the record with this issue, now.
+    await db.exec('UPDATE proposals SET accept_claim = NULL WHERE id = ? AND accept_claim = ?', [p.id, claim]).catch(() => undefined);
+    if (isSchemaBehind(e)) throw e; // the entry point migrates and retries the call, which finds the stamp
+    throw new AppError('unavailable', `Dowser did not record the accept of ${p.ref} (${errTag(e)}). Jira issue ${issue.key} was created and is kept on the item: accept it again to finish, and no second issue is created`);
   }
 }
 
@@ -206,35 +228,110 @@ export async function accept(deps, args, who) {
 async function openItems(db, refs) {
   if (!Array.isArray(refs) || refs.length === 0 || !refs.every(str)) throw new AppError('bad-input', 'refs must be a non-empty array of inbox refs');
   if (refs.length > 200) throw new AppError('bad-input', 'at most 200 refs per call');
-  const items = [];
-  for (const r of new Set(refs)) {
-    const p = await findProposal(db, r);
-    needOpen(p);
-    items.push(p);
+  const found = await proposalsMatching(db, refs);
+  /** @type {Map<number, ProposalRow>} */
+  const items = new Map();
+  for (const ref of refs) {
+    const r = ref.trim();
+    const rows = found.get(r) ?? [];
+    if (rows.length === 0) throw new AppError('bad-input', `no Dowser proposal ${r}`);
+    if (rows.length > 1) throw new AppError('bad-input', `fingerprint ${r} is in more than one inbox; use its DW ref`);
+    needOpen(rows[0]);
+    items.set(rows[0].id, rows[0]);
   }
-  return items;
+  return [...items.values()];
+}
+
+/** The verdicts table's columns, in the order `appendVerdicts` writes them. */
+const VERDICT_COLS = ['seq', 'project_key', 'fp', 'status', 'reason', 'note', 'merged_into', 'decided_by', 'decided_at', 'external_ref',
+  'issue_ref', 'issue_url', 'via', 'snooze_until'];
+
+/**
+ * Appends the verdict rows of decisions just stamped on `after` (one decision, so one `decided_at`): per inbox, one
+ * read of what is logged already, one block of seqs and one multi-row INSERT. Best effort as in `decide`: a failure
+ * is logged and `repairVerdicts` appends the missing rows before the next pull.
+ * @param {Db} db
+ * @param {ProposalRow[]} after
+ */
+async function appendVerdicts(db, after) {
+  /** @type {Map<string, ProposalRow[]>} */
+  const byInbox = new Map();
+  for (const p of after) byInbox.set(p.project_key, [...(byInbox.get(p.project_key) ?? []), p]);
+  for (const [projectKey, ps] of byInbox) {
+    try {
+      const at = /** @type {string} */ (ps[0].decided_at);
+      const have = new Set((await db.query(`SELECT fp FROM verdicts WHERE project_key = ? AND decided_at = ? AND fp IN (${ps.map(() => '?').join(', ')})`,
+        [projectKey, at, ...ps.map((p) => p.fp)])).map((r) => String(r.fp)));
+      const todo = ps.filter((p) => !have.has(p.fp));
+      if (!todo.length) continue;
+      const first = await nextCounterBlock(db, seqName(projectKey), todo.length);
+      await insertMany(db, 'verdicts', VERDICT_COLS, todo.map((p, i) => [first + i, p.project_key, p.fp, p.status, sqlv(p.reason), sqlv(p.note),
+        sqlv(p.merged_into), p.decided_by, p.decided_at, p.ref, null, null, p.via ?? 'inbox', p.status === 'snoozed' ? sqlv(p.snooze_until) : null]));
+    } catch (e) {
+      console.warn(`dowser: ${ps.length} verdicts of one inbox not logged yet (${errTag(e)}); the next pull repairs them`);
+    }
+  }
 }
 
 /**
- * Applies one decision to many items; a failure part-way names what landed.
+ * Applies one decision (reject or snooze) to many items as sets: one CAS UPDATE over every id still open, one read
+ * back, the verdict rows in blocks and the cards from one evidence read, so a page of 50 cards is about a dozen
+ * statements, not 550, and stays inside the resolver time limit. An item someone decided in between is left as they
+ * decided it (the CAS), and the answer names it and what landed. An item whose last decision is not older than now
+ * (a clock tie) is decided on its own, so `decided_at` stays unique per fp.
  * @param {Deps} deps
  * @param {ProposalRow[]} items
- * @param {Parameters<typeof decide>[2]} d
+ * @param {{to: 'rejected' | 'snoozed', reason?: string, note?: string, snooze_until?: string}} d
  * @param {Decider} who
  * @returns {Promise<{cards: Card[]}>}
  */
 async function decideAll(deps, items, d, who) {
-  /** @type {Card[]} */
-  const cards = [];
-  for (const p of items) {
+  const { db } = deps;
+  const at = deps.now().toISOString();
+  const tied = items.filter((p) => p.decided_at && at <= p.decided_at);
+  const batch = items.filter((p) => !tied.includes(p));
+  /** @type {Map<number, ProposalRow>} */
+  const landed = new Map();
+  /** @type {ProposalRow | undefined} */
+  let lost;
+  if (batch.length) {
+    const ids = batch.map((p) => p.id);
+    const marks = ids.map(() => '?').join(', ');
+    await db.exec(
+      `UPDATE proposals SET status = ?, reason = ?, note = ?, merged_into = NULL, decided_by = ?, decided_at = ?, via = ?,
+        reopened = 0, refs_at_status = evidence_count, types_at_status = evidence_types, accept_claim = NULL, snooze_until = ?
+        WHERE id IN (${marks}) AND status = 'open'`,
+      [d.to, sqlv(d.reason), sqlv(d.note), who.by, at, who.via, sqlv(d.snooze_until), ...ids],
+    );
+    const now = new Map((await db.query(`SELECT * FROM proposals WHERE id IN (${marks})`, ids)).map((r) => [Number(r.id), toProposal(r)]));
+    /** @type {ProposalRow[]} */
+    const mine = [];
+    for (const p of batch) {
+      const n = now.get(p.id);
+      if (n && n.status === d.to && n.decided_at === at && n.decided_by === who.by) mine.push(n);
+      else lost ??= n ?? p;
+    }
+    await appendVerdicts(db, mine);
+    for (const n of mine) landed.set(n.id, n);
+  }
+  for (const p of tied) {
+    if (lost) break;
     try {
-      cards.push(await cardOf(deps.db, await decide(deps, p, d, who)));
+      const n = await decide(deps, p, d, who);
+      landed.set(n.id, n);
     } catch (e) {
-      if (!cards.length || !(e instanceof AppError)) throw e;
-      throw new AppError(e.code, `${e.message}; already ${d.to}: ${cards.map((c) => c.ref).join(', ')}`);
+      if (!(e instanceof AppError)) throw e;
+      lost = p;
     }
   }
-  return { cards };
+  const after = /** @type {ProposalRow[]} */ (items.map((p) => landed.get(p.id)).filter((p) => p !== undefined));
+  if (lost) {
+    const why = `${lost.ref} is ${lost.status === 'open' ? 'no longer open' : `${lost.status}, not open`}; reload it`;
+    throw new AppError('bad-input', after.length ? `${why}; already ${d.to}: ${after.map((p) => p.ref).join(', ')}` : why);
+  }
+  const repos = await inboxRowsByKey(db, after.map((p) => p.project_key));
+  const evidence = await evidenceOfMany(db, after);
+  return { cards: after.map((p) => toCard(p, evidence.get(p.id) ?? [], repos.get(p.project_key)?.repo_url)) };
 }
 
 /**
@@ -305,7 +402,7 @@ export async function merge(deps, args, who) {
     try {
       await deps.jira.addComment(into, mergeComment(card, await deps.links.inboxUrl(p.ref)));
     } catch (e) {
-      throw new AppError('unavailable', `Jira did not take the comment on ${into} (${/** @type {Error} */ (e).message}); ${p.ref} stays open`);
+      throw new AppError('unavailable', `Jira did not take the comment on ${into} (${errTag(e)}); ${p.ref} stays open`);
     }
     const after = await decide(deps, p, { to: 'merged', merged_into: into }, who);
     await writeIssueProperty(deps, after, into, 'merged'); // best effort: logged, backfilled daily

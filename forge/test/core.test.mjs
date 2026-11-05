@@ -233,7 +233,7 @@ test('reject needs a closed reason, other needs a note; bulk decisions are check
   await tool(d, 'dowser_proposals_push', pushArgs([record({ topic: 'a' }), record({ topic: 'b' })]));
   assert.equal((await res(d, 'verdict.reject', { refs: ['DW-1'], reason: 'meh' })).error, 'bad-input');
   assert.equal((await res(d, 'verdict.reject', { refs: ['DW-1'], reason: 'other' })).error, 'bad-input');
-  assert.equal((await res(d, 'verdict.reject', { refs: ['DW-1', 'DW-9'], reason: 'wrong-size' })).error, 'bad-input');
+  assert.equal((await res(d, 'verdict.reject', { refs: ['DW-1', 'DW-9'], reason: 'wrong-size' })).error, 'forbidden', 'a missing ref answers as a closed one');
   assert.equal(proposalRows(d)[0].status, 'open', 'nothing decided when one ref is bad');
   const out = await res(d, 'verdict.reject', { refs: ['DW-1', 'DW-2'], reason: 'already-known' });
   assert.deepEqual(out.cards.map((/** @type {any} */ c) => c.status), ['rejected', 'rejected']);

@@ -261,6 +261,9 @@ first-run screen (resolver `sample.load`) files a real Dowser scan of Dowser's o
 - **Accept creates a real issue.** Accepting a sample card creates a Jira issue in the chosen project with the
   label `dowser-sample`, and its description opens with "Created from Dowser sample data: a scan of Dowser's
   own public repository." (A project whose create screen has no Labels field gets the issue without the label.)
+- **Who may open it.** Everyone who can use the app (core/access.mjs): several evaluators on one site all see
+  the one sample, and a second person who presses Load gets it (`already: true`), not a refusal. A Jira write
+  from it (accept, merge) still needs the person's own Jira permission.
 - **Remove.** `sample.remove` deletes every row of the sample in every table (proposals, evidence, verdicts,
   pushes, areas, rules, outcomes, directions, trust, its verdict counter, the inbox). Only the person who
   loaded it or a Jira admin may remove it. Issues that accepted sample cards created stay in Jira; the answer

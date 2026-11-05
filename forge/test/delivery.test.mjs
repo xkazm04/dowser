@@ -44,6 +44,28 @@ test('Jira issue events record delivered, abandoned (Won\'t Do, deleted) and in 
   assert.equal((await cands(d))['DW-1'].delivery, 'in_progress', 'reopened in Jira: no longer delivered');
 });
 
+test("a Won't Do issue stays abandoned on a later done-to-done move; the current resolution decides when the event has it", async () => {
+  const { d, keys } = await seeded();
+  await onIssueEvent(d, updated(keys[0], 'done', 'Resolved', [{ field: 'status', toString: 'Resolved' }, { field: 'resolution', toString: "Won't Do" }]));
+  await onIssueEvent(d, updated(keys[0], 'done', 'Closed')); // Resolved -> Closed, resolution untouched, field not sent
+  let c = await cands(d);
+  assert.equal(c['DW-1'].delivery, 'abandoned');
+  assert.equal(c['DW-1'].issue_status, 'Closed', 'the status still follows');
+
+  await onIssueEvent(d, updated(keys[1], 'done', 'Closed')); // no resolution known and nothing stored: delivered
+  assert.equal((await cands(d))['DW-2'].delivery, 'delivered');
+
+  // an event that carries the current resolution is believed either way
+  const withRes = (/** @type {string} */ key, /** @type {any} */ resolution) => {
+    const e = updated(key, 'done', 'Closed');
+    return { ...e, issue: { ...e.issue, fields: { ...e.issue.fields, resolution } } };
+  };
+  await onIssueEvent(d, withRes(keys[0], { name: 'Done' }));
+  await onIssueEvent(d, withRes(keys[1], { name: 'Duplicate' }));
+  c = await cands(d);
+  assert.deepEqual([c['DW-1'].delivery, c['DW-2'].delivery], ['delivered', 'abandoned']);
+});
+
 test('reflect_sync carries the code check; Done in Jira with the problem still present is flagged; a re-push of a delivered card recurs', async () => {
   const { d, keys } = await seeded();
   await onIssueEvent(d, updated(keys[0], 'done', 'Done'));

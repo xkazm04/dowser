@@ -2,10 +2,14 @@
 // Who may see and decide an inbox. An inbox follows Jira's own permissions, so there is no Dowser user list:
 //  - an inbox with a Jira project set (Settings) is open to whoever may browse that project;
 //  - an inbox without one is open to its creator (the account whose first push made it) until a project is set;
-//  - a Jira admin (global ADMINISTER) may open every inbox, so none is ever orphaned.
+//  - a Jira admin (global ADMINISTER) may open every inbox, so none is ever orphaned;
+//  - the sample inbox (SAMPLE_KEY, core/sample.mjs) is open to everyone who can use the app: it is a scan of a public
+//    repository, and every evaluator on a site must be able to try it, not only the one who loaded it. Jira writes
+//    from it (accept, merge) still need the caller's own Jira permission, and removing it stays the loader's or an
+//    admin's (sample.mjs removeSample).
 // Everything else answers `forbidden`. The dispatch door (app.mjs) builds one Access per call and checks it
 // before a handler runs; Jira answers are asked as the user (Perms port) and cached for the call.
-import { findProposal, listInboxRows, needInbox } from './store.mjs';
+import { inboxRowsByKey, isSampleKey, listInboxRows, needInbox, proposalsMatching } from './store.mjs';
 import { AppError } from './util.mjs';
 import { deciderOf } from './verdicts.mjs';
 
@@ -18,7 +22,9 @@ import { deciderOf } from './verdicts.mjs';
  *   canSee: (inbox: InboxRow) => Promise<boolean>,
  *   inbox: (projectKey: string) => Promise<InboxRow>,
  *   proposal: (ref: string) => Promise<ProposalRow>,
+ *   proposals: (refs: string[]) => Promise<ProposalRow[]>,
  *   visibleKeys: () => Promise<string[]>,
+ *   visibleAmong: (keys: string[]) => Promise<string[]>,
  * }} Access
  */
 
@@ -29,9 +35,18 @@ import { deciderOf } from './verdicts.mjs';
 function denied(inbox) {
   const how = inbox.jira_project_key
     ? `it follows Jira project ${inbox.jira_project_key}: ask for Browse permission there`
-    : 'until a Jira project is set for it in Dowser settings, only the person who first pushed to it and Jira admins can open it';
+    : 'until a Jira project is set for it in Dowser settings, only the person whose first push created it and Jira admins can open it';
   return new AppError('forbidden', `You cannot open the Dowser inbox ${inbox.project_key}; ${how}`);
 }
+
+/**
+ * The `forbidden` answer for an item ref the caller cannot open. A ref that does not exist answers exactly the same,
+ * and neither names the inbox or its Jira project: an inbox the caller may not open reveals nothing, not even that
+ * it holds this item.
+ * @param {string} ref
+ */
+const hidden = (ref) => new AppError('forbidden', `You cannot open Dowser proposal ${ref}: it does not exist, or its inbox is closed to you. `
+  + 'An inbox follows the Browse permission of its Jira project; until a project is set in Dowser settings, only the person who created it and Jira admins can open it');
 
 /**
  * The access of one caller for one call.
@@ -60,6 +75,7 @@ export function accessFor(deps, accountId) {
 
   /** @type {Access['canSee']} */
   const canSee = async (inbox) => {
+    if (isSampleKey(inbox.project_key)) return true;
     if (inbox.jira_project_key) {
       if (await may('BROWSE_PROJECTS', { projectKey: inbox.jira_project_key })) return true;
     } else if (inbox.created_by === me) {
@@ -75,14 +91,41 @@ export function accessFor(deps, accountId) {
     return row;
   };
 
+  /**
+   * The items `refs` name, in order, each one the caller may open: one IN read of the refs and one of their inboxes,
+   * then one permission answer per distinct inbox. An fp is looked up among the open-able inboxes only, so another
+   * inbox holding the same finding neither makes it ambiguous nor shows that it exists.
+   * @type {Access['proposals']}
+   */
+  const proposals = async (refs) => {
+    const found = await proposalsMatching(deps.db, refs);
+    const all = [...found.values()].flat();
+    const rows = await inboxRowsByKey(deps.db, all.map((p) => p.project_key));
+    const inboxes = [...rows.values()];
+    const seen = await Promise.all(inboxes.map((row) => canSee(row)));
+    const ok = new Set(inboxes.filter((_, i) => seen[i]).map((row) => row.project_key));
+    return refs.map((ref) => {
+      const r = String(ref ?? '').trim();
+      const mine = (found.get(r) ?? []).filter((p) => ok.has(p.project_key));
+      if (mine.length === 0) throw hidden(r);
+      if (mine.length > 1) throw new AppError('bad-input', `fingerprint ${r} is in more than one of your inboxes; use its DW ref`);
+      return mine[0];
+    });
+  };
+
   return {
     may,
     canSee,
     inbox,
-    proposal: async (ref) => {
-      const p = await findProposal(deps.db, ref);
-      await inbox(p.project_key);
-      return p;
+    proposals,
+    proposal: async (ref) => (await proposals([ref]))[0],
+    // The keys among `keys` the caller may open: one IN read and a permission answer per named inbox only, for a
+    // view that already knows which inboxes it touches (the page byline, the issue panel).
+    visibleAmong: async (keys) => {
+      if (keys.length === 0) return [];
+      const rows = [...(await inboxRowsByKey(deps.db, keys)).values()];
+      const ok = await Promise.all(rows.map((r) => canSee(r)));
+      return rows.filter((_, i) => ok[i]).map((r) => r.project_key).sort();
     },
     visibleKeys: async () => {
       const rows = await listInboxRows(deps.db);

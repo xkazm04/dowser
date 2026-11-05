@@ -76,6 +76,15 @@ test('a page edit after the decision is recorded and flagged; an unlinked page c
   assert.equal(b.cards[0].page_edited_since_decision, true);
 });
 
+test('a page event with an unreadable version date is recorded at the time it arrived, never thrown', async () => {
+  const d = await seeded();
+  const ev = pageEv('164004');
+  const out = await onPageEvent(d, { ...ev, content: { ...ev.content, version: { when: 'not a date', number: 5 } } });
+  assert.deepEqual(out, { matched: 1 });
+  const row = /** @type {any} */ (d.db.raw.prepare("SELECT edited_at FROM page_edits WHERE page_id = '164004'").get());
+  assert.equal(row.edited_at, d.now().toISOString());
+});
+
 test('Draft the fix posts a footer comment as the person, quoting the code; only for an item linked to that page', async () => {
   const d = await seeded();
   const out = await res(d, 'byline.draftFix', { page_id: '164004', ref: 'DW-1' });

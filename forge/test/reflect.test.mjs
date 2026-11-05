@@ -96,7 +96,7 @@ test('outcome.record: accepted items only, once per ref, and the candidates refr
   await res(d, 'verdict.reject', { refs: ['DW-3'], reason: 'false-positive' });
   assert.equal((await res(d, 'outcome.record', { ref: 'DW-3', rating: 'right' })).error, 'bad-input', 'rejected item');
   assert.equal((await res(d, 'outcome.record', { ref: 'DW-1', rating: 'great' })).error, 'bad-input');
-  assert.equal((await res(d, 'outcome.record', { ref: 'DW-99', rating: 'right' })).error, 'bad-input');
+  assert.equal((await res(d, 'outcome.record', { ref: 'DW-99', rating: 'right' })).error, 'forbidden', 'a missing ref answers as a closed one');
 
   d.clock.tick();
   const out = await res(d, 'outcome.record', { ref: 'DW-1', rating: 'partly', note: 'shipped without the filter' });

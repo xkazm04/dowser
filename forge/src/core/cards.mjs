@@ -162,18 +162,29 @@ export async function getProposal(deps, ref) {
 export async function inboxSummaries(db, visible, inboxRows) {
   /** @returns {Record<InboxStatus, number>} */
   const zero = () => /** @type {any} */ (Object.fromEntries(INBOX_STATUSES.map((s) => [s, 0])));
+  const inboxes = (inboxRows ?? await listInboxRows(db)).filter((i) => !visible || visible.includes(i.project_key));
+  if (inboxes.length === 0) return [];
+  // Two statements whatever the inbox count, each limited to the inboxes summarised: the counts per status, and the
+  // newest push of each inbox (the newest `at`; on a tie the lowest id, as `ORDER BY at DESC, id` picks).
+  const keys = inboxes.map((i) => i.project_key);
+  const inList = keys.map(() => '?').join(', ');
   /** @type {Map<string, Record<string, number>>} */
   const counts = new Map();
-  for (const r of await db.query('SELECT project_key, status, COUNT(*) AS n FROM proposals GROUP BY project_key, status')) {
+  for (const r of await db.query(`SELECT project_key, status, COUNT(*) AS n FROM proposals WHERE project_key IN (${inList}) GROUP BY project_key, status`, keys)) {
     const by = /** @type {Record<string, number>} */ (counts.get(String(r.project_key)) ?? zero());
     counts.set(String(r.project_key), by);
     if (String(r.status) in by) by[String(r.status)] = Number(r.n);
   }
+  /** @type {Map<string, Row>} */
+  const newest = new Map();
+  for (const r of await db.query(
+    `SELECT * FROM pushes p WHERE p.project_key IN (${inList}) AND p.at = (SELECT MAX(q.at) FROM pushes q WHERE q.project_key = p.project_key) ORDER BY p.id`,
+    keys,
+  )) if (!newest.has(String(r.project_key))) newest.set(String(r.project_key), r);
   /** @type {InboxSummary[]} */
   const out = [];
-  for (const i of inboxRows ?? await listInboxRows(db)) {
-    if (visible && !visible.includes(i.project_key)) continue;
-    const push = (await db.query('SELECT * FROM pushes WHERE project_key = ? ORDER BY at DESC, id LIMIT 1', [i.project_key]))[0];
+  for (const i of inboxes) {
+    const push = newest.get(i.project_key);
     const sample = isSampleKey(i.project_key);
     out.push(/** @type {InboxSummary} */ (omitAbsent({
       project_key: i.project_key, repo_url: i.repo_url, jira_project_key: i.jira_project_key, issue_type_id: i.issue_type_id,
@@ -321,10 +332,13 @@ export async function panelForIssue(deps, issueKey) {
 
 /**
  * `byline.forPage`: open and accepted proposals whose `page` evidence ref or `doc_impact` entry is the page id,
- * from the `visible` inboxes only (core/access.mjs; the dispatch door always passes it).
+ * from the visible inboxes only (core/access.mjs; the dispatch door always passes it). The banner asks on every page
+ * view, so a page no item names costs one indexed read and no permission call: `visible` is asked only once there
+ * are items, and only about the inboxes they sit in (a list is taken as is).
  * @param {Db} db
  * @param {string} pageId
- * @param {string[]} [visible]
+ * @param {string[] | ((keys: string[]) => Promise<string[]>)} [visible]  the caller's visible inbox keys, or a lookup
+ *   answering them for the named inboxes (it may answer more; only the named ones are read)
  * @returns {Promise<{count: number, cards: Card[], page_edited_at?: string}>}  a card decided before the page's newest edit carries page_edited_since_decision: true
  */
 export async function bylineForPage(db, pageId, visible) {
@@ -333,12 +347,15 @@ export async function bylineForPage(db, pageId, visible) {
     "SELECT p.* FROM page_links l JOIN proposals p ON p.id = l.proposal_id WHERE l.page_id = ? AND p.status IN ('open', 'accepted') ORDER BY p.id",
     [pageId],
   );
+  if (rows.length === 0) return { count: 0, cards: [] };
+  const keys = [...new Set(rows.map((r) => String(r.project_key)))];
+  const seen = typeof visible === 'function' ? await visible(keys) : visible;
   const edits = await db.query('SELECT edited_at FROM page_edits WHERE page_id = ?', [pageId]);
   const editedAt = edits.length ? String(edits[0].edited_at) : undefined;
   /** @type {Card[]} */
   const cards = [];
   // A page byline spans every inbox: the sample's cards stay out unless it is the only inbox visible (itemScope).
-  const scope = itemScope(visible ?? (await listInboxRows(db)).map((i) => i.project_key));
+  const scope = itemScope(seen ?? (await listInboxRows(db)).map((i) => i.project_key));
   for (const r of rows) {
     if (!scope.includes(String(r.project_key))) continue;
     const p = toProposal(r);

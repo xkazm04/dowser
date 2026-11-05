@@ -12,7 +12,7 @@
 import { cardOf } from './cards.mjs';
 import { deliveriesOf } from './delivery.mjs';
 import { findProposal, needInbox, nextCounter, toProposal } from './store.mjs';
-import { AppError, needStr, omitAbsent, optStr } from './util.mjs';
+import { AppError, errTag, needStr, omitAbsent, optStr } from './util.mjs';
 
 /** @typedef {import('./ports.mjs').Deps} Deps */
 /** @typedef {import('./ports.mjs').AdfDoc} AdfDoc */
@@ -117,7 +117,7 @@ export async function workReport(deps, args, by) {
   try {
     await deps.jira.addComment(/** @type {string} */ (p.issue_ref), reportComment(p.ref, by, String(status), note, url));
   } catch (e) {
-    throw new AppError('unavailable', `Jira did not take the comment on ${p.issue_ref} (${/** @type {Error} */ (e).message}); nothing was recorded`);
+    throw new AppError('unavailable', `Jira did not take the comment on ${p.issue_ref} (${errTag(e)}); nothing was recorded`);
   }
   await deps.db.exec('INSERT INTO work_reports (id, proposal_id, project_key, status, note, url, by_who, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     [await nextCounter(deps.db, 'work_reports'), p.id, p.project_key, status, note ?? null, url ?? null, by, at]);

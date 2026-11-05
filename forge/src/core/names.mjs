@@ -2,6 +2,7 @@
 // Display names for deciders (`forge:<accountId>`), through the Users port. Best effort by design: a missing
 // port, a failed batch or an account Jira will not name just leaves the name out (absent value: omit the key).
 import { logLine } from './observe.mjs';
+import { errTag } from './util.mjs';
 
 /**
  * @typedef {import('./ports.mjs').Deps} Deps
@@ -24,7 +25,7 @@ export async function namesOf(deps, deciders) {
     const byId = await deps.users.names(ids);
     for (const id of ids) if (typeof byId[id] === 'string' && byId[id]) out[`${PREFIX}${id}`] = byId[id];
   } catch (e) {
-    logLine(deps, { dowser: 'warn', what: 'user names', message: String(/** @type {Error} */ (e)?.message ?? e).slice(0, 200) });
+    logLine(deps, { dowser: 'warn', what: 'user names', error: errTag(e) });
   }
   return out;
 }

@@ -12,7 +12,7 @@
 import { cardOf } from './cards.mjs';
 import { logLine } from './observe.mjs';
 import { counterValue, evidenceRefsOfMany, findProposal, nextCounter, setCounter, toProposal } from './store.mjs';
-import { AppError, DuplicateKey, needStr } from './util.mjs';
+import { AppError, DuplicateKey, errTag, needStr } from './util.mjs';
 
 /** @typedef {import('./ports.mjs').Deps} Deps */
 /** @typedef {import('./ports.mjs').Db} Db */
@@ -108,7 +108,9 @@ export async function onPageEvent(deps, event) {
   if (!PAGE_ID_RE.test(pageId)) return { matched: 0 };
   const links = await deps.db.query('SELECT proposal_id FROM page_links WHERE page_id = ?', [pageId]);
   if (!links.length) return { matched: 0 };
-  const when = typeof event?.content?.version?.when === 'string' ? new Date(Date.parse(event.content.version.when)).toISOString() : deps.now().toISOString();
+  // an absent or unreadable version date is the time the event arrived (Date.parse answers NaN, which would throw)
+  const parsed = typeof event?.content?.version?.when === 'string' ? Date.parse(event.content.version.when) : Number.NaN;
+  const when = Number.isNaN(parsed) ? deps.now().toISOString() : new Date(parsed).toISOString();
   const version = Number.isInteger(event?.content?.version?.number) ? event.content.version.number : null;
   const by = typeof event?.atlassianId === 'string' ? `forge:${event.atlassianId}` : null;
   try {
@@ -175,7 +177,7 @@ export async function draftFix(deps, args) {
   try {
     made = await deps.confluence.addFooterComment(pageId, fixComment(card, await deps.links.inboxUrl(p.ref)));
   } catch (e) {
-    throw new AppError('unavailable', `Confluence did not take the comment (${/** @type {Error} */ (e).message}); you may need permission to comment on this page`);
+    throw new AppError('unavailable', `Confluence did not take the comment (${errTag(e)}); you may need permission to comment on this page`);
   }
   return { comment: { page_id: pageId, id: made.id, ref: p.ref } };
 }
