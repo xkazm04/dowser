@@ -236,6 +236,24 @@ test('modules bar CLI: reads an instruments folder and writes docs/evals/temper/
   assert.ok(file.next, 'the least-stable module is named');
 });
 
+test('--help: one command\'s flags and exit 0; no command: all of them; a real usage error still exits 2', () => {
+  const w = world();
+  const h = main(['triage', 'check', '--help'], w.ctx);
+  assert.deepEqual(h, { code: 0, out: { usage: 'usage: temper.mjs triage check --verdicts <f> --inbox <k>' } });
+  assert.equal(main(['land', '--help'], w.ctx).out.usage, 'usage: temper.mjs land [--repo <r>] [--dry-run]');
+  assert.equal(main(['day', 'end', '--help'], w.ctx).out.usage, 'usage: temper.mjs day end');
+  const all = main(['--help'], w.ctx);
+  assert.equal(all.code, 0);
+  assert.match(all.out.usage, /cycle begin --target <t> \[--repo <r>\] \[--scan-anyway\] \| cycle end/);
+  assert.equal(main(['triage', 'check', '--nope'], w.ctx).code, 2);
+});
+
+test('triage limits: today tells the rejects cap\'s spend apart: rejects, snoozes and merges', () => {
+  const v = (/** @type {string} */ verdict, /** @type {number} */ i) => ({ ref: `DW-${i}`, verdict, ...(verdict === 'merge' ? { into: 'DW-1' } : {}) });
+  const l = triageLimits([v('reject', 1), v('snooze', 2)], [v('snooze', 3), v('merge', 4), { ...v('snooze', 5), deferred: 'cap' }], DEFAULT_CAPS);
+  assert.deepEqual(l.today, { accepts: 0, rejects: 4, rejects_by: { reject: 1, snooze: 2, merge: 1 }, carried: 1 });
+});
+
 test('modules.json: 8 modules cover every context of the map, the supplement and the app-structure, and every e2e coverage id', () => {
   const { order, modules } = loadModules();
   assert.deepEqual(order, ['skill-store', 'lenses', 'triage', 'forge-core', 'inbox-ui', 'insights-ui', 'connections', 'tooling']);
@@ -1618,7 +1636,7 @@ test('cycle begin prints the runner block: the brief, the launch inputs, the cap
   assert.deepEqual([r.repo, r.path, r.inbox, r.n, r.target, r.focus, r.loop_root], ['bp', bp, 'bp-temper', 2, 'goal:faster triage', 'goal:faster triage', w.root]);
   assert.equal(r.scan, b.out.scan.bp, 'the scan command, the same one');
   assert.match(r.scan, / --ref temper\/2026-11-05 /);
-  assert.deepEqual(r.caps, { ...DEFAULT_CAPS, used: { accepts: 2, rejects: 1, carried: 0 }, left: { accepts: 8, rejects: 29 } });
+  assert.deepEqual(r.caps, { ...DEFAULT_CAPS, used: { accepts: 2, rejects: 1, rejects_by: { reject: 1, snooze: 0, merge: 0 }, carried: 0 }, left: { accepts: 8, rejects: 29 } });
   assert.deepEqual(r.carried, [{ ref: 'DW-7', note: 'XS doc fix' }], 'yesterday\'s carried cards of this inbox only');
   assert.deepEqual([r.work.worktree, r.work.branch], [day.repos.bp.worktree, day.repos.bp.branch]);
   assert.deepEqual(r.laws, [join(bp, 'AGENTS.md')]);

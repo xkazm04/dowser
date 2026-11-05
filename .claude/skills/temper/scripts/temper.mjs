@@ -1108,7 +1108,7 @@ export function triageLimits(verdicts, earlier, caps) {
   const carried = c.carried ?? 0;
   const deferral_ok = !carried || accepts >= caps.accepts_per_day;
   if (!deferral_ok) why.push(`${carried} snoozes say deferred: "cap", but only ${accepts} of ${caps.accepts_per_day} accepts are used today: accept them, or snooze them for a real reason`);
-  return { counts: c, ...q, floor_ok: q.ok, cycle: rejectShare(c), today: { accepts, rejects, carried: all.carried ?? 0 }, caps, deferral_ok, ok: !why.length, why };
+  return { counts: c, ...q, floor_ok: q.ok, cycle: rejectShare(c), today: { accepts, rejects, rejects_by: { reject: all.reject ?? 0, snooze: all.snooze ?? 0, merge: all.merge ?? 0 }, carried: all.carried ?? 0 }, caps, deferral_ok, ok: !why.length, why };
 }
 
 /** Today's earlier verdicts of an inbox, from the cycle rows. @param {string} root @param {string} date @param {string} inbox */
@@ -2352,7 +2352,17 @@ function land(ctx, f) {
 // ------------------------------------------------------------------------------------------------- main
 
 const SPEC = { values: ['from', 'operator', 'date', 'approve', 'veto', 'target', 'file', 'verdicts', 'instruments', 'inbox', 'until', 'repo', 'paths', 'title', 'status', 'id', 'commit', 'note', 'n', 'add'], bool: ['dry-run', 'rate-limited', 'scan-anyway'] };
-const USAGE = 'usage: temper.mjs charter init --from <json> --operator <name> | charter show | day start|resume|end | repo start|end --repo <r> | repo paths --repo <r> --add a,b | cycle begin --target <t> [--repo <r>] [--scan-anyway] | cycle end --file <f> | cycle reverify --n <n> [--repo <r>] | triage check --verdicts <f> --inbox <k> | modules bar | proposals resolve --id <p> --commit <sha> [--note t] | clock | report | land [--repo <r>] [--dry-run]';
+/** Each command's flags: --help prints one command's line, and a usage error all of them. */
+const COMMANDS = {
+  'charter init': '--from <json> --operator <name>', 'charter show': '',
+  'day start': '[--date YYYY-MM-DD] [--approve a,b] [--veto c]', 'day resume': '', 'day end': '',
+  'repo start': '--repo <r> [--paths a,b] [--title t]', 'repo paths': '--repo <r> --add a,b', 'repo end': '--repo <r> [--status t]',
+  'cycle begin': '--target <t> [--repo <r>] [--scan-anyway]', 'cycle end': '--file <f> [--repo <r>]', 'cycle reverify': '--n <n> [--repo <r>]',
+  'triage check': '--verdicts <f> --inbox <k>', 'modules bar': '[--instruments <dir>]', 'proposals resolve': '--id <p> --commit <sha> [--note t]',
+  clock: '[--rate-limited --until <iso>]', report: '[--date YYYY-MM-DD]', land: '[--repo <r>] [--dry-run]',
+};
+const commandLine = (/** @type {string} */ name, /** @type {string} */ flags) => `temper.mjs ${name}${flags ? ` ${flags}` : ''}`;
+const USAGE = `usage: ${Object.entries(COMMANDS).map(([n, x]) => commandLine(n, x).replace('temper.mjs ', '')).join(' | ')}`;
 
 /**
  * Runs one command. @param {string[]} argv @param {Ctx} [ctx]
@@ -2363,6 +2373,11 @@ export function main(argv, ctx = realCtx()) {
     const [cmd, maybeSub] = argv;
     const single = ['clock', 'report', 'land'].includes(cmd);
     const sub = single ? '' : maybeSub ?? '';
+    if (argv.includes('--help')) {
+      const name = single ? cmd : `${cmd} ${sub}`;
+      const flags = /** @type {Record<string, string>} */ (COMMANDS)[name];
+      return { code: 0, out: { usage: flags === undefined ? USAGE : `usage: ${commandLine(name, flags)}` } };
+    }
     const { flags: f, rest } = parseFlags(argv.slice(single ? 1 : 2), SPEC);
     if (rest.length) throw new UsageError(`unexpected argument ${rest[0]}`);
     /** @type {Record<string, () => any>} */

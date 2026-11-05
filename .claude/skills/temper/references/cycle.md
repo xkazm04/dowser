@@ -71,7 +71,8 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   `T triage check --verdicts <file> --inbox <key>`. Exit 1 means look again for the weak cards.
 - **The rejects cap counts snoozes and merges.** Forge counts a day's rejects, snoozes and merges together against
   `rejects_per_day`, and so do `triage check`, `cycle end` and the runner block's `caps.used.rejects` and
-  `caps.left.rejects`: a snooze or a merge spends the rejects cap as a reject does. A `deferred: "cap"` snooze does
+  `caps.left.rejects`: a snooze or a merge spends the rejects cap as a reject does (`today.rejects_by` and
+  `caps.used.rejects_by` tell them apart, so `rejects` reads as the cap's spend, not as cards rejected). A `deferred: "cap"` snooze does
   not: it is counted as `carried` (below), outside both the cap and the floor.
 - One verdicts file serves both tools: `[{ref, verdict, reason?, note?, into?, until?, inbox?, recorded?, deferred?}]`.
   `reason` is a reject's code only (model.mjs REASONS); a snooze or an accept says why in `note`. `inbox` (when given)
