@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { candidate, gitRepo, listFiles, removeDir, tempDir } from './_fixture.mjs';
 import { callTool, emptyBackend } from '../../../tools/mock-forge-mcp.mjs';
+import { fingerprint } from '../lib/fingerprint.mjs';
 
 const CLI = fileURLToPath(new URL('../dowser.mjs', import.meta.url));
 const MOCK = fileURLToPath(new URL('../../../tools/mock-forge-mcp.mjs', import.meta.url));
@@ -245,27 +246,31 @@ test('mock Forge over stdio: push to the inbox, accept with a Jira issue, idempo
 test('mock Forge backend: reopen rules (snoozed any new key, rejected by resurfaces, accepted never), caps, areas replace', () => {
   const b = emptyBackend();
   const code = { type: 'code', ref: 'src/a.js:1', quote: 'x' };
-  /** @param {string} fp @param {Record<string, unknown>[]} evidence */
-  const rec = (fp, evidence) => ({ fp, title: 't', status: 'verified', evidence });
+  /** A wire record whose fp hashes from its identity, as Forge requires. @param {string} topic @param {Record<string, unknown>[]} evidence */
+  const rec = (topic, evidence) => {
+    const r = candidate({ topic, evidence });
+    return { ...r, fp: fingerprint({ lens: r.lens, kind: r.kind, topic: r.topic, anchors: r.anchors }, [r.kind]), status: 'verified' };
+  };
   /** @param {Record<string, unknown>[]} records */
   const push = (records) => callTool(b, 'dowser_proposals_push', { project_key: 'pk', run_id: 'r', proposals_json: JSON.stringify(records) }).results;
   /** @param {string} fp */
   const item = (fp) => callTool(b, 'mock_inbox', { fp }).item;
-  const [rej, acc] = ['aaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbb'];
+  const [rejT, accT] = ['rejected topic', 'accepted topic'];
+  const [rej, acc] = [rec(rejT, [code]).fp, rec(accT, [code]).fp];
   const codeB = { type: 'code', ref: 'src/b.js:1', quote: 'y' };
-  assert.deepEqual(push([rec(rej, [code, codeB]), rec(acc, [code])]).map((/** @type {any} */ r) => r.external_ref), ['DW-1', 'DW-2']);
+  assert.deepEqual(push([rec(rejT, [code, codeB]), rec(accT, [code])]).map((/** @type {any} */ r) => r.external_ref), ['DW-1', 'DW-2']);
 
   callTool(b, 'mock_decide', { fp: rej, status: 'rejected', reason: 'not-worth-it' });
-  push([rec(rej, [code, codeB])]);
+  push([rec(rejT, [code, codeB])]);
   assert.equal(item(rej).status, 'rejected', 'a re-push with no new key changes nothing');
-  push([rec(rej, [code, { type: 'ticket', ref: 'SUP-1' }])]);
+  push([rec(rejT, [code, { type: 'ticket', ref: 'SUP-1' }])]);
   assert.equal(item(rej).status, 'rejected', '3 refs with a new type, but not 2x the 2 it had: still rejected');
-  push([rec(rej, [{ type: 'ticket', ref: 'SUP-2' }])]);
+  push([rec(rejT, [{ type: 'ticket', ref: 'SUP-2' }])]);
   assert.deepEqual([item(rej).status, item(rej).reopened, item(rej).evidence], ['open', true, 4], 'a new type and 2x refs reopens it');
 
   callTool(b, 'mock_decide', { fp: acc, status: 'accepted' });
   assert.match(item(acc).issue_ref, /^MOCK-\d+$/);
-  push([rec(acc, [{ type: 'ticket', ref: 'SUP-9' }, { type: 'page', ref: 'P-1' }])]);
+  push([rec(accT, [{ type: 'ticket', ref: 'SUP-9' }, { type: 'page', ref: 'P-1' }])]);
   assert.deepEqual([item(acc).status, item(acc).evidence], ['accepted', 3], 'an accepted item only gains evidence');
 
   assert.throws(() => push(Array.from({ length: 51 }, (_, i) => rec(String(i).padStart(16, 'c'), [code]))), /at most 50/);
@@ -279,4 +284,28 @@ test('mock Forge backend: reopen rules (snoozed any new key, rejected by resurfa
     [{ path: 'src/', files: 1, churn_90d: 0 }], [{ path: 'src', files: 0, churn_90d: 0 }], [{ path: 'src', files: 1, churn_90d: 0, authors_90d: 1 }],
     [{ path: 'src', files: 1, churn_90d: 1, authors_90d: null }], [{ path: 'src', files: 1, churn_90d: 0 }, { path: 'src', files: 1, churn_90d: 0 }],
   ]) assert.throws(() => areas(bad), /areas_json/, JSON.stringify(bad));
+});
+
+test('mock Forge backend refuses what Forge refuses: a bad record or fp, reflect on an unknown project, bad trust slices', () => {
+  const b = emptyBackend();
+  const r = candidate();
+  const good = { ...r, fp: fingerprint({ lens: r.lens, kind: r.kind, topic: r.topic, anchors: r.anchors }, [r.kind]), status: 'verified' };
+  /** @param {Record<string, unknown>} rec */
+  const push = (rec) => callTool(b, 'dowser_proposals_push', { project_key: 'pk', run_id: 'r', proposals_json: JSON.stringify([rec]) }).results[0];
+  assert.match(push({ ...good, fp: 'zzzz' }).why, /invalid record: fp/);
+  assert.match(push({ ...good, fp: 'f'.repeat(16) }).why, /does not match its identity/);
+  assert.match(push({ ...good, lens: 'nope' }).why, /invalid record: lens/);
+  assert.match(push({ fp: good.fp, title: 't', status: 'verified', evidence: [{ type: 'code', ref: 'a.js:1', quote: 'x' }] }).why, /invalid record/);
+  assert.match(push({ ...good, score: 0, score_parts: { bogus: 1 } }).why, /invalid record: score/);
+  assert.equal(push(good).result, 'created');
+  assert.equal(push({ ...good, issue_ref: 'X-1', external_ref: 'DW-9' }).result, 'updated', 'store-owned and issue keys are dropped, as Forge does');
+
+  assert.throws(() => callTool(b, 'dowser_reflect_sync', { project_key: 'nobody' }), (/** @type {any} */ e) => e.code === 'unknown-project');
+  assert.deepEqual(callTool(b, 'dowser_reflect_sync', { project_key: 'pk', rules_json: '' }), { rules: [], outcomes: [] }, 'an empty rules_json is no offers');
+  const slice = { slice: 'opportunity|S', level: 0, ceiling: 1, start: 0, n: 0 };
+  /** @param {unknown[]} slices */
+  const trust = (slices) => callTool(b, 'dowser_reflect_sync', { project_key: 'pk', trust_json: JSON.stringify({ slices, events: [] }) });
+  assert.deepEqual(trust([slice]), { rules: [], outcomes: [] });
+  assert.throws(() => trust([{ ...slice, level: 9 }]), /slices\[0\]/);
+  assert.throws(() => trust(Array.from({ length: 201 }, () => slice)), /at most 200 slices/);
 });
