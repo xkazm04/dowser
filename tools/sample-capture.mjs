@@ -51,7 +51,7 @@ export function parseArgs(argv) {
     i++;
   }
   for (const k of ['home', 'repo', 'repo-url', 'out']) if (!o[k]) throw new Error(`--${k} is required`);
-  if (/\/\/[^/]*@/.test(o['repo-url']) || !webRepoUrl(o['repo-url'])) throw new Error('--repo-url must be an https:// web URL without credentials');
+  if (/\/\/[^/]*@/.test(o['repo-url']) || !webRepoUrl(o['repo-url'])) throw new Error('--repo-url must be an https:// (or http://) web URL without credentials');
   return { home: resolve(o.home), repo: resolve(o.repo), run: o.run, repoUrl: o['repo-url'], out: resolve(o.out) };
 }
 
@@ -132,7 +132,7 @@ async function main(argv) {
   let o;
   try { o = parseArgs(argv); } catch (e) {
     console.error(`sample-capture: ${/** @type {Error} */ (e).message}`);
-    console.error('usage: sample-capture.mjs --home <DOWSER_HOME> --repo <scanned checkout> [--run <id>] --repo-url <https url> --out <file>');
+    console.error('usage: sample-capture.mjs --home <DOWSER_HOME> --repo <scanned checkout> [--run <id>] --repo-url <https or http url> --out <file>');
     process.exit(2);
   }
   if (isInside(o.repo, o.out)) { console.error(`sample-capture: --out ${o.out} is inside the scanned checkout ${o.repo}; write it elsewhere`); process.exit(2); }
