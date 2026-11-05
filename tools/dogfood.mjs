@@ -191,7 +191,9 @@ try {
   if (!o.dryRun) writeFileSync(stateFile, JSON.stringify(backendFor(seed, o.campaign ? stateFile : undefined), null, 2));
   writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { dowser: { type: 'stdio', command: process.execPath,
     args: [MOCK, '--state', stateFile] } } }, null, 2));
-  const args = ['-p', prompt(o.lenses.join(', '), Boolean(o.campaign)), '--mcp-config', mcpConfig, '--strict-mcp-config', '--add-dir', tmpdir(),
+  // --setting-sources without `user`: a user-scope dowser skill (~/.claude/skills/dowser, often a link to another
+  // checkout) otherwise wins over the project-scope copy installed above, and the scan runs that skill (as lens-eval)
+  const args = ['-p', prompt(o.lenses.join(', '), Boolean(o.campaign)), '--setting-sources', 'project,local', '--mcp-config', mcpConfig, '--strict-mcp-config', '--add-dir', tmpdir(),
     '--allowedTools', ...ALLOWED_TOOLS, '--output-format', 'json', ...(o.model ? ['--model', o.model] : []), ...(o.budget ? ['--max-budget-usd', o.budget] : [])];
   const plan = {
     source: o.source, head: cloned.head, ...(o.campaign ? { campaign: o.campaign } : {}), hidden: cloned.hidden, work, project_key: projectKey, lenses: o.lenses,
