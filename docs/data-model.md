@@ -67,7 +67,7 @@ model no longer lists is refused with exit 3, and nothing is rebuilt. A list tha
 | `deliveries` | **append-only** (v7): delivery truth from the code. One row each time `delivery --run` finds an accepted card's state CHANGED: `fp`, `run_id`, `head_sha`, `state` (`present` = every quoted code/doc line still at the run's commit, `partly`, `resolved` = none left), `found` / `total` quotes, `commits_json` (`[{sha, at}]`, commits since the decision whose message names its Jira issue or inbox ref; NULL when none), `checked_at`. The newest row per fp is the current state. Written only by `delivery` (`lib/delivery.mjs`) | index (`fp`, `id`) |
 | `edges` | **append-only** (v8): the proposal relationship graph. `from_fp`, `to_fp` (both cards of this store), `kind` (`unblocks` = from is a prerequisite of to; `duplicate-of`, `follow-up-of`, `conflicts-with`, `related`), `by`, `at`, `note`. Written only by `link` (`lib/edges.mjs`); read by `show`, `links` and the allocation, which lifts a reserve card that `unblocks` a ranked card of the run over the weakest plain ranked card (`lifted`) | UNIQUE (`from_fp`, `to_fp`, `kind`); index (`to_fp`, `kind`) |
 | `sources_cache` | what a run fetched: tickets, pages and goals (`ingest-sources`), dependency advisories (`deps`) and the team's lens direction (`ingest-direction`). `verify` checks ticket, page, goal and dep refs against it. Ticket, page and goal text is dropped when the run ends; the direction rows (focus, exclude, notes, spaces) are kept as long as the store exists, until deleted (`SECURITY.md` says how) | PK (`run_id`, `type`, `ref`) |
-| `sync_state` | Forge sync bookkeeping: `verdicts_cursor`; `trust_through` (the last transition id the trust replay read); `push_seq:<fp>` (evidence id at last push); `outbox:last` (ids actually sent); `verdict:<fp>@<decided_at>` (idempotency). See `docs/contracts/forge-mcp-2.md` | PK `key` |
+| `sync_state` | Forge sync bookkeeping: `verdicts_cursor`; `trust_through` (the last transition id the trust replay read); `push_seq:<fp>` (evidence id at last push); `outbox:last` (ids actually sent); `rechecked:<fp>` (evidence ids `verify` re-checked and found on a verified or pushed card); `verdict:<fp>@<decided_at>` (idempotency). See `docs/contracts/forge-mcp-2.md` | PK `key` |
 
 Append-only is enforced twice. Triggers abort any UPDATE or DELETE on `evidence`, `transitions`, `outcomes`, `deliveries`, `edges` and
 `trust_events`, and a test greps the sources for such statements on the first two.
@@ -295,6 +295,10 @@ working tree, an uncommitted edit, fails as `uncommitted`: the card's links woul
   `sources_cache` (written by `ingest-sources` and `deps`). A ref that is not there drops the item with note
   `ref-not-ingested:<type>:<ref>`, so an unconnected run can never verify a card citing a ticket. When several
   refs fail, the first in evidence order names the note.
+- A `verified` or `pushed` card the run re-proposed with new evidence is not moved (a person may have seen it).
+  Only its new rows (newer than its verify move, not re-checked yet) are checked, by the same rules, and listed
+  under `rechecked` as `checked` or `held` (with the note a drop would carry). `outbox` sends only checked
+  evidence (`store.checkedEvidenceOf`), so a row that is held, or not checked yet, never reaches the inbox.
 - `git` and `sarif` evidence is passed through as `unchecked`; the agent judges it. A card whose evidence is only
   `git`/`sarif` has nothing verify can check and is `dropped` with note `no-checkable-evidence`.
 

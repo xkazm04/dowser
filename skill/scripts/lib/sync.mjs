@@ -97,8 +97,19 @@ function pushedSeq(db, fp) {
 // ------------------------------------------------------------------------------------------------ outbox
 
 /**
- * The `dowser-proposal/1` record of `fp`: the stored card, every evidence row, the triage fields; absent keys
- * omitted, store-internal columns (run ids, timestamps) left out.
+ * The highest evidence id of `fp` that outbox may send (store.checkedEvidenceOf), 0 when none.
+ * @param {Db} db
+ * @param {string} fp
+ * @returns {number}
+ */
+export function sentSeq(db, fp) {
+  return store.checkedEvidenceOf(db, fp).reduce((m, e) => Math.max(m, Number(e.id)), 0);
+}
+
+/**
+ * The `dowser-proposal/1` record of `fp`: the stored card, every evidence row verify has checked
+ * (store.checkedEvidenceOf: a row a re-propose added to a verified or pushed card waits for verify), the triage
+ * fields; absent keys omitted, store-internal columns (run ids, timestamps) left out.
  * @param {Db} db
  * @param {string} fp
  * @returns {Row}
@@ -108,6 +119,7 @@ export function proposalRecord(db, fp) {
   if (!p) throw new DowserError(`proposal ${fp} does not exist`, 2);
   /** @type {Row} */
   const out = {};
+  p.evidence = store.checkedEvidenceOf(db, fp).map(({ type, ref, quote, url }) => store.clean({ type, ref, quote, url }));
   for (const k of RECORD_KEYS) if (p[k] !== undefined) out[k] = p[k];
   // a card hydrated before 2026-11-05 holds provenance.hydrated_from, which no record may carry
   if (out.provenance && typeof out.provenance === 'object' && 'hydrated_from' in out.provenance) {
@@ -146,7 +158,8 @@ export function outbox(db, { projectKey, runId, repoUrl, limit = PUSH_MAX, quote
     const rows = /** @type {Row[]} */ (db.prepare("SELECT fp, status FROM proposals WHERE status IN ('verified', 'pushed') ORDER BY lens, fp").all());
     for (const r of rows) {
       const fp = String(r.fp);
-      const seq = store.evidenceSnapshot(db, fp).seq;
+      // the newest evidence it may send: a grown card's unchecked rows neither go out nor count as growth
+      const seq = sentSeq(db, fp);
       if (r.status === 'pushed') {
         const last = pushedSeq(db, fp);
         if (last !== undefined && seq <= last) continue;

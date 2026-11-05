@@ -4,7 +4,7 @@
 // proposals.mjs.
 import { DowserError, LENSES, LENS_STATES, RUN_MODES, isOneOf } from './model.mjs';
 import { clean, getRun, lastDoneRun, localDate, newRunId, now, sql, tx } from './store-core.mjs';
-import { evidenceSnapshot, wakeSnoozed } from './proposals.mjs';
+import { checkedEvidenceOf, wakeSnoozed } from './proposals.mjs';
 import { allocationOf } from './budget.mjs';
 
 /** @import { Db, Row, LensRecord } from './store-core.mjs' */
@@ -202,7 +202,7 @@ export function openRuns(db) {
  * How many cards `outbox` would send now: every `verified` card, and every `pushed` card whose evidence grew since
  * its last push. Store-wide, like the outbox (not per run). Mirrors sync.mjs outbox's selection and its pushedSeq
  * (sync_state `push_seq:<fp>`, else the seq of the fp's last `pushed` transition) without its 50-record page and
- * without writing `outbox:last`; run-status.test.mjs pins the two equal.
+ * without writing `outbox:last`, and the same sendable evidence (store.checkedEvidenceOf); run-status.test.mjs pins the two equal.
  * @param {Db} db
  * @returns {number}
  */
@@ -216,7 +216,8 @@ function pushPending(db) {
       const s = /** @type {Row | undefined} */ (state.get(`push_seq:${fp}`));
       const t = s ? undefined : /** @type {Row | undefined} */ (pushedT.get(fp));
       const last = s ? Number(s.value) : t ? Number(t.evidence_seq) : undefined;
-      if (last !== undefined && evidenceSnapshot(db, fp).seq <= last) continue;
+      const sendable = checkedEvidenceOf(db, fp).reduce((m, e) => Math.max(m, Number(e.id)), 0);
+      if (last !== undefined && sendable <= last) continue;
     }
     n++;
   }

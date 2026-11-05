@@ -277,7 +277,7 @@ export const COMMANDS = {
   verify: {
     flags: { run: RUN_FLAG, 'per-lens': { arg: '<n>' }, 'per-run': { arg: '<n>' } },
     help: 're-check code/doc quotes -> verified | dropped (verify-failed:<ref>); a ticket/page/goal/dep ref this run did not ' +
-      'ingest -> dropped (ref-not-ingested:<type>:<ref>); each check gives the line the quote was found on (claimed_line when the ' +
+      'ingest -> dropped (ref-not-ingested:<type>:<ref>); a verified/pushed card the run grew keeps its status and only its new evidence is checked -> rechecked: checked | held (held evidence is never sent); each check gives the line the quote was found on (claimed_line when the ' +
       'hint differs, drift when > 3 lines); bus_factor measured from git (anchor paths, 90 days before head); per_lens {emitted, ' +
       'verified, dropped}; then allocate the verified cards: each lens\'s MVP, then by score up to the pack budget (4) per lens, ' +
       'then free run slots (16 per run) to the best reserve of any lens -> band ranked; the rest band reserve (stored, pushed) -> allocation',

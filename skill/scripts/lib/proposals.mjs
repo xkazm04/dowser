@@ -372,6 +372,57 @@ export function move(db, fp, to, { from, by, reason, note, into, runId, until, t
 }
 
 /**
+ * The evidence of `fp` that verify has checked (D8). Every row up to the evidence seq of its newest verify move
+ * (`candidate -> verified`), or of its hydrate insert (a card that arrives decided, checked where it was found), plus
+ * the rows a later `verify` re-checked on the verified or pushed card (sync_state `rechecked:<fp>`, a JSON list of
+ * evidence ids). A row added after that - a re-propose that grew a verified or pushed card, or a snoozed card's
+ * suppressed line - is unchecked: `outbox` holds it back until `verify` finds it (verify.mjs recheck).
+ * @param {Db} db
+ * @param {string} fp
+ * @returns {{through: number, ids: Set<number>}}
+ */
+export function checkedEvidence(db, fp) {
+  const t = /** @type {Row | undefined} */ (db.prepare(`SELECT MAX(evidence_seq) AS seq FROM transitions WHERE fp = ?
+    AND ((from_status = 'candidate' AND to_status = 'verified') OR (from_status IS NULL AND to_status <> 'candidate'))`).get(fp));
+  const s = /** @type {Row | undefined} */ (db.prepare('SELECT value FROM sync_state WHERE key = ?').get(`rechecked:${fp}`));
+  return { through: t?.seq == null ? 0 : Number(t.seq), ids: new Set(s ? /** @type {number[]} */ (JSON.parse(String(s.value))) : []) };
+}
+
+/**
+ * The evidence rows of `fp` verify has checked (`checkedEvidence`), oldest first: what `outbox` sends.
+ * @param {Db} db
+ * @param {string} fp
+ * @returns {Row[]}
+ */
+export function checkedEvidenceOf(db, fp) {
+  const { through, ids } = checkedEvidence(db, fp);
+  return evidenceOf(db, fp).filter((e) => Number(e.id) <= through || ids.has(Number(e.id)));
+}
+
+/**
+ * Records evidence ids verify re-checked and found on a verified or pushed card (sync_state `rechecked:<fp>`).
+ * @param {Db} db
+ * @param {string} fp
+ * @param {number[]} found
+ */
+export function markRechecked(db, fp, found) {
+  if (!found.length) return;
+  const ids = [...new Set([...checkedEvidence(db, fp).ids, ...found])].sort((a, b) => a - b);
+  db.prepare('INSERT INTO sync_state (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value')
+    .run(`rechecked:${fp}`, JSON.stringify(ids));
+}
+
+/**
+ * Fingerprints of `verified` or `pushed` proposals the run re-proposed (verify re-checks their new evidence).
+ * @param {Db} db
+ * @param {string} runId
+ * @returns {string[]}
+ */
+export function grownOfRun(db, runId) {
+  return /** @type {Row[]} */ (db.prepare("SELECT fp FROM proposals WHERE last_run_id = ? AND status IN ('verified', 'pushed') ORDER BY fp").all(runId)).map((r) => String(r.fp));
+}
+
+/**
  * Fingerprints of `candidate` proposals the run touched (proposed or re-proposed in it).
  * @param {Db} db
  * @param {string} runId

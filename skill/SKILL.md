@@ -302,7 +302,9 @@ carry a reason.
    a card never verifies). `git` and `sarif` evidence passes unchecked; the output says so, and a card
    with ONLY git/sarif evidence drops (`no-checkable-evidence`). Quotes are read at the run's head
    commit, the one the pushed links point at: a line that exists only as an uncommitted edit fails with
-   `why: uncommitted`, so quote committed code (or tell the runner to commit first). Print
+   `why: uncommitted`, so quote committed code (or tell the runner to commit first). A verified or
+   pushed card you re-proposed with new evidence keeps its status; only the new evidence is checked,
+   listed under `rechecked` (`checked`, or `held` with the note: that evidence is never sent). Print
    per lens, from its `per_lens` (`{lens: {emitted, verified, dropped}}`, the candidates this call
    checked): `<lens>: emitted <n>, verified <v>, dropped <d>`.
    Each quote check gives `line`, the line the quote was **found** on; `claimed_line` is your hint
