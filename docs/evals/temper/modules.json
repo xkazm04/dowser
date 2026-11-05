@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-05T21:16:24.288Z",
+  "at": "2026-11-05T22:44:36.745Z",
   "modules": {
     "skill-store": {
       "met": false,
@@ -7,7 +7,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (327) at 2acc138"
+          "detail": "typecheck pass, tests pass (347) at be96bd1"
         },
         "proposals": {
           "state": "verified",
@@ -21,8 +21,8 @@
         },
         "quality": {
           "state": "verified",
-          "ok": true,
-          "detail": "not growing (e26f158 -> 2acc138)"
+          "ok": false,
+          "detail": "grew: dup_windows 65 -> 66"
         },
         "coverage": {
           "state": "verified",
@@ -37,7 +37,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (327) at 2acc138"
+          "detail": "typecheck pass, tests pass (347) at be96bd1"
         },
         "proposals": {
           "state": "verified",
@@ -51,8 +51,8 @@
         },
         "quality": {
           "state": "verified",
-          "ok": true,
-          "detail": "not growing (e26f158 -> 2acc138)"
+          "ok": false,
+          "detail": "grew: dup_windows 65 -> 66"
         },
         "coverage": {
           "state": "verified",
@@ -67,7 +67,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (327) at 2acc138"
+          "detail": "typecheck pass, tests pass (347) at be96bd1"
         },
         "proposals": {
           "state": "verified",
@@ -81,8 +81,8 @@
         },
         "quality": {
           "state": "verified",
-          "ok": true,
-          "detail": "not growing (e26f158 -> 2acc138)"
+          "ok": false,
+          "detail": "grew: dup_windows 65 -> 66"
         },
         "coverage": {
           "state": "verified",
@@ -95,9 +95,9 @@
       "met": false,
       "parts": {
         "uat": {
-          "state": "unverifiable",
+          "state": "verified",
           "ok": false,
-          "detail": "the local results are older than HEAD"
+          "detail": "12 of 12 specs ran fewer than 3 times (--repeat-each 3)"
         },
         "proposals": {
           "state": "verified",
@@ -111,8 +111,8 @@
         },
         "quality": {
           "state": "verified",
-          "ok": true,
-          "detail": "not growing (e26f158 -> 2acc138)"
+          "ok": false,
+          "detail": "grew: dup_windows 65 -> 66"
         },
         "coverage": {
           "state": "verified",
@@ -127,7 +127,7 @@
         "uat": {
           "state": "unverifiable",
           "ok": false,
-          "detail": "the fixture results are older than HEAD"
+          "detail": "no live results (npm run e2e:live)"
         },
         "proposals": {
           "state": "verified",
@@ -137,12 +137,12 @@
         "scan_yield": {
           "state": "unverifiable",
           "ok": false,
-          "detail": "0 scan(s) with focus area:forge/static/app/src/routes/inbox in the ledger; the bar needs two"
+          "detail": "1 scan(s) with focus area:forge/static/app/src/routes/inbox in the ledger; the bar needs two"
         },
         "quality": {
           "state": "verified",
-          "ok": true,
-          "detail": "not growing (e26f158 -> 2acc138)"
+          "ok": false,
+          "detail": "grew: dup_windows 65 -> 66"
         },
         "coverage": {
           "state": "verified",
@@ -157,7 +157,7 @@
         "uat": {
           "state": "unverifiable",
           "ok": false,
-          "detail": "the fixture results are older than HEAD"
+          "detail": "no live results (npm run e2e:live)"
         },
         "proposals": {
           "state": "verified",
@@ -167,12 +167,12 @@
         "scan_yield": {
           "state": "unverifiable",
           "ok": false,
-          "detail": "0 scan(s) with focus area:forge/static/app/src/routes/reflect in the ledger; the bar needs two"
+          "detail": "1 scan(s) with focus area:forge/static/app/src/routes/reflect in the ledger; the bar needs two"
         },
         "quality": {
           "state": "verified",
-          "ok": true,
-          "detail": "not growing (e26f158 -> 2acc138)"
+          "ok": false,
+          "detail": "grew: dup_windows 65 -> 66"
         },
         "coverage": {
           "state": "verified",
@@ -185,9 +185,9 @@
       "met": false,
       "parts": {
         "uat": {
-          "state": "unverifiable",
+          "state": "verified",
           "ok": false,
-          "detail": "the local results are older than HEAD"
+          "detail": "5 of 5 specs ran fewer than 3 times (--repeat-each 3)"
         },
         "proposals": {
           "state": "verified",
@@ -197,12 +197,12 @@
         "scan_yield": {
           "state": "unverifiable",
           "ok": false,
-          "detail": "0 scan(s) with focus area:skill/scripts/lib/sync.mjs in the ledger; the bar needs two"
+          "detail": "1 scan(s) with focus area:skill/scripts/lib/sync.mjs in the ledger; the bar needs two"
         },
         "quality": {
           "state": "verified",
-          "ok": true,
-          "detail": "not growing (e26f158 -> 2acc138)"
+          "ok": false,
+          "detail": "grew: dup_windows 65 -> 66"
         },
         "coverage": {
           "state": "verified",
@@ -217,7 +217,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (327) at 2acc138"
+          "detail": "typecheck pass, tests pass (347) at be96bd1"
         },
         "proposals": {
           "state": "verified",
@@ -231,8 +231,8 @@
         },
         "quality": {
           "state": "verified",
-          "ok": true,
-          "detail": "not growing (e26f158 -> 2acc138)"
+          "ok": false,
+          "detail": "grew: dup_windows 65 -> 66"
         },
         "coverage": {
           "state": "verified",
