@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { ForgeSQLAPIError, migrationRunner } from '@forge/sql';
 import { MIGRATIONS } from '../src/sql/migrations.mjs';
-import { isAlreadyApplied, runMigrationsWith, schemaGuard } from '../src/sql/schema.mjs';
+import { isAlreadyApplied, runMigrationsWith, schemaGuard, storageFailure } from '../src/sql/schema.mjs';
 
 /** @typedef {{executeDDL: (q: string) => Promise<{rows: any[]}>, prepare: (q: string) => {bindParams: (...p: unknown[]) => {execute: () => Promise<{rows: any}>}}}} SqlClient */
 
@@ -198,4 +198,20 @@ test('concurrent calls on a missing table share one migration and all succeed', 
   const out = await Promise.all([g.withSchema(call), g.withSchema(call), g.withSchema(call)]);
   assert.deepEqual(out, [{ ok: true }, { ok: true }, { ok: true }]);
   assert.equal(s.runs, 1);
+});
+
+test('storageFailure names the failing migration, its code and trace id, and never the message', async () => {
+  const f = fakeSql({ failDdlFor: 'ADD COLUMN snooze_until VARCHAR(10)' });
+  const e = await runMigrationsWith(runnerOver(f.client), recordWith(f), MIGRATIONS).catch((x) => x);
+  const line = storageFailure(e);
+  assert.equal(line.dowser, 'storage-not-ready');
+  assert.equal(line.error, 'MigrationExecutionError');
+  assert.equal(line.migration, 'v016_proposals_snooze_until');
+  assert.equal(line.code, 'SQL_EXECUTION_ERROR');
+  assert.equal(line.errno, 9999);
+  assert.equal(typeof line.yet_to_run, 'number');
+  const api = new ForgeSQLAPIError({ status: 500, statusText: 'x', traceId: 'trace-1' }, { code: 'ER_NO_SUCH_TABLE', message: "Table 'secret_value' doesn't exist" });
+  assert.deepEqual(storageFailure(api), { dowser: 'storage-not-ready', error: 'ForgeSQLAPIError', code: 'ER_NO_SUCH_TABLE', trace_id: 'trace-1' });
+  assert.deepEqual(storageFailure('nope'), { dowser: 'storage-not-ready', error: 'String' });
+  assert.doesNotMatch(JSON.stringify(storageFailure(api)), /secret_value/);
 });

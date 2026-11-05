@@ -6,7 +6,7 @@ import ResolverPkg from '@forge/resolver';
 import { getAppContext } from '@forge/api';
 import { RESOLVERS, actionName, isConsent, isSchemaBehind, resolverAllowed, runResolver, runRovo, runTool } from './core/app.mjs';
 import { forgeDb, runMigrations } from './adapters/forge-sql.mjs';
-import { schemaGuard } from './sql/schema.mjs';
+import { schemaGuard, storageFailure } from './sql/schema.mjs';
 import { backfillIssueProperties } from './core/issue-property.mjs';
 import { onIssueEvent } from './core/delivery.mjs';
 import { backfillPageLinks, onPageEvent } from './core/doc-drift.mjs';
@@ -49,7 +49,7 @@ const safe = async (fn, consent = false) => {
       if (consent) throw e;
       return { error: 'unauthorized', message: 'Dowser needs your permission to read Jira on your behalf; open Dowser in Jira once and allow access' };
     }
-    console.error(`dowser: storage not ready (${String(/** @type {any} */ (e)?.name ?? typeof e)})`);
+    console.error(JSON.stringify(storageFailure(e)));
     return { error: 'unavailable', message: 'Dowser storage is not ready; try again in a minute' };
   }
 };

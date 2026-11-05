@@ -115,3 +115,33 @@ export function schemaGuard({ runMigrations, installationId, isSchemaBehind }) {
   // the Deps `ensureSchema` port is the same rule: true when it migrated now
   return { ensureSchema: migrateFor, withSchema, markMigrated };
 }
+
+/**
+ * The metadata of a storage failure for one log line: error class, code, errno, the failing migration and how many
+ * were still to run, and the Forge SQL trace id, from the error or its cause. No message: a SQL message can quote
+ * row values. Absent fields are omitted.
+ * @param {unknown} e
+ * @returns {Record<string, string | number>}
+ */
+export function storageFailure(e) {
+  const err = /** @type {any} */ (e);
+  const cause = err?.cause;
+  /** @type {Record<string, string | number | undefined>} */
+  const out = {
+    dowser: 'storage-not-ready',
+    error: String(err?.constructor?.name && err.constructor.name !== 'Object' ? err.constructor.name : err?.name ?? typeof e),
+    code: str(err?.code) ?? str(cause?.code),
+    errno: num(err?.context?.debug?.errno) ?? num(cause?.context?.debug?.errno),
+    sql_code: str(err?.context?.debug?.code) ?? str(cause?.context?.debug?.code),
+    migration: str(err?.migrationName),
+    yet_to_run: Array.isArray(err?.migrationsYetToRun) ? err.migrationsYetToRun.length : undefined,
+    trace_id: str(err?.responseDetails?.traceId) ?? str(cause?.responseDetails?.traceId),
+  };
+  for (const k of Object.keys(out)) if (out[k] === undefined) delete out[k];
+  return /** @type {Record<string, string | number>} */ (out);
+}
+
+/** @param {unknown} v */
+const str = (v) => (typeof v === 'string' && v ? v.slice(0, 200) : undefined);
+/** @param {unknown} v */
+const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
