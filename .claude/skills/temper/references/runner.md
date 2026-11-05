@@ -43,7 +43,7 @@ repo's master. Landing is the director's.
    section 2). When the scan fails, record why and go on with the cards the inbox already holds.
 2. **Triage.** List the cards with `node tools/temper-cards.mjs --project-key <inbox> [--status s] [--quotes]` (or
    the scan's `report`), never `dowser.mjs list --repo`. Decide the `carried` cards first, then every new or still
-   undecided card. Read each card's quoted evidence against the code on the day branch. Accept only a card that is
+   undecided card (`--undecided` lists only those: a `pushed` card with `decided_local` or `decided_live` is judged). Read each card's quoted evidence against the code on the day branch. Accept only a card that is
    real, in direction and inside the bounds. Reject with the honest reason code. Snooze what is real but not now.
    Merge duplicates. When the accept cap is reached, a card you would accept is a snooze with `deferred: "cap"`
    (cycle.md section 3): it is carried, not judged. Write **one verdicts file** and run

@@ -152,7 +152,9 @@ node tools/temper-scan.mjs --repo <path> --project-key <k> [--ref r] [--focus "g
   `~/.temper/scans/<stamp>-<project-key>.json`: the row, the scan's summary and each card the scan created or moved,
   `{fp, ref?, url?, status, lens, title, evidence: [{type, ref, path?, line?}], created}`.
 - To list a scan home's cards later, run `node tools/temper-cards.mjs --project-key <k> [--status s] [--lens l]
-  [--quotes] [--full]`; `--full` adds each card's rationale, impact, effort, confidence, body sections by heading and
+  [--quotes] [--full] [--undecided] [--date d | --ledger f]`; each card with a ref carries `decided_local` or
+  `decided_live` (`{verdict, cycle}`, its newest verdict in the loop checkout's day ledger), `--undecided` keeps only
+  the cards with neither; `--full` adds each card's rationale, impact, effort, confidence, body sections by heading and
   `acceptance` (its Evaluation section). `dowser.mjs list --repo <path>` on the real checkout reads another project (its origin) and lists
   nothing.
 - `--dry-run` clones, installs and prints the plan (inbox key, Dowser home, ledger, MCP server). It does not call
