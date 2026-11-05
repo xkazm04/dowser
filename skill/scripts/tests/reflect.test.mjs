@@ -10,9 +10,9 @@ import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { candidate, gitRepo, removeDir, tempDir } from './_fixture.mjs';
-import { openStore } from '../lib/store.mjs';
-import { exportOffers, ingestReflect } from '../lib/reflect.mjs';
+import { KINDS, candidate, gitRepo, removeDir, tempDir } from './_fixture.mjs';
+import { openStore, propose, runStart } from '../lib/store.mjs';
+import { exportOffers, ingestReflect, outcomeCounts, outcomeNotes, outcomesOf } from '../lib/reflect.mjs';
 import { callTool, emptyBackend, TOOLS } from '../../../tools/mock-forge-mcp.mjs';
 
 const CLI = fileURLToPath(new URL('../dowser.mjs', import.meta.url));
@@ -344,5 +344,20 @@ test('reflect export sends outcomes_since from the newest local outcome; ingest 
     const again = ingestReflect(db, { rules: [], outcomes: [o('DW-2', '2026-11-02T00:00:00.000Z')] });
     assert.equal(again.out.outcomes_added, 0, 'the boundary row is seen, not added');
     assert.ok(!('outcomes_more' in again.out));
+  } finally { db.close(); removeDir(home); }
+});
+
+test('reflect: the latest rating is the newest recorded one, whatever order Forge sent it in (first page: newest first)', () => {
+  const home = tempDir('reflect-latest');
+  const db = openStore(join(home, 'dowser.db'));
+  try {
+    const run = String(runStart(db, { mode: 'full', harness: 'claude', model: 'm' }).id);
+    const fp = String(propose(db, run, candidate({ lens: 'opportunity', kind: 'gap', topic: 'csv export', anchors: ['src/e.js'] }), { kinds: KINDS }).fp);
+    const o = (/** @type {string} */ ref, /** @type {string} */ rating, /** @type {string} */ at) => ({ ref, fp, rating, note: `${rating} note`, issue_ref: 'SHOP-1', decided_by: 'forge:bob', recorded_at: at });
+    // Forge without outcomes_since: newest first
+    ingestReflect(db, { rules: [], outcomes: [o('DW-2', 'right', '2026-11-02T00:00:00.000Z'), o('DW-1', 'wrong', '2026-11-01T00:00:00.000Z')] });
+    assert.deepEqual(outcomeCounts(db, 'opportunity'), { right: 1, partly: 0, wrong: 0 });
+    assert.deepEqual(outcomeNotes(db, 'opportunity', 5, 300).map((n) => n.rating), ['right']);
+    assert.deepEqual(outcomesOf(db, fp).map((r) => r.ref), ['DW-1', 'DW-2'], 'oldest first, by time');
   } finally { db.close(); removeDir(home); }
 });

@@ -172,6 +172,12 @@ export function ingestReflect(db, doc) {
 }
 
 /**
+ * The id of the newest outcome of `o.fp`, by when it was recorded (ties by insert order). Never MAX(id): Forge's first
+ * reflect page arrives newest first, so insert order is not time order.
+ */
+const LATEST_OUTCOME = '(SELECT o2.id FROM outcomes o2 WHERE o2.fp = o.fp ORDER BY o2.recorded_at DESC, o2.id DESC LIMIT 1)';
+
+/**
  * Per lens, the latest rating of each proposal that has an outcome: `{right, partly, wrong}`; `undefined` when
  * the lens has none (absent, not zero). Outcomes of fingerprints this store does not know are not counted.
  * @param {Db} db
@@ -181,7 +187,7 @@ export function ingestReflect(db, doc) {
 export function outcomeCounts(db, lens) {
   const rows = /** @type {Row[]} */ (db.prepare(
     `SELECT o.rating, COUNT(*) AS n FROM outcomes o JOIN proposals p ON p.fp = o.fp
-     WHERE p.lens = ? AND o.id = (SELECT MAX(o2.id) FROM outcomes o2 WHERE o2.fp = o.fp)
+     WHERE p.lens = ? AND o.id = ${LATEST_OUTCOME}
      GROUP BY o.rating`,
   ).all(lens));
   if (rows.length === 0) return undefined;
@@ -203,7 +209,7 @@ export function outcomeCounts(db, lens) {
 export function outcomeNotes(db, lens, max, noteCap) {
   return /** @type {Row[]} */ (db.prepare(
     `SELECT p.title, o.rating, o.note FROM outcomes o JOIN proposals p ON p.fp = o.fp
-     WHERE p.lens = ? AND o.note IS NOT NULL AND o.id = (SELECT MAX(o2.id) FROM outcomes o2 WHERE o2.fp = o.fp)
+     WHERE p.lens = ? AND o.note IS NOT NULL AND o.id = ${LATEST_OUTCOME}
      ORDER BY o.recorded_at DESC, o.id DESC LIMIT ?`,
   ).all(lens, max)).map((r) => {
     const note = String(r.note).replace(/\s+/g, ' ').trim();
@@ -218,6 +224,6 @@ export function outcomeNotes(db, lens, max, noteCap) {
  * @returns {Row[]}
  */
 export function outcomesOf(db, fp) {
-  return /** @type {Row[]} */ (db.prepare('SELECT ref, rating, note, issue_ref, decided_by, recorded_at FROM outcomes WHERE fp = ? ORDER BY id').all(fp))
+  return /** @type {Row[]} */ (db.prepare('SELECT ref, rating, note, issue_ref, decided_by, recorded_at FROM outcomes WHERE fp = ? ORDER BY recorded_at, id').all(fp))
     .map((r) => /** @type {Row} */ (clean(r)));
 }
