@@ -57,6 +57,9 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
 ## 6. Update
 
 - `node tools/quality-snapshot.mjs --label c<n> --append docs/evals/temper/quality.jsonl`
+  When no row was written since the cycle began, `cycle end` runs this itself (Dowser cycles only), so the bar's
+  quality part fills on a fresh day without relying on this step. The row's `verified.quality` says `present`,
+  `appended`, `no row written` or `failed`; a failed snapshot never makes the cycle red.
 - lens-scan cover on the changed features: `node C:/Users/kazda/kiro/bp/.claude/skills/lens-scan/scripts/drive.mjs cover --lens all --root . --features <a,b>`
 - Outcome ratings for items built two or more cycles ago go in the cycle file as `{ref, rating, basis}`. The basis is
   the evidence (their specs green on local and live, no finding filed). They are self-reported. The Learning tab's

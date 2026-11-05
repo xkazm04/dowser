@@ -284,6 +284,46 @@ test('cycle end: local-only verdicts are recorded as delegate:temper with the ca
   assert.match(main(['cycle', 'end', '--file', file], w.ctx).out.error, /does not meet the bar/);
 });
 
+test('cycle end: appends the quality-snapshot row itself when none was written since the cycle began, so the instrument fills', () => {
+  const w = world();
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  const qfile = join(w.root, 'docs', 'evals', 'temper', 'quality.jsonl');
+  /** @type {string[][]} */
+  const snaps = [];
+  let exit = 0;
+  const ctx = { ...w.ctx, run: /** @type {import('../../../.claude/skills/temper/scripts/temper.mjs').Runner} */ ((c, a, o) => {
+    if (c === process.execPath && a[0].endsWith('quality-snapshot.mjs')) {
+      snaps.push(a.slice(1));
+      if (!exit) writeFileSync(a[4], `${readFileSync(a[4], 'utf8').trim() ? `${readFileSync(a[4], 'utf8').trim()}\n` : ''}${JSON.stringify({ ts: new Date().toISOString(), label: a[2], head: 'abc1234', long_functions: 1 })}\n`);
+      return { status: exit, stdout: '' };
+    }
+    return w.ctx.run(c, a, o);
+  }) };
+  put(qfile, '');
+  const file = join(w.work, 'c.json');
+  put(file, { target: 'tooling' });
+  main(['cycle', 'begin', '--target', 'tooling'], ctx);
+  const a = main(['cycle', 'end', '--file', file], ctx);
+  assert.deepEqual(snaps, [['--label', 'c1', '--append', qfile]]);
+  assert.deepEqual(a.out.verified.quality, { state: 'appended', head: 'abc1234' });
+  assert.equal(readFileSync(qfile, 'utf8').trim().split('\n').length, 1);
+  // the director's update step already wrote one: no second row
+  main(['cycle', 'begin', '--target', 'tooling'], ctx);
+  writeFileSync(qfile, `${readFileSync(qfile, 'utf8')}${JSON.stringify({ ts: new Date(Date.now() + 1000).toISOString(), label: 'c2', head: 'def5678' })}\n`);
+  const b = main(['cycle', 'end', '--file', file], ctx);
+  assert.equal(snaps.length, 1);
+  assert.deepEqual(b.out.verified.quality, { state: 'present', head: 'def5678' });
+  // a failed snapshot is recorded, and never makes the cycle red by itself
+  w.at(Date.now() + 5000);
+  main(['cycle', 'begin', '--target', 'tooling'], ctx);
+  exit = 1;
+  const c = main(['cycle', 'end', '--file', file], ctx);
+  assert.deepEqual(c.out.verified.quality, { state: 'failed', exit: 1 });
+  assert.ok(!(c.out.red_because ?? []).some((/** @type {string} */ x) => /quality/.test(x)));
+  assert.equal(snaps.length, 2, 'tried once more');
+});
+
 test('land --dry-run (Dowser): green is the ff merge + push + Forge development deploy plan; red rolls back to the last green head', () => {
   const w = world();
   charter(w);
@@ -526,6 +566,7 @@ test('cycles per repo: bp begins while Dowser\'s cycle is open (the first versio
   const e = main(['cycle', 'end', '--file', file], w.ctx);
   assert.equal(e.code, 0, JSON.stringify(e.out));
   assert.deepEqual([e.out.repo, e.out.n], ['bp', 2]);
+  assert.equal(e.out.verified.quality, undefined, 'a bp cycle leaves the Dowser quality snapshot alone');
   assert.equal(existsSync(join(w.root, '.temper', 'cycle-bp.json')), false);
   // Dowser's cycle begun by the first version ends through --repo (the file names none), and its file goes
   put(file, { target: 'lenses' });

@@ -711,6 +711,25 @@ export function validateCycleFile(raw, o) {
   return raw.verdicts === undefined ? [] : checkVerdicts(raw.verdicts);
 }
 
+/**
+ * The quality instrument fills itself: when quality.jsonl has no row written since the cycle began (the director's
+ * update step did not run quality-snapshot), run it now with --label c<n> --append. It never makes a cycle red; its
+ * state goes in the row (present, appended, no row written, failed).
+ * @param {Ctx} ctx @param {any} open @returns {{state: string, head?: string, exit?: number | null}}
+ */
+function qualityRowOf(ctx, open) {
+  const file = join(paths(ctx.root).records, 'quality.jsonl');
+  const since = Date.parse(open.begun_at);
+  const fresh = () => readJsonl(file).filter((r) => typeof r.ts === 'string' && Date.parse(r.ts) >= since).at(-1);
+  const had = fresh();
+  if (had) return { state: 'present', ...(typeof had.head === 'string' ? { head: had.head } : {}) };
+  mkdirSync(dirname(file), { recursive: true });
+  const r = ctx.run(process.execPath, [join(ctx.root, 'tools', 'quality-snapshot.mjs'), '--label', `c${open.n}`, '--append', file], { cwd: ctx.root });
+  if (r.status !== 0) return { state: 'failed', exit: r.status };
+  const now = fresh();
+  return now ? { state: 'appended', ...(typeof now.head === 'string' ? { head: now.head } : {}) } : { state: 'no row written' };
+}
+
 /** @param {Ctx} ctx @param {Record<string, string | true>} f */
 function cycleEnd(ctx, f) {
   const charter = needCharter(ctx);
@@ -750,6 +769,7 @@ function cycleEnd(ctx, f) {
   const head = gitIn(ctx, dir, 'rev-parse', 'HEAD');
   const gates = isDowser ? { ...runGates(ctx, ['typecheck', 'test']), ...runRepoGates(ctx, repo, dir) } : runRepoGates(ctx, repo, dir);
   const u = isDowser ? uatSince(ctx.root, Date.parse(open.begun_at)) : { uat: {}, green: true, why: [] };
+  const quality = isDowser ? qualityRowOf(ctx, open) : undefined;
   const gatesGreen = Object.values(gates).every((s) => s === 'pass');
   const quota = rejectShare(countKinds(verdicts));
   const { target: _t, repo: _r, ...claims } = raw;
@@ -757,7 +777,7 @@ function cycleEnd(ctx, f) {
   const row = {
     kind: 'cycle', n: open.n, date: open.date, repo: repo.name, target: open.target, begun_at: open.begun_at, ended_at: ctx.now().toISOString(), head,
     green, ...(green ? {} : { red_because: [...Object.entries(gates).filter(([, s]) => s !== 'pass').map(([k]) => `${k} failed`), ...u.why] }),
-    verified: { gates, ...(isDowser ? { uat: u.uat } : {}) },
+    verified: { gates, ...(isDowser ? { uat: u.uat } : {}), ...(quality ? { quality } : {}) },
     quota,
     self_reported: { ...claims, ...(raw.verdicts ? { verdicts } : {}) },
   };

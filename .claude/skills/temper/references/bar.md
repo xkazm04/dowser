@@ -8,7 +8,7 @@ supplement). `T modules bar` reads every part from an instrument and writes `doc
 | `uat` | `e2e/results/<project>.json` (the runner's three-state rows), matched to the module's surfaces by the `uat` regexes; a CLI-only module (`"uat": "tests"`) reads the gates of the last quality-snapshot row | every matched spec passes, none flaky, each run at least 3 times (`--repeat-each 3`), on every project the module renders in |
 | `proposals` | the lens-scan store (its `store.mjs proposals`, read-only), `.ai/lens-scan/app-structure.json` (feature -> contexts) and `docs/evals/temper/resolved.json` | no open proposal (proposed, approved, executing, failed, rework, done) at tier 0-2 on the module's features, other than one resolved by a landed commit |
 | `scan_yield` | `~/.temper/scans.jsonl`, rows of the Dowser inbox with the module's `focus` | the last two scans each created 2 cards or fewer |
-| `quality` | `docs/evals/temper/quality.jsonl` (quality-snapshot rows) | long_functions, dup_windows, lib_cycles and todos did not grow between the last two rows |
+| `quality` | `docs/evals/temper/quality.jsonl` (quality-snapshot rows; every Dowser `cycle end` makes sure its cycle wrote one) | long_functions, dup_windows, lib_cycles and todos did not grow between the last two rows |
 | `coverage` | `tools/e2e-coverage.mjs` | every route and resolver id matched by the module's `coverage` regexes is covered by a spec |
 
 Each part is `{state, ok, detail}`:
