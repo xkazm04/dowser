@@ -48,6 +48,13 @@ build. Install first, in the worktree, before any gate or e2e:
 Say in `notes` what you installed. A red gate whose output says "Cannot find module" or "is not recognized" is the
 install missing, not the item: install, then run the gate again.
 
+## Secret scanning
+
+The repo's own secret-scan hook may depend on a tool that is not installed here (gitleaks, for one): such a hook
+skips or fails without scanning. Then the repo's scan is **unverifiable**: never report it as clean, and say so in
+`notes`. Do not install the tool or bypass the hook. `land` runs the built-in secret scan on every landing kind, so
+the director's landing still checks the diff; you still never commit a secret or a `.env`.
+
 ## Steps
 
 1. **Scan.** Skip it when the launch message says the scan ran. Otherwise run `scan` from `loop_root` as printed:

@@ -28,6 +28,8 @@ const put = (file, v) => { mkdirSync(dirname(file), { recursive: true }); writeF
 /** @param {string} dir @param {...string} a */
 const g = (dir, ...a) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
 const row = (/** @type {string} */ spec, state = 'pass', attempts = 3, flaky = false) => ({ spec, state, attempts, flaky });
+// fake credentials, split so this file's own lines never trip the built-in secret scan when Dowser lands (land scans the branch's diff)
+const FAKE_AWS = ['AKIA', 'ABCDEFGHIJKLMNOP'].join(''), FAKE_ANTHROPIC = ['sk-ant', 'abcdefghijklmnopqrstuvwxyz0123'].join('-'), FAKE_PEM = ['-----BEGIN RSA', 'PRIVATE KEY-----'].join(' ');
 
 /**
  * A Dowser stand-in (git repo on master) with a ctx whose runner runs git for real and answers the rest.
@@ -616,6 +618,68 @@ test('land --dry-run (Dowser): green is the ff merge + push + Forge development 
   assert.ok(red.out.reasons.some((/** @type {string} */ x) => /e2e fixture: stale/.test(x)), 'results older than HEAD are stale');
 });
 
+test('land, every landing kind: the built-in secret scan runs, and a repo hook whose gitleaks is missing never reads as clean', () => {
+  const w = world();
+  const { bp, personas } = otherRepos(w);
+  const HOOK = 'gitleaks protect --staged';
+  const draft = join(w.work, 'draft.json');
+  put(draft, { repos: [
+    { name: 'dowser', path: w.root, inbox_key: 'dowser-temper', build: true, gates: [HOOK] },
+    { name: 'bp', path: bp, inbox_key: 'bp-temper', build: true, landing: { kind: 'rebase-push' }, gates: ['npm run check', HOOK] },
+    { name: 'personas', path: personas, inbox_key: 'personas-temper', build: true, landing: { kind: 'commit-only' }, gates: ['npm run gate -- --cold', HOOK] },
+  ] });
+  assert.equal(main(['charter', 'init', '--from', draft, '--operator', 'Op'], w.ctx).code, 0);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  const s = main(['repo', 'start', '--repo', 'bp'], w.ctx).out;
+  const p = main(['repo', 'start', '--repo', 'personas', '--paths', 'src/**'], w.ctx).out;
+  /** @param {string} dir @param {string} name @param {string} text */
+  const commit = (dir, name, text) => { put(join(dir, name), text); g(dir, 'add', name); g(dir, 'commit', '-q', '-m', `feat: ${name}`); };
+  commit(w.root, 'a.txt', 'a\n'); commit(s.worktree, 'a.txt', 'a\n'); commit(p.worktree, 'a.txt', 'a\n');
+  put(join(w.root, 'e2e', 'results', 'fixture.json'), [row('a')]);
+  put(join(w.root, 'e2e', 'results', 'local.json'), [row('b')]);
+  /** @param {{status: number, stdout: string, stderr?: string}} hook */
+  const withHook = (hook) => ({ ...w.ctx, run: /** @type {import('../../../.claude/skills/temper/scripts/temper.mjs').Runner} */ ((c, a, o) => (c === HOOK ? hook : w.ctx.run(c, a, o))) });
+  const land = (/** @type {any} */ ctx, /** @type {string[]} */ ...repo) => main(['land', ...repo, '--dry-run'], ctx).out;
+  // a clean diff and a hook that ran: green everywhere, and each landing records the built-in scan
+  const ran = withHook({ status: 0, stdout: 'no leaks found' });
+  const clean = [land(ran), land(ran, '--repo', 'bp'), land(ran, '--repo', 'personas')];
+  assert.deepEqual(clean.map((x) => x.decision), ['land', 'land', 'commit-only'], JSON.stringify(clean.map((x) => x.reasons)));
+  for (const x of clean) assert.deepEqual(x.checks.secret_scan, { clean: true, hits: [] }, `${x.landing} runs the built-in scan`);
+  // gitleaks is not installed: the hook gate fails for the environment, and that is red, never clean
+  const missing = withHook({ status: 1, stdout: '', stderr: "'gitleaks' is not recognized as an internal or external command,\noperable program or batch file." });
+  const gone = [land(missing), land(missing, '--repo', 'bp'), land(missing, '--repo', 'personas')];
+  assert.deepEqual(gone.map((x) => x.decision), ['rollback', 'red', 'red']);
+  for (const x of gone) {
+    assert.ok(x.reasons.includes(`${HOOK} failed (environmental: command not recognized)`), JSON.stringify(x.reasons));
+    assert.deepEqual(x.checks.env, { [HOOK]: 'command not recognized' });
+  }
+  // a hook that skips silently without gitleaks (exit 0): the built-in scan still turns a leak red
+  const skipped = withHook({ status: 0, stdout: 'gitleaks not installed, skipping secret scan' });
+  const KEY = `token ${FAKE_AWS}\n`;
+  commit(w.root, 'k.txt', KEY); commit(s.worktree, 'k.txt', KEY); commit(p.worktree, 'k.txt', KEY);
+  for (const e of ['fixture', 'local']) put(join(w.root, 'e2e', 'results', `${e}.json`), [row(e)]);
+  const leak = [land(skipped), land(skipped, '--repo', 'bp'), land(skipped, '--repo', 'personas')];
+  assert.deepEqual(leak.map((x) => x.decision), ['red', 'red', 'red'], 'a scan hit alone stops a Dowser landing without resetting the branch');
+  assert.deepEqual(leak[0].steps, []);
+  for (const x of leak) {
+    assert.equal(x.checks.secret_scan.clean, false);
+    assert.match(x.reasons.join(), /the secret scan found aws-access-key in k\.txt/);
+    assert.doesNotMatch(JSON.stringify(x), new RegExp(FAKE_AWS), 'the secret itself is never printed');
+  }
+});
+
+test('secret scan: the /temper sources and tests hold no credential shape, so a Dowser landing that carries them is not stopped by its own fixtures', () => {
+  for (const f of ['skill/scripts/tests/temper.test.mjs', 'skill/scripts/tests/temper-tools.test.mjs', '.claude/skills/temper/scripts/temper.mjs']) {
+    const added = readFileSync(join(ROOT, f), 'utf8').split(/\r?\n/).map((l) => `+${l}`).join('\n');
+    assert.deepEqual(secretScan(f, `+++ b/${f}\n${added}`).hits, [], f);
+  }
+});
+
+test('envCause: names what the shell and node say about a missing tool or module, not a word that merely resembles it', () => {
+  for (const out of ['sh: 1: tsc: not found', 'bash: gitleaks: command not found', "'tsc' is not recognized as an internal or external command,"]) assert.equal(envCause({ status: 1, stdout: out }), 'command not recognized', out);
+  for (const out of ['Error: user: not found', 'expected 200, got 404: not found']) assert.equal(envCause({ status: 1, stdout: out }), undefined, out);
+});
+
 test('land (Dowser, executed): more than one Forge installation row is a failed landing', () => {
   const w = world();
   charter(w);
@@ -760,7 +824,7 @@ test('repo start/land: bp rebases onto origin/master and pushes HEAD:master only
   assert.equal(green.out.decision, 'land', JSON.stringify(green.out));
   assert.deepEqual(green.out.steps, ['git push origin HEAD:master']);
   assert.ok(w.calls.some((c) => c.cmd === 'npm run check' && c.cwd === s.out.worktree), 'the charter gate ran in the worktree');
-  put(join(s.out.worktree, '.env'), 'KEY=sk-ant-abcdefghijklmnopqrstuvwxyz0123\n');
+  put(join(s.out.worktree, '.env'), `KEY=${FAKE_ANTHROPIC}\n`);
   g(s.out.worktree, 'add', '-f', '.env'); g(s.out.worktree, 'commit', '-q', '-m', 'oops');
   const red = main(['land', '--repo', 'bp', '--dry-run'], w.ctx);
   assert.equal(red.out.decision, 'red');
@@ -792,7 +856,7 @@ test('repo start/land: bp rebases onto origin/master and pushes HEAD:master only
   assert.ok(!w.calls.some((c) => c.cmd === 'npm run verify:affected -- --files {files}'), 'an item gate is the builder\'s, not land\'s');
   assert.equal(pl.out.checks.secret_scan.clean, true, 'commit-only runs the built-in secret scan too');
   // the repo's own hook may skip its scan (gitleaks missing): the built-in scan still turns a leak red
-  put(join(p.out.worktree, 'k.txt'), 'token AKIAABCDEFGHIJKLMNOP\n');
+  put(join(p.out.worktree, 'k.txt'), `token ${FAKE_AWS}\n`);
   g(p.out.worktree, 'add', 'k.txt'); g(p.out.worktree, 'commit', '-q', '-m', 'oops');
   const leak = main(['land', '--repo', 'personas', '--dry-run'], w.ctx);
   assert.equal(leak.out.decision, 'red');
@@ -947,8 +1011,8 @@ test('cycle begin --repo: the target is a focus in the store\'s form (area:<path
 
 test('secretScan: env files and token shapes in added lines, never .env.example, names only', () => {
   assert.deepEqual(secretScan('a.txt\n.env.example\nsub/.env.local', '+++ b/a.txt\n+hello'), { clean: false, hits: [{ file: 'sub/.env.local', pattern: 'env-file' }] });
-  assert.equal(secretScan('a.txt', '+++ b/a.txt\n-AKIAABCDEFGHIJKLMNOP\n+fine').clean, true, 'a removed line is no leak');
-  assert.deepEqual(secretScan('k.pem', '+++ b/k.pem\n+-----BEGIN RSA PRIVATE KEY-----').hits, [{ file: 'k.pem', pattern: 'private-key' }]);
+  assert.equal(secretScan('a.txt', `+++ b/a.txt\n-${FAKE_AWS}\n+fine`).clean, true, 'a removed line is no leak');
+  assert.deepEqual(secretScan('k.pem', `+++ b/k.pem\n+${FAKE_PEM}`).hits, [{ file: 'k.pem', pattern: 'private-key' }]);
 });
 
 test('report: verified vs self-reported UAT, live and local-only verdicts apart, at most three questions', () => {
@@ -1116,12 +1180,17 @@ test('runner.md: the brief is repo-agnostic, on tonight\'s tools, and SKILL.md s
   assert.match(md, /--ref/);
   assert.match(md, /recorded: "local"/);
   // a fresh worktree has no node_modules: the runner installs before any gate or e2e
-  const fresh = md.slice(md.indexOf('## A fresh worktree has no node_modules'), md.indexOf('## Steps'));
+  const fresh = md.slice(md.indexOf('## A fresh worktree has no node_modules'), md.indexOf('## Secret scanning'));
   assert.ok(fresh.length > 40, 'the section is there, before the steps');
   assert.match(fresh, /`npm ci` in the root, in `forge` and in `forge\/static\/app`/);
   assert.match(fresh, /the install its law or its README names/);
   assert.match(fresh, /before any gate or e2e/);
-  const skill =readFileSync(join(ROOT, '.claude/skills/temper/SKILL.md'), 'utf8');
+  // a repo's secret hook whose tool is missing is unverifiable; land's built-in scan covers every landing kind
+  const secrets = md.slice(md.indexOf('## Secret scanning'), md.indexOf('## Steps'));
+  assert.match(secrets, /gitleaks/);
+  assert.match(secrets, /\*\*unverifiable\*\*: never report it as clean/);
+  assert.match(secrets, /built-in secret scan on every landing kind/);
+  const skill = readFileSync(join(ROOT, '.claude/skills/temper/SKILL.md'), 'utf8');
   const s1 = skill.slice(skill.indexOf('## 1. Cycle'), skill.indexOf('## 2.'));
   assert.match(s1, /references\/runner\.md/);
   assert.match(s1, /`runner` block/);

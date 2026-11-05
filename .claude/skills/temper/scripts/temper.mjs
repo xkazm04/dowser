@@ -27,8 +27,8 @@
 //   clock [--rate-limited --until <iso>]   {elapsed_min, remaining_min, ends_at, drain, stop}
 //   report [--date YYYY-MM-DD]             writes docs/evals/temper/<date>.md (with the runners' skill issues, by where)
 //   land [--repo <name>] [--dry-run]       the repo's own landing law (charter repos[].landing):
-//                                          loop-ff (Dowser): ff master, push origin master, deploy Forge development
-//                                            when green; red: reset loop/<date> to the last green commit
+//                                          loop-ff (Dowser): gates + secret scan, ff master, push origin master, deploy
+//                                            Forge development when green; red: reset loop/<date> to the last green commit
 //                                          rebase-push (bp): rebase onto origin/master, gates + secret scan, push
 //                                            HEAD:master; red: nothing pushed
 //                                          commit-only (personas): gates + secret scan; never pushes
@@ -882,7 +882,7 @@ export function syncDeps(ctx) {
  */
 const ENV_ERRORS = /** @type {const} */ ([
   ['module not found', /cannot find (module|package)|err_module_not_found|module not found/i],
-  ['command not recognized', /is not recognized as (an internal or external command|the name of a cmdlet)|command not found|: not found\b/i],
+  ['command not recognized', /is not recognized as (an internal or external command|the name of a cmdlet)|command not found|^\S*sh: (\d+: )?\S+: not found/im],
 ]);
 /** The environmental cause of a failed run, if its output names one. @param {RunResult} r @returns {string | undefined} */
 export function envCause(r) {
@@ -1985,12 +1985,21 @@ export function landPlan(ctx, day, repo) {
   // the gates run on the tree the lockfiles name: a folder whose node_modules predates its lockfile gets npm ci first
   const deps = syncDeps(ctx);
   reasons.push(...deps.why);
-  const gates = { ...runGates(ctx, ['typecheck', 'test', 'e2e:coverage', ...(forgeChanged ? ['forge:typecheck', 'forge:test', 'forge:check-shared'] : [])]),
-    ...(repo ? runRepoGates(ctx, repo, ctx.root) : {}) };
-  for (const [k, s] of Object.entries(gates)) if (s !== 'pass') reasons.push(`${k} failed`);
+  /** @type {Record<string, string>} */
+  const env = {};
+  const gates = { ...runGates(ctx, ['typecheck', 'test', 'e2e:coverage', ...(forgeChanged ? ['forge:typecheck', 'forge:test', 'forge:check-shared'] : [])], ctx.root, env),
+    ...(repo ? runRepoGates(ctx, repo, ctx.root, env) : {}) };
+  for (const [k, s] of Object.entries(gates)) if (s !== 'pass') reasons.push(failWhy(k, env));
   const u = uatSince(ctx.root, Number(git(ctx, 'log', '-1', '--format=%ct')) * 1000);
   reasons.push(...u.why);
-  const checks = { deps: deps.deps, gates, uat: u.uat, forge_changed: forgeChanged, ahead };
+  // every landing kind runs the built-in scan: a repo's own hook may skip or fail without scanning (gitleaks missing)
+  const scan = secretScan(git(ctx, 'diff', '--name-only', `master...${branch}`), git(ctx, 'diff', '-U0', `master...${branch}`));
+  const scanOnly = !scan.clean && !reasons.length;
+  if (!scan.clean) reasons.push(`the secret scan found ${scan.hits.map((h) => `${h.pattern} in ${h.file}`).join(', ')}`);
+  const checks = { deps: deps.deps, gates, ...(Object.keys(env).length ? { env } : {}), uat: u.uat, secret_scan: scan, forge_changed: forgeChanged, ahead };
+  // a scan hit alone stops the landing and resets nothing: the scan matches shapes (a test fixture is one), the leak may
+  // predate the last green, and a reset of the night's work is the operator's call on what the hit really is
+  if (scanOnly) return { repo: 'dowser', landing: 'loop-ff', decision: 'red', branch, head, checks, reasons, steps: [] };
   const deploy = forgeChanged && repo?.landing.deploy !== undefined ? repo.landing.deploy : forgeChanged && !repo ? 'forge-development' : undefined;
   if (!reasons.length) {
     const forgeDir = join(ctx.root, 'forge');
@@ -2040,10 +2049,14 @@ export function repoLand(ctx, day, repo, dry) {
   }
   const head = gitIn(ctx, wt, 'rev-parse', 'HEAD');
   if (!reasons.length) {
-    const gates = runRepoGates(ctx, repo, wt);
+    /** @type {Record<string, string>} */
+    const env = {};
+    const gates = runRepoGates(ctx, repo, wt, env);
     checks.gates = gates;
+    if (Object.keys(env).length) checks.env = env;
     if (!Object.keys(gates).length) reasons.push('the charter names no land gate for this repo');
-    for (const [k, v] of Object.entries(gates)) if (v !== 'pass') reasons.push(`${k} failed`);
+    // a gate that is the repo's own secret hook and needs a missing tool fails here (environmental): never clean
+    for (const [k, v] of Object.entries(gates)) if (v !== 'pass') reasons.push(failWhy(k, env));
     // every landing kind: a repo's own hook may skip its scan silently (personas: gitleaks not installed, c7)
     const range = `${base}...HEAD`;
     const scan = secretScan(gitIn(ctx, wt, 'diff', '--name-only', range), gitIn(ctx, wt, 'diff', '-U0', range));
