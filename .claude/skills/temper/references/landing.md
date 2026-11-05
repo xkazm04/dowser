@@ -10,8 +10,9 @@ Production, tags and releases are never part of a landing. The guard denies them
   last green commit.
 - `T land` checks, on `loop/<date>`: a clean tree, no open cycle, master an ancestor (a fast-forward is possible),
   the gates (`typecheck`, `test`, `e2e:coverage`, plus `forge:typecheck`, `forge:test` and `forge:check-shared` when
-  forge/ changed, plus the charter's gates), and fixture and local e2e results newer than HEAD with a pass and no fail.
-  A live fail blocks; live unverifiable does not.
+  forge/ changed, plus the charter's gates), the built-in secret scan of `master...loop/<date>` (`checks.secret_scan`;
+  a hit is red), and fixture and local e2e results newer than HEAD with a pass and no fail. A live fail blocks; live
+  unverifiable does not.
 - **Dependencies first.** Before the gates, `land` (dry run included: it touches only `node_modules`) checks root,
   `forge` and `forge/static/app`: when a folder's `package-lock.json` is not what its `node_modules/.package-lock.json`
   says is installed, it runs `npm ci` there (`checks.deps`). A failed `npm ci` is a reason not to land. Cycle 1 of
@@ -66,6 +67,16 @@ Production, tags and releases are never part of a landing. The guard denies them
 - personas' gates lint `src/` only: for a change to `scripts/*.mjs` the cold gate reports eslint `ok` with "no lintable
   files". Those files are linted only by the pre-commit eslint-staged hook, so never read the cold gate as covering
   them; say so in the cycle's `uat`.
+
+## Secret scanning on every landing kind
+
+`loop-ff`, `rebase-push` and `commit-only` all run the built-in secret scan of the branch's diff and record it in
+`checks.secret_scan`; a hit is red. On `loop-ff` a hit with no other reason stops the landing and resets nothing
+(`decision: "red"`, no steps): the scan matches shapes, so what a hit really is stays the operator's call. Test
+fixtures build fake credentials at run time, so the repo's own lines do not trip it. A repo's own secret-scan hook that depends on a tool that is missing (gitleaks)
+scans nothing, so it is **unverifiable**, never clean: a charter gate that runs it and fails because the tool is
+not recognized is red (`<gate> failed (environmental: command not recognized)`), and a hook that skips silently is
+never read as the scan.
 
 ## After a landing
 

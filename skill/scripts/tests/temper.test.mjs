@@ -11,7 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, depDrift, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
-  capQuestions, commitGroups, commitKind, parkedGroups, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
+  capQuestions, commitGroups, commitKind, cycleRows, envCause, environmentalRed, parkedGroups, supersede, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
 } from '../../../.claude/skills/temper/scripts/temper.mjs';
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
 import { derivedIds } from '../../../tools/e2e-coverage.mjs';
@@ -28,6 +28,8 @@ const put = (file, v) => { mkdirSync(dirname(file), { recursive: true }); writeF
 /** @param {string} dir @param {...string} a */
 const g = (dir, ...a) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
 const row = (/** @type {string} */ spec, state = 'pass', attempts = 3, flaky = false) => ({ spec, state, attempts, flaky });
+// fake credentials, split so this file's own lines never trip the built-in secret scan when Dowser lands (land scans the branch's diff)
+const FAKE_AWS = ['AKIA', 'ABCDEFGHIJKLMNOP'].join(''), FAKE_ANTHROPIC = ['sk-ant', 'abcdefghijklmnopqrstuvwxyz0123'].join('-'), FAKE_PEM = ['-----BEGIN RSA', 'PRIVATE KEY-----'].join(' ');
 
 /**
  * A Dowser stand-in (git repo on master) with a ctx whose runner runs git for real and answers the rest.
@@ -616,6 +618,68 @@ test('land --dry-run (Dowser): green is the ff merge + push + Forge development 
   assert.ok(red.out.reasons.some((/** @type {string} */ x) => /e2e fixture: stale/.test(x)), 'results older than HEAD are stale');
 });
 
+test('land, every landing kind: the built-in secret scan runs, and a repo hook whose gitleaks is missing never reads as clean', () => {
+  const w = world();
+  const { bp, personas } = otherRepos(w);
+  const HOOK = 'gitleaks protect --staged';
+  const draft = join(w.work, 'draft.json');
+  put(draft, { repos: [
+    { name: 'dowser', path: w.root, inbox_key: 'dowser-temper', build: true, gates: [HOOK] },
+    { name: 'bp', path: bp, inbox_key: 'bp-temper', build: true, landing: { kind: 'rebase-push' }, gates: ['npm run check', HOOK] },
+    { name: 'personas', path: personas, inbox_key: 'personas-temper', build: true, landing: { kind: 'commit-only' }, gates: ['npm run gate -- --cold', HOOK] },
+  ] });
+  assert.equal(main(['charter', 'init', '--from', draft, '--operator', 'Op'], w.ctx).code, 0);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  const s = main(['repo', 'start', '--repo', 'bp'], w.ctx).out;
+  const p = main(['repo', 'start', '--repo', 'personas', '--paths', 'src/**'], w.ctx).out;
+  /** @param {string} dir @param {string} name @param {string} text */
+  const commit = (dir, name, text) => { put(join(dir, name), text); g(dir, 'add', name); g(dir, 'commit', '-q', '-m', `feat: ${name}`); };
+  commit(w.root, 'a.txt', 'a\n'); commit(s.worktree, 'a.txt', 'a\n'); commit(p.worktree, 'a.txt', 'a\n');
+  put(join(w.root, 'e2e', 'results', 'fixture.json'), [row('a')]);
+  put(join(w.root, 'e2e', 'results', 'local.json'), [row('b')]);
+  /** @param {{status: number, stdout: string, stderr?: string}} hook */
+  const withHook = (hook) => ({ ...w.ctx, run: /** @type {import('../../../.claude/skills/temper/scripts/temper.mjs').Runner} */ ((c, a, o) => (c === HOOK ? hook : w.ctx.run(c, a, o))) });
+  const land = (/** @type {any} */ ctx, /** @type {string[]} */ ...repo) => main(['land', ...repo, '--dry-run'], ctx).out;
+  // a clean diff and a hook that ran: green everywhere, and each landing records the built-in scan
+  const ran = withHook({ status: 0, stdout: 'no leaks found' });
+  const clean = [land(ran), land(ran, '--repo', 'bp'), land(ran, '--repo', 'personas')];
+  assert.deepEqual(clean.map((x) => x.decision), ['land', 'land', 'commit-only'], JSON.stringify(clean.map((x) => x.reasons)));
+  for (const x of clean) assert.deepEqual(x.checks.secret_scan, { clean: true, hits: [] }, `${x.landing} runs the built-in scan`);
+  // gitleaks is not installed: the hook gate fails for the environment, and that is red, never clean
+  const missing = withHook({ status: 1, stdout: '', stderr: "'gitleaks' is not recognized as an internal or external command,\noperable program or batch file." });
+  const gone = [land(missing), land(missing, '--repo', 'bp'), land(missing, '--repo', 'personas')];
+  assert.deepEqual(gone.map((x) => x.decision), ['rollback', 'red', 'red']);
+  for (const x of gone) {
+    assert.ok(x.reasons.includes(`${HOOK} failed (environmental: command not recognized)`), JSON.stringify(x.reasons));
+    assert.deepEqual(x.checks.env, { [HOOK]: 'command not recognized' });
+  }
+  // a hook that skips silently without gitleaks (exit 0): the built-in scan still turns a leak red
+  const skipped = withHook({ status: 0, stdout: 'gitleaks not installed, skipping secret scan' });
+  const KEY = `token ${FAKE_AWS}\n`;
+  commit(w.root, 'k.txt', KEY); commit(s.worktree, 'k.txt', KEY); commit(p.worktree, 'k.txt', KEY);
+  for (const e of ['fixture', 'local']) put(join(w.root, 'e2e', 'results', `${e}.json`), [row(e)]);
+  const leak = [land(skipped), land(skipped, '--repo', 'bp'), land(skipped, '--repo', 'personas')];
+  assert.deepEqual(leak.map((x) => x.decision), ['red', 'red', 'red'], 'a scan hit alone stops a Dowser landing without resetting the branch');
+  assert.deepEqual(leak[0].steps, []);
+  for (const x of leak) {
+    assert.equal(x.checks.secret_scan.clean, false);
+    assert.match(x.reasons.join(), /the secret scan found aws-access-key in k\.txt/);
+    assert.doesNotMatch(JSON.stringify(x), new RegExp(FAKE_AWS), 'the secret itself is never printed');
+  }
+});
+
+test('secret scan: the /temper sources and tests hold no credential shape, so a Dowser landing that carries them is not stopped by its own fixtures', () => {
+  for (const f of ['skill/scripts/tests/temper.test.mjs', 'skill/scripts/tests/temper-tools.test.mjs', '.claude/skills/temper/scripts/temper.mjs']) {
+    const added = readFileSync(join(ROOT, f), 'utf8').split(/\r?\n/).map((l) => `+${l}`).join('\n');
+    assert.deepEqual(secretScan(f, `+++ b/${f}\n${added}`).hits, [], f);
+  }
+});
+
+test('envCause: names what the shell and node say about a missing tool or module, not a word that merely resembles it', () => {
+  for (const out of ['sh: 1: tsc: not found', 'bash: gitleaks: command not found', "'tsc' is not recognized as an internal or external command,"]) assert.equal(envCause({ status: 1, stdout: out }), 'command not recognized', out);
+  for (const out of ['Error: user: not found', 'expected 200, got 404: not found']) assert.equal(envCause({ status: 1, stdout: out }), undefined, out);
+});
+
 test('land (Dowser, executed): more than one Forge installation row is a failed landing', () => {
   const w = world();
   charter(w);
@@ -760,7 +824,7 @@ test('repo start/land: bp rebases onto origin/master and pushes HEAD:master only
   assert.equal(green.out.decision, 'land', JSON.stringify(green.out));
   assert.deepEqual(green.out.steps, ['git push origin HEAD:master']);
   assert.ok(w.calls.some((c) => c.cmd === 'npm run check' && c.cwd === s.out.worktree), 'the charter gate ran in the worktree');
-  put(join(s.out.worktree, '.env'), 'KEY=sk-ant-abcdefghijklmnopqrstuvwxyz0123\n');
+  put(join(s.out.worktree, '.env'), `KEY=${FAKE_ANTHROPIC}\n`);
   g(s.out.worktree, 'add', '-f', '.env'); g(s.out.worktree, 'commit', '-q', '-m', 'oops');
   const red = main(['land', '--repo', 'bp', '--dry-run'], w.ctx);
   assert.equal(red.out.decision, 'red');
@@ -792,7 +856,7 @@ test('repo start/land: bp rebases onto origin/master and pushes HEAD:master only
   assert.ok(!w.calls.some((c) => c.cmd === 'npm run verify:affected -- --files {files}'), 'an item gate is the builder\'s, not land\'s');
   assert.equal(pl.out.checks.secret_scan.clean, true, 'commit-only runs the built-in secret scan too');
   // the repo's own hook may skip its scan (gitleaks missing): the built-in scan still turns a leak red
-  put(join(p.out.worktree, 'k.txt'), 'token AKIAABCDEFGHIJKLMNOP\n');
+  put(join(p.out.worktree, 'k.txt'), `token ${FAKE_AWS}\n`);
   g(p.out.worktree, 'add', 'k.txt'); g(p.out.worktree, 'commit', '-q', '-m', 'oops');
   const leak = main(['land', '--repo', 'personas', '--dry-run'], w.ctx);
   assert.equal(leak.out.decision, 'red');
@@ -947,8 +1011,8 @@ test('cycle begin --repo: the target is a focus in the store\'s form (area:<path
 
 test('secretScan: env files and token shapes in added lines, never .env.example, names only', () => {
   assert.deepEqual(secretScan('a.txt\n.env.example\nsub/.env.local', '+++ b/a.txt\n+hello'), { clean: false, hits: [{ file: 'sub/.env.local', pattern: 'env-file' }] });
-  assert.equal(secretScan('a.txt', '+++ b/a.txt\n-AKIAABCDEFGHIJKLMNOP\n+fine').clean, true, 'a removed line is no leak');
-  assert.deepEqual(secretScan('k.pem', '+++ b/k.pem\n+-----BEGIN RSA PRIVATE KEY-----').hits, [{ file: 'k.pem', pattern: 'private-key' }]);
+  assert.equal(secretScan('a.txt', `+++ b/a.txt\n-${FAKE_AWS}\n+fine`).clean, true, 'a removed line is no leak');
+  assert.deepEqual(secretScan('k.pem', `+++ b/k.pem\n+${FAKE_PEM}`).hits, [{ file: 'k.pem', pattern: 'private-key' }]);
 });
 
 test('report: verified vs self-reported UAT, live and local-only verdicts apart, at most three questions', () => {
@@ -1082,6 +1146,24 @@ test('cycle.md: QA updates the tests that encode the old behaviour in the spec c
   assert.match(build, /in its own scratch worktree/);
 });
 
+test('cycle.md: snoozes and merges spend the rejects cap as Forge counts them; a cap-deferred snooze does not', () => {
+  const md = readFileSync(join(ROOT, '.claude/skills/temper/references/cycle.md'), 'utf8');
+  const triage = md.slice(md.indexOf('## 3. Triage'), md.indexOf('## 4.'));
+  assert.match(triage, /\*\*The rejects cap counts snoozes and merges\.\*\* Forge counts/);
+  assert.match(triage, /A `deferred: "cap"` snooze does\s+not/);
+  // the doc and the code agree: 1 reject + 1 snooze + 1 merge spend 3 of a cap of 3; a carried snooze spends none
+  const v = (/** @type {string} */ ref, /** @type {string} */ verdict, o = {}) => ({ ref, verdict, inbox: 'x', recorded: 'local', ...o });
+  const caps = { accepts_per_day: 1, rejects_per_day: 3 };
+  const at = triageLimits([v('A', 'reject', { reason: 'false-positive' }), v('B', 'snooze', { note: 'n' }), v('C', 'merge', { into: 'A' })], [v('D', 'accept')], caps);
+  assert.equal(at.today.rejects, 3);
+  assert.equal(at.ok, true);
+  const over = triageLimits([v('A', 'reject', { reason: 'false-positive' }), v('B', 'snooze', { note: 'n' }), v('C', 'merge', { into: 'A' }), v('E', 'snooze', { note: 'n' })], [v('D', 'accept')], caps);
+  assert.match(over.why.join(), /4 rejects, snoozes and merges today, over the cap of 3/);
+  const carried = triageLimits([v('A', 'reject', { reason: 'false-positive' }), v('B', 'snooze', { note: 'n' }), v('C', 'merge', { into: 'A' }), v('E', 'snooze', { note: 'n', deferred: 'cap' })], [v('D', 'accept')], caps);
+  assert.equal(carried.today.rejects, 3, 'the cap-deferred snooze is carried, not a reject');
+  assert.equal(carried.today.carried, 1);
+});
+
 test('runner.md: the brief is repo-agnostic, on tonight\'s tools, and SKILL.md section 1 launches runners with it', () => {
   const md = readFileSync(join(ROOT, '.claude/skills/temper/references/runner.md'), 'utf8');
   for (const name of ['bp', 'personas', 'Lynx', 'Wolf', 'kiro']) assert.equal(new RegExp(`\\b${name}\\b`).test(md), false, `the brief names ${name}: repo specifics come from the block and the repo's law`);
@@ -1097,6 +1179,17 @@ test('runner.md: the brief is repo-agnostic, on tonight\'s tools, and SKILL.md s
   assert.match(md, /greps the repo's test folders for the old behaviour/);
   assert.match(md, /--ref/);
   assert.match(md, /recorded: "local"/);
+  // a fresh worktree has no node_modules: the runner installs before any gate or e2e
+  const fresh = md.slice(md.indexOf('## A fresh worktree has no node_modules'), md.indexOf('## Secret scanning'));
+  assert.ok(fresh.length > 40, 'the section is there, before the steps');
+  assert.match(fresh, /`npm ci` in the root, in `forge` and in `forge\/static\/app`/);
+  assert.match(fresh, /the install its law or its README names/);
+  assert.match(fresh, /before any gate or e2e/);
+  // a repo's secret hook whose tool is missing is unverifiable; land's built-in scan covers every landing kind
+  const secrets = md.slice(md.indexOf('## Secret scanning'), md.indexOf('## Steps'));
+  assert.match(secrets, /gitleaks/);
+  assert.match(secrets, /\*\*unverifiable\*\*: never report it as clean/);
+  assert.match(secrets, /built-in secret scan on every landing kind/);
   const skill = readFileSync(join(ROOT, '.claude/skills/temper/SKILL.md'), 'utf8');
   const s1 = skill.slice(skill.indexOf('## 1. Cycle'), skill.indexOf('## 2.'));
   assert.match(s1, /references\/runner\.md/);
@@ -1271,6 +1364,56 @@ test('report from a synthetic ledger: the summary per repo, commits by repo with
   const parked = md.slice(md.indexOf('## Parked'), md.indexOf('## Skill issues'));
   assert.match(parked, /### dowser\n\n- DW-9 \(c3, parked 2 times\): newest\n\n### bp\n\n- DW-12 \(c2\): bp\n\nBuilt since they were parked: DW-3 \(dowser, c3\)\./);
   assert.ok(bp);
+});
+
+test('report: a repo without e2e suites reports its verified land gates per cycle; an environmental red answered by a later green at a descendant head reads as superseded', () => {
+  assert.equal(envCause({ status: 1, stdout: '', stderr: "'tsx' is not recognized as an internal or external command," }), 'command not recognized');
+  assert.equal(envCause({ status: 1, stdout: "Error: Cannot find module 'vitest'", stderr: '' }), 'module not found');
+  assert.equal(envCause({ status: 1, stdout: '2 tests failed', stderr: '' }), undefined);
+  assert.equal(environmentalRed(['typecheck failed (environmental: module not found)', 'e2e fixture: missing']), true);
+  assert.equal(environmentalRed(['npm ci in forge failed (exit 1; no node_modules)']), true);
+  assert.equal(environmentalRed(['e2e fixture: missing']), false, 'missing results alone are no environmental cause');
+  assert.equal(environmentalRed(['typecheck failed (environmental: module not found)', 'npm test failed']), false);
+  const w = world();
+  const { bp } = twoRepoDay(w);
+  const wt = JSON.parse(readFileSync(join(w.root, '.temper', 'day.json'), 'utf8')).repos.bp.worktree;
+  /** @type {{status: number, stdout: string, stderr: string}} */
+  let check = { status: 0, stdout: '', stderr: '' };
+  const ctx = { ...w.ctx, run: /** @type {import('../../../.claude/skills/temper/scripts/temper.mjs').Runner} */ ((c, a, o) => (c === 'npm run check' ? check : w.ctx.run(c, a, o))) };
+  const file = join(w.work, 'c.json');
+  const cycle = (/** @type {string} */ name) => {
+    assert.equal(main(['cycle', 'begin', '--repo', 'bp', '--target', 'area:README.md'], ctx).code, 0);
+    put(join(wt, `${name}.txt`), `${name}\n`);
+    g(wt, 'add', `${name}.txt`); g(wt, 'commit', '-q', '-m', `feat: ${name}`);
+    put(file, { target: 'area:README.md', repo: 'bp' });
+    return main(['cycle', 'end', '--file', file], ctx).out;
+  };
+  // a fresh worktree without node_modules: the gate fails for a reason that is not the build's
+  check = { status: 1, stdout: '', stderr: "'tsc' is not recognized as an internal or external command,\noperable program or batch file." };
+  const c1 = cycle('one');
+  assert.deepEqual(c1.red_because, ['npm run check failed (environmental: command not recognized)']);
+  assert.deepEqual(c1.verified, { gates: { 'npm run check': 'fail' }, env: { 'npm run check': 'command not recognized' } });
+  check = { status: 0, stdout: '', stderr: '' };
+  const c2 = cycle('two');
+  assert.equal(c2.green, true);
+  check = { status: 1, stdout: '1 test failed', stderr: '' };
+  const c3 = cycle('three');
+  assert.deepEqual(c3.red_because, ['npm run check failed'], 'a real failure carries no environmental cause');
+  const r = main(['report'], w.ctx);
+  assert.equal(r.code, 0, JSON.stringify(r.out));
+  const md = readFileSync(r.out.written, 'utf8');
+  const summary = md.slice(md.indexOf('## Summary'), md.indexOf('## Needs you'));
+  assert.match(summary, /- \*\*bp\*\*: 3 cycles \(1 green, 1 red: c3, c1 red \(environmental\?\) superseded by c2 green\);/);
+  assert.match(summary, /UAT pass: verified gates 1 passed of 3 \(c1 0\/1, c2 1\/1, c3 0\/1; no e2e suite\), self-reported 0\./);
+  assert.doesNotMatch(summary, /verified none/);
+  assert.match(md, /- 1 bp area:README.md: red \(environmental\?\) superseded by c2 green \(npm run check failed \(environmental: command not recognized\)\)/);
+  assert.match(md, /- 3 bp area:README.md: red \(npm run check failed\)/, 'a red with a real reason stays open');
+  // a green that is not a descendant of the red's head supersedes nothing
+  const rows = cycleRows(w.root, '2026-11-05');
+  const other = rows.map((x) => (x.n === 2 ? { ...x, head: g(bp, 'rev-parse', 'HEAD') } : x));
+  const day = JSON.parse(readFileSync(join(w.root, '.temper', 'day.json'), 'utf8'));
+  assert.equal(supersede(w.ctx, other, day, undefined).find((x) => x.n === 1).superseded_by, undefined);
+  assert.equal(supersede(w.ctx, rows, day, undefined).find((x) => x.n === 1).superseded_by, 2);
 });
 
 test('cycle begin prints the runner block: the brief, the launch inputs, the caps used and left, the work tree and the cycle file', () => {

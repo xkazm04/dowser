@@ -37,7 +37,9 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
 
 - List the cards with `node tools/temper-cards.mjs --project-key <inbox> [--status s] [--quotes]` (or the scan's
   `report`). `--full` adds the rationale, impact, effort, confidence, the body's sections (Flow, Expected impact) and
-  `acceptance` (the Evaluation section): hand that to the QA step, so it quotes the card instead of inventing criteria. Not `dowser.mjs list --repo <path>`: the scan keys the store by the inbox key (the clone's origin is set to
+  `acceptance` (the Evaluation section): hand that to the QA step, so it quotes the card instead of inventing criteria.
+  A card the store keeps `pushed` may already be judged: each row carries `decided_local` or `decided_live`
+  (`{verdict, cycle}`, from the day ledger), and `--undecided` lists only the cards with no verdict yet. Not `dowser.mjs list --repo <path>`: the scan keys the store by the inbox key (the clone's origin is set to
   it), so the real checkout maps to another project and lists nothing.
 - A subagent reads every new card against the code it quotes. Accept only a card that is real (the evidence holds
   at HEAD), in direction, and inside the charter's bounds. Reject with the honest reason code. Snooze what is real but
@@ -47,6 +49,10 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   reject cap), so a cycle
   that decides one or two good cards is not pushed into a dishonest reject. Within the day's caps, check the verdicts file first with
   `T triage check --verdicts <file> --inbox <key>`. Exit 1 means look again for the weak cards.
+- **The rejects cap counts snoozes and merges.** Forge counts a day's rejects, snoozes and merges together against
+  `rejects_per_day`, and so do `triage check`, `cycle end` and the runner block's `caps.used.rejects` and
+  `caps.left.rejects`: a snooze or a merge spends the rejects cap as a reject does. A `deferred: "cap"` snooze does
+  not: it is counted as `carried` (below), outside both the cap and the floor.
 - One verdicts file serves both tools: `[{ref, verdict, reason?, note?, into?, until?, inbox?, recorded?, deferred?}]`.
   `reason` is a reject's code only (model.mjs REASONS); a snooze or an accept says why in `note`. `inbox` (when given)
   must be the inbox checked, and `recorded` is `live` or `local`; temper-verdicts checks both and never sends them.
@@ -147,6 +153,13 @@ held a port), is not fixed by reverting the build. Fix the cause, then run `T cy
 - It appends a `kind: "reverify"` row (`head`, `of_head`, `before`, `green`, `red_because`, `verified`). The cycle's
   row is never rewritten. The newest verdict per cycle is what the bar, `report` (as "reverified at ...") and `land`
   (the rollback target) read. A green reverify moves the day's last green to HEAD.
+- A gate whose output names a missing module or an unknown command is recorded as `<gate> failed (environmental:
+  module not found | command not recognized)` (`verified.env` keeps the cause). A red whose only reasons are such
+  (or a failed `npm ci`, with e2e results missing beside them) and that a later green cycle of the same repo answers
+  at its head or a descendant reads in the report as "red (environmental?) superseded by c<m> green", not an open
+  red. Any other reason keeps it open.
+- A repo without e2e suites (bp, personas) reports its verified UAT as the land gates `cycle end` ran itself:
+  "verified gates n passed of m (c<k> p/q, ...)", never "none".
 
 ## The cycle file
 

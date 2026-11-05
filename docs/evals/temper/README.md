@@ -12,7 +12,7 @@ These are operator records, not Dowser runner surfaces, so they have no guided-m
 | file | written by | what |
 |---|---|---|
 | `<date>.jsonl` | `temper.mjs cycle end`, `cycle reverify` | one row per cycle, and a reverify row per re-check (below) |
-| `<date>.md` | `temper.mjs report` | the morning report: a Summary per repo first (cycles green/red, cards scanned, accepted and built with refs, rejected, snoozed, carried, landed, scan cost, UAT passes verified vs self-reported; the skill-hardening commit count), Needs you (at most 3 questions; one accept-cap question for every inbox at its cap), commits by repo (product first; record and merge commits folded to a count; skill-hardening commits in their own group), UAT verified vs self-reported, scans and costs, verdicts (live and local-only apart, and the cards carried to tomorrow), the bar per module, direction proposals, parked items (once per item and repo, with the newest reason; an item built later drops out) |
+| `<date>.md` | `temper.mjs report` | the morning report: a Summary per repo first (cycles green/red, cards scanned, accepted and built with refs, rejected, snoozed, carried, landed, scan cost, UAT passes verified vs self-reported (a repo without e2e suites: its verified land gates per cycle; an environmental red a later green at a descendant head answers reads as superseded); the skill-hardening commit count), Needs you (at most 3 questions; one accept-cap question for every inbox at its cap), commits by repo (product first; record and merge commits folded to a count; skill-hardening commits in their own group), UAT verified vs self-reported, scans and costs, verdicts (live and local-only apart, and the cards carried to tomorrow), the bar per module, direction proposals, parked items (once per item and repo, with the newest reason; an item built later drops out) |
 | `modules.json` | `temper.mjs modules bar` | the stability bar per module, `next` (the least-stable), and the pending direction proposals |
 | `quality.jsonl` | `tools/quality-snapshot.mjs --append` | one structural snapshot per cycle; the bar's quality part compares the last two. `tests`, `tests_fail` and `tests_status` are the skill suite, `forge_tests`, `forge_tests_fail` and `forge_tests_status` the Forge suite; a row without the `forge_` fields predates them (not measured) |
 | `resolved.json` | `temper.mjs proposals resolve` | lens-scan proposals whose fix landed, `{commit, subject, resolved_at, by, status_then, tier, note?}` per id |
@@ -152,7 +152,9 @@ node tools/temper-scan.mjs --repo <path> --project-key <k> [--ref r] [--focus "g
   `~/.temper/scans/<stamp>-<project-key>.json`: the row, the scan's summary and each card the scan created or moved,
   `{fp, ref?, url?, status, lens, title, evidence: [{type, ref, path?, line?}], created}`.
 - To list a scan home's cards later, run `node tools/temper-cards.mjs --project-key <k> [--status s] [--lens l]
-  [--quotes] [--full]`; `--full` adds each card's rationale, impact, effort, confidence, body sections by heading and
+  [--quotes] [--full] [--undecided] [--date d | --ledger f]`; each card with a ref carries `decided_local` or
+  `decided_live` (`{verdict, cycle}`, its newest verdict in the loop checkout's day ledger), `--undecided` keeps only
+  the cards with neither; `--full` adds each card's rationale, impact, effort, confidence, body sections by heading and
   `acceptance` (its Evaluation section). `dowser.mjs list --repo <path>` on the real checkout reads another project (its origin) and lists
   nothing.
 - `--dry-run` clones, installs and prints the plan (inbox key, Dowser home, ledger, MCP server). It does not call

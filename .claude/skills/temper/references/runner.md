@@ -35,6 +35,26 @@ never commits (secrets, a `.env`), its doc-sync and test rules, what it marks as
 this brief differ, follow the law and say so in `skill_issues`. Never push, tag, release, deploy, or touch any
 repo's master. Landing is the director's.
 
+## A fresh worktree has no node_modules
+
+`git worktree add` checks out the tracked files only: a fresh `work.worktree` (and a QA scratch worktree) has no
+`node_modules`, so every gate, test and e2e run there fails on a missing module or an unknown command, not on the
+build. Install first, in the worktree, before any gate or e2e:
+
+- Dowser (the loop's own repo): `npm ci` in the root, in `forge` and in `forge/static/app`.
+- Another repo: the install its law or its README names (the lockfile's own: `npm ci`, `pnpm install
+  --frozen-lockfile`, and so on), in every package folder its gates run in.
+
+Say in `notes` what you installed. A red gate whose output says "Cannot find module" or "is not recognized" is the
+install missing, not the item: install, then run the gate again.
+
+## Secret scanning
+
+The repo's own secret-scan hook may depend on a tool that is not installed here (gitleaks, for one): such a hook
+skips or fails without scanning. Then the repo's scan is **unverifiable**: never report it as clean, and say so in
+`notes`. Do not install the tool or bypass the hook. `land` runs the built-in secret scan on every landing kind, so
+the director's landing still checks the diff; you still never commit a secret or a `.env`.
+
 ## Steps
 
 1. **Scan.** Skip it when the launch message says the scan ran. Otherwise run `scan` from `loop_root` as printed:
@@ -43,7 +63,7 @@ repo's master. Landing is the director's.
    section 2). When the scan fails, record why and go on with the cards the inbox already holds.
 2. **Triage.** List the cards with `node tools/temper-cards.mjs --project-key <inbox> [--status s] [--quotes]` (or
    the scan's `report`), never `dowser.mjs list --repo`. Decide the `carried` cards first, then every new or still
-   undecided card. Read each card's quoted evidence against the code on the day branch. Accept only a card that is
+   undecided card (`--undecided` lists only those: a `pushed` card with `decided_local` or `decided_live` is judged). Read each card's quoted evidence against the code on the day branch. Accept only a card that is
    real, in direction and inside the bounds. Reject with the honest reason code. Snooze what is real but not now.
    Merge duplicates. When the accept cap is reached, a card you would accept is a snooze with `deferred: "cap"`
    (cycle.md section 3): it is carried, not judged. Write **one verdicts file** and run

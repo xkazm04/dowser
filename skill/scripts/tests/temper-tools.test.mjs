@@ -11,7 +11,8 @@ import { PROJECT_KEY_RE } from '../../../forge/src/core/push.mjs';
 import { SAMPLE_KEY } from '../../../forge/src/core/types.mjs';
 import { findDowserServer, toolPrompt, writeMcpConfig } from '../../../tools/live-mcp.mjs';
 import { UsageError, checkProjectKey, parseFlags } from '../../../tools/temper-lib.mjs';
-import { listCards, scanStore } from '../../../tools/temper-cards.mjs';
+import { dayLedger, ledgerVerdicts, listCards, scanStore } from '../../../tools/temper-cards.mjs';
+import * as store from '../../../skill/scripts/lib/store.mjs';
 import { cardCounts, parseScanArgs, reportFile, resolveScanRef, scanPrompt, writeReport } from '../../../tools/temper-scan.mjs';
 import { adfOf, closeTickets, dedupeJql, fileFindings, planFindings, findingFp, fpLabel, jiraClient, parseFindings, parseTicketArgs, summaryOf } from '../../../tools/temper-tickets.mjs';
 import { ForbiddenError, checkVerdict, forbiddenToday, parseVerdictArgs, parseVerdicts, recordVerdicts, rememberForbidden } from '../../../tools/temper-verdicts.mjs';
@@ -478,5 +479,58 @@ test('temper-cards: lists a scan home\'s cards (status, lens, title, evidence re
     assert.equal(r.report, report);
     assert.equal(r.summary, 'done');
     assert.deepEqual([r.cards[0].fp, r.cards[0].created, r.cards[0].lens], [fp, true, 'security-cra']);
+  } finally { removeDir(work); }
+});
+
+test('temper-cards: joins the day ledger\'s verdicts, so a card decided locally reads decided_local, not just pushed; --undecided lists only cards with no verdict', () => {
+  const work = tempDir('temper-cards-ledger');
+  try {
+    const temperHome = join(work, 'temper'), key = 'bp-temper';
+    const repo = join(work, 'clone');
+    mkdirSync(repo);
+    gitRepo(repo, { 'src/auth.js': 'export function login(user) {\n  return check(user.password);\n}\n', 'src/b.js': 'export const token = "x";\n', 'src/c.js': 'eval(input);\n' });
+    spawnSync('git', ['-C', repo, 'remote', 'add', 'origin', key]);
+    const CLI = join(ROOT, 'skill', 'scripts', 'dowser.mjs');
+    const env = { ...process.env, DOWSER_HOME: join(temperHome, 'homes', key) };
+    const cli = (/** @type {string[]} */ ...a) => { const r = spawnSync(process.execPath, [CLI, ...a, '--repo', repo], { encoding: 'utf8', env, cwd: work }); assert.equal(r.status, 0, r.stderr + r.stdout); return r.stdout; };
+    const run = JSON.parse(cli('run', 'start', '--mode', 'full')).run_id;
+    const file = join(work, 'c.jsonl');
+    const cards = [
+      candidate({ kind: 'secret-exposure', topic: 'plaintext password' }),
+      candidate({ kind: 'secret-exposure', topic: 'hardcoded token', anchors: ['src/b.js#token'], title: 'Token hardcoded in source', evidence: [{ type: 'code', ref: 'src/b.js:1', quote: 'export const token = "x";' }] }),
+      candidate({ kind: 'secret-exposure', topic: 'eval of input', anchors: ['src/c.js#eval'], title: 'Input passed to eval', evidence: [{ type: 'code', ref: 'src/c.js:1', quote: 'eval(input);' }] }),
+    ];
+    writeFileSync(file, cards.map((c) => JSON.stringify(c)).join('\n') + '\n');
+    const fps = cli('propose', '--run', run, '--file', file, '--kinds', 'security-cra=secret-exposure').trim().split('\n').map((l) => JSON.parse(l).fp).filter(Boolean);
+    assert.equal(fps.length, 3);
+    // the cards as the push left them: pushed, each with its ref (DW-1..DW-3)
+    const s = store.openStore(scanStore(temperHome, key));
+    try { fps.forEach((fp, i) => s.prepare("UPDATE proposals SET status = 'pushed', external_ref = ? WHERE fp = ?").run(`DW-${i + 1}`, fp)); } finally { s.close(); }
+    const ledger = join(work, 'loop', 'docs', 'evals', 'temper', '2026-11-05.jsonl');
+    mkdirSync(join(work, 'loop', 'docs', 'evals', 'temper'), { recursive: true });
+    const rows = [
+      { kind: 'cycle', n: 2, repo: 'bp', self_reported: { verdicts: [{ ref: 'DW-1', verdict: 'snooze', inbox: key, recorded: 'local' }, { ref: 'DW-3', verdict: 'accept', inbox: 'personas-temper', recorded: 'local' }] } },
+      { kind: 'reverify', n: 2, repo: 'bp' },
+      { kind: 'cycle', n: 5, repo: 'bp', self_reported: { verdicts: [{ ref: 'DW-1', verdict: 'accept', inbox: key, recorded: 'local' }, { ref: 'DW-2', verdict: 'reject', inbox: key, recorded: 'live' }] } },
+    ];
+    writeFileSync(ledger, `${rows.map((r) => JSON.stringify(r)).join('\n')}\nnot json\n`);
+    const v = ledgerVerdicts(ledger, key);
+    assert.deepEqual(v.get('DW-1'), { verdict: 'accept', cycle: 5, recorded: 'local' }, 'the newest verdict of the ref wins');
+    assert.equal(v.has('DW-3'), false, 'another inbox\'s DW-3 is not this card');
+    assert.equal(ledgerVerdicts(join(work, 'none.jsonl'), key).size, 0, 'no ledger is no verdict');
+    const out = listCards({ home: temperHome, key, ledger });
+    const byRef = Object.fromEntries(out.cards.map((/** @type {any} */ c) => [c.ref, c]));
+    assert.equal(byRef['DW-1'].status, 'pushed');
+    assert.deepEqual(byRef['DW-1'].decided_local, { verdict: 'accept', cycle: 5 });
+    assert.deepEqual(byRef['DW-2'].decided_live, { verdict: 'reject', cycle: 5 });
+    assert.equal(byRef['DW-3'].decided_local, undefined);
+    assert.deepEqual(listCards({ home: temperHome, key, ledger, undecided: true }).cards.map((/** @type {any} */ c) => c.ref), ['DW-3']);
+    assert.equal(dayLedger('2026-11-05', join(work, 'loop')), ledger);
+    const tool = (/** @type {string[]} */ ...a) => spawnSync(process.execPath, [join(ROOT, 'tools', 'temper-cards.mjs'), ...a], { encoding: 'utf8', env: { ...process.env, TEMPER_HOME: temperHome } });
+    const cliOut = tool('--project-key', key, '--ledger', ledger, '--undecided');
+    assert.equal(cliOut.status, 0, cliOut.stderr);
+    assert.deepEqual(JSON.parse(cliOut.stdout).cards.map((/** @type {any} */ c) => c.ref), ['DW-3']);
+    assert.equal(tool('--project-key', key, '--date', '11/05').status, 2);
+    assert.equal(tool('--project-key', key, '--date', '2026-11-05', '--ledger', ledger).status, 2);
   } finally { removeDir(work); }
 });
