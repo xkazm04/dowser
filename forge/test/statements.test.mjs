@@ -313,3 +313,28 @@ test('byline.forPage on a page nothing names: one statement and no Jira permissi
   assert.deepEqual(d.perms.calls.map((c) => c.on?.projectKey), ['P7'], 'only the inbox the page names is checked');
   assert.ok(d.db.count() <= 6, `${d.db.count()} statements`);
 });
+
+test('inbox summaries cost the same few statements for 1 or 20 inboxes, and keep the newest push of each', async () => {
+  const d = counted();
+  /** @param {number} n */
+  const cost = async (n) => {
+    for (let i = 0; i < n; i++) {
+      const pk = `github-com-Acme-S${i}`;
+      if (await store.getInbox(d.db.inner, pk)) continue;
+      await tool(d, 'dowser_proposals_push', pushArgs([record({ topic: `s${i}` })], { project_key: pk, run_id: 'r-1', head_sha: 'old' }));
+      d.clock.tick(1000);
+      await tool(d, 'dowser_proposals_push', pushArgs([record({ topic: `s${i}` }), record({ topic: `s${i} more` })], { project_key: pk, run_id: 'r-2', head_sha: 'new' }));
+    }
+    d.db.reset();
+    const out = await res(d, 'settings.get', {});
+    return { n: d.db.count(), out };
+  };
+  const one = await cost(1);
+  const twenty = await cost(20);
+  assert.equal(twenty.n, one.n, `${one.n} statements for 1 inbox, ${twenty.n} for 20`);
+  assert.ok(twenty.n <= 4, `${twenty.n} statements`);
+  assert.equal(twenty.out.inboxes.length, 20);
+  for (const i of twenty.out.inboxes) {
+    assert.deepEqual([i.last_push.run_id, i.last_push.head_sha, i.open], ['r-2', 'new', 2], i.project_key);
+  }
+});

@@ -162,18 +162,29 @@ export async function getProposal(deps, ref) {
 export async function inboxSummaries(db, visible, inboxRows) {
   /** @returns {Record<InboxStatus, number>} */
   const zero = () => /** @type {any} */ (Object.fromEntries(INBOX_STATUSES.map((s) => [s, 0])));
+  const inboxes = (inboxRows ?? await listInboxRows(db)).filter((i) => !visible || visible.includes(i.project_key));
+  if (inboxes.length === 0) return [];
+  // Two statements whatever the inbox count, each limited to the inboxes summarised: the counts per status, and the
+  // newest push of each inbox (the newest `at`; on a tie the lowest id, as `ORDER BY at DESC, id` picks).
+  const keys = inboxes.map((i) => i.project_key);
+  const inList = keys.map(() => '?').join(', ');
   /** @type {Map<string, Record<string, number>>} */
   const counts = new Map();
-  for (const r of await db.query('SELECT project_key, status, COUNT(*) AS n FROM proposals GROUP BY project_key, status')) {
+  for (const r of await db.query(`SELECT project_key, status, COUNT(*) AS n FROM proposals WHERE project_key IN (${inList}) GROUP BY project_key, status`, keys)) {
     const by = /** @type {Record<string, number>} */ (counts.get(String(r.project_key)) ?? zero());
     counts.set(String(r.project_key), by);
     if (String(r.status) in by) by[String(r.status)] = Number(r.n);
   }
+  /** @type {Map<string, Row>} */
+  const newest = new Map();
+  for (const r of await db.query(
+    `SELECT * FROM pushes p WHERE p.project_key IN (${inList}) AND p.at = (SELECT MAX(q.at) FROM pushes q WHERE q.project_key = p.project_key) ORDER BY p.id`,
+    keys,
+  )) if (!newest.has(String(r.project_key))) newest.set(String(r.project_key), r);
   /** @type {InboxSummary[]} */
   const out = [];
-  for (const i of inboxRows ?? await listInboxRows(db)) {
-    if (visible && !visible.includes(i.project_key)) continue;
-    const push = (await db.query('SELECT * FROM pushes WHERE project_key = ? ORDER BY at DESC, id LIMIT 1', [i.project_key]))[0];
+  for (const i of inboxes) {
+    const push = newest.get(i.project_key);
     const sample = isSampleKey(i.project_key);
     out.push(/** @type {InboxSummary} */ (omitAbsent({
       project_key: i.project_key, repo_url: i.repo_url, jira_project_key: i.jira_project_key, issue_type_id: i.issue_type_id,
