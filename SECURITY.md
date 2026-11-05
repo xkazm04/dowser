@@ -97,6 +97,11 @@ them is an unfinished release. `v0.2.0` was published this way.
   page's resolver writes that switch; no MCP tool or Rovo action can, so a delegate cannot extend its own
   mandate. The tool runs with the signed-in account's own permissions, its accepts are labelled
   `dowser-delegate` in Jira, and the skill never counts its verdicts toward trust.
+- The /temper loop's own session is bounded by a PreToolUse hook (`.claude/skills/temper/scripts/guard.mjs`).
+  It denies writes to the operator's charter, production Forge deploys (and a deploy that names no environment),
+  tags, releases, force pushes, and pushes to any branch that a repo's charter landing does not permit. The charter
+  itself is written only by a command that the hook makes the operator confirm. Its secret scan before bp pushes
+  reports file and pattern names only, never the match.
 - The Forge app caps the length of every pushed card field and accepts evidence links only as `https://`
   URLs (a repo link may also be `http://`, for an `http://` git remote). The inbox renders a link only when
   it is `https://` or `http://`; any other scheme shows as plain text. Its per-call log lines name a project

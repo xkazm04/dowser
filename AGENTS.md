@@ -50,3 +50,21 @@ Run both before you hand back work:
   compare-and-set. `evidence` and `transitions` are append-only.
 - Absent values: omit the key. Never write `null`, and never write `0` for something unmeasured.
 - Strings are English only. Card copy lives in the lens packs and `SKILL.md`, not in scripts.
+
+## Temper (daily loop)
+
+`/temper` (`.claude/skills/temper/`) is the operator's daily loop: one long session that scans, triages as
+`delegate:temper`, builds, runs simulated UAT and updates the stability bar per module. Its records are in
+`docs/evals/temper/` (protocol: `docs/evals/temper/README.md`).
+
+- **Landing authority.** The loop may push master and deploy Forge **development** only through
+  `node .claude/skills/temper/scripts/temper.mjs land`, and only when that day's gates and UAT are green. Other repos
+  land under their own law from the charter: bp rebases and pushes master when `npm run check` and the secret scan
+  are clean; personas commits on a branch and never pushes. Never production, never a tag, never a release: those stay
+  the operator's.
+- `.temper/charter.json` is written only by the start dialog (`charter init` with the operator present). The
+  PreToolUse guard `.claude/skills/temper/scripts/guard.mjs` (registered in `.claude/settings.json`) denies other
+  writes, production deploys, tags, releases, force pushes, and pushes to a branch that a repo's landing does not
+  permit.
+- Outside a temper day, this file's other rules hold as written: build mode still never commits, pushes or merges on
+  its own.

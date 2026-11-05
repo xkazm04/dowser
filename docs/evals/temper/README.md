@@ -1,5 +1,67 @@
 # /temper - day records
 
+`/temper` (`.claude/skills/temper/`) is the daily loop. The operator starts one long session a day in the Dowser
+repo. After a morning report and at most three questions, it runs Scan -> Triage -> Build -> Simulated UAT -> Update
+cycles until the charter's end time, the usage window or the 8 h wall. This folder holds what each day leaves behind.
+These are operator records, not Dowser runner surfaces, so they have no guided-mode form.
+
+## Protocol
+
+### Files
+
+| file | written by | what |
+|---|---|---|
+| `<date>.jsonl` | `temper.mjs cycle end` | one row per cycle (below) |
+| `<date>.md` | `temper.mjs report` | the morning report: Needs you (at most 3 questions), commits and landings, UAT verified vs self-reported, scans and costs, verdicts (live and local-only apart), the bar per module, direction proposals, parked items |
+| `modules.json` | `temper.mjs modules bar` | the stability bar per module, `next` (the least-stable), and the pending direction proposals |
+| `quality.jsonl` | `tools/quality-snapshot.mjs --append` | one structural snapshot per cycle; the bar's quality part compares the last two |
+
+The working state is not committed. It lives in `<dowser>/.temper/` (gitignored): `charter.json`, `day.json`,
+`cycle.json` and `directions.json`. The scan ledger, the ticket memory, the Dowser homes, the chrome profile and the
+other repos' worktrees are in the Temper home `~/.temper/` (`TEMPER_HOME`).
+
+### A cycle row
+
+```json
+{"kind": "cycle", "n": 2, "date": "2026-11-05", "repo": "dowser", "target": "inbox-ui", "begun_at": "...", "ended_at": "...",
+ "head": "<sha>", "green": false, "red_because": ["test failed", "e2e local: stale"],
+ "verified": {"gates": {"typecheck": "pass", "test": "fail"},
+              "uat": {"fixture": {"state": "fresh", "pass": 40, "fail": 0, "unverifiable": 0, "flaky": 0}, "local": {"state": "stale"}, "live": {"state": "missing"}}},
+ "quota": {"decided": 5, "share": 0.4, "ok": true},
+ "self_reported": {"scan": {...}, "verdicts": [{"ref": "DW-50", "verdict": "reject", "reason": "duplicate", "inbox": "dowser-temper",
+                   "recorded": "local", "decided_by": "delegate:temper"}], "built": [...], "outcomes": [...], "directions": [...], "parked": [...]}}
+```
+
+- **Verified vs self-reported.** `verified` is what temper.mjs read itself: the gates' exit codes, and the e2e
+  result files newer than the cycle's start. `self_reported` is the director's cycle file, as written. A row is
+  `green` only when the verified gates and UAT are green. Fixture and local are required every cycle. A live fail
+  blocks; live unverifiable (nobody signed in) does not. The report keeps the two columns apart.
+- **Verdicts.** Every verdict is decided by `delegate:temper`. `recorded: "live"` means Forge recorded it through
+  `temper-verdicts`. `recorded: "local"` means the inbox had no valid delegation (the tool answered forbidden), so the
+  verdict is kept here only, and the live inbox keeps its cards undecided. Both obey a floor of 20% reject or snooze
+  per cycle and the charter's daily caps per inbox (`repos[].caps`, default 10 accepts and 30 rejects; snoozes and
+  merges count against rejects). Delegate verdicts teach Dowser's memory but never count toward trust.
+- **The bar** is in `.claude/skills/temper/references/bar.md`. A part counts only when it is verified.
+
+### Landing authority
+
+The loop lands only through `temper.mjs land --repo <name>`, under each repo's own landing law (charter
+`repos[].landing`):
+
+- Dowser (`loop-ff`) fast-forwards master from `loop/<date>`, pushes origin master, and deploys Forge development
+  when the day's gates and UAT are green. A red day is reset to its last green commit and stays on its branch.
+- bp (`rebase-push`) rebases `temper/<date>` onto origin/master. It pushes HEAD:master only when `npm run check` and
+  the secret scan are clean.
+- personas (`commit-only`) commits on `temper/<date>` in a worktree and never pushes.
+
+Production deploys, tags and releases stay the operator's in every repo. The PreToolUse guard
+(`.claude/skills/temper/scripts/guard.mjs`) denies them, and it denies any push that a repo's landing does not permit.
+
+### A dry run
+
+`node tools/temper-dryrun.mjs` chains charter init -> day start -> cycle begin -> modules bar -> cycle end -> report
+-> land --dry-run on a throwaway repo, with an injected gate runner and no network. `npm test` runs it.
+
 ## Tools
 
 Three tools connect the /temper loop to the live Dowser inbox and to Jira. They are operator and loop tools, not
