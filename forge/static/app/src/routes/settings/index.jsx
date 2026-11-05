@@ -5,10 +5,12 @@
 // (`dowser_direction_get`); `direction.get` / `direction.set` here.
 // The inbox list and the Jira project list load apart: when Jira will not list projects, the inboxes and Lens
 // direction still show, the target selectors say they are unavailable, and a Retry sits beside them.
+// Between them, Delegated triage: per inbox (never the sample), until a day and two daily limits for Temper's
+// `dowser_verdicts_record` (forge/src/core/delegate.mjs). `settings.set` here is its only writer.
 import React, { useState } from 'react';
 import { call } from '../../api.js';
 import { Button, ErrorState, SectionMessage, SkeletonList, useAsync } from '../../components/ui.jsx';
-import { LENSES, LENS_LABELS, plural } from '../../components/labels.js';
+import { LENSES, LENS_LABELS, formatDay, plural } from '../../components/labels.js';
 import { LensDot } from '../inbox/parts.jsx';
 import { ITEMS_MAX, LINE_MAX, SPACES_MAX, labelled, listProblem } from './direction.js';
 import './settings.css';
@@ -69,6 +71,17 @@ export default function Settings({ context }) {
           </tbody>
         </table>
         </div>
+        </div>
+        <div className="dwr-sec">
+          <h2 className="dwr-sec__h" id="dw-del-h">Delegated triage</h2>
+          <p className="dwr-sec__hint">
+            Let Temper, Dowser&rsquo;s daily improvement loop, accept and reject in an inbox until a day you choose, within daily
+            limits. Its decisions show as &ldquo;Decided by Temper (delegate)&rdquo;, the Jira issues it creates carry the
+            label dowser-delegate, and they never count toward trust. Only this page can switch it on or off.
+          </p>
+          {data.data.inboxes.some((i) => !i.sample)
+            ? data.data.inboxes.filter((i) => !i.sample).map((inbox) => <DelegationInbox key={inbox.project_key} inbox={inbox} />)
+            : <p className="dwr-muted" role="status">No inbox to delegate yet. The sample inbox takes no delegation; a scan&rsquo;s first push creates one.</p>}
         </div>
         <div className="dwr-sec">
           <h2 className="dwr-sec__h" id="dw-dir-h">Lens direction</h2>
@@ -200,6 +213,106 @@ function LensEditor({ inbox, lens, initial, idBase }) {
         </div>
       </div>
     </details>
+  );
+}
+
+/** Highest daily limit the server takes (forge/src/core/types.mjs DELEGATE_CAP_MAX). */
+const CAP_MAX = 200;
+/** The person's own today, YYYY-MM-DD (the server allows any day not yet past on Earth). */
+const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+/** A daily limit as typed: a whole number 0..CAP_MAX, else undefined. @param {string} v */
+const capOf = (v) => (/^\d{1,3}$/.test(v.trim()) && Number(v) <= CAP_MAX ? Number(v) : undefined);
+
+/**
+ * What the inbox's delegation says now: off, on until a day (with its limits), or ended. `utcToday` decides "ended",
+ * as the server does (a delegation holds through its last UTC day).
+ * @param {{delegate_until?: string, delegate_accepts_per_day?: number, delegate_rejects_per_day?: number}} d
+ */
+export function delegationLine(d, utcToday = new Date().toISOString().slice(0, 10)) {
+  if (!d.delegate_until) return { state: 'off', text: 'Off. Temper records nothing in this inbox.' };
+  const day = formatDay(`${d.delegate_until}T00:00`);
+  if (d.delegate_until < utcToday) return { state: 'ended', text: `Ended on ${day}. Temper records nothing here until you set a new date.` };
+  return {
+    state: 'on',
+    text: `Temper may accept and reject in this inbox until ${day}: at most ${plural(d.delegate_accepts_per_day ?? 0, 'accept')} and ${plural(d.delegate_rejects_per_day ?? 0, 'reject, snooze or merge', 'rejects, snoozes or merges')} a day (UTC).`,
+  };
+}
+
+function DelegationInbox({ inbox }) {
+  const [saved, setSaved] = useState(inbox);
+  const [until, setUntil] = useState(inbox.delegate_until ?? '');
+  const [accepts, setAccepts] = useState(String(inbox.delegate_accepts_per_day ?? 3));
+  const [rejects, setRejects] = useState(String(inbox.delegate_rejects_per_day ?? 10));
+  const [state, setState] = useState(/** @type {'idle'|'saving'|'stopping'|'saved'|'stopped'|string} */ ('idle'));
+  const id = `dw-del-${inbox.project_key.replace(/[^A-Za-z0-9_-]/g, '_')}`;
+  const line = delegationLine(saved);
+  const a = capOf(accepts);
+  const r = capOf(rejects);
+  const today = localToday();
+  const badDate = Boolean(until) && until < today;
+  const valid = Boolean(until) && !badDate && a !== undefined && r !== undefined;
+  const dirty = until !== (saved.delegate_until ?? '') || a !== saved.delegate_accepts_per_day || r !== saved.delegate_rejects_per_day;
+  const edit = (set) => (e) => { set(e.target.value); if (state !== 'saving' && state !== 'stopping') setState('idle'); };
+
+  /** @param {boolean} off */
+  async function send(off) {
+    setState(off ? 'stopping' : 'saving');
+    try {
+      const payload = off ? { delegate_until: '' } : { delegate_until: until, delegate_accepts_per_day: a, delegate_rejects_per_day: r };
+      const res = await call('settings.set', { project_key: inbox.project_key, ...payload });
+      const next = res.inbox ?? saved;
+      setSaved(next);
+      if (off) setUntil('');
+      setState(off ? 'stopped' : 'saved');
+    } catch (e) {
+      setState(String(e?.message ?? 'The delegation could not be saved.'));
+    }
+  }
+
+  const busy = state === 'saving' || state === 'stopping';
+  const failed = !busy && !['idle', 'saved', 'stopped'].includes(state);
+  return (
+    <section className="dw-del" aria-labelledby={`${id}-h`}>
+      <h3 className="dw-dir__inbox" id={`${id}-h`}>{inbox.project_key}</h3>
+      <p className={`dw-del__now dw-del__now--${line.state}`} id={`${id}-now`} role="status">{line.text}</p>
+      <div className="dw-del__grid">
+        <div className="dw-field">
+          <label htmlFor={`${id}-u`}>Until (the last day)</label>
+          <input id={`${id}-u`} type="date" className="dw-input" min={today} value={until} onChange={edit(setUntil)}
+            aria-invalid={badDate ? true : undefined} aria-describedby={`${id}-uo`} />
+          <span id={`${id}-uo`} className="dw-dir__hint" style={badDate ? { color: 'var(--ds-text-danger, #AE2E24)' } : undefined}>
+            {badDate ? 'Choose today or a later day.' : 'Through the end of that day, UTC.'}
+          </span>
+        </div>
+        <div className="dw-field">
+          <label htmlFor={`${id}-a`}>Accepts a day, at most</label>
+          <input id={`${id}-a`} type="number" inputMode="numeric" min={0} max={CAP_MAX} step={1} className="dw-input dw-del__num" value={accepts} onChange={edit(setAccepts)}
+            aria-invalid={a === undefined ? true : undefined} aria-describedby={`${id}-ao`} />
+          <span id={`${id}-ao`} className="dw-dir__hint" style={a === undefined ? { color: 'var(--ds-text-danger, #AE2E24)' } : undefined}>
+            {a === undefined ? `A whole number from 0 to ${CAP_MAX}.` : 'Each creates a Jira issue.'}
+          </span>
+        </div>
+        <div className="dw-field">
+          <label htmlFor={`${id}-r`}>Rejects, snoozes and merges a day, at most</label>
+          <input id={`${id}-r`} type="number" inputMode="numeric" min={0} max={CAP_MAX} step={1} className="dw-input dw-del__num" value={rejects} onChange={edit(setRejects)}
+            aria-invalid={r === undefined ? true : undefined} aria-describedby={`${id}-ro`} />
+          <span id={`${id}-ro`} className="dw-dir__hint" style={r === undefined ? { color: 'var(--ds-text-danger, #AE2E24)' } : undefined}>
+            {r === undefined ? `A whole number from 0 to ${CAP_MAX}.` : '0 lets it accept only.'}
+          </span>
+        </div>
+      </div>
+      <div className="dw-dir__act">
+        <Button appearance="primary" onClick={() => send(false)} disabled={!valid || !dirty || busy} busy={state === 'saving'}>
+          {line.state === 'off' ? 'Switch on' : 'Save'}
+        </Button>
+        {line.state !== 'off' && <Button appearance="subtle" onClick={() => send(true)} disabled={busy} busy={state === 'stopping'}>Switch off</Button>}
+        <span aria-live="polite" className="dw-subtlest">
+          {state === 'saved' && 'Saved.'}
+          {state === 'stopped' && 'Switched off.'}
+          {failed && <span role="alert" style={{ color: 'var(--ds-text-danger, #AE2E24)' }}>{state}</span>}
+        </span>
+      </div>
+    </section>
   );
 }
 

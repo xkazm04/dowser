@@ -1,8 +1,8 @@
 # Forge MCP contract, version 2 (`forge-mcp-2`)
 
 This is the seam between the Dowser local skill and the Dowser Forge app (`forge/`). The Forge app
-implements these twelve tools on its `rovo:mcp` server (the original six plus `dowser_reflect_sync`,
-`dowser_direction_get`, `dowser_memory_pull` and the three work-queue tools, added without a version change). `tools/mock-forge-mcp.mjs` implements the same tools locally, so the skill can be
+implements these thirteen tools on its `rovo:mcp` server (the original six plus `dowser_reflect_sync`,
+`dowser_direction_get`, `dowser_memory_pull`, the three work-queue tools and `dowser_verdicts_record`, added without a version change). `tools/mock-forge-mcp.mjs` implements the same tools locally, so the skill can be
 tested without a Jira site.
 
 **What changed from `forge-mcp-1`.** Version 1 was never deployed, so version 2 replaces it rather than
@@ -30,7 +30,9 @@ Rovo agent inside Jira, and the mock keeps the skill testable. The skill treats 
 **unconnected**, not as an error.
 
 **Who decides.** Every tool runs as the signed-in person. Forge takes the caller from the invocation
-context (`context.accountId`), never from an argument.
+context (`context.accountId`), never from an argument. The one verdict a person did not make is a delegate's
+(`dowser_verdicts_record`, decided by `delegate:temper`): it runs as the signed-in account too, with that
+account's permissions, and only while a person has switched on delegated triage for the inbox in Dowser Settings.
 
 ## Conventions
 
@@ -46,7 +48,7 @@ context (`context.accountId`), never from an argument.
   `docs/data-model.md`). The agent takes it from the `init` output. Forge keeps one inbox per
   `project_key` and creates it on the first push. **`dowser-sample` is reserved** for the app's sample inbox
   (a bundled scan of Dowser's own repository, loaded from the Jira inbox): `dowser_proposals_push`,
-  `dowser_areas_push`, `dowser_reflect_sync` and `dowser_direction_get` with that key answer `bad-input`
+  `dowser_areas_push`, `dowser_reflect_sync`, `dowser_direction_get` and `dowser_verdicts_record` with that key answer `bad-input`
   "dowser-sample is reserved for the sample inbox", before any access check. No key the skill derives can
   equal it.
 - **`fp`** is the 16-hex fingerprint of a proposal. It is the identity of a proposal across both sides.
@@ -72,7 +74,7 @@ A failure the caller can act on is a tool result with `isError: true`. Its JSON 
 | `bad-cursor` | the `cursor` was not issued by this server, or it expired. Pull again without `cursor`; re-ingesting is idempotent |
 | `unknown-project` | Forge has no inbox for `project_key` |
 | `unauthorized` | the token is missing, expired or lacks scope. The harness signs in again |
-| `forbidden` | signed in, but this account may not open the inbox for `project_key` (see "Inbox access"), or may not make that change in Jira. Not retried; the message says what would allow it. Additive (2026-10-30) |
+| `forbidden` | signed in, but this account may not open the inbox for `project_key` (see "Inbox access"), or may not make that change in Jira, or (`dowser_verdicts_record`) the inbox has no delegated triage that holds today. Not retried; the message says what would allow it. Additive (2026-10-30) |
 | `unavailable` | Jira, Confluence or TWG did not answer. Retry on the next run, not in a loop |
 
 ### Inbox access
@@ -315,7 +317,7 @@ Output:
 | `verdicts[].reason` | string | required for `rejected`: `false-positive`, `already-known`, `not-our-direction`, `not-worth-it`, `wrong-size` or `other`. Omitted otherwise |
 | `verdicts[].note` | string | optional. Required when `reason` is `other` |
 | `verdicts[].merged_into` | string | required for `merged`: the fp of the surviving proposal, or the Jira key of an existing issue the evidence was folded into. Omitted otherwise |
-| `verdicts[].decided_by` | string | required: `forge:<accountId>`. The name is `[A-Za-z0-9._@:-]+`, so a raw Atlassian account id (`712020:uuid`) passes unchanged |
+| `verdicts[].decided_by` | string | required: `forge:<accountId>` for a person's verdict, `delegate:temper` for a delegate's (`dowser_verdicts_record`). The name is `[A-Za-z0-9._@:-]+`, so a raw Atlassian account id (`712020:uuid`) passes unchanged |
 | `verdicts[].decided_at` | string | required ISO timestamp of the decision in Jira. Unique per fp per decision |
 | `verdicts[].external_ref` | string | required: the inbox item (`DW-12`) |
 | `verdicts[].issue_ref` | string | required for `accepted`: the Jira issue the accept created or updated. Omitted otherwise |
@@ -325,7 +327,8 @@ Output:
 
 A verdict is recorded only after it has landed: an accept that could not create its Jira issue writes no
 verdict, and the item stays open in the inbox. Verdicts made through the Rovo agent arrive the same way; the
-decider is the person who asked the agent.
+decider is the person who asked the agent. A delegate's verdicts (`dowser_verdicts_record`) arrive the same way
+too, with `decided_by` `delegate:temper`.
 
 Verdicts are returned oldest first. A verdict appears once per decision; a changed decision is a new verdict
 with a new `decided_at`.
@@ -336,7 +339,9 @@ re-ingesting the same file is a no-op (`already-applied`). A verdict that matche
 is `in-sync`. An unknown `fp` (`unknown`), a malformed verdict (`invalid`) or a transition the local status
 does not allow (`conflict`, with the `current` status) is reported and never forced; for example
 `verified -> accepted` needs a `human:` decider, so a `forge:` acceptance of an item that is still `verified`
-locally is a conflict. An `accepted` verdict also records `issue_ref` and `issue_url` on the local item.
+locally is a conflict. A `delegate:` verdict may move a `pushed` item like a `forge:` one; it never moves a
+`verified` one, and it never counts toward trust (the skill's ladder stays human-earned), while the memory
+still learns from it. An `accepted` verdict also records `issue_ref` and `issue_url` on the local item.
 Exit 0 when every verdict applied or was already applied, 1 otherwise. The `cursor` is stored in
 `sync_state` key `verdicts_cursor`, and `init` prints it as `verdicts_cursor`.
 
@@ -467,6 +472,51 @@ item's status: delivery is what Jira and the code say.
 Routing by shape (a transport that gives no tool name): `queue` -> work_list; `ref` with `status` -> work_report;
 `ref` alone -> work_get.
 
+## `dowser_verdicts_record` (delegated triage)
+
+A delegate's door into the inbox: Temper, Dowser's daily improvement loop, records accept, reject, snooze and merge
+verdicts on an inbox's open items, decided by `delegate:temper`, while a person has switched on **delegated
+triage** for that inbox. The delegation lives in Dowser Settings (`docs/forge-app.md`, "Delegated triage"): a last
+day and two per-day caps, set only by the Settings page's own resolver. **No MCP tool sets it**, this one included.
+
+Input: `{project_key, verdicts_json}`.
+
+| field | type | rule |
+|---|---|---|
+| `project_key` | string | required. The inbox must exist (`unknown-project`) and the caller must be able to open it (`forbidden`). `dowser-sample` is `bad-input` |
+| `verdicts_json` | string | required. A JSON array of 1 to 50 `{ref, verdict, reason?, note?, into?, until?}`; any other key, or a malformed entry, is `bad-input` naming its index, and nothing is recorded |
+| `verdicts_json[].ref` | string | the inbox item (`DW-12`) or its fp; it must be an item of `project_key` |
+| `verdicts_json[].verdict` | string | `accept`, `reject`, `snooze` or `merge` |
+| `verdicts_json[].reason` | string | required for `reject`, as in the inbox (`other` needs a `note`) |
+| `verdicts_json[].note` | string | optional, at most 2000 characters |
+| `verdicts_json[].into` | string | required for `merge`: a DW ref or fp of the same inbox, or a Jira key |
+| `verdicts_json[].until` | string | optional for `snooze`: `YYYY-MM-DD` after today, the day it comes back |
+
+The whole call is `forbidden` when the inbox has no delegation, or its last day (`delegate_until`, UTC) has passed;
+the message says a person switches it on (or renews it) in Dowser Settings. Otherwise each verdict, in order, goes
+through the same decision path as a person's in the inbox, with the caller's own checks (Create issues for an
+accept, Add comments for a merge into a Jira issue), and is recorded with `decided_by` `delegate:temper`. An accept
+creates the Jira issue labelled `dowser-delegate`.
+
+Output: `{results: [{ref, result, why?, issue_ref?}], more?}`, one result per verdict looked at, in order.
+
+| field | type | rule |
+|---|---|---|
+| `results[].result` | string | `recorded`, or `refused` with `why` |
+| `results[].why` | string | only on `refused`: the cap that is reached ("today's delegate accept cap (3) is reached; it resets at 00:00 UTC", "today's delegate cap of 10 rejects, snoozes and merges is reached; ..."), or why the decision did not land (not open, another inbox, a missing reason, no permission, Jira refused) |
+| `results[].issue_ref` | string | only on a recorded `accept`: the Jira issue it created |
+| `more` | boolean | only when the call's time budget (15 s of the ~25 s a call has) ran out: the verdicts after the last result were not looked at, so send them again. Omitted otherwise |
+
+**Caps.** Per UTC day and inbox, at most `delegate_accepts_per_day` accepts and `delegate_rejects_per_day` other
+verdicts (reject, snooze and merge together), counted from the verdict log's `delegate:` rows. A verdict past its
+cap is refused and the rest still run. Forge SQL has no transactions, so two calls at once can each pass the count;
+one delegate runs one call at a time. A person's own decisions never use the caps.
+
+**What the skill does with them.** `dowser_verdicts_pull` returns them like any verdict, with `decided_by`
+`delegate:temper`, and `ingest-verdicts` applies them (see above). They teach the memory, never trust.
+
+Routing by shape (a transport that gives no tool name): `verdicts_json` -> verdicts_record.
+
 ## Versioning
 
 This is `forge-mcp-2`. An additive change (a new optional field, a new error code, a new tool) keeps the
@@ -499,3 +549,8 @@ Additive amendments:
   tools that write to or read for one inbox (push, areas, reflect sync, direction get) answer `bad-input` for
   it. `dowser_verdicts_pull` still reads it for whoever may open it. A skill never derives that key, so nothing
   it sends changes.
+- **Delegated triage (2026-11-05).** A thirteenth tool, `dowser_verdicts_record {project_key, verdicts_json}`,
+  records a delegate's verdicts while a person has switched on delegated triage for the inbox in Settings; it
+  refuses the sample key too. A pulled verdict's `decided_by` may now be `delegate:temper`. A skill that does not
+  know the `delegate` kind reports such a reject or snooze as a `conflict`; this skill applies it and keeps it out
+  of trust.

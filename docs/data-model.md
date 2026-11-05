@@ -141,7 +141,7 @@ absent when none); `run start` neither closes nor refuses them (only the 24 h ru
   highest-scored remaining cards of any lens, past the per-lens cap; every other card is `band` `reserve`. Order
   (in every pass): score desc (unscored last), confidence, evidence count, fp. A re-verify re-allocates.
 - **Trust.** `lib/trust.mjs` replays the person's decisions (`human:`/`forge:` moves to accepted, rejected, snoozed
-  on cards with a prediction) per slice: technical slices start at L1 (contract start capped at the ceiling), product at L0; L0 -> L1 at >= 90 % agreement over the last 20 (min 20); a person's reject
+  on cards with a prediction; never a `delegate:` verdict) per slice: technical slices start at L1 (contract start capped at the ceiling), product at L0; L0 -> L1 at >= 90 % agreement over the last 20 (min 20); a person's reject
   of a card `pretriaged_by: machine:dowser` drops the slice one level and resets its window. Ceiling L1 for every
   slice. Each change is a `trust_events` row. `ingest-verdicts` and `move` sync it and print `trust_events`;
   `trust [--slice]` reports it; `pretriage --run` is the L1 gate (marks ranked cards predicted `accept` in L1 slices,
@@ -214,13 +214,18 @@ An illegal move, a stale `--from`, or an unknown fp is refused with exit 2. Stdo
 - `human:<name>` for a person's call.
 - `agent:<harness>` for the scanning agent, such as a same-work merge.
 - `forge:<jira-user>` for verdicts pulled from Jira.
+- `delegate:<name>` (`delegate:temper`) for a delegate's verdicts pulled from Jira: recorded by
+  `dowser_verdicts_record` while a person had switched on delegated triage for the inbox in Dowser Settings. Not a
+  person's decision: `show` marks its transitions `delegate: true`, and trust never counts it.
 - `skill:dowser` and `skill:dowser-verify` for the store's own moves (creation, resurfacing, verify);
   `skill:dowser-sync` for moves the Forge ingest makes on its own (push results).
 - `machine:dowser` decides no move: it is only the `pretriaged_by` mark of the L1 gate.
 - A decider name may contain `:` so raw Atlassian account ids (`forge:712020:uuid`) pass; the kind is the text before the FIRST colon.
 
 `model.DECIDER_GUARDS` restricts some moves by decider kind. `verified -> accepted` is allowed only for
-`human:`. `pushed -> accepted` is open to every kind, because Forge verdicts arrive as `forge:`. A guarded
+`human:`. `pushed -> accepted` is open to every kind, because Forge verdicts arrive as `forge:` (or `delegate:`).
+`verified -> rejected | snoozed` take `human:` or `forge:`; `pushed -> rejected | snoozed` also take `delegate:`,
+which only ever arrives by `ingest-verdicts`. A guarded
 move with the wrong kind is refused like an illegal one: exit 2, with the current status.
 
 A reject needs a reason code: `false-positive`, `already-known`, `not-our-direction`, `not-worth-it`,

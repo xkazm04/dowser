@@ -92,6 +92,11 @@ them is an unfinished release. `v0.2.0` was published this way.
   admins. This holds for the inbox, the issue panel, the Confluence byline, the Rovo agent and every MCP tool.
   Accept and merge create the issue or comment as the app, but only for a person who holds Create issues or
   Add comments there. A repo's project key is derived from its URL and is not a secret.
+- Delegated triage lets the MCP tool `dowser_verdicts_record` decide in one inbox as `delegate:temper`, only
+  while a person has switched it on in Dowser Settings (until a day, within per-day caps). Only the Settings
+  page's resolver writes that switch; no MCP tool or Rovo action can, so a delegate cannot extend its own
+  mandate. The tool runs with the signed-in account's own permissions, its accepts are labelled
+  `dowser-delegate` in Jira, and the skill never counts its verdicts toward trust.
 - The Forge app caps the length of every pushed card field and accepts evidence links only as `https://`
   URLs (a repo link may also be `http://`, for an `http://` git remote). The inbox renders a link only when
   it is `https://` or `http://`; any other scheme shows as plain text. Its per-call log lines name a project

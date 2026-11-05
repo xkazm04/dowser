@@ -11,8 +11,8 @@ Graph goals to the skill as scan sources.
 
 | Manifest module | Key | Function | What it does |
 |---|---|---|---|
-| `rovo:mcp` | `dowser-mcp` | `mcp` | The twelve forge-mcp-2 tools, for Claude Code and Codex CLI |
-| `action` (x12) | `dowser_sources_tickets`, `dowser_sources_pages`, `dowser_sources_goals`, `dowser_proposals_push`, `dowser_verdicts_pull`, `dowser_areas_push`, `dowser_reflect_sync`, `dowser_direction_get`, `dowser_memory_pull`, `dowser_work_list`, `dowser_work_get`, `dowser_work_report` | `mcp` | The tools themselves. `rovo:mcp` lists them |
+| `rovo:mcp` | `dowser-mcp` | `mcp` | The thirteen forge-mcp-2 tools, for Claude Code and Codex CLI |
+| `action` (x13) | `dowser_sources_tickets`, `dowser_sources_pages`, `dowser_sources_goals`, `dowser_proposals_push`, `dowser_verdicts_pull`, `dowser_areas_push`, `dowser_reflect_sync`, `dowser_direction_get`, `dowser_memory_pull`, `dowser_work_list`, `dowser_work_get`, `dowser_work_report`, `dowser_verdicts_record` | `mcp` | The tools themselves. `rovo:mcp` lists them |
 | `action` (x3) | `dowser_inbox_list`, `dowser_proposal_explain`, `dowser_verdict_record` | `rovo` | The Rovo agent's actions |
 | `rovo:agent` | `dowser-agent` | - | Lists and explains proposals, and records verdicts for the person chatting with it |
 | `rovo:skill` | `dowser-skill` | - | The read actions as a skill for other agents |
@@ -50,7 +50,7 @@ Graph goals to the skill as scan sources.
 | Table | Contents |
 |---|---|
 | `counters` | `ref` is the last `DW-<n>` issued (one counter per installation). `seq:<project_key>` is the last verdict seq |
-| `inboxes` | One row per `project_key`, holding the repo URL and the accept target (Jira project and issue type) |
+| `inboxes` | One row per `project_key`, holding the repo URL, the accept target (Jira project and issue type) and the delegated triage (`delegate_until`, `delegate_accepts_per_day`, `delegate_rejects_per_day`, v032-v034; NULL = off) |
 | `proposals` | One row per `(project_key, fp)`. Holds the status, the record and the decision stamp |
 | `evidence` | Append-only, one row per evidence key. Each row carries the `head_sha` of the push that added it |
 | `verdicts` | Append-only verdict log. Its seq is the pull cursor |
@@ -318,7 +318,7 @@ push, not a sortable table.
   the ranked cards by the score the skill stored (Forge never recomputes it), unscored after every scored card,
   then the push's reserve folded as "**N in reserve**" (verified, scored, over the scan's budget; it opens by
   click, or by itself while `j`/`k` walk into it). A card the skill's trust gate pre-triaged is marked
-  **Pre-triaged**: accepting it stays a person's click. Cards pushed before scan-finding/1 keep the older order
+  **Pre-triaged**: accepting it stays a person's click (or, where a person switched on delegated triage, the delegate's, marked as such). Cards pushed before scan-finding/1 keep the older order
   (confidence, evidence count, first seen) among themselves.
 - **Reading pane.** The selected proposal: title (with the **MVP of <lens>**, **In reserve** and **Machine
   pre-triaged** markers when they apply). An open card that came back says why under its title, from the card's
@@ -392,7 +392,8 @@ push, not a sortable table.
 ### Learning (Apps > Dowser > Learning)
 
 A digest first: a few plain sentences written from the data (the last push and its repeat rate, how much was
-accepted, the most common reason to say no, what is waiting). Then **Needs you**: rule offers to accept (the text
+accepted, how many verdicts a delegate recorded apart from people's when it recorded any, the most common reason
+to say no, what is waiting). Then **Needs you**: rule offers to accept (the text
 is editable) or decline, and accepted items to rate (**Right call**, **Partly**, **Wrong call**, with an optional
 note), the ones whose Jira issue is done first. Each item to rate also says what became of it: Jira's fate as
 issue events report it (Done, or closed without the work / deleted), and the code at the last scan (the skill's
@@ -425,6 +426,35 @@ the `directions` table (one per inbox and lens, last writer wins, a clear delete
 same data at run start through the MCP tool `dowser_direction_get` and hands each lens its direction in
 `context`; a runner's local `--focus` still applies on top for that one run. A scan that is not connected runs
 without direction.
+
+#### Delegated triage
+
+Between the accept targets and Lens direction, **Delegated triage** lets a person hand one inbox's triage to
+Temper, Dowser's daily improvement loop, for a while. Each inbox except the sample has one block: a line that says
+what holds now ("Temper may accept and reject in this inbox until 31 Dec 2026: at most 3 accepts and 10 rejects,
+snoozes or merges a day (UTC)", or "Off. Temper records nothing in this inbox.", or "Ended on <date>. ..."), then
+**Until (the last day)**, **Accepts a day, at most** and **Rejects, snoozes and merges a day, at most** (whole
+numbers 0 to 200), **Switch on** / **Save** and **Switch off**. A failed save shows the server's message inline.
+
+- **Who sets it.** Only this page: `settings.set {project_key, delegate_until, delegate_accepts_per_day,
+  delegate_rejects_per_day}` sets it whole, `settings.set {project_key, delegate_until: ""}` switches it off, and
+  only the inbox global page may call that resolver (`MODULE_KEYS`). No MCP tool and no Rovo action writes it, so
+  the delegate can never extend its own mandate (`forge/test/delegate.test.mjs` asserts it). The caller must be
+  able to open the inbox; the sample inbox takes no delegation. `settings.get` shows it on each inbox summary (the
+  three `delegate_*` keys, or none of them).
+- **What it allows.** The MCP tool `dowser_verdicts_record` (`docs/contracts/forge-mcp-2.md`) records verdicts as
+  `delegate:temper` (via `mcp`) while the delegation holds: through `delegate_until`, a UTC day, and within the
+  day's caps, counted from the verdict log per UTC day (accepts against one cap; rejects, snoozes and merges
+  against the other). It is a gate in front of the inbox's own decision path (`core/verdicts.mjs`, the same one
+  the Rovo agent uses): the caller is still the signed-in account, and its inbox access and Jira permissions
+  apply as for a person. An accept's Jira issue carries the label `dowser-delegate`.
+- **How it shows.** The triage history in the inbox, the evidence panel and the card dialog shows a delegate's
+  decision as the chip **Decided by Temper (delegate)**, never as a name. The Learning digest counts the
+  delegate's verdicts apart from people's (`reflect.data` `verdicts_by`). The skill learns from them (precedents,
+  rules), but they never count toward trust: the ladder stays human-earned.
+- **Deploy note.** The columns come from migrations v032-v034. A minor deploy does not run migrations; the first
+  `settings.set` with a delegation hits the missing column, migrates once and retries (`withSchema`), or the daily
+  migrate adds them. Check the first delegation save on a site after deploy.
 
 ### Evidence panel (on a Jira issue)
 
@@ -508,11 +538,11 @@ file (WAL and a busy timeout), so a push over MCP shows in the UI on reload.
 
 | Flag | Meaning |
 | --- | --- |
-| `--stdio` | MCP server (JSON-RPC 2.0, newline-delimited) with the twelve forge-mcp-2 tools; logs go to stderr |
+| `--stdio` | MCP server (JSON-RPC 2.0, newline-delimited) with the thirteen forge-mcp-2 tools; logs go to stderr. `dowser_verdicts_record` needs a delegation, which only `POST /invoke settings.set` sets, as in Forge |
 | `--http <port>` | `POST /invoke {key, payload, module?}` -> the resolver result (`via` is `panel` for module `dowser-evidence`); `0` picks a free port |
 | `--db <file>` | the SQLite file; refused inside this repository |
 | `--seed <file>` | `{tickets?, pages?, goals?, projects?: [{key, name, issue_types}], users?: {<id>: <name>}}` |
-| `--account <id>` | the account every call runs as (default `local-user`); deciders are `forge:<id>` |
+| `--account <id>` | the account every call runs as (default `local-user`); deciders are `forge:<id>`, and `delegate:temper` for `dowser_verdicts_record` |
 | `--reset` | delete the db file first |
 
 Dev-only endpoints: `POST /dev/jira-status {key, category: new|indeterminate|done, name?}` simulates an

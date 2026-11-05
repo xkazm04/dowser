@@ -15,8 +15,9 @@ Dowser runs as two halves joined by one contract:
   server, shows them in a Jira triage inbox, creates the Jira issue on Accept, and returns every
   verdict to the skill. Built, deployed to the development environment, and verified end to end on
   a live site.
-- **The seam**: `docs/contracts/forge-mcp-2.md` (twelve tools: the original six plus
-  `dowser_reflect_sync`, `dowser_direction_get`, `dowser_memory_pull` and the work queue; scalar inputs). `tools/mock-forge-mcp.mjs`
+- **The seam**: `docs/contracts/forge-mcp-2.md` (thirteen tools: the original six plus
+  `dowser_reflect_sync`, `dowser_direction_get`, `dowser_memory_pull`, the work queue and `dowser_verdicts_record`,
+  delegated triage for the Temper loop, refused unless a person switched it on in Settings; scalar inputs). `tools/mock-forge-mcp.mjs`
   is its executable spec for tests; `tools/forge-live-e2e.mjs` drives the live app.
 - **The finding contract** `scan-finding/1` (`docs/contracts/scan-finding-1.md`, shared with the
   registry's scan-sweep and lens-scan): cards carry impact, a stored `scan-score/1` score with its

@@ -297,4 +297,9 @@ export const MIGRATIONS = Object.freeze([
   PRIMARY KEY (page_id)
 )`,
   },
+  // Delegated triage (core/delegate.mjs), set only by `settings.set`: the last day (YYYY-MM-DD, UTC) a delegate may
+  // record verdicts, and its per-UTC-day caps. NULL = no delegation; the three are written together.
+  { name: 'v032_inboxes_delegate_until', statement: 'ALTER TABLE inboxes ADD COLUMN delegate_until VARCHAR(10)' },
+  { name: 'v033_inboxes_delegate_accepts', statement: 'ALTER TABLE inboxes ADD COLUMN delegate_accepts_per_day INT' },
+  { name: 'v034_inboxes_delegate_rejects', statement: 'ALTER TABLE inboxes ADD COLUMN delegate_rejects_per_day INT' },
 ]);

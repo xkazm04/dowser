@@ -16,7 +16,7 @@ status it expects to move from. A move that is illegal, or that comes from a sta
 | `verified` | `merged` | human, or agent for a same-work duplicate | `move --to merged --into <fp>` |
 | `verified` | `pushed` | script | `ingest-push`, after `dowser_proposals_push` |
 | `verified` | `accepted` | human only (`--by human:<name>`) | `move --to accepted` (offline acceptance, see below) |
-| `pushed` | `accepted` / `rejected` / `merged` / `snoozed` | human in Jira (`forge:<jira-user>`) | `ingest-verdicts`, after `dowser_verdicts_pull` |
+| `pushed` | `accepted` / `rejected` / `merged` / `snoozed` | human in Jira (`forge:<jira-user>`), or a delegate in Jira (`delegate:temper`) | `ingest-verdicts`, after `dowser_verdicts_pull` |
 | `snoozed` | `candidate` | script | `propose` with any new evidence key (resurfacing) |
 | `snoozed` | `verified` | human | `move --to verified` (the runner un-snoozes it) |
 | `snoozed` | `verified` | store (`skill:dowser`) | `run start`, once the `--until` date has passed |
@@ -25,9 +25,18 @@ status it expects to move from. A move that is illegal, or that comes from a sta
 
 A resurfaced item goes back through `verify` like a new one. `decided_by` is always
 `kind:name`: `human:<name>` for the runner, `agent:<harness>` for the scanning agent,
-`forge:<jira-user>` for a verdict pulled from Jira, and `skill:dowser` / `skill:dowser-verify`
-for the store's own moves. `machine:dowser` is not a decider of any move: it only marks a card
-`pretriaged_by` (see "Predicted verdicts and trust").
+`forge:<jira-user>` for a verdict pulled from Jira, `delegate:<name>` for a delegate's verdict
+pulled from Jira, and `skill:dowser` / `skill:dowser-verify` for the store's own moves.
+`machine:dowser` is not a decider of any move: it only marks a card `pretriaged_by` (see
+"Predicted verdicts and trust").
+
+A **delegate verdict** (`delegate:temper`) is one Temper, Dowser's daily improvement loop,
+recorded in the Jira inbox while a person had switched on delegated triage for that inbox in
+Dowser Settings (until a day, within daily caps). It is not a person's decision. It arrives only
+through `ingest-verdicts`, so it moves only `pushed` cards. The memory learns from it like any
+verdict (precedents, rule offers), but trust never counts it. `show` marks its transition
+`delegate: true`. Say it so: in dev mode, the decider plus "(delegate)", e.g.
+`accepted by delegate:temper (delegate)`; in guided mode, see `guided-mode.md` "Ask-why patterns".
 
 An **evidence key** is what makes evidence "new". For `code` and `doc` it is the path plus the
 quote with whitespace collapsed. The line number is only a hint, so the same quote at a shifted
@@ -183,7 +192,8 @@ else `defer`; re-propose it with the judge's verdict. Nothing acts on it at leve
 measured.
 
 Trust is kept per **slice** `<category>|<lens>|-|<size>` (`lib/trust.mjs`), from the person's
-decisions only (`human:` and `forge:` moves to accepted, rejected or snoozed). A card's category
+decisions only (`human:` and `forge:` moves to accepted, rejected or snoozed; a `delegate:`
+verdict never counts, so the ladder stays human-earned). A card's category
 is its lens pack's default (opportunity and ux-friction `product`, doc-drift and security-cra
 `technical`); the judge may move a card `technical` -> `product`, never `product` -> `technical`.
 `propose` stores a product lens's card as `product` whatever the line says and reports
@@ -192,8 +202,9 @@ is its lens pack's default (opportunity and ux-friction `product`, doc-drift and
 - A `technical` slice starts at **L1** (the contract's L2 start capped by Dowser's ceiling: technical items default to automation); a `product` slice starts at **L0** and reaches **L1** when its predicted verdicts agreed with the
   person's on at least 90 % of its last 20 decided items (at least 20; an item counts once, by its latest decision). Dowser's ceiling is L1:
   a scan never writes into the repo, and a Jira issue leaves the system, so nothing is ever built
-  or accepted by the machine. Build mode (SKILL.md section 12) builds only what a person
-  accepted, when a person asks for it.
+  or accepted by the machine on the strength of trust. (A delegate's accept is a person's
+  delegation, set in Dowser Settings for one inbox, and it never raises trust.) Build mode
+  (SKILL.md section 12) builds only what a person accepted, when a person asks for it.
 - At L1, `pretriage --run <id>` marks the slice's ranked cards predicted `accept`
   `pretriaged_by: machine:dowser`. They skip the runner's pre-triage and go to the inbox marked
   "machine pre-triaged". No status moves: the person still accepts, rejects or snoozes each in

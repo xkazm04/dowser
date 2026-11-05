@@ -48,7 +48,8 @@
  * }} Jira
  *  `issueStatuses` reads as the calling user and answers only the keys Jira returned (a missing key is one the user
  *  cannot browse, or gone); it throws on failure.
- *  `labels` (createIssue) is set only on an issue from the sample inbox (`dowser-sample`).
+ *  `labels` (createIssue) is set only on an issue from the sample inbox (`dowser-sample`) or one a delegate accepted
+ *  (`dowser-delegate`, core/delegate.mjs).
  *  `setIssueProperty` writes an issue entity property as the app (core/issue-property.mjs); optional, so a
  *  port without it simply writes none.
  */

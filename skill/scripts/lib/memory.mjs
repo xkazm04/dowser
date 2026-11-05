@@ -11,7 +11,7 @@ import { linksOf } from './edges.mjs';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DECIDER_RE, DowserError, LENSES, STATUSES, isOneOf } from './model.mjs';
+import { DECIDER_RE, DELEGATE_KIND, DowserError, LENSES, STATUSES, isOneOf } from './model.mjs';
 import { dowserHome, isInside } from './paths.mjs';
 import { outcomeCounts, outcomeNotes, outcomesOf } from './reflect.mjs';
 import { topicTokens } from './predict.mjs';
@@ -302,7 +302,9 @@ export function show(db, fp) {
   if (!card) throw new DowserError(`proposal ${fp} does not exist`, 2, { error: 'not-found', fp });
   delete card.evidence;
   const evidence = evidenceOf(db, fp).map(({ id: _id, fp: _fp, key: _key, ...rest }) => rest);
-  const transitions = transitionsOf(db, fp).map(({ id: _id, fp: _fp, evidence_seq: _seq, ...rest }) => rest);
+  // a delegate's verdict (`delegate:<name>`, pulled from Jira) is marked, so no reader takes it for a person's
+  const transitions = transitionsOf(db, fp).map(({ id: _id, fp: _fp, evidence_seq: _seq, ...rest }) => (
+    String(rest.by ?? '').startsWith(`${DELEGATE_KIND}:`) ? { ...rest, delegate: true } : rest));
   const outcomes = outcomesOf(db, fp);
   const links = linksOf(db, fp);
   return /** @type {Row} */ (clean({ fp, external_ref: card.external_ref, external_url: card.external_url, issue_ref: card.issue_ref, issue_url: card.issue_url, card, evidence, transitions, outcomes: outcomes.length ? outcomes : undefined, links: links.length ? links : undefined }));

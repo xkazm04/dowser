@@ -18,8 +18,10 @@ import { REF_RE, SAMPLE_KEY, SAMPLE_RESERVED } from './types.mjs';
  *   accept_claim?: string, change_kind: 'new' | 'grew' | 'reopened', snooze_until?: string
  * }} ProposalRow
  * @typedef {{type: string, ref: string, quote?: string, url?: string, head_sha?: string, added_run_id: string, added_at: string}} EvidenceRow
- * @typedef {{project_key: string, repo_url?: string, jira_project_key?: string, issue_type_id?: string, created_at: string, created_by?: string}} InboxRow
+ * @typedef {{project_key: string, repo_url?: string, jira_project_key?: string, issue_type_id?: string, created_at: string, created_by?: string,
+ *   delegate_until?: string, delegate_accepts_per_day?: number, delegate_rejects_per_day?: number}} InboxRow
  *   `created_by` = the decider (forge:<accountId>) whose first push created it; absent before migration v018.
+ *   `delegate_*` = the delegation set in Settings (core/delegate.mjs); absent when off, and before v032-v034.
  */
 
 const CAS_TRIES = 20;
@@ -235,6 +237,9 @@ export function refuseSampleKey(projectKey, o = {}) {
 const toInbox = (r) => /** @type {InboxRow} */ (omitAbsent({
   project_key: String(r.project_key), repo_url: r.repo_url, jira_project_key: r.jira_project_key,
   issue_type_id: r.issue_type_id, created_at: String(r.created_at), created_by: r.created_by,
+  delegate_until: r.delegate_until ?? undefined,
+  delegate_accepts_per_day: r.delegate_accepts_per_day === null || r.delegate_accepts_per_day === undefined ? undefined : Number(r.delegate_accepts_per_day),
+  delegate_rejects_per_day: r.delegate_rejects_per_day === null || r.delegate_rejects_per_day === undefined ? undefined : Number(r.delegate_rejects_per_day),
 }));
 
 /**

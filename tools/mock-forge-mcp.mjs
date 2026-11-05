@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // @ts-check
 // mock-forge-mcp - a zero-dependency stdio MCP server that stands in for Dowser's Forge app (rovo:mcp), so the
-// skill and its scripts are testable end to end without a Jira site. It implements the twelve tools of
+// skill and its scripts are testable end to end without a Jira site. It implements the thirteen tools of
 // docs/contracts/forge-mcp-2.md (every dowser_* tool of forge/manifest.yml: sources_tickets, sources_pages,
 // sources_goals, proposals_push, verdicts_pull, memory_pull, work_list, work_get, work_report, areas_push,
-// reflect_sync, direction_get) over an in-memory backend, plus five test-only tools: `mock_decide` simulates a
+// reflect_sync, direction_get, verdicts_record) over an in-memory backend, plus six test-only tools: `mock_delegate`
+// switches a project's delegated triage on or off (a person's Settings switch in Forge, which no real tool reaches,
+// so `dowser_verdicts_record` is refused until it runs), `mock_decide` simulates a
 // person's verdict in the inbox, `mock_inbox` reads an inbox item back (its status, whether it reopened, and the
 // scan-finding/1 score, band, mvp and pretriaged_by it was pushed with), `mock_decide_rule` simulates a person
 // accepting or declining an offered rule in Forge, `mock_outcome` simulates a person rating an accepted item's
@@ -60,7 +62,7 @@ import { LENSES, STORE_OWNED, resurfaces, validateCandidate } from '../skill/scr
  * @typedef {{refs: number, types: string[]}} Snapshot
  * @typedef {{fp: string, external_ref: string, external_url: string, record: Obj, evidence: EvidenceId[], pushes: number,
  *   run_ids: string[], status: string, reopened?: boolean, decided_snapshot?: Snapshot, issue_ref?: string, issue_url?: string,
- *   repo_url?: string, head_sha?: string, snooze_until?: string, work?: Obj[]}} Item
+ *   repo_url?: string, head_sha?: string, snooze_until?: string, work?: Obj[], labels?: string[]}} Item  `labels` = its Jira issue's
  * @typedef {{seq: number, fp: string, status: string, reason?: string, note?: string, merged_into?: string, decided_by: string,
  *   decided_at: string, external_ref: string, issue_ref?: string, issue_url?: string, snooze_until?: string}} Verdict
  * @typedef {{path: string, files: number, churn_90d: number, authors_90d?: number, last_change?: string}} Area
@@ -68,7 +70,8 @@ import { LENSES, STORE_OWNED, resurfaces, validateCandidate } from '../skill/scr
  * decided_by?: string, decided_at?: string}} RuleRecord
  * @typedef {{ref: string, fp: string, rating: string, note?: string, issue_ref: string, decided_by: string, recorded_at: string}} OutcomeRecord
  * @typedef {{items: Record<string, Item>, verdicts: Verdict[], areas: Area[], areas_run_id?: string,
- *   rules?: Record<string, RuleRecord>, outcomes?: OutcomeRecord[], trust?: Obj, deliveries?: unknown[]}} Project
+ *   rules?: Record<string, RuleRecord>, outcomes?: OutcomeRecord[], trust?: Obj, deliveries?: unknown[],
+ *   delegation?: {until: string, accepts: number, rejects: number}}} Project
  * @typedef {{
  *   tickets: SourceItem[], pages: SourceItem[], goals: SourceItem[], merge_existing: Record<string, string>,
  *   projects: Record<string, Project>, next_item: number, next_issue: number, next_seq: number,
@@ -142,6 +145,10 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: { project_key: S, rules_json: S, trust_json: S, outcomes_since: S, deliveries_json: S }, required: ['project_key'], additionalProperties: false } },
   { name: 'dowser_direction_get', description: 'What the team set in Settings for each lens of this inbox (lens = one lens id, or all). Returns {lenses:{[lens]:{focus?,exclude?,notes?,spaces?}}}.',
     inputSchema: { type: 'object', properties: { project_key: S, lens: S }, required: ['project_key'], additionalProperties: false } },
+  { name: 'dowser_verdicts_record', description: 'Record verdicts as the inbox\'s delegate (delegate:temper) while a person has switched on delegated triage in Settings, within its daily caps (verdicts_json, a JSON array of at most 50 {ref, verdict: accept|reject|snooze|merge, reason?, note?, into?, until?}). Returns {results:[{ref,result: recorded|refused,why?,issue_ref?}], more?}.',
+    inputSchema: { type: 'object', properties: { project_key: S, verdicts_json: S }, required: ['project_key', 'verdicts_json'], additionalProperties: false } },
+  { name: 'mock_delegate', description: 'TEST ONLY: a person switching delegated triage on in Forge Settings (until YYYY-MM-DD, accepts_per_day, rejects_per_day), or off (until ""). No real tool can do this.',
+    inputSchema: { type: 'object', properties: { project_key: S, until: S, accepts_per_day: { type: 'integer', minimum: 0 }, rejects_per_day: { type: 'integer', minimum: 0 } }, required: ['project_key', 'until'], additionalProperties: false } },
   { name: 'mock_decide', description: 'TEST ONLY: simulate a person\'s verdict in the inbox on a pushed fp (status accepted|rejected|merged|snoozed; snooze_until = YYYY-MM-DD with snoozed, a past date allowed so tests reach the skill\'s wake path).',
     inputSchema: { type: 'object', properties: { fp: S, status: S, reason: S, note: S, merged_into: S, decided_by: S, project_key: S, snooze_until: S }, required: ['fp', 'status'], additionalProperties: false } },
   { name: 'mock_decide_rule', description: 'TEST ONLY: simulate a person accepting or declining an offered rule in Forge (state accepted|declined, text = the edited wording).',
@@ -605,27 +612,112 @@ function mockDecide(b, args) {
   const key = keys.find((k) => b.projects[k]?.items?.[args.fp]);
   if (!key) throw new ToolError('bad-input', `no inbox item for fp ${args.fp}`);
   const p = b.projects[key];
-  const item = p.items[args.fp];
-  item.status = args.status;
+  const v = applyVerdict(b, p, p.items[args.fp], { status: args.status, reason: args.reason, note: args.note, merged_into: args.merged_into,
+    snooze_until: args.snooze_until, decided_by: str(args.decided_by) ? args.decided_by : 'forge:mock-user' });
+  const { seq, ...out } = v;
+  return { verdict: out };
+}
+
+/**
+ * Decides `item` and appends its verdict: the one decision step `mock_decide` and `dowser_verdicts_record` share. An
+ * accept fabricates the Jira issue first (with `labels`, kept on the item); the verdict carries it.
+ * @param {Backend} b @param {Project} p @param {Item} item
+ * @param {{status: string, reason?: string, note?: string, merged_into?: string, snooze_until?: string, decided_by: string, labels?: string[]}} d
+ * @returns {Verdict}
+ */
+function applyVerdict(b, p, item, d) {
+  item.status = d.status;
   delete item.reopened;
-  if (args.status === 'snoozed' && str(args.snooze_until)) item.snooze_until = args.snooze_until; else delete item.snooze_until;
-  if (args.status === 'rejected') item.decided_snapshot = snapshot(item.evidence);
-  if (args.status === 'accepted') {
-    // an accept creates the Jira issue first; the verdict carries it
+  if (d.status === 'snoozed' && str(d.snooze_until)) item.snooze_until = d.snooze_until; else delete item.snooze_until;
+  if (d.status === 'rejected') item.decided_snapshot = snapshot(item.evidence);
+  if (d.status === 'accepted') {
     const issue = `MOCK-${b.next_issue++}`;
     item.issue_ref = issue;
     item.issue_url = JIRA_URL + issue;
+    if (d.labels?.length) item.labels = d.labels;
   }
   const decidedAt = new Date(Date.now() + p.verdicts.length).toISOString();
   /** @type {Verdict} */
   const v = /** @type {Verdict} */ (omitAbsent({
-    seq: b.next_seq++, fp: args.fp, status: args.status, reason: args.reason, note: args.note, merged_into: args.merged_into,
-    decided_by: str(args.decided_by) ? args.decided_by : 'forge:mock-user', decided_at: decidedAt, external_ref: item.external_ref,
-    issue_ref: args.status === 'accepted' ? item.issue_ref : undefined, issue_url: args.status === 'accepted' ? item.issue_url : undefined, snooze_until: args.snooze_until,
+    seq: b.next_seq++, fp: item.fp, status: d.status, reason: d.reason, note: d.note, merged_into: d.merged_into,
+    decided_by: d.decided_by, decided_at: decidedAt, external_ref: item.external_ref,
+    issue_ref: d.status === 'accepted' ? item.issue_ref : undefined, issue_url: d.status === 'accepted' ? item.issue_url : undefined,
+    snooze_until: d.status === 'snoozed' ? d.snooze_until : undefined,
   }));
   p.verdicts.push(v);
-  const { seq, ...out } = v;
-  return { verdict: out };
+  return v;
+}
+
+/** The delegate's decider and its issue label (Forge core/types.mjs DELEGATE_DECIDER, DELEGATE_LABEL). */
+export const DELEGATE_DECIDER = 'delegate:temper';
+export const DELEGATE_LABEL = 'dowser-delegate';
+/** Verdicts per call, the verbs, and the reasons (Forge core/types.mjs RECORD_MAX, core/delegate.mjs VERBS, shared REASONS). */
+const RECORD_MAX = 50;
+const VERBS = /** @type {Record<string, string>} */ ({ accept: 'accepted', reject: 'rejected', snooze: 'snoozed', merge: 'merged' });
+
+/**
+ * `dowser_verdicts_record` (Forge core/delegate.mjs): a delegate's verdicts while the project's delegation holds (set
+ * here by `mock_delegate`, as a person's Settings switch in Forge), under its per-UTC-day caps (accepts; every other
+ * verdict against the rejects cap). Same refusals and wording as Forge; no time budget (the mock is instant).
+ * @param {Backend} b @param {Obj} args @returns {Obj}
+ */
+function dowserVerdictsRecord(b, args) {
+  if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
+  const list = jsonArray(args.verdicts_json, 'verdicts_json', RECORD_MAX);
+  if (list.length === 0) throw new ToolError('bad-input', 'verdicts_json is a non-empty JSON array');
+  list.forEach((v, i) => {
+    if (!isObj(v)) throw new ToolError('bad-input', `verdicts_json[${i}] is an object`);
+    if (!str(v.ref)) throw new ToolError('bad-input', `verdicts_json[${i}].ref is required`);
+    if (!Object.hasOwn(VERBS, String(v.verdict))) throw new ToolError('bad-input', `verdicts_json[${i}].verdict is accept, reject, snooze or merge`);
+  });
+  if (!b.projects[args.project_key]) throw new ToolError('unknown-project', `Dowser has no inbox for project ${args.project_key}; push proposals first`);
+  const p = project(b, args.project_key);
+  const today = new Date().toISOString().slice(0, 10);
+  const d = p.delegation;
+  if (!d) throw new ToolError('forbidden', `${args.project_key} has no delegated triage; a person switches it on in Dowser Settings`);
+  if (today > d.until) throw new ToolError('forbidden', `the delegated triage of ${args.project_key} ended on ${d.until}; a person renews it in Dowser Settings`);
+  const mine = p.verdicts.filter((v) => v.decided_by.startsWith('delegate:') && v.decided_at >= `${today}T00:00:00.000Z`);
+  const used = { accepts: mine.filter((v) => v.status === 'accepted').length, rejects: mine.filter((v) => v.status !== 'accepted').length };
+  const results = (/** @type {Obj[]} */ (list)).map((v) => {
+    const accept = v.verdict === 'accept';
+    const cap = accept ? d.accepts : d.rejects;
+    const refused = (/** @type {string} */ why) => ({ ref: v.ref, result: 'refused', why });
+    if ((accept ? used.accepts : used.rejects) >= cap) {
+      return refused(accept ? `today's delegate accept cap (${cap}) is reached; it resets at 00:00 UTC`
+        : `today's delegate cap of ${cap} rejects, snoozes and merges is reached; it resets at 00:00 UTC`);
+    }
+    const item = Object.values(p.items).find((it) => it.external_ref === v.ref || it.fp === v.ref);
+    if (!item) return refused(`no Dowser proposal ${v.ref} in ${args.project_key}`);
+    if (item.status !== 'open') return refused(`${item.external_ref} is ${item.status}, not open`);
+    const to = VERBS[String(v.verdict)];
+    if (to === 'rejected' && !['false-positive', 'already-known', 'not-our-direction', 'not-worth-it', 'wrong-size', 'other'].includes(v.reason)) {
+      return refused('reason must be one of false-positive, already-known, not-our-direction, not-worth-it, wrong-size, other');
+    }
+    if (to === 'rejected' && v.reason === 'other' && !str(v.note)) return refused('reason other needs a note');
+    if (to === 'merged' && !str(v.into)) return refused('into is required and must be a non-empty string');
+    const into = to === 'merged' ? (Object.values(p.items).find((it) => it.external_ref === v.into)?.fp ?? v.into) : undefined;
+    const out = applyVerdict(b, p, item, { status: to, reason: to === 'rejected' ? v.reason : undefined, note: str(v.note) ? v.note : undefined, merged_into: into,
+      snooze_until: to === 'snoozed' && str(v.until) ? v.until : undefined, decided_by: DELEGATE_DECIDER, labels: [DELEGATE_LABEL] });
+    if (accept) used.accepts++; else used.rejects++;
+    return accept ? { ref: v.ref, result: 'recorded', issue_ref: out.issue_ref } : { ref: v.ref, result: 'recorded' };
+  });
+  return { results };
+}
+
+/**
+ * `mock_delegate` (TEST ONLY): a person's Settings switch in Forge (`settings.set` delegate_*), which no real MCP tool
+ * can reach. `until` YYYY-MM-DD with both caps switches it on; `until: ""` switches it off.
+ * @param {Backend} b @param {Obj} args @returns {Obj}
+ */
+function mockDelegate(b, args) {
+  if (!str(args.project_key)) throw new ToolError('bad-input', 'project_key is required');
+  const p = project(b, args.project_key);
+  if (args.until === '') { delete p.delegation; return {}; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(args.until))) throw new ToolError('bad-input', 'until is YYYY-MM-DD, or "" to switch the delegation off');
+  const cap = (/** @type {unknown} */ v) => Number.isInteger(v) && /** @type {number} */ (v) >= 0 && /** @type {number} */ (v) <= 200;
+  if (!cap(args.accepts_per_day) || !cap(args.rejects_per_day)) throw new ToolError('bad-input', 'accepts_per_day and rejects_per_day are whole numbers from 0 to 200');
+  p.delegation = { until: args.until, accepts: args.accepts_per_day, rejects: args.rejects_per_day };
+  return { delegation: p.delegation };
 }
 
 /** `mock_inbox`. @param {Backend} b @param {Obj} args @returns {Obj} */
@@ -636,7 +728,7 @@ function mockInbox(b, args) {
   if (!key) throw new ToolError('bad-input', `no inbox item for fp ${args.fp}`);
   const it = b.projects[key].items[args.fp];
   return { item: omitAbsent({ fp: it.fp, external_ref: it.external_ref, status: it.status, reopened: it.reopened, evidence: it.evidence.length, pushes: it.pushes, issue_ref: it.issue_ref, issue_url: it.issue_url,
-    score: it.record.score, band: it.record.band, mvp: it.record.mvp, pretriaged_by: it.record.pretriaged_by }) };
+    labels: it.labels, score: it.record.score, band: it.record.band, mvp: it.record.mvp, pretriaged_by: it.record.pretriaged_by }) };
 }
 
 /** `mock_trust`. @param {Backend} b @param {Obj} args @returns {Obj} */
@@ -648,7 +740,7 @@ function mockTrust(b, args) {
 
 /** The sample inbox's reserved project key (Forge core/types.mjs SAMPLE_KEY) and the tools that refuse it. */
 export const SAMPLE_KEY = 'dowser-sample';
-const SAMPLE_REFUSED = ['dowser_proposals_push', 'dowser_areas_push', 'dowser_reflect_sync', 'dowser_direction_get'];
+const SAMPLE_REFUSED = ['dowser_proposals_push', 'dowser_areas_push', 'dowser_reflect_sync', 'dowser_direction_get', 'dowser_verdicts_record'];
 
 /** The tools by name. @type {Record<string, (b: Backend, args: Obj) => Obj>} */
 const HANDLERS = {
@@ -664,6 +756,8 @@ const HANDLERS = {
   dowser_areas_push: dowserAreasPush,
   dowser_reflect_sync: dowserReflectSync,
   dowser_direction_get: dowserDirectionGet,
+  dowser_verdicts_record: dowserVerdictsRecord,
+  mock_delegate: mockDelegate,
   mock_decide_rule: mockDecideRule,
   mock_outcome: mockOutcome,
   mock_decide: mockDecide,

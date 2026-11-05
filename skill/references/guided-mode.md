@@ -50,6 +50,7 @@ Guided output never uses the words on the left. Say the right column instead.
 | reserve, band | "also found" |
 | predicted verdict, slice, trust level, L1 | "Dowser's guess", "this kind of proposal", "how often Dowser guesses your decisions right" |
 | pretriaged_by, machine pre-triaged | "pre-sorted by Dowser" |
+| `delegate:temper`, delegate verdict, "Decided by Temper (delegate)" | "decided by Temper, the helper your team allowed to decide in this inbox for a while (not a person)" |
 
 "Merge" in triage stays, because it is the runner's own action: "this is the same as another
 proposal".
@@ -88,6 +89,10 @@ Checking security and EU Cyber Resilience Act duties: done, no proposals.
     proposals of a kind you have agreed with Dowser about 9 times out of 10 skipped this review
     and went straight to the inbox, marked as pre-sorted by Dowser. You still decide each one
     there."
+- Delegate verdicts pulled from Jira (`decided_by` `delegate:temper`): "Temper, the helper your
+  team allowed to decide in this inbox, accepted <a> and turned down <r> since the last scan.
+  Dowser learns from them, but only your own decisions teach it how far to trust its guesses."
+  Dev form: `<n> verdicts by delegate:temper (delegate): <a> accepted, <r> rejected; not counted in trust`.
 - A trust change (`trust_events` from `ingest-verdicts` or `move`): earned - "Dowser has guessed
   your decisions on <lens in words> proposals of this size right 9 times out of 10, so from now
   on it may pre-sort them for you."; lost - "You turned down a proposal Dowser had pre-sorted, so
@@ -153,7 +158,9 @@ Answer from `show <fp>` only, in this order, in plain words:
 4. **History:** only the moves `show` lists, in order: "Proposed on <date>, checked against the
    code the same day, sent to the Jira inbox on <date>, accepted there by <name> as DOW-12."
    Keeping a card records nothing, so never say who kept it: a card nobody decided yet is
-   "not decided yet".
+   "not decided yet". A move `show` marks `delegate: true` (decider `delegate:temper`) was not a
+   person's: say "accepted there by Temper, the helper your team allowed to decide in this inbox
+   for a while, not by a person" (or "turned down" / "put off" there by Temper), never a name.
 
 | Runner asks | Answer from |
 | --- | --- |

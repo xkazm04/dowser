@@ -9,7 +9,7 @@ import { LENSES, isOneOf } from '../shared/model.mjs';
 import { namesOf } from './names.mjs';
 import { logLine } from './observe.mjs';
 import { findProposal, needInbox, refuseSampleKey, toProposal } from './store.mjs';
-import { INBOX_STATUSES, NOTE_MAX, OUTCOMES_MAX, OUTCOME_RATINGS, RULES_MAX, RULE_TEXT_MAX, RULE_TITLES_MAX, TRUST_EVENTS_MAX, TRUST_SLICES_MAX } from './types.mjs';
+import { DELEGATE_KIND, INBOX_STATUSES, NOTE_MAX, OUTCOMES_MAX, OUTCOME_RATINGS, RULES_MAX, RULE_TEXT_MAX, RULE_TITLES_MAX, TRUST_EVENTS_MAX, TRUST_SLICES_MAX, VERDICT_STATUSES } from './types.mjs';
 import { AppError, DuplicateKey, errTag, isIso, isObj, needStr, omitAbsent, optStr, sqlv, str } from './util.mjs';
 import { deciderOf } from './verdicts.mjs';
 import { parseJsonArray } from './push.mjs';
@@ -27,6 +27,7 @@ import { deliveriesOf, storeCodeDeliveries } from './delivery.mjs';
  * @typedef {import('./types.mjs').ReflectData} ReflectData
  * @typedef {import('./types.mjs').PushRetro} PushRetro
  * @typedef {import('./types.mjs').LensYield} LensYield
+ * @typedef {import('./types.mjs').VerdictStatus} VerdictStatus
  */
 
 /** Pushes shown in the retro, newest first. */
@@ -392,6 +393,18 @@ export async function reflectData(deps, p) {
   );
   const names = await namesOf(deps, [...noteRows.map((r) => r.decided_by), ...ruleRows.map((r) => r.decided_by), ...outcomeRows.map((r) => r.decided_by)]);
   const trust = await trustOf(db, projectKey);
+  // the verdict log counted apart for people and for a delegate (core/delegate.mjs): a delegate's verdicts teach the
+  // memory, but the tab never lets them pass for a person's
+  const zero = () => /** @type {Record<VerdictStatus, number>} */ (Object.fromEntries(VERDICT_STATUSES.map((s) => [s, 0])));
+  const verdicts_by = { human: zero(), delegate: zero() };
+  for (const r of await db.query(
+    `SELECT CASE WHEN decided_by LIKE ? THEN 'delegate' ELSE 'human' END AS who, status, COUNT(*) AS n FROM verdicts WHERE project_key = ? GROUP BY who, status`,
+    [`${DELEGATE_KIND}:%`, projectKey],
+  )) {
+    const side = verdicts_by[r.who === 'delegate' ? 'delegate' : 'human'];
+    const s = String(r.status);
+    if (isOneOf(VERDICT_STATUSES, s)) side[/** @type {VerdictStatus} */ (s)] += Number(r.n);
+  }
 
   return {
     totals: /** @type {ReflectData['totals']} */ (totals),
@@ -406,6 +419,7 @@ export async function reflectData(deps, p) {
     candidates: await candidatesOf(deps, projectKey),
     outcomes: outcomeRows.map((r) => omitAbsent({ ...toOutcome(r), title: String(r.title), decided_by_name: names[String(r.decided_by)] })),
     ...(trust ? { trust } : {}),
+    verdicts_by,
   };
 }
 

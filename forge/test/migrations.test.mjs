@@ -40,6 +40,9 @@ const SHIPPED = new Map([
   ['v029_work_reports_proposal_ix', '8dff797794a55ad7'],
   ['v030_page_links', 'c7d548d360adedc4'],
   ['v031_page_edits', '4d74be7e01af1cc1'],
+  ['v032_inboxes_delegate_until', 'b052f361b11d002a'],
+  ['v033_inboxes_delegate_accepts', 'a39123f8a35a8e5a'],
+  ['v034_inboxes_delegate_rejects', '9a73af8a17788811'],
 ]);
 
 /** @param {string} s */
