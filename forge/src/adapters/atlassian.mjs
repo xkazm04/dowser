@@ -22,7 +22,7 @@
 //   GET  /rest/api/3/user/bulk?accountId=&accountId=    -> display names (asApp, read:jira-user)
 //   GET  /rest/api/3/mypermissions?permissions=&projectKey=|issueKey=  -> {permissions: {KEY: {havePermission}}}
 //   GET  /wiki/rest/api/content/search?cql=&expand=body.storage,version
-import { NeedsAuthenticationError, asApp, asUser, getAppContext, route } from '@forge/api';
+import * as forgeApi from '@forge/api';
 import { htmlToText, trimText } from '../core/adf.mjs';
 import { BODY_MAX, TICKET_FIELDS, ticketItem } from '../core/sources.mjs';
 import { AppError, ISSUE_KEY_RE, omitAbsent } from '../core/util.mjs';
@@ -36,6 +36,28 @@ import { AppError, ISSUE_KEY_RE, omitAbsent } from '../core/util.mjs';
  * @typedef {import('../core/ports.mjs').SourceItem} SourceItem
  * @typedef {import('@forge/api').APIResponse} APIResponse
  */
+
+/**
+ * The @forge/api calls this adapter makes, behind one object so a test can script the product's answers
+ * (test/adapters.test.mjs) without the Forge runtime. Production never swaps it.
+ * @type {{asApp: typeof forgeApi.asApp, asUser: typeof forgeApi.asUser, getAppContext: typeof forgeApi.getAppContext,
+ *   route: typeof forgeApi.route, NeedsAuthenticationError: typeof forgeApi.NeedsAuthenticationError}}
+ */
+const api = {
+  asApp: forgeApi.asApp, asUser: forgeApi.asUser, getAppContext: forgeApi.getAppContext, route: forgeApi.route,
+  NeedsAuthenticationError: forgeApi.NeedsAuthenticationError,
+};
+
+/**
+ * Test seam: replaces some of the @forge/api calls; answers a function that restores them.
+ * @param {Partial<typeof api>} over
+ * @returns {() => void}
+ */
+export function useForgeApi(over) {
+  const before = { ...api };
+  Object.assign(api, over);
+  return () => { Object.assign(api, before); };
+}
 
 /**
  * The JSON of a product response, or a thrown Error naming the status (the core maps it to `unavailable`);
@@ -66,14 +88,14 @@ const httpError = (message, status) => Object.assign(new Error(message), { statu
  */
 async function asPerson(fn) {
   try { return await fn(); } catch (e) {
-    if (e instanceof NeedsAuthenticationError) throw new AppError('unauthorized', 'Dowser needs your permission to read on your behalf; allow access and retry');
+    if (e instanceof api.NeedsAuthenticationError) throw new AppError('unauthorized', 'Dowser needs your permission to read on your behalf; allow access and retry');
     throw e;
   }
 }
 
 /** The installation this invocation runs for; a warm runtime may serve more than one. */
 export function installationId() {
-  try { return getAppContext().installationAri?.installationId ?? ''; } catch { return ''; }
+  try { return api.getAppContext().installationAri?.installationId ?? ''; } catch { return ''; }
 }
 
 /** @type {Map<string, string>} installation id -> site URL */
@@ -84,7 +106,7 @@ export async function siteUrl() {
   const inst = installationId();
   let url = inst ? siteCache.get(inst) : undefined;
   if (!url) {
-    const info = await json(await asApp().requestJira(route`/rest/api/3/serverInfo`), 'Jira serverInfo');
+    const info = await json(await api.asApp().requestJira(api.route`/rest/api/3/serverInfo`), 'Jira serverInfo');
     url = String(info.baseUrl).replace(/\/+$/, '');
     if (inst) siteCache.set(inst, url);
   }
@@ -97,7 +119,7 @@ export const perms = {
     const q = new URLSearchParams({ permissions: keys.join(',') });
     if (on?.projectKey) q.set('projectKey', on.projectKey);
     if (on?.issueKey) q.set('issueKey', on.issueKey);
-    const res = await asUser().requestJira(route`/rest/api/3/mypermissions?${q}`);
+    const res = await api.asUser().requestJira(api.route`/rest/api/3/mypermissions?${q}`);
     /** @type {Record<string, boolean>} */
     const out = Object.fromEntries(keys.map((k) => [k, false]));
     // A project or issue the person cannot see (or that does not exist) answers 404: no permission at all.
@@ -114,13 +136,13 @@ export const links = {
   // (`/jira/apps/<appId>/<envId>/<route>`) is the documented one for jira:globalPage; the `ref` query is read by
   // the inbox route.
   async inboxUrl(ref) {
-    const ctx = getAppContext();
+    const ctx = api.getAppContext();
     return `${await siteUrl()}/jira/apps/${ctx.appAri.appId}/${ctx.environmentAri.environmentId}/inbox?ref=${encodeURIComponent(ref)}`;
   },
   // The rovo:mcp server a coding agent connects to: one URL per app (the setup checklist shows it).
   mcpUrl() {
     try {
-      const appId = getAppContext().appAri?.appId;
+      const appId = api.getAppContext().appAri?.appId;
       return appId ? `https://mcp.atlassian.com/forge/${appId}` : undefined;
     } catch { return undefined; }
   },
@@ -130,7 +152,7 @@ export const links = {
 export const jira = {
   async createIssue({ projectKey, issueTypeId, summary, description, labels }) {
     /** @param {boolean} withLabels */
-    const post = (withLabels) => asApp().requestJira(route`/rest/api/3/issue`, {
+    const post = (withLabels) => api.asApp().requestJira(api.route`/rest/api/3/issue`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ fields: { project: { key: projectKey }, issuetype: { id: issueTypeId }, summary, description, ...(withLabels ? { labels } : {}) } }),
@@ -144,7 +166,7 @@ export const jira = {
     return { key, url: `${await siteUrl()}/browse/${key}` };
   },
   async addComment(issueKey, body) {
-    const res = await asApp().requestJira(route`/rest/api/3/issue/${issueKey}/comment`, {
+    const res = await api.asApp().requestJira(api.route`/rest/api/3/issue/${issueKey}/comment`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ body }),
@@ -156,7 +178,7 @@ export const jira = {
     const out = [];
     for (let startAt = 0; startAt < 1000;) {
       const q = new URLSearchParams({ expand: 'issueTypes', maxResults: '50', startAt: String(startAt) });
-      const page = await json(await asUser().requestJira(route`/rest/api/3/project/search?${q}`), 'Jira project search');
+      const page = await json(await api.asUser().requestJira(api.route`/rest/api/3/project/search?${q}`), 'Jira project search');
       for (const p of /** @type {any[]} */ (page.values ?? [])) {
         out.push({
           key: String(p.key), name: String(p.name),
@@ -170,7 +192,7 @@ export const jira = {
   },
   async setIssueProperty(issueKey, key, value) {
     if (!ISSUE_KEY_RE.test(issueKey)) throw new Error(`not an issue key: ${issueKey}`);
-    const res = await asApp().requestJira(route`/rest/api/3/issue/${issueKey}/properties/${key}`, {
+    const res = await api.asApp().requestJira(api.route`/rest/api/3/issue/${issueKey}/properties/${key}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(value),
     });
     // the status rides on the error: a 404 (issue deleted or moved) is final for core/issue-property.mjs
@@ -184,7 +206,7 @@ export const jira = {
     const valid = [...new Set(keys)].filter((k) => ISSUE_KEY_RE.test(k));
     for (let i = 0; i < valid.length; i += 50) {
       const chunk = valid.slice(i, i + 50);
-      const res = await asUser().requestJira(route`/rest/api/3/search/jql`, {
+      const res = await api.asUser().requestJira(api.route`/rest/api/3/search/jql`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ jql: `key in (${chunk.join(',')})`, maxResults: chunk.length, fields: ['status'] }),
@@ -204,7 +226,7 @@ export const confluence = {
   // As the user: a person without comment permission on the page gets Confluence's refusal, not the app's reach.
   async addFooterComment(pageId, body) {
     if (!/^[0-9]{1,32}$/.test(pageId)) throw new Error(`not a page id: ${pageId}`);
-    const res = await asUser().requestConfluence(route`/wiki/api/v2/footer-comments`, {
+    const res = await api.asUser().requestConfluence(api.route`/wiki/api/v2/footer-comments`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ pageId, body: { representation: 'atlas_doc_format', value: JSON.stringify(body) } }),
     });
@@ -224,7 +246,7 @@ export const users = {
       try {
         const q = new URLSearchParams({ maxResults: '50' });
         for (const id of ids.slice(i, i + 50)) q.append('accountId', id);
-        const page = await json(await asApp().requestJira(route`/rest/api/3/user/bulk?${q}`), 'Jira user bulk');
+        const page = await json(await api.asApp().requestJira(api.route`/rest/api/3/user/bulk?${q}`), 'Jira user bulk');
         for (const u of /** @type {any[]} */ (page.values ?? [])) if (u.accountId && u.displayName) out[String(u.accountId)] = String(u.displayName);
       } catch { /* omit this batch's names */ }
     }
@@ -264,7 +286,7 @@ const GOALS_QUERY = `query dowser_goals($cypherQuery: String!) {
 export const sources = {
   async tickets({ jql, limit }) {
     return asPerson(async () => {
-      const res = await asUser().requestJira(route`/rest/api/3/search/jql`, {
+      const res = await api.asUser().requestJira(api.route`/rest/api/3/search/jql`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ jql, maxResults: limit, fields: TICKET_FIELDS }),
@@ -277,7 +299,7 @@ export const sources = {
   async pages({ cql, limit }) {
     return asPerson(async () => {
       const q = new URLSearchParams({ cql, limit: String(limit), expand: 'body.storage,version' });
-      const out = await json(await asUser().requestConfluence(route`/wiki/rest/api/content/search?${q}`), 'Confluence search');
+      const out = await json(await api.asUser().requestConfluence(api.route`/wiki/rest/api/content/search?${q}`), 'Confluence search');
       const base = String(out._links?.base ?? `${await siteUrl()}/wiki`);
       return (out.results ?? []).map((/** @type {any} */ p) => /** @type {SourceItem} */ (omitAbsent({
         ref: String(p.id), title: String(p.title ?? ''), url: `${base}${p._links?.webui ?? `/pages/viewpage.action?pageId=${p.id}`}`,
@@ -288,7 +310,7 @@ export const sources = {
   },
   async goals() {
     return asPerson(async () => {
-      const res = await asUser().requestTeamworkGraph(GOALS_QUERY, { cypherQuery: 'MATCH (goal:AtlassianGoal) RETURN collect(distinct goal) as goals' });
+      const res = await api.asUser().requestTeamworkGraph(GOALS_QUERY, { cypherQuery: 'MATCH (goal:AtlassianGoal) RETURN collect(distinct goal) as goals' });
       if (res.status === 403 || res.status === 401) {
         throw new AppError('unavailable', 'Teamwork Graph refused the goals query: the app must be allowlisted for the Teamwork Graph API (request it from Atlassian support with the app id)');
       }

@@ -18,6 +18,6 @@ function method(name) {
 
 test('issue statuses are read as the user, never as the app (no status leak across project permissions)', () => {
   const body = method('issueStatuses');
-  assert.match(body, /asUser\(\)\.requestJira/);
+  assert.match(body, /api\.asUser\(\)\.requestJira/);
   assert.doesNotMatch(body, /asApp\(\)/);
 });
