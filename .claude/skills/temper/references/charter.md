@@ -38,7 +38,7 @@ stored charter (`T charter show`).
 1. `T report --date <yesterday>` writes `docs/evals/temper/<yesterday>.md` from the ledger, including the landing.
    Show the "Needs you" section first, then the rest.
 2. Ask the report's `questions`, at most three, in this order: the delegation (expired, expiring, or local-only
-   verdicts), the direction approvals, the live sign-in, and the parked items. The rest wait under "Also waiting".
+   verdicts), the direction approvals, the live sign-in, the flaky gates, and the parked items. The rest wait under "Also waiting".
 3. Record the operator's direction answers through
    `TEMPER_CHARTER_DIALOG=1 node .claude/skills/temper/scripts/temper.mjs day start --approve a,b --veto c`. The
    operator may reorder directions by approving only the first. Approvals given in any other way are refused.

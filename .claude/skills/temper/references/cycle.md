@@ -161,6 +161,18 @@ held a port), is not fixed by reverting the build. Fix the cause, then run `T cy
 - A repo without e2e suites (bp, personas) reports its verified UAT as the land gates `cycle end` ran itself:
   "verified gates n passed of m (c<k> p/q, ...)", never "none".
 
+## A flaky gate is a defect
+
+A gate that fails and then passes on a rerun with no change is a flaky gate (a fixed wait in a test, a port race). It
+is a defect to file, never a pass to wave through: the rerun's green proves nothing about the first failure. Read the
+failure to see whether the item caused it. If it did, or you cannot tell, the item stops. If not, the build goes on,
+and the gate goes in the cycle file's `flaky_gates: [{gate, evidence}]` (`evidence`: the failing test, its counts on
+each run, and the file:line that causes it when found) and is filed as a finding. `cycle end` checks the shape; the
+report lists them under Needs you, or Also waiting past the three questions.
+
+`cycle reverify` is for a cause you fixed. A red it turns green with no cause fixed is a flaky gate: name it in the
+next cycle file's `flaky_gates`.
+
 ## The cycle file
 
 ```json
@@ -169,7 +181,8 @@ held a port), is not fixed by reverting the build. Fix the cause, then run `T cy
  "built": [{"ref": "DW-48", "size": "M", "slice": "1/2", "commits": ["abc1234"], "specs": ["e2e/fixture/x.spec.mjs"]}],
  "uat": {"pass": 40, "fail": 0}, "findings": ["DOW-12"], "outcomes": [{"ref": "DW-40", "rating": "right", "basis": "specs green on local; no finding"}],
  "directions": [], "parked": [{"item": "DW-49", "why": "needs the operator's call on scope"}], "notes": "...",
- "skill_issues": [{"where": "temper.mjs cycleEnd", "what": "...", "evidence": "file:line or a run's output", "fix": "..."}]}
+ "skill_issues": [{"where": "temper.mjs cycleEnd", "what": "...", "evidence": "file:line or a run's output", "fix": "..."}],
+ "flaky_gates": [{"gate": "npm run check:x", "evidence": "151/152 then 152/152, no change; a fixed 2.5 s wait at x.ts:177"}]}
 ```
 
 The top-level keys are closed (an unknown one is a usage error). Inside them a runner may add informational keys,

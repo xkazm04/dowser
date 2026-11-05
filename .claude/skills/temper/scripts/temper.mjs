@@ -71,7 +71,9 @@ export const QUALITY_KEYS = ['long_functions', 'dup_windows', 'lib_cycles', 'tod
 const PARTS = /** @type {const} */ (['uat', 'proposals', 'scan_yield', 'quality', 'coverage']);
 const CHARTER_KEYS = ['repos', 'until', 'out_of_bounds', 'limits', 'delegation', 'live'];
 const REPO_KEYS = ['name', 'path', 'inbox_key', 'build', 'landing', 'gates', 'ledger', 'caps'];
-const CYCLE_KEYS = ['target', 'repo', 'scan', 'other_scans', 'verdicts', 'built', 'uat', 'findings', 'outcomes', 'directions', 'parked', 'notes', 'skill_issues'];
+const CYCLE_KEYS = ['target', 'repo', 'scan', 'other_scans', 'verdicts', 'built', 'uat', 'findings', 'outcomes', 'directions', 'parked', 'notes', 'skill_issues', 'flaky_gates'];
+/** A gate that failed and then passed on rerun: a defect the report lists, never a pass. */
+const FLAKY_GATE_KEYS = ['gate', 'evidence'];
 /** What the cycle runner learned about the loop itself: each issue names where (a file, step or brief), what, the evidence and the fix. */
 const SKILL_ISSUE_KEYS = ['where', 'what', 'evidence', 'fix'];
 const VERDICT_KINDS = ['accept', 'reject', 'snooze', 'merge'];
@@ -1049,6 +1051,21 @@ export function checkSkillIssues(arr) {
 }
 
 /**
+ * The cycle's flaky gates: a list of {gate, evidence}, each a non-empty string, no other key.
+ * @param {unknown} arr
+ */
+export function checkFlakyGates(arr) {
+  const shape = `flaky_gates is a list of {${FLAKY_GATE_KEYS.join(', ')}}, each a non-empty string`;
+  if (!Array.isArray(arr)) throw new UsageError(shape);
+  arr.forEach((x, i) => {
+    if (!x || typeof x !== 'object' || Array.isArray(x)) throw new UsageError(`flaky_gates[${i}] is an object: ${shape}`);
+    for (const k of Object.keys(x)) if (!FLAKY_GATE_KEYS.includes(k)) throw new UsageError(`unknown key flaky_gates[${i}].${k} (${FLAKY_GATE_KEYS.join(', ')})`);
+    for (const k of FLAKY_GATE_KEYS) if (typeof x[k] !== 'string' || !x[k].trim()) throw new UsageError(`flaky_gates[${i}] needs ${k}: ${shape}`);
+  });
+  return arr;
+}
+
+/**
  * Checks the director's cycle file. @param {any} raw @param {{target: string, metModules: string[], proposedPerModule: Record<string, number>}} o
  */
 export function validateCycleFile(raw, o) {
@@ -1063,6 +1080,7 @@ export function validateCycleFile(raw, o) {
   for (const x of raw.outcomes ?? []) if (typeof x?.ref !== 'string' || !['right', 'partly', 'wrong'].includes(x.rating) || typeof x.basis !== 'string') throw new UsageError('each outcome is {ref, rating: right|partly|wrong, basis}');
   for (const x of raw.parked ?? []) if (typeof x?.item !== 'string' || typeof x.why !== 'string') throw new UsageError('each parked entry is {item, why}');
   if (raw.skill_issues !== undefined) checkSkillIssues(raw.skill_issues);
+  if (raw.flaky_gates !== undefined) checkFlakyGates(raw.flaky_gates);
   const per = { ...o.proposedPerModule };
   for (const d of raw.directions ?? []) {
     for (const k of ['id', 'module', 'title', 'evidence', 'value', 'size', 'first_slice']) if (typeof d?.[k] !== 'string' || !d[k].trim()) throw new UsageError(`each direction has ${k}`);
@@ -1831,8 +1849,20 @@ export function capQuestions(charter, cycles) {
 }
 
 /**
+ * The flaky-gates question: one for all of the day's, each with its repo, cycle and evidence. A rerun's green settles
+ * nothing, so they stay in front of the operator until a day has none.
+ * @param {any[]} cycles @returns {string[]} none or one question
+ */
+export function flakyQuestions(cycles) {
+  const each = [...cycles].sort((a, b) => a.n - b.n).flatMap((r) => (r.self_reported?.flaky_gates ?? [])
+    .map((/** @type {any} */ x) => `${x.gate} (${r.repo ?? 'dowser'}, c${r.n}): ${x.evidence}`));
+  return each.length ? [`${each.length} flaky gates failed and then passed on rerun, which proves nothing: ${each.join('; ')}. Each is a defect to fix; none counts as a clean pass.`] : [];
+}
+
+/**
  * The start questions, in order: the cards carried to today (first), inboxes at their accept cap (one question for
- * all), delegation, directions, live sign-in, parked. At most three are asked.
+ * all), delegation, directions, live sign-in, flaky gates (one question for all), parked. At most three are asked; the
+ * rest are listed under "Also waiting".
  * @param {{date: string, charter?: any, directions: any[], cycles: any[], liveState?: string}} d
  */
 export function startQuestions(d) {
@@ -1854,6 +1884,7 @@ export function startQuestions(d) {
   else if (d.charter && !Object.keys(d.charter.delegation ?? {}).length) q.push('No inbox is delegated: switch on "Delegate triage" in Jira Settings, or I triage locally only again.');
   if (d.directions.length) q.push(`Approve, reorder or veto the direction proposals: ${d.directions.map((x) => x.id).join(', ')}.`);
   if (d.liveState !== 'signed-in') q.push('The live suite was unverifiable: sign in with node e2e/live/sign-in.mjs.');
+  q.push(...flakyQuestions(d.cycles));
   const parked = parkedGroups(d.cycles).repos;
   const items = parked.flatMap(([, xs]) => xs);
   if (items.length) q.push(`${items.length} items are parked (${parked.map(([r, xs]) => `${r} ${xs.length}`).join(', ')}; see Parked): unpark, drop or decide?`);

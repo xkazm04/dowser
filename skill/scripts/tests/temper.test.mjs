@@ -11,7 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, depDrift, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
-  capQuestions, commitGroups, commitKind, cycleRows, cycleScratch, envCause, environmentalRed, parkedGroups, supersede, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
+  capQuestions, checkFlakyGates, flakyQuestions, commitGroups, commitKind, cycleRows, cycleScratch, envCause, environmentalRed, parkedGroups, supersede, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
 } from '../../../.claude/skills/temper/scripts/temper.mjs';
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
 import { derivedIds } from '../../../tools/e2e-coverage.mjs';
@@ -1465,4 +1465,32 @@ test('cycle begin prints the runner block: the brief, the launch inputs, the cap
   assert.equal(d.scratch, join(w.home, 'runs', 'c3'), 'concurrent cycles never share one');
   assert.equal(d.focus, loadModules().modules.tooling.focus, 'the module focus');
   assert.match(d.scan, / --ref loop\/2026-11-05 /);
+});
+
+test('flaky gates: cycle end accepts {gate, evidence}, the row keeps them, the report lists them under Needs you or Also waiting, the briefs state the rule', () => {
+  const flaky = { gate: 'npm run check:morning-watch', evidence: '151/152 then 152/152; a fixed 2.5 s wait at check-morning-watch.ts:177' };
+  assert.deepEqual(checkFlakyGates([flaky]), [flaky]);
+  for (const bad of ['x', [{ gate: 'g' }], [{ gate: 'g', evidence: ' ' }], [{ gate: 'g', evidence: 'e', why: 'w' }], [null]]) assert.throws(() => checkFlakyGates(bad), /flaky_gates/, JSON.stringify(bad));
+  const o = { target: 't', metModules: [], proposedPerModule: {} };
+  assert.deepEqual(validateCycleFile({ target: 't', flaky_gates: [flaky] }, o), []);
+  assert.throws(() => validateCycleFile({ target: 't', flaky_gates: [{ gate: 'g' }] }, o), /flaky_gates\[0\] needs evidence/);
+  const w = world();
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  assert.equal(main(['cycle', 'begin', '--target', 'tooling'], w.ctx).code, 0);
+  put(join(w.work, 'cf.json'), { target: 'tooling', flaky_gates: [flaky] });
+  assert.deepEqual(main(['cycle', 'end', '--file', join(w.work, 'cf.json')], w.ctx).out.self_reported.flaky_gates, [flaky]);
+  const cycles = [{ n: 2, repo: 'bp', self_reported: { flaky_gates: [flaky] } }, { n: 1, self_reported: { flaky_gates: [{ gate: 'e2e', evidence: 'port race' }] } }, { n: 3, self_reported: {} }];
+  const [q, ...none] = flakyQuestions(cycles);
+  assert.deepEqual(none, [], 'one question for all of them');
+  assert.ok(q.startsWith('2 flaky gates'), q);
+  assert.ok(q.indexOf('e2e (dowser, c1): port race') < q.indexOf('npm run check:morning-watch (bp, c2): 151/152'), q);
+  assert.deepEqual(flakyQuestions([{ n: 1, self_reported: {} }]), []);
+  const ask = startQuestions({ date: '2026-11-05', charter: { delegation: { x: { until: '2027-01-01' } } }, directions: [], cycles, liveState: 'signed-in' });
+  assert.deepEqual(ask.questions, [q], 'in Needs you when there is room');
+  const crowded = startQuestions({ date: '2026-11-05', charter: { delegation: {} }, directions: [{ id: 'a' }], cycles, liveState: 'unverifiable' });
+  assert.equal(crowded.questions.length, 3);
+  assert.deepEqual(crowded.later, [q], 'in Also waiting past the three');
+  assert.match(renderReport({ date: 'd', commits: {}, landings: {}, cycles: [], scans: [], directions: [], questions: [], later: crowded.later }), /Also waiting: 2 flaky gates/);
+  for (const f of ['runner.md', 'cycle.md']) assert.match(readFileSync(join(ROOT, '.claude/skills/temper/references', f), 'utf8'), /defect to file, never a pass to wave through/, f);
 });
