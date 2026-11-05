@@ -498,7 +498,7 @@ sources from a seed. The mock (`tools/mock-forge-mcp.mjs`) reimplements the cont
 
 ```sh
 npm run local:forge     # terminal 1: HTTP on 127.0.0.1:4710, db in <os tmp>/dowser-local-forge/forge.db
-npm run local:ui        # terminal 2: the Custom UI (vite --mode local) at http://127.0.0.1:5173, POSTing to :4710
+npm run local:ui        # terminal 2: the Custom UI (vite --mode local-forge) at http://127.0.0.1:5173, POSTing to :4710
 curl -s -X POST http://127.0.0.1:4710/invoke -H 'content-type: application/json' -d '{"key":"inbox.list","payload":{}}'
 ```
 

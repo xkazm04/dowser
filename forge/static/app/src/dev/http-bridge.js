@@ -1,4 +1,4 @@
-// A `@forge/bridge` stand-in for local-server mode (`npm run dev:local`, i.e. vite --mode local). Every invoke is
+// A `@forge/bridge` stand-in for local-server mode (`npm run dev:local`, i.e. vite --mode local-forge). Every invoke is
 // POSTed as `{key, payload}` to `http://127.0.0.1:${VITE_DOWSER_LOCAL_PORT || 4710}/invoke`, and the JSON body
 // (the resolver result, or `{error, message}`) is returned as the resolver's answer. The server is not part of
 // this bundle. vite.config.js aliases `@forge/bridge` to this file only in that mode, so a Forge build never has it.
