@@ -169,7 +169,7 @@ async function main() {
   };
 
   if (appendTo) {
-    const file = join(ROOT, appendTo);
+    const file = appendPath(appendTo);
     const prev = existsSync(file) ? readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)).at(-1) : undefined;
     appendFileSync(file, JSON.stringify(row) + '\n');
     if (prev) {
