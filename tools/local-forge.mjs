@@ -15,8 +15,8 @@
 //                  GET  /dev/state                       row counts per table
 //                  GET  /browse/<key>                    a local Jira issue with its comments
 //                CORS: any http://localhost / 127.0.0.1 origin.
-//     --stdio    an MCP server on stdin/stdout (JSON-RPC 2.0, newline-delimited; framing as the mock): the seven
-//                forge-mcp-2 tools. stdout carries protocol only; every log line goes to stderr.
+//     --stdio    an MCP server on stdin/stdout (JSON-RPC 2.0, newline-delimited; framing as the mock): the twelve
+//                forge-mcp-2 tools (TOOL_NAMES), their schemas read from forge/manifest.yml. stdout carries protocol only; every log line goes to stderr.
 //     --seed     JSON {tickets?, pages?, goals?, projects?: [{key, name, issue_types: [{id, name}]}], users?: {<accountId>: <name>}}
 //                loaded on start (replaces seeded rows by key). Project DOW (issue type 10001) and the person
 //                `local-user` -> "Local Operator" are always there.
@@ -50,45 +50,58 @@ const LOCAL_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?
 const CATEGORIES = ['new', 'indeterminate', 'done'];
 const log = (/** @type {unknown[]} */ ...a) => console.error('[local-forge]', ...a);
 
-// tools/list: scalar input schemas (rovo:mcp allows no arrays), descriptions and properties from forge/manifest.yml.
-const S = (/** @type {string} */ description) => ({ type: 'string', description });
-const PK = S('The key Dowser derives from the repo origin.');
-export const TOOLS = [
-  { name: 'dowser_sources_tickets', description: 'Jira issues matching free text, as scan sources for a Dowser lens.',
-    inputSchema: { type: 'object', properties: { query: S('Free text; OR between terms means any of them.'), since: S('ISO timestamp; only issues created at or after it.'),
-      limit: { type: 'integer', minimum: 1, description: 'Maximum items, at least 1 (50 recommended).' } }, required: ['query', 'limit'], additionalProperties: false } },
-  { name: 'dowser_sources_pages', description: 'Confluence pages matching free text, as scan sources for a Dowser lens.',
-    inputSchema: { type: 'object', properties: { query: S('Free text.'), space: S('Confluence space key.') }, required: ['query'], additionalProperties: false } },
-  { name: 'dowser_sources_goals', description: "The team's goals from Teamwork Graph, as scan sources for the Opportunity lens.",
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
-  { name: 'dowser_proposals_push', description: 'File verified Dowser proposals in the triage inbox. Idempotent per project and fingerprint.',
-    inputSchema: { type: 'object', properties: { project_key: PK, run_id: S('The Dowser run that pushed.'), proposals_json: S('JSON array of dowser-proposal/2 (or /1) records, at most 50.'),
-      repo_url: S('The repo web URL without credentials.'), head_sha: S('The commit the run scanned.'),
-      lens_kinds_json: S('JSON object of lens to its closed kind list, from the lens packs. When sent, a proposal whose kind its lens lacks is refused.') },
-      required: ['project_key', 'run_id', 'proposals_json'], additionalProperties: false } },
-  { name: 'dowser_verdicts_pull', description: 'Triage decisions made in Jira since the cursor, oldest first.',
-    inputSchema: { type: 'object', properties: { project_key: PK, cursor: S('The cursor from the previous pull; omit on the first pull.') }, required: ['project_key'], additionalProperties: false } },
-  { name: 'dowser_memory_pull', description: "The inbox's decided items with their records and decisions, oldest first, 50 per page, and the rules decided in Jira on the first page. A fresh store hydrates from it.",
-    inputSchema: { type: 'object', properties: { project_key: PK, after: S('Send 0 for the first page, then the cursor the previous page returned.') }, required: ['project_key', 'after'], additionalProperties: false } },
-  { name: 'dowser_work_list', description: "The inbox's accepted items, oldest decision first, with their Jira issue and latest work status. queue open leaves out what Jira reports delivered or abandoned.",
-    inputSchema: { type: 'object', properties: { project_key: PK, queue: S('open for work not yet delivered, or all.') }, required: ['project_key', 'queue'], additionalProperties: false } },
-  { name: 'dowser_work_get', description: "One accepted item's brief - the card with its evidence linked to the scanned commit, its Jira issue, and done_when, the quoted lines that must be gone.",
-    inputSchema: { type: 'object', properties: { ref: S('The inbox item (DW-12) or its fingerprint.') }, required: ['ref'], additionalProperties: false } },
-  { name: 'dowser_work_report', description: 'Record progress on an accepted item - started, pr_open, done or blocked - and leave it as a comment on its Jira issue.',
-    inputSchema: { type: 'object', properties: { ref: S('The inbox item (DW-12) or its fingerprint.'), status: S('started, pr_open, done or blocked.'), note: S('At most 2000 characters.'), url: S('An https link to the pull request or build.') }, required: ['ref', 'status'], additionalProperties: false } },
-  { name: 'dowser_areas_push', description: "Per-directory churn and author counts for the opportunity map. Replaces the project's previous set.",
-    inputSchema: { type: 'object', properties: { project_key: PK, run_id: S('The Dowser run that measured the areas.'), areas_json: S('JSON array of at most 200 areas.') },
-      required: ['project_key', 'run_id', 'areas_json'], additionalProperties: false } },
-  { name: 'dowser_reflect_sync', description: "Offer the skill's learned rules and read back the rules decided in Jira and the outcomes of accepted items. Idempotent.",
-    inputSchema: { type: 'object', properties: { project_key: PK, rules_json: S('JSON array of at most 50 offered rules with id and lens and text and offered_at and optional titles. Send an empty array to only read.'),
-      trust_json: S("JSON object with the skill's per-slice trust levels and their newest 50 events, as reflect export prints it. Omit it when absent."),
-      deliveries_json: S("JSON array of at most 500 {fp, state: present|partly|resolved, found, total, checked_at, commits?}: the skill's re-check of accepted cards. Omit it when absent."),
-      outcomes_since: S('ISO time of the newest outcome the skill holds. Returns the oldest 200 outcomes at or after it and outcomes_more when more follow. Omit it for the newest 200.') },
-      required: ['project_key'], additionalProperties: false } },
-  { name: 'dowser_direction_get', description: 'What the team set in Dowser Settings for each lens of this inbox - focus, exclude, notes and Confluence spaces.',
-    inputSchema: { type: 'object', properties: { project_key: PK, lens: S('One lens id or all (the default). Send all rather than omitting it.') },
-      required: ['project_key'], additionalProperties: false } },
-];
+// tools/list: built at start-up from forge/manifest.yml (one source, so this server cannot drift from the deployed
+// contract): every `action` whose key is one of the core's TOOL_NAMES, with its description and scalar inputs
+// (rovo:mcp allows no arrays). An integer input gets `minimum: 1`, as its descriptions state.
+export const MANIFEST = join(REPO_ROOT, 'forge', 'manifest.yml');
+
+/**
+ * Reads the MCP tools' input schemas from the manifest's `action` list. Only the shape forge/manifest.yml uses is
+ * read (`- key:`, `description:`, `inputs:` of one-line `{ title, type, required, description }` maps); an
+ * input line in any other shape throws, so a manifest edit this reader does not understand fails loudly.
+ * @param {string} text  the manifest
+ * @param {readonly string[]} names  the tools to keep, in this order
+ * @returns {{name: string, description: string, inputSchema: Obj}[]}
+ */
+export function toolsFromManifest(text, names) {
+  /** @type {Map<string, {description: string, properties: Obj, required: string[]}>} */
+  const actions = new Map();
+  /** @type {{description: string, properties: Obj, required: string[]} | undefined} */
+  let cur;
+  let inAction = false;
+  let inInputs = false;
+  const unquote = (/** @type {string} */ v) => (/^".*"$/.test(v) ? JSON.parse(v) : v);
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.replace(/\s+$/, '');
+    if (/^ {2}\S/.test(line)) { inAction = line === '  action:'; cur = undefined; inInputs = false; continue; }
+    if (!inAction) continue;
+    const key = line.match(/^ {4}- key: (\S+)$/);
+    if (key) { cur = { description: '', properties: {}, required: [] }; actions.set(key[1], cur); inInputs = false; continue; }
+    if (!cur) continue;
+    const desc = line.match(/^ {6}description: (.+)$/);
+    if (desc) { cur.description = unquote(desc[1]); continue; }
+    if (/^ {6}inputs:$/.test(line)) { inInputs = true; continue; }
+    if (/^ {6}\S/.test(line)) { inInputs = false; continue; }
+    if (!inInputs || line === '') continue;
+    const input = line.match(/^ {8}([a-z_]+): \{ title: [^,]+, type: (string|integer|number|boolean), required: (true|false), description: (.+) \}$/);
+    if (!input) throw new Error(`forge/manifest.yml: an action input this reader does not understand: ${line.trim()}`);
+    const [, name, type, required, d] = input;
+    cur.properties[name] = type === 'integer' ? { type, minimum: 1, description: unquote(d) } : { type, description: unquote(d) };
+    if (required === 'true') cur.required.push(name);
+  }
+  return names.map((name) => {
+    const a = actions.get(name);
+    if (!a) throw new Error(`forge/manifest.yml has no action ${name}`);
+    return { name, description: a.description,
+      inputSchema: { type: 'object', properties: a.properties, ...(a.required.length ? { required: a.required } : {}), additionalProperties: false } };
+  });
+}
+
+/** The tool order of tools/list (the contract's order). */
+const TOOL_ORDER = ['dowser_sources_tickets', 'dowser_sources_pages', 'dowser_sources_goals', 'dowser_proposals_push', 'dowser_verdicts_pull',
+  'dowser_memory_pull', 'dowser_work_list', 'dowser_work_get', 'dowser_work_report', 'dowser_areas_push', 'dowser_reflect_sync', 'dowser_direction_get'];
+export const TOOLS = toolsFromManifest(readFileSync(MANIFEST, 'utf8'), [...TOOL_ORDER.filter((n) => TOOL_NAMES.includes(/** @type {any} */ (n))),
+  ...TOOL_NAMES.filter((n) => !TOOL_ORDER.includes(n))]);
 
 /**
  * One core call at a time in this process: the Db port's `tx` holds the connection's transaction across
