@@ -50,15 +50,6 @@ export async function deepLink(context) {
 }
 
 /**
- * The `ref` a deep link asks for, or undefined.
- * @param {any} context  the Forge context (view.getContext())
- * @returns {Promise<string | undefined>}
- */
-export async function deepLinkRef(context) {
-  return (await deepLink(context)).ref;
-}
-
-/**
  * Another tab of the global page (inbox, map, reflect, settings), from this page's location (…/inbox -> …/settings).
  * @param {string | undefined} location @param {string} route
  */

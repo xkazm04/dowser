@@ -138,7 +138,7 @@ and Jira's sidebar groups need a DOM click, not a coordinate click.
 Fixed since (2026-10-29 check against the code): 1 (snooze and reject wait in an undo window,
 `useCommitWindow`), 2 (account ids resolved through `/rest/api/3/user/bulk`), 4 (the accept preview renders
 markdown), 6 (one structured log line per tool and resolver call, `forge/src/core/observe.mjs`), 3 (the change
-label is gated on open cards since 85fb5c0 in `InboxList.jsx`, `Detail.jsx` and `ProposalCard.jsx`; the doc lagged
+label is gated on open cards since 85fb5c0 in `InboxList.jsx` and `Detail.jsx`; the doc lagged
 until 2026-11-04). Still open: 5.
 
 **Live check after the security hardening (2026-10-30, 2.12.0, browser over CDP + MCP).** Passed:
