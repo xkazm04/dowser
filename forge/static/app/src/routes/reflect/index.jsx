@@ -182,15 +182,32 @@ function NeedsYou({ d, projectKey, onPatch }) {
   const offers = (d.rules ?? []).filter((x) => x.state === 'offered');
   const cands = d.candidates ?? [];
   const n = offers.length + cands.length;
+  const listRef = useRef(/** @type {HTMLUListElement | null} */ (null));
+  const headRef = useRef(/** @type {HTMLHeadingElement | null} */ (null));
+  // after a decision the item leaves with the control that had focus: focus moves to the item now in its place
+  // (or the last one, or the heading when none is left) and a polite status says what happened
+  const [focusAt, setFocusAt] = useState(/** @type {number | null} */ (null));
+  const [said, setSaid] = useState('');
+  useEffect(() => {
+    if (focusAt === null) return;
+    setFocusAt(null);
+    const items = listRef.current ? [...listRef.current.children] : [];
+    const li = items[Math.min(focusAt, items.length - 1)];
+    const target = li?.querySelector('textarea, input, button, a[href]');
+    if (target instanceof HTMLElement) target.focus(); else headRef.current?.focus();
+  }, [focusAt]);
+  /** @param {number} at @param {string} message @param {(data: any) => any} fn */
+  const decided = (at, message, fn) => { setSaid(message); setFocusAt(at); onPatch(fn); };
   return (
     <section className="dwr-needs" aria-labelledby="dwr-needs-h">
-      <h2 className="dwr-page__sub" id="dwr-needs-h">Needs you <span className="dwr-count">{n}</span></h2>
+      <h2 className="dwr-page__sub" id="dwr-needs-h" ref={headRef} tabIndex={-1}>Needs you <span className="dwr-count">{n}</span></h2>
+      <p className="dwr-visually-hidden" role="status">{said}</p>
       {n === 0
         ? <p className="dwr-muted" role="status">Nothing to decide. Dowser drafts a rule when the same kind of proposal keeps getting the same answer, and lists an accepted item here once its Jira issue moves.</p>
         : (
-          <ul className="dwr-needs__list">
-            {offers.map((x) => <li key={x.id}><RuleOffer rule={x} projectKey={projectKey} onDecided={(res) => onPatch((data) => withRule(data, res.rule))} /></li>)}
-            {cands.map((c) => <li key={c.ref}><Candidate cand={c} onRecorded={(res) => onPatch((data) => withOutcome(data, res))} /></li>)}
+          <ul className="dwr-needs__list" ref={listRef}>
+            {offers.map((x, i) => <li key={x.id}><RuleOffer rule={x} projectKey={projectKey} onDecided={(res) => decided(i, `Rule ${res.rule.state}.`, (data) => withRule(data, res.rule))} /></li>)}
+            {cands.map((c, i) => <li key={c.ref}><Candidate cand={c} onRecorded={(res) => decided(offers.length + i, `Recorded ${c.ref}.`, (data) => withOutcome(data, res))} /></li>)}
           </ul>
         )}
     </section>
