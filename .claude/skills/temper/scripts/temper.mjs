@@ -1415,27 +1415,235 @@ function modulesBar(ctx, f) {
 
 // ---------------------------------------------------------------------------------------------- report
 
+/** @typedef {{sha: string, subject: string, parents: number, at?: number, files: string[]}} Commit  one commit of a day branch */
+/** @typedef {'product' | 'skill' | 'record' | 'merge'} CommitKind */
+
+/** The /temper skill's own files (its scripts, tools/temper-* and the scan workspace they share, their tests, the records README). */
+const SKILL_FILE_RE = /^(\.claude\/skills\/temper\/|tools\/temper-[^/]*$|tools\/scan-workspace\.mjs$|skill\/scripts\/tests\/temper[^/]*$|docs\/evals\/temper\/README\.md$)/;
+/** A record commit: chore(temper) touching only the day records. */
+const RECORD_FILE_RE = /^docs\/evals\/temper\//;
+/** A Jira-style card ref, alone. */
+const REF_ONLY_RE = /^[A-Z][A-Z0-9]*-\d+$/;
+
 /**
- * The morning report's markdown (operator-facing; not a Dowser runner surface, so it has no guided form).
- * @param {{date: string, commits: string[], landings: Record<string, any>, cycles: any[], scans: any[], bar?: any, directions: any[], questions: string[], later: string[]}} d
+ * `git log --format=%x1e%h%x1f%p%x1f%at%x1f%s --name-only` as commits, newest first.
+ * @param {string} out @returns {Commit[]}
+ */
+export function parseCommitLog(out) {
+  return String(out).split('\x1e').map((chunk) => chunk.replace(/^\r?\n+/, '')).filter((c) => c.trim()).map((chunk) => {
+    const [head, ...files] = chunk.split(/\r?\n/);
+    const [sha, parents, at, ...subject] = head.split('\x1f');
+    return { sha, subject: subject.join('\x1f'), parents: parents.trim() ? parents.trim().split(/\s+/).length : 0, at: Number(at) * 1000, files: files.map((f) => f.trim()).filter(Boolean) };
+  });
+}
+
+/**
+ * What a commit is, for the report: a merge; a record (chore(temper) touching only docs/evals/temper/); skill
+ * hardening (only the /temper skill's files: .claude/skills/temper/, tools/temper-*, their tests, the records README);
+ * else product. A commit that mixes skill and product files is product.
+ * @param {Commit} c @returns {CommitKind}
+ */
+export function commitKind(c) {
+  if (c.parents > 1) return 'merge';
+  const files = c.files ?? [];
+  if (/^chore\(temper\)/.test(c.subject) && files.length && files.every((f) => RECORD_FILE_RE.test(f) && !SKILL_FILE_RE.test(f))) return 'record';
+  if (files.length && files.every((f) => SKILL_FILE_RE.test(f))) return 'skill';
+  return 'product';
+}
+
+/**
+ * The day's commits by repo and kind. @param {Record<string, Commit[]>} byRepo
+ * @returns {{repos: [string, {product: Commit[], record: number, merge: number}][], skill: {repo: string, c: Commit}[]}}
+ */
+export function commitGroups(byRepo) {
+  /** @type {[string, {product: Commit[], record: number, merge: number}][]} */
+  const repos = [];
+  /** @type {{repo: string, c: Commit}[]} */
+  const skill = [];
+  for (const [repo, cs] of Object.entries(byRepo)) {
+    const g = { product: /** @type {Commit[]} */ ([]), record: 0, merge: 0 };
+    for (const c of cs) {
+      const k = commitKind(c);
+      if (k === 'product') g.product.push(c);
+      else if (k === 'skill') skill.push({ repo, c });
+      else g[k]++;
+    }
+    repos.push([repo, g]);
+  }
+  return { repos, skill };
+}
+
+/** Cycles, newest first (ended_at, then n). @param {any[]} cycles */
+const newestFirst = (cycles) => [...cycles].sort((a, b) => String(b.ended_at ?? '').localeCompare(String(a.ended_at ?? '')) || (b.n ?? 0) - (a.n ?? 0));
+
+/**
+ * Parked items by repo, deduplicated: one row per item (its text, trimmed) with the newest cycle's reason and how many
+ * cycles parked it. An item that is only a card ref and was built by a later cycle of the same repo is dropped (the
+ * build answered it) and listed in `unparked`.
+ * @param {any[]} cycles
+ * @returns {{repos: [string, {item: string, why: string, n: number, times: number}[]][], unparked: {repo: string, item: string, n: number}[]}}
+ */
+export function parkedGroups(cycles) {
+  const order = newestFirst(cycles);
+  /** @type {Map<string, Map<string, {item: string, why: string, n: number, times: number}>>} */
+  const by = new Map();
+  /** @type {{repo: string, item: string, n: number}[]} */
+  const unparked = [];
+  order.forEach((r, i) => {
+    const repo = r.repo ?? 'dowser';
+    for (const p of r.self_reported?.parked ?? []) {
+      if (!p || typeof p.item !== 'string' || !p.item.trim()) continue;
+      const item = p.item.trim();
+      if (!by.has(repo)) by.set(repo, new Map());
+      const m = /** @type {Map<string, {item: string, why: string, n: number, times: number}>} */ (by.get(repo));
+      const seen = m.get(item);
+      if (seen) { seen.times++; continue; }
+      // newer cycles come first in `order`: a build there answers this park
+      const builtLater = REF_ONLY_RE.test(item) && order.slice(0, i).find((x) => (x.repo ?? 'dowser') === repo && (x.self_reported?.built ?? []).some((/** @type {any} */ b) => b?.ref === item));
+      if (builtLater) { if (!unparked.some((u) => u.repo === repo && u.item === item)) unparked.push({ repo, item, n: builtLater.n }); m.set(item, { item, why: '', n: -1, times: 1 }); continue; }
+      m.set(item, { item, why: typeof p.why === 'string' ? p.why.trim() : '', n: r.n, times: 1 });
+    }
+  });
+  return { repos: [...by.entries()].map(([repo, m]) => /** @type {[string, {item: string, why: string, n: number, times: number}[]]} */ ([repo, [...m.values()].filter((x) => x.n !== -1)])).filter(([, xs]) => xs.length), unparked };
+}
+
+/**
+ * The repo an inbox belongs to: the charter's inbox_key, else the cycle whose scan or verdicts name it.
+ * @param {any} charter @param {any[]} cycles @returns {(inbox: string) => string}
+ */
+function inboxRepo(charter, cycles) {
+  /** @type {Map<string, string>} */
+  const m = new Map();
+  for (const r of cycles) {
+    const repo = r.repo ?? 'dowser';
+    if (typeof r.self_reported?.scan?.project_key === 'string') m.set(r.self_reported.scan.project_key, repo);
+    for (const v of r.self_reported?.verdicts ?? []) if (typeof v?.inbox === 'string' && !m.has(v.inbox)) m.set(v.inbox, repo);
+  }
+  for (const r of charter?.repos ?? []) if (typeof r?.inbox_key === 'string') m.set(r.inbox_key, r.name);
+  return (inbox) => m.get(inbox) ?? inbox.replace(/-temper$/, '');
+}
+
+/**
+ * A cycle file's own UAT claim as pass and fail counts: its top-level pass/fail, else the sum of its e2e_fixture,
+ * e2e_local and e2e_live results (a Dowser runner's shape), so verified and self-reported compare like for like.
+ * @param {any} u @returns {{pass: number, fail: number}}
+ */
+export function selfUat(u) {
+  if (!u || typeof u !== 'object') return { pass: 0, fail: 0 };
+  if (typeof u.pass === 'number' || typeof u.fail === 'number') return { pass: Number(u.pass) || 0, fail: Number(u.fail) || 0 };
+  const runs = E2E_PROJECTS.map((p) => u[`e2e_${p}`]).filter((x) => x && typeof x === 'object');
+  return { pass: runs.reduce((n, x) => n + (Number(x.pass) || 0), 0), fail: runs.reduce((n, x) => n + (Number(x.fail) || 0), 0) };
+}
+
+const short = (/** @type {unknown} */ s) => (typeof s === 'string' ? s.slice(0, 7) : '');
+
+/** One landing in words. @param {any} l @param {string} [branch] */
+export function landingWords(l, branch) {
+  if (!l) return `not landed${branch ? ` (on ${branch})` : ''}`;
+  if (l.decision === 'land' && l.ok !== false) return `pushed ${short(l.head)}${l.pushed ? ` to ${l.pushed}` : ''}${l.deployed ? `, deployed ${l.deployed}` : ''}`;
+  if (l.decision === 'land') return `land failed at ${l.stage ?? 'an unknown stage'}${branch ? ` (on ${branch})` : ''}`;
+  if (l.decision === 'commit-only') return `committed ${short(l.head)} on ${branch ?? 'its branch'}, not pushed (commit-only)`;
+  if (l.decision === 'rollback') return `rolled back to ${short(l.target)}`;
+  if (l.decision === 'none') return 'nothing to land';
+  return `${l.decision}${(l.reasons ?? []).length ? `: ${l.reasons.join('; ')}` : ''}, not landed${branch ? ` (on ${branch})` : ''}`;
+}
+
+/**
+ * The summary block, one entry per repo: cycles (green/red), cards scanned, accepted and built (with refs), rejected,
+ * snoozed, carried, the landing, the scan cost, and UAT passes verified vs self-reported. Verdict counts are per card
+ * at its newest verdict of the day (a card decided twice counts once).
+ * @param {{charter?: any, cycles: any[], scans: any[], landings: Record<string, any>, branches?: Record<string, string>, commits?: Record<string, Commit[]>}} d
+ */
+export function repoSummaries(d) {
+  const repoOf = inboxRepo(d.charter, d.cycles);
+  /** @type {Map<string, any>} */
+  const newest = new Map();
+  for (const r of [...newestFirst(d.cycles)].reverse()) for (const v of r.self_reported?.verdicts ?? []) if (v && typeof v.inbox === 'string') newest.set(`${v.inbox}|${v.ref}`, v);
+  const names = [...new Set(['dowser', ...(d.charter?.repos ?? []).map((/** @type {any} */ r) => r.name), ...d.cycles.map((r) => r.repo ?? 'dowser'),
+    ...Object.keys(d.landings), ...d.scans.map((s) => repoOf(String(s.project_key)))])];
+  return names.map((repo) => {
+    const cs = d.cycles.filter((r) => (r.repo ?? 'dowser') === repo);
+    const scans = d.scans.filter((s) => repoOf(String(s.project_key)) === repo);
+    const vs = [...newest.values()].filter((v) => repoOf(v.inbox) === repo);
+    const kinds = countKinds(vs);
+    const built = [...new Set(cs.flatMap((r) => (r.self_reported?.built ?? []).map((/** @type {any} */ b) => b?.ref)).filter((x) => typeof x === 'string'))];
+    const verified = cs.reduce((n, r) => n + E2E_PROJECTS.reduce((m, p) => m + (r.verified?.uat?.[p]?.pass ?? 0), 0), 0);
+    const anyVerified = cs.some((r) => E2E_PROJECTS.some((p) => typeof r.verified?.uat?.[p]?.pass === 'number'));
+    const self = cs.reduce((n, r) => n + selfUat(r.self_reported?.uat).pass, 0);
+    return {
+      repo, cycles: cs.length, green: cs.filter((r) => r.green).length, red: cs.filter((r) => !r.green).map((r) => r.n),
+      scans: scans.length, scanned: scans.reduce((n, s) => n + (s.cards?.created ?? 0), 0), cost: scans.reduce((n, s) => n + (typeof s.cost_usd === 'number' ? s.cost_usd : 0), 0),
+      accepted: kinds.accept ?? 0, built, rejected: kinds.reject ?? 0, snoozed: kinds.snooze ?? 0, merged: kinds.merge ?? 0, carried: kinds.carried ?? 0,
+      landed: landingWords(d.landings[repo], d.branches?.[repo]), uat: { verified: anyVerified ? verified : undefined, self },
+    };
+  }).filter((s) => s.cycles || s.scans || d.landings[s.repo] || (d.commits?.[s.repo] ?? []).length);
+}
+
+/** Refs as a short list: consecutive numbers of one prefix collapse to a range (DW-100..DW-106). @param {string[]} refs */
+export function refList(refs) {
+  const nums = refs.map((r) => r.match(/^([A-Z][A-Z0-9]*-)(\d+)$/));
+  if (!refs.length || nums.some((m) => !m) || new Set(nums.map((m) => m?.[1])).size > 1) return refs.join(', ');
+  const p = /** @type {RegExpMatchArray} */ (nums[0])[1];
+  const ns = [...new Set(nums.map((m) => Number(m?.[2])))].sort((a, b) => a - b);
+  /** @type {string[]} */
+  const out = [];
+  for (let i = 0; i < ns.length; i++) {
+    let j = i;
+    while (j + 1 < ns.length && ns[j + 1] === ns[j] + 1) j++;
+    out.push(j - i >= 2 ? `${p}${ns[i]}..${p}${ns[j]}` : ns.slice(i, j + 1).map((n) => `${p}${n}`).join(', '));
+    i = j;
+  }
+  return out.join(', ');
+}
+
+/**
+ * The morning report's markdown (operator-facing; not a Dowser runner surface, so it has no guided form). Read in two
+ * minutes: the summary per repo first, then what needs the operator, the commits by repo, the rest after.
+ * @param {{date: string, commits: Record<string, Commit[]>, landings: Record<string, any>, branches?: Record<string, string>, charter?: any, cycles: any[], scans: any[], bar?: any, directions: any[], questions: string[], later: string[]}} d
  */
 export function renderReport(d) {
   const L = [`# /temper - ${d.date}`, ''];
   const sum = (/** @type {string} */ k) => d.cycles.reduce((n, r) => n + E2E_PROJECTS.reduce((m, p) => m + (r.verified?.uat?.[p]?.[k] ?? 0), 0), 0);
-  L.push('## Needs you', '');
+  const groups = commitGroups(d.commits);
+  L.push('## Summary', '');
+  const sums = repoSummaries(d);
+  if (sums.length) {
+    for (const s of sums) {
+      const cyc = s.cycles ? `${s.cycles} cycles (${s.green} green${s.red.length ? `, ${s.red.length} red: ${s.red.map((n) => `c${n}`).join(', ')}` : ''})` : 'no cycle';
+      const scan = s.scans ? `${s.scanned} cards scanned in ${s.scans} scans ($${s.cost.toFixed(2)})` : 'no scan';
+      const verdicts = `accepted ${s.accepted}, built ${s.built.length}${s.built.length ? ` (${refList(s.built)})` : ''}; rejected ${s.rejected}, snoozed ${s.snoozed}${s.merged ? `, merged ${s.merged}` : ''}, carried to tomorrow ${s.carried}`;
+      const uat = `UAT pass: verified ${s.uat.verified ?? 'none (no runner results)'}, self-reported ${s.uat.self}`;
+      L.push(`- **${s.repo}**: ${cyc}; ${scan}; ${verdicts}; landed: ${s.landed}; ${uat}.`);
+    }
+    const cost = d.scans.reduce((n, s) => n + (typeof s.cost_usd === 'number' ? s.cost_usd : 0), 0);
+    L.push(`- **/temper itself**: ${groups.skill.length} skill-hardening commits; scans cost $${cost.toFixed(2)} in all.`);
+  } else L.push('Nothing ran today.');
+  L.push('', '## Needs you', '');
   if (d.questions.length) d.questions.forEach((q, i) => L.push(`${i + 1}. ${q}`)); else L.push('Nothing blocks the next day.');
   if (d.later.length) L.push('', `Also waiting: ${d.later.join('; ')}`);
-  L.push('', '## Commits and landings', '');
-  for (const [repo, l] of Object.entries(d.landings)) {
-    L.push(`- ${repo}: ${l.decision}${l.ok === false && l.stage ? ` (failed at ${l.stage})` : ''}${l.target ? `, reset to ${l.target}` : ''}${l.pushed ? `, pushed ${l.pushed}` : ''}${l.deployed ? `, deployed ${l.deployed}` : ''}.`);
+  L.push('', '## Commits', '');
+  const line = (/** @type {Commit} */ c) => `- ${c.sha} ${c.subject}`;
+  if (!groups.repos.length && !Object.keys(d.landings).length) L.push('No commit on the day branches.');
+  const repos = [...new Set([...groups.repos.map(([r]) => r), ...Object.keys(d.landings)])];
+  for (const repo of repos) {
+    const g = groups.repos.find(([r]) => r === repo)?.[1] ?? { product: [], record: 0, merge: 0 };
+    L.push(`### ${repo}`, '', `Landing: ${landingWords(d.landings[repo], d.branches?.[repo])}.`, '');
+    if (g.product.length) for (const c of g.product) L.push(line(c)); else L.push('No product commit.');
+    const folded = [g.record ? `${g.record} record commits (chore(temper) under docs/evals/temper)` : '', g.merge ? `${g.merge} merges` : ''].filter(Boolean);
+    if (folded.length) L.push(`- and ${folded.join(' and ')}, not listed`);
+    L.push('');
   }
-  if (Object.keys(d.landings).length) L.push('');
-  if (d.commits.length) for (const c of d.commits) L.push(`- ${c}`); else L.push('No Dowser commit on the day branch.');
+  if (groups.skill.length) {
+    L.push(`### Skill hardening (/temper: .claude/skills/temper, tools/temper-*): ${groups.skill.length}`, '');
+    for (const { repo, c } of groups.skill) L.push(`${line(c)}${repo === 'dowser' ? '' : ` (${repo})`}`);
+    L.push('');
+  }
+  if (L.at(-1) === '') L.pop();
   const pass = sum('pass'), fail = sum('fail'), unv = sum('unverifiable');
   L.push('', '## UAT', '', '| | pass | fail | unverifiable | pass rate |', '|---|---|---|---|---|');
   L.push(`| verified (runner results) | ${pass} | ${fail} | ${unv} | ${pass + fail ? `${Math.round((100 * pass) / (pass + fail))}%` : 'n/a'} |`);
-  const claims = d.cycles.map((r) => r.self_reported?.uat).filter((u) => u && typeof u === 'object');
-  const cp = claims.reduce((n, u) => n + (Number(u.pass) || 0), 0), cf = claims.reduce((n, u) => n + (Number(u.fail) || 0), 0);
+  const claims = d.cycles.map((r) => selfUat(r.self_reported?.uat));
+  const cp = claims.reduce((n, u) => n + u.pass, 0), cf = claims.reduce((n, u) => n + u.fail, 0);
   L.push(`| self-reported (cycle files) | ${cp} | ${cf} | | ${cp + cf ? `${Math.round((100 * cp) / (cp + cf))}%` : 'n/a'} |`);
   L.push('', `Cycles: ${d.cycles.length}, green ${d.cycles.filter((r) => r.green).length}.`);
   for (const r of d.cycles) {
@@ -1452,6 +1660,7 @@ export function renderReport(d) {
   const vs = d.cycles.flatMap((r) => r.self_reported?.verdicts ?? []);
   L.push('', '## Verdicts (decided by delegate:temper)', '');
   if (vs.length) {
+    L.push('Every decision of the day (a card decided twice counts twice, as the caps count; the summary counts each card once).', '');
     L.push('| inbox | recorded | accept | reject | snooze | merge | carried |', '|---|---|---|---|---|---|---|');
     const keys = [...new Set(vs.map((v) => `${v.inbox}|${v.recorded}`))].sort();
     for (const k of keys) {
@@ -1477,14 +1686,21 @@ export function renderReport(d) {
   L.push('', '## Direction proposals', '');
   if (d.directions.length) for (const x of d.directions) L.push(`- **${x.id}** (${x.module}, ${x.size}): ${x.title}. Value: ${x.value}. Evidence: ${x.evidence}. First slice: ${x.first_slice}.`);
   else L.push('None.');
-  const parked = d.cycles.flatMap((r) => r.self_reported?.parked ?? []);
+  const parked = parkedGroups(d.cycles);
   L.push('', '## Parked', '');
-  if (parked.length) for (const p of parked) L.push(`- ${p.item}: ${p.why}`); else L.push('None.');
+  if (parked.repos.length) {
+    L.push('Each item once, with its newest reason (the cycle that gave it), by repo.');
+    for (const [repo, xs] of parked.repos) {
+      L.push('', `### ${repo}`, '');
+      for (const x of xs) L.push(`- ${x.item} (c${x.n}${x.times > 1 ? `, parked ${x.times} times` : ''}): ${x.why}`);
+    }
+    if (parked.unparked.length) L.push('', `Built since they were parked: ${parked.unparked.map((u) => `${u.item} (${u.repo}, c${u.n})`).join(', ')}.`);
+  } else L.push('None.');
   L.push('', '## Skill issues', '');
-  const groups = skillIssueGroups(d.cycles);
-  if (groups.length) {
+  const issues = skillIssueGroups(d.cycles);
+  if (issues.length) {
     L.push('What the cycle runners found wrong with the loop itself (self-reported), by where, newest first.');
-    for (const [where, items] of groups) {
+    for (const [where, items] of issues) {
       L.push('', `### ${where}`, '');
       const end = (/** @type {string} */ s) => s.trim().replace(/([^.!?])$/, '$1.');
       for (const x of items) L.push(`- c${x.n} (${x.repo}): ${end(x.what)} Evidence: ${end(x.evidence)} Fix: ${end(x.fix)}`);
@@ -1498,10 +1714,9 @@ export function renderReport(d) {
  * @param {any[]} cycles @returns {[string, {n: number, repo: string, what: string, evidence: string, fix: string}[]][]}
  */
 export function skillIssueGroups(cycles) {
-  const newest = [...cycles].sort((a, b) => String(b.ended_at ?? '').localeCompare(String(a.ended_at ?? '')) || (b.n ?? 0) - (a.n ?? 0));
   /** @type {Map<string, {n: number, repo: string, what: string, evidence: string, fix: string}[]>} */
   const by = new Map();
-  for (const r of newest) {
+  for (const r of newestFirst(cycles)) {
     for (const x of r.self_reported?.skill_issues ?? []) {
       if (!x || typeof x.where !== 'string') continue;
       const key = x.where.trim();
@@ -1524,28 +1739,40 @@ export function carriedOf(cycles) {
 }
 
 /**
- * One question per inbox whose accepts reached the day's cap: the numbers, and a request for real caps in the charter
- * (the charter's caps default to DEFAULT_CAPS when the day-1 dialog set none). Accepts count every decision, as the
- * caps do. @param {any} charter @param {any[]} cycles @returns {string[]}
+ * The accept-cap question: inboxes whose accepts reached the day's cap, with the numbers and a request for real caps in
+ * the charter (the charter's caps default to DEFAULT_CAPS when the day-1 dialog set none). Several inboxes make one
+ * question that lists them, so they take one of the three places in Needs you. Accepts count every decision, as the
+ * caps do. @param {any} charter @param {any[]} cycles @returns {string[]} none or one question
  */
 export function capQuestions(charter, cycles) {
   const vs = cycles.flatMap((r) => r.self_reported?.verdicts ?? []);
-  return (charter?.repos ?? []).flatMap((/** @type {Repo} */ r) => {
+  /** @type {{inbox: string, accepts: number, caps: {accepts_per_day: number, rejects_per_day: number}, carried: number, dflt: boolean}[]} */
+  const hits = (charter?.repos ?? []).flatMap((/** @type {Repo} */ r) => {
     const caps = r.caps ?? DEFAULT_CAPS;
     const mine = vs.filter((v) => v.inbox === r.inbox_key);
     const accepts = mine.filter((v) => v.verdict === 'accept').length;
     if (accepts < caps.accepts_per_day) return [];
     const carried = mine.filter(isCarried).length;
     const dflt = caps.accepts_per_day === DEFAULT_CAPS.accepts_per_day && caps.rejects_per_day === DEFAULT_CAPS.rejects_per_day;
-    return [`${r.inbox_key} reached its accept cap: ${accepts} of ${caps.accepts_per_day} accepts${carried ? `, ${carried} real cards carried to the next day` : ''}. `
+    return [{ inbox: r.inbox_key, accepts, caps, carried, dflt }];
+  });
+  if (!hits.length) return [];
+  if (hits.length === 1) {
+    const { inbox, accepts, caps, carried, dflt } = hits[0];
+    return [`${inbox} reached its accept cap: ${accepts} of ${caps.accepts_per_day} accepts${carried ? `, ${carried} real cards carried to the next day` : ''}. `
       + `${dflt ? `Its caps are the defaults (${caps.accepts_per_day} accepts, ${caps.rejects_per_day} rejects a day), not a choice of yours` : `Its caps are ${caps.accepts_per_day} accepts and ${caps.rejects_per_day} rejects a day`}: `
       + 'set real caps for it in the charter (repos[].caps, in the start dialog).'];
-  });
+  }
+  const each = hits.map((h) => `${h.inbox} ${h.accepts} of ${h.caps.accepts_per_day}${h.carried ? ` (${h.carried} real cards carried to the next day)` : ''}${h.dflt ? ' on the default caps' : ` on caps of ${h.caps.accepts_per_day} accepts and ${h.caps.rejects_per_day} rejects a day`}`);
+  const allDefault = hits.every((h) => h.dflt);
+  return [`${hits.length} inboxes reached their accept cap: ${each.join('; ')}. `
+    + `${allDefault ? `The defaults (${DEFAULT_CAPS.accepts_per_day} accepts, ${DEFAULT_CAPS.rejects_per_day} rejects a day) are not a choice of yours: set` : 'Set'}`
+    + ' real caps for each in the charter (repos[].caps, in the start dialog).'];
 }
 
 /**
- * The start questions, in order: the cards carried to today (first), inboxes at their accept cap, delegation, directions, live sign-in, parked.
- * At most three are asked.
+ * The start questions, in order: the cards carried to today (first), inboxes at their accept cap (one question for
+ * all), delegation, directions, live sign-in, parked. At most three are asked.
  * @param {{date: string, charter?: any, directions: any[], cycles: any[], liveState?: string}} d
  */
 export function startQuestions(d) {
@@ -1567,9 +1794,38 @@ export function startQuestions(d) {
   else if (d.charter && !Object.keys(d.charter.delegation ?? {}).length) q.push('No inbox is delegated: switch on "Delegate triage" in Jira Settings, or I triage locally only again.');
   if (d.directions.length) q.push(`Approve, reorder or veto the direction proposals: ${d.directions.map((x) => x.id).join(', ')}.`);
   if (d.liveState !== 'signed-in') q.push('The live suite was unverifiable: sign in with node e2e/live/sign-in.mjs.');
-  const parked = d.cycles.flatMap((r) => r.self_reported?.parked ?? []);
-  if (parked.length) q.push(`Parked: ${parked.map((/** @type {any} */ p) => p.item).join(', ')}. Unpark, drop or decide?`);
+  const parked = parkedGroups(d.cycles).repos;
+  const items = parked.flatMap(([, xs]) => xs);
+  if (items.length) q.push(`${items.length} items are parked (${parked.map(([r, xs]) => `${r} ${xs.length}`).join(', ')}; see Parked): unpark, drop or decide?`);
   return { questions: q.slice(0, 3), later: q.slice(3) };
+}
+
+/**
+ * The day's commits of each repo, newest first: Dowser's day branch from its base, and each started repo's branch from
+ * its base, read in its day worktree (else the charter's path). After a rebase onto a moved origin/master the range
+ * also holds other people's commits, so a started repo keeps only those authored since it was started.
+ * @param {Ctx} ctx @param {any} day @param {any} charter @returns {Record<string, Commit[]>}
+ */
+export function dayCommits(ctx, day, charter) {
+  const FORMAT = '--format=%x1e%h%x1f%p%x1f%at%x1f%s';
+  /** @type {Record<string, Commit[]>} */
+  const out = {};
+  const log = (/** @type {string} */ dir, /** @type {string} */ range) => {
+    const r = ctx.run('git', ['-C', dir, 'log', FORMAT, '--name-only', range]);
+    return r.status === 0 ? parseCommitLog(r.stdout) : undefined;
+  };
+  if (day?.branch && day.base && gitOk(ctx, 'rev-parse', '--verify', '--quiet', `refs/heads/${day.branch}`)) out.dowser = log(ctx.root, `${day.base}..${day.branch}`) ?? [];
+  for (const [name, s] of Object.entries(day?.repos ?? {})) {
+    const st = /** @type {any} */ (s);
+    if (typeof st?.branch !== 'string' || typeof st.base !== 'string') continue;
+    const path = (charter?.repos ?? []).find((/** @type {any} */ r) => r.name === name)?.path;
+    const dir = [st.worktree, path].find((p) => typeof p === 'string' && existsSync(p));
+    if (!dir) continue;
+    const since = Date.parse(st.started_at ?? '') - 60000;
+    const cs = log(dir, `${st.base}..${st.branch}`);
+    if (cs) out[name] = Number.isFinite(since) ? cs.filter((c) => !(c.at && c.at < since)) : cs;
+  }
+  return out;
 }
 
 /** @param {Ctx} ctx @param {Record<string, string | true>} f */
@@ -1582,16 +1838,14 @@ function report(ctx, f) {
   const scans = readJsonl(join(ctx.home, 'scans.jsonl')).filter((s) => typeof s.ts === 'string' && localDate(new Date(s.ts)) === date);
   const bar = readJson(join(paths(ctx.root).records, 'modules.json'));
   const directions = Object.values(readDirections(ctx).proposed);
-  let commits = /** @type {string[]} */ ([]);
-  if (day?.date === date && gitOk(ctx, 'rev-parse', '--verify', '--quiet', `refs/heads/${day.branch}`)) {
-    const out = git(ctx, 'log', '--format=%h %s', `${day.base}..${day.branch}`);
-    commits = out ? out.split('\n') : [];
-  }
+  const today = day?.date === date;
+  const commits = today ? dayCommits(ctx, day, charter) : {};
+  const branches = today ? { ...(day.branch ? { dowser: day.branch } : {}), ...Object.fromEntries(Object.entries(day.repos ?? {}).map(([k, v]) => [k, /** @type {any} */ (v).branch])) } : {};
   const live = readE2eResults(ctx.root).live;
   const liveState = live && live.rows.length && !live.rows.some((r) => r.state === 'unverifiable') ? 'signed-in' : 'unverifiable';
   const { questions, later } = startQuestions({ date, charter, directions, cycles, liveState });
-  const landings = day?.date === date ? { ...(day.landing ? { dowser: day.landing } : {}), ...(day.landings ?? {}) } : {};
-  const md = renderReport({ date, commits, landings, cycles, scans, bar, directions, questions, later });
+  const landings = today ? { ...(day.landing ? { dowser: day.landing } : {}), ...(day.landings ?? {}) } : {};
+  const md = renderReport({ date, commits, landings, branches, charter, cycles, scans, bar, directions, questions, later });
   const file = join(paths(ctx.root).records, `${date}.md`);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, md);

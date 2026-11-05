@@ -57,7 +57,8 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   "Carried to tomorrow", and the next day's start dialog asks about them first. Forge still records a live one as a
   snooze. `deferred` is a ledger key too: checked, never sent. When an inbox's accepts reach the cap, the report's
   Needs you says so with the numbers and asks the operator for real caps in the charter (`repos[].caps`; a charter
-  that set none runs on the defaults, 10 accepts and 30 rejects a day).
+  that set none runs on the defaults, 10 accepts and 30 rejects a day). Several inboxes at their cap make one
+  question that lists them all.
 - Record them live with `node tools/temper-verdicts.mjs --project-key <k> --verdicts <file>`. When it answers
   `{forbidden: true, record_as: "local"}` and exit 1 (no valid delegation in Jira Settings), the verdicts are **local
   only**. It remembers the answer for the inbox for the day, so later cycles get it without a `claude -p` call; pass
