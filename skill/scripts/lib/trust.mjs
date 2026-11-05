@@ -173,9 +173,10 @@ export function trustReport(db, { slice, sync = true, maxEvents, cards = true } 
 
 /**
  * `pretriage --run <id>`: the store's L1 gate. Syncs trust, then marks `pretriaged_by: machine:dowser` on every
- * verified, ranked card of the run, predicted `accept`, not marked yet, whose slice is at level >= 1. No status
- * moves: the card stays verified and is pushed as usual; a person decides it in the inbox. Returns the cards it
- * marked and the cards left for the person (with their slice and its level).
+ * verified, ranked card of the run, predicted `accept`, whose slice is at level >= 1. The gate is checked again on a
+ * card an earlier run marked: one that no longer passes (its slice was demoted, say) loses the mark and goes to the
+ * person. No status moves: the card stays verified and is pushed as usual; a person decides it in the inbox. Returns
+ * the cards marked and the cards left for the person (with their slice and its level).
  * @param {Db} db
  * @param {string} runId
  * @returns {Row}
@@ -187,6 +188,9 @@ export function pretriageRun(db, runId) {
       "SELECT fp, title, lens, category, effort_json, band, predicted_verdict, pretriaged_by FROM proposals WHERE last_run_id = ? AND status = 'verified' ORDER BY lens, score DESC, fp",
     ).all(runId));
     const mark = db.prepare("UPDATE proposals SET pretriaged_by = ? WHERE fp = ? AND status = 'verified' AND pretriaged_by IS NULL");
+    // a mark from an earlier run (the card resurfaced, or this run is pre-triaged again) holds only while the gate
+    // still passes: a slice demoted since then sends the card back to the person
+    const unmark = db.prepare("UPDATE proposals SET pretriaged_by = NULL WHERE fp = ? AND status = 'verified' AND pretriaged_by = ?");
     /** @type {Row[]} */
     const pretriaged = [];
     /** @type {Row[]} */
@@ -195,11 +199,13 @@ export function pretriageRun(db, runId) {
       const slice = sliceKey({ category: r.category ?? undefined, lens: String(r.lens), effort: JSON.parse(String(r.effort_json)) });
       const level = levelOf(db, slice);
       const item = { fp: r.fp, title: r.title, slice, level };
-      if (r.pretriaged_by === MACHINE_DECIDER) { pretriaged.push(item); continue; }
       if (level >= 1 && r.band === 'ranked' && r.predicted_verdict === 'accept') {
-        mark.run(MACHINE_DECIDER, r.fp);
+        if (r.pretriaged_by !== MACHINE_DECIDER) mark.run(MACHINE_DECIDER, r.fp);
         pretriaged.push(item);
-      } else forPerson.push(item);
+      } else {
+        if (r.pretriaged_by === MACHINE_DECIDER) unmark.run(r.fp, MACHINE_DECIDER);
+        forPerson.push(item);
+      }
     }
     return { run_id: runId, pretriaged, for_person: forPerson };
   });

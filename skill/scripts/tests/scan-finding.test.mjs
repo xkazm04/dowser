@@ -200,3 +200,31 @@ test('pretriage: only an L1 slice\'s ranked cards predicted accept are marked; a
     assert.equal(trustReport(s.db).events.length, 2);
   } finally { s.done(); }
 });
+
+test('pretriage: a stale machine mark is re-checked; a card that resurfaces on a demoted slice goes to the person', () => {
+  const s = fresh();
+  try {
+    const SLICE = 'product|opportunity|-|S';
+    decide(s, 20, 'reject', 'rejected', 'a');
+    syncTrust(s.db);
+    assert.equal(trustReport(s.db, { slice: SLICE }).slices[0].level, 1);
+    const a = s.verified({ lens: 'opportunity', kind: 'gap', topic: 'export csv now', anchors: ['src/e.js'], impact: 9, impact_why: 'x', predicted_verdict: 'accept' });
+    const b = s.verified({ lens: 'opportunity', kind: 'gap', topic: 'import csv too', anchors: ['src/i.js'], impact: 9, impact_why: 'x', predicted_verdict: 'accept' });
+    allocateRun(s.db, s.run);
+    assert.deepEqual(pretriageRun(s.db, s.run).pretriaged.map((/** @type {any} */ p) => p.fp).sort(), [a, b].sort());
+    for (const fp of [a, b]) move(s.db, fp, 'pushed', { by: 'skill:dowser-sync' });
+    // B's rejection is a reversal: the slice drops to L0. The person snoozes A, and A resurfaces in run 2.
+    move(s.db, b, 'rejected', { by: 'forge:jane', reason: 'false-positive' });
+    move(s.db, a, 'snoozed', { by: 'forge:jane' });
+    syncTrust(s.db);
+    assert.equal(trustReport(s.db, { slice: SLICE }).slices[0].level, 0);
+    const run2 = String(runStart(s.db, { mode: 'full', model: 'm' }).id);
+    move(s.db, a, 'verified', { by: 'skill:dowser' });
+    s.db.prepare('UPDATE proposals SET last_run_id = ? WHERE fp = ?').run(run2, a);
+    allocateRun(s.db, run2);
+    const out = pretriageRun(s.db, run2);
+    assert.deepEqual(out.pretriaged, [], 'the L1 gate holds on a demoted slice');
+    assert.deepEqual(out.for_person.map((/** @type {any} */ p) => [p.fp, p.level]), [[a, 0]]);
+    assert.equal('pretriaged_by' in /** @type {any} */ (getProposal(s.db, a)), false, 'the stale mark is cleared, not kept');
+  } finally { s.done(); }
+});
