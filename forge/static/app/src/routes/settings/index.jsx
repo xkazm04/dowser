@@ -205,6 +205,9 @@ function InboxRow({ inbox, projects, loading }) {
   const [state, setState] = useState(/** @type {'idle'|'saving'|'saved'|string} */ ('idle'));
   const types = projects?.find((p) => p.key === project)?.issue_types ?? [];
   const listed = Boolean(projects);
+  // a saved target the project list no longer carries (archived, renamed, or not visible to this person) is shown
+  // as itself with a warning, not as the empty placeholder, so a configured-but-broken default is visible here
+  const gone = listed && saved.jira_project_key && !(projects ?? []).some((p) => p.key === saved.jira_project_key) ? String(saved.jira_project_key) : '';
   const dirty = project !== (saved.jira_project_key ?? '') || issueType !== (saved.issue_type_id ?? '');
   const id = `dw-set-${inbox.project_key.replace(/[^A-Za-z0-9_-]/g, '_')}`;
 
@@ -231,13 +234,20 @@ function InboxRow({ inbox, projects, loading }) {
         <label className="dw-visually-hidden" htmlFor={`${id}-p`}>Jira project for {inbox.project_key}</label>
         <select id={`${id}-p`} className="dw-select" value={project} disabled={!listed} onChange={(e) => { setProject(e.target.value); setIssueType(''); setState('idle'); }}>
           <option value="">{listed ? 'Choose a project' : loading ? 'Loading projects…' : (saved.jira_project_key ?? 'Projects unavailable')}</option>
+          {gone && <option value={gone}>{gone} (not available to you, or archived)</option>}
           {(projects ?? []).map((p) => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
         </select>
+        {gone && project === gone && (
+          <div className="dw-subtlest" id={`${id}-gone`} style={{ color: 'var(--ds-text-warning, #A54800)' }}>
+            {gone} is not in the projects you can see. Accept will fail until you choose another project.
+          </div>
+        )}
       </td>
       <td>
         <label className="dw-visually-hidden" htmlFor={`${id}-t`}>Issue type for {inbox.project_key}</label>
         <select id={`${id}-t`} className="dw-select" value={issueType} onChange={(e) => { setIssueType(e.target.value); setState('idle'); }} disabled={!project || !listed}>
           <option value="">{listed ? 'Choose an issue type' : (saved.issue_type_id ? `Saved type ${saved.issue_type_id}` : 'Unavailable')}</option>
+          {gone && project === gone && saved.issue_type_id && <option value={saved.issue_type_id}>Saved type {saved.issue_type_id}</option>}
           {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
       </td>
