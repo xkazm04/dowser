@@ -1,20 +1,24 @@
 #!/usr/bin/env node
 // @ts-check
 // mock-forge-mcp - a zero-dependency stdio MCP server that stands in for Dowser's Forge app (rovo:mcp), so the
-// skill and its scripts are testable end to end without a Jira site. It implements the eight tools of
-// docs/contracts/forge-mcp-2.md over an in-memory backend, plus five test-only tools: `mock_decide` simulates a
+// skill and its scripts are testable end to end without a Jira site. It implements the twelve tools of
+// docs/contracts/forge-mcp-2.md (every dowser_* tool of forge/manifest.yml: sources_tickets, sources_pages,
+// sources_goals, proposals_push, verdicts_pull, memory_pull, work_list, work_get, work_report, areas_push,
+// reflect_sync, direction_get) over an in-memory backend, plus five test-only tools: `mock_decide` simulates a
 // person's verdict in the inbox, `mock_inbox` reads an inbox item back (its status, whether it reopened, and the
 // scan-finding/1 score, band, mvp and pretriaged_by it was pushed with), `mock_decide_rule` simulates a person
 // accepting or declining an offered rule in Forge, `mock_outcome` simulates a person rating an accepted item's
 // built result, and `mock_trust` reads back the trust the last reflect sync stored.
 //
-// Tool 7, `dowser_reflect_sync` {project_key, rules_json?, trust_json?, outcomes_since?}: trust_json (the skill's per-slice trust
-// {slices, events}, at most 50 events) is stored whole; rules_json (a JSON array of at most 50 RuleOffer
+// `dowser_reflect_sync` {project_key, rules_json?, trust_json?, deliveries_json?, outcomes_since?}: a project with no
+// inbox is `unknown-project`; deliveries_json (the skill's re-check of accepted cards, {fp, state:
+// present|partly|resolved, ...}) is kept whole; trust_json (the skill's per-slice trust {slices, events}, at most
+// 200 slices and 50 events) is checked and stored whole; rules_json (absent or blank = no offers; a JSON array of at most 50 RuleOffer
 // {id, lens, text, titles?(<=10), offered_at}) is upserted - a new id is stored `offered`, an `offered` one takes
 // the new text and titles, a decided one is never reverted - and the reply is {rules, outcomes}: every rule a
 // person decided (RuleDecision) and the newest 200 outcomes (oldest first). Idempotent both ways.
 //
-// Tool 8, `dowser_direction_get` {project_key, lens?}: the lens direction a team set in Settings, from the seed's
+// `dowser_direction_get` {project_key, lens?}: the lens direction a team set in Settings, from the seed's
 // `directions` - {lenses: {[lens]: {focus?, exclude?, notes?, spaces?}}}; `lens` (one id, or `all`) narrows it.
 // A project with neither items nor a seeded direction is `unknown-project`, as in Forge.
 //
