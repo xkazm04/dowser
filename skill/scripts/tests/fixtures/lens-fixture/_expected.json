@@ -76,7 +76,7 @@
     { "lens": "security-cra", "id": "sec-report-since-sql", "hypothesis": "H2", "kind": "risky-pattern", "priority": 3, "excluded_by_direction": true, "anchor": "src/jobs/nightly-report.js#runNightlyReport", "must": true,
       "why": "`pebble report nightly --since` concatenates its argument into the SQL; only staff on the shop server run it. Real but minor, and the direction excludes the staff admin CLI and its report jobs." },
     { "lens": "security-cra", "id": "sec-decoy-test-key", "anchor": "test/payment.test.js", "decoy": true,
-      "why": "Matches the secret grep (api_key = '...'), but it is a stand-in for a fake server in a unit test and opens nothing." },
+      "why": "Matches the secret grep (STONEPAY_API_KEY = '...'), but it is a stand-in for a fake server in a unit test and opens nothing." },
     { "lens": "security-cra", "id": "sec-decoy-cli-exec", "anchor": "cli/pebble.js#main", "decoy": true,
       "why": "child_process.execFileSync with constant arguments (git rev-parse --short HEAD): a sink with no user input." },
     { "lens": "security-cra", "id": "sec-decoy-innerhtml-constant", "anchor": "public/app.js#renderProducts", "decoy": true,

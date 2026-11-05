@@ -9,7 +9,7 @@ const { allowGuestCheckout } = require('./guest');
 async function charge(card, amount) {
   const res = await fetch(stonepay.endpoint, {
     method: 'POST',
-    headers: { authorization: `Bearer ${stonepay.api_key}`, 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${stonepay.secretKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({ card, amount, currency: CURRENCY }),
   });
   const body = await res.json();

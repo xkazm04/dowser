@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { onPaymentError } = require('../src/checkout/payment');
 
 // A stand-in credential for the fake StonePay server below; it opens nothing.
-const api_key = 'test_key_fake_0000000000';
+const STONEPAY_API_KEY = 'test_key_fake_0000000000';
 
 function fakeRes() {
   const res = { statusCode: 200 };
@@ -14,7 +14,7 @@ function fakeRes() {
 }
 
 test('a declined payment answers 402 with a message', () => {
-  const req = { session: { checkoutForm: { card: '4242' } }, headers: { authorization: `Bearer ${api_key}` } };
+  const req = { session: { checkoutForm: { card: '4242' } }, headers: { authorization: `Bearer ${STONEPAY_API_KEY}` } };
   const res = fakeRes();
   onPaymentError(req, res, { code: 'card_declined' });
   assert.equal(res.statusCode, 402);

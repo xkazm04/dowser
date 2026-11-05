@@ -1,6 +1,6 @@
 ---
 id: security-cra
-version: 0.3.2
+version: 0.3.3
 name: Security and CRA
 kinds: [vulnerable-dependency, risky-pattern, secret-exposure, vulnerability-handling-gap, sbom-gap, update-mechanism-gap]
 sources: [code, docs, git, deps, sarif]
@@ -69,11 +69,11 @@ supplies its SARIF or CycloneDX output, cite it and propose the work it implies.
 4. **Runner-supplied reports (optional).** If the runner names a SARIF (`*.sarif`) or CycloneDX
    (`bom.json`, `*.cdx.json`) file, read it and cite entries as `sarif` evidence. `dep` evidence
    is only what `deps` returned this run.
-5. **Secrets.** `git grep -n -I -E "(api[_-]?key|secret|token|passw(or)?d)\s*[:=]\s*['\"][A-Za-z0-9/+_\-]{12,}['\"]|-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}"`.
+5. **Secrets.** `git grep -n -I -i -E "(api[_-]?key|secret|token|passw(or)?d)[a-z0-9_]*['\"]?\s*[:=]\s*['\"][A-Za-z0-9/+_\-]{12,}['\"]|-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}"`.
    Also `git ls-files "*.env" "*.pem" "*.key" "*.p12"`. Never print or store a secret: quote the
    line only up to the value (`const stripeKey = '`); `verify` matches a fragment. A hit in
    `test/`, fixtures, `*.example`, `*.sample` or docs, or a documented placeholder or test-mode
-   key, is class E0: record it, no card.
+   key, is class E0: record it, no card. `-i` and the name's suffix are there for `apiKey`, `API_KEY`, `STRIPE_SECRET_KEY`.
 6. **Risky patterns.** `git grep -n -E "eval\(|new Function\(|child_process|execSync\(|shell: ?true|shell=True|os\.system|innerHTML|dangerouslySetInnerHTML|v-html|(SELECT|INSERT|UPDATE|DELETE) .*(['\"] *\+|\$\{)|pickle\.loads|yaml\.load\(|verify ?= ?False|rejectUnauthorized: ?false|Math\.random\(\).*(token|secret)" -- ':!*test*' ':!*fixtures/*' ':!*.md'`.
    No bare `exec(` (in JS it is mostly `RegExp.exec`): `child_process` finds the imports, then
    read their calls. For each hit, read where its input comes from and give it an exposure class.
