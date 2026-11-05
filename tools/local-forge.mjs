@@ -238,12 +238,14 @@ export function serveHttp({ forge, port }) {
       ? { 'access-control-allow-origin': origin, 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'content-type', vary: 'origin' }
       : {};
     const json = (/** @type {number} */ status, /** @type {unknown} */ body) => {
-      res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', ...cors });
+      // connection: close - a dev door with one caller at a time; a kept-alive socket the server times out
+      // (5 s idle) while a test blocks in a sync CLI call is reused by fetch and resets (ECONNRESET)
+      res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', connection: 'close', ...cors });
       res.end(JSON.stringify(body));
     };
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     try {
-      if (req.method === 'OPTIONS') { res.writeHead(origin && !cors['access-control-allow-origin'] ? 403 : 204, cors); res.end(); return; }
+      if (req.method === 'OPTIONS') { res.writeHead(origin && !cors['access-control-allow-origin'] ? 403 : 204, { connection: 'close', ...cors }); res.end(); return; }
       if (req.method === 'POST' && url.pathname === '/invoke') {
         const b = /** @type {Obj} */ (await readBody(req));
         if (!b || typeof b !== 'object' || typeof b.key !== 'string') return json(400, { error: 'bad-input', message: 'POST /invoke takes {key, payload, module?}' });
