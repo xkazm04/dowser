@@ -11,7 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, depDrift, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
-  capQuestions, commitGroups, commitKind, parkedGroups, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
+  capQuestions, commitGroups, commitKind, cycleRows, envCause, environmentalRed, parkedGroups, supersede, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
 } from '../../../.claude/skills/temper/scripts/temper.mjs';
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
 import { derivedIds } from '../../../tools/e2e-coverage.mjs';
@@ -1271,6 +1271,56 @@ test('report from a synthetic ledger: the summary per repo, commits by repo with
   const parked = md.slice(md.indexOf('## Parked'), md.indexOf('## Skill issues'));
   assert.match(parked, /### dowser\n\n- DW-9 \(c3, parked 2 times\): newest\n\n### bp\n\n- DW-12 \(c2\): bp\n\nBuilt since they were parked: DW-3 \(dowser, c3\)\./);
   assert.ok(bp);
+});
+
+test('report: a repo without e2e suites reports its verified land gates per cycle; an environmental red answered by a later green at a descendant head reads as superseded', () => {
+  assert.equal(envCause({ status: 1, stdout: '', stderr: "'tsx' is not recognized as an internal or external command," }), 'command not recognized');
+  assert.equal(envCause({ status: 1, stdout: "Error: Cannot find module 'vitest'", stderr: '' }), 'module not found');
+  assert.equal(envCause({ status: 1, stdout: '2 tests failed', stderr: '' }), undefined);
+  assert.equal(environmentalRed(['typecheck failed (environmental: module not found)', 'e2e fixture: missing']), true);
+  assert.equal(environmentalRed(['npm ci in forge failed (exit 1; no node_modules)']), true);
+  assert.equal(environmentalRed(['e2e fixture: missing']), false, 'missing results alone are no environmental cause');
+  assert.equal(environmentalRed(['typecheck failed (environmental: module not found)', 'npm test failed']), false);
+  const w = world();
+  const { bp } = twoRepoDay(w);
+  const wt = JSON.parse(readFileSync(join(w.root, '.temper', 'day.json'), 'utf8')).repos.bp.worktree;
+  /** @type {{status: number, stdout: string, stderr: string}} */
+  let check = { status: 0, stdout: '', stderr: '' };
+  const ctx = { ...w.ctx, run: /** @type {import('../../../.claude/skills/temper/scripts/temper.mjs').Runner} */ ((c, a, o) => (c === 'npm run check' ? check : w.ctx.run(c, a, o))) };
+  const file = join(w.work, 'c.json');
+  const cycle = (/** @type {string} */ name) => {
+    assert.equal(main(['cycle', 'begin', '--repo', 'bp', '--target', 'area:README.md'], ctx).code, 0);
+    put(join(wt, `${name}.txt`), `${name}\n`);
+    g(wt, 'add', `${name}.txt`); g(wt, 'commit', '-q', '-m', `feat: ${name}`);
+    put(file, { target: 'area:README.md', repo: 'bp' });
+    return main(['cycle', 'end', '--file', file], ctx).out;
+  };
+  // a fresh worktree without node_modules: the gate fails for a reason that is not the build's
+  check = { status: 1, stdout: '', stderr: "'tsc' is not recognized as an internal or external command,\noperable program or batch file." };
+  const c1 = cycle('one');
+  assert.deepEqual(c1.red_because, ['npm run check failed (environmental: command not recognized)']);
+  assert.deepEqual(c1.verified, { gates: { 'npm run check': 'fail' }, env: { 'npm run check': 'command not recognized' } });
+  check = { status: 0, stdout: '', stderr: '' };
+  const c2 = cycle('two');
+  assert.equal(c2.green, true);
+  check = { status: 1, stdout: '1 test failed', stderr: '' };
+  const c3 = cycle('three');
+  assert.deepEqual(c3.red_because, ['npm run check failed'], 'a real failure carries no environmental cause');
+  const r = main(['report'], w.ctx);
+  assert.equal(r.code, 0, JSON.stringify(r.out));
+  const md = readFileSync(r.out.written, 'utf8');
+  const summary = md.slice(md.indexOf('## Summary'), md.indexOf('## Needs you'));
+  assert.match(summary, /- \*\*bp\*\*: 3 cycles \(1 green, 1 red: c3, c1 red \(environmental\?\) superseded by c2 green\);/);
+  assert.match(summary, /UAT pass: verified gates 1 passed of 3 \(c1 0\/1, c2 1\/1, c3 0\/1; no e2e suite\), self-reported 0\./);
+  assert.doesNotMatch(summary, /verified none/);
+  assert.match(md, /- 1 bp area:README.md: red \(environmental\?\) superseded by c2 green \(npm run check failed \(environmental: command not recognized\)\)/);
+  assert.match(md, /- 3 bp area:README.md: red \(npm run check failed\)/, 'a red with a real reason stays open');
+  // a green that is not a descendant of the red's head supersedes nothing
+  const rows = cycleRows(w.root, '2026-11-05');
+  const other = rows.map((x) => (x.n === 2 ? { ...x, head: g(bp, 'rev-parse', 'HEAD') } : x));
+  const day = JSON.parse(readFileSync(join(w.root, '.temper', 'day.json'), 'utf8'));
+  assert.equal(supersede(w.ctx, other, day, undefined).find((x) => x.n === 1).superseded_by, undefined);
+  assert.equal(supersede(w.ctx, rows, day, undefined).find((x) => x.n === 1).superseded_by, 2);
 });
 
 test('cycle begin prints the runner block: the brief, the launch inputs, the caps used and left, the work tree and the cycle file', () => {

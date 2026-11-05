@@ -92,7 +92,7 @@ const SECRET_PATTERNS = [
 /** A rule said no (exit 1). */
 export class Refusal extends Error {}
 
-/** @typedef {{status: number | null, stdout: string}} RunResult */
+/** @typedef {{status: number | null, stdout: string, stderr?: string}} RunResult */
 /** @typedef {(cmd: string, args: string[], o?: {cwd?: string, shell?: boolean}) => RunResult} Runner */
 /** @typedef {{pid: number, cmd: string}} Proc */
 /** @typedef {{list: () => Proc[], kill: (pid: number) => boolean}} Procs  the process lister and killer (injected in tests) */
@@ -108,7 +108,7 @@ export const realRun = (cmd, args, o = {}) => {
   /** @type {import('node:child_process').SpawnSyncOptionsWithStringEncoding} */
   const opts = { cwd: o.cwd, encoding: 'utf8', windowsHide: true, maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] };
   const r = viaShell ? spawnSync([cmd, ...args].join(' '), { ...opts, shell: true }) : spawnSync(cmd, args, opts);
-  return { status: r.status, stdout: r.stdout ?? '' };
+  return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
 };
 
 /**
@@ -876,13 +876,47 @@ export function syncDeps(ctx) {
   return { deps, why };
 }
 
-/** npm scripts in a checkout. @param {Ctx} ctx @param {string[]} scripts @param {string} [cwd] @returns {Record<string, 'pass' | 'fail'>} */
-function runGates(ctx, scripts, cwd = ctx.root) {
-  return Object.fromEntries(scripts.map((s) => [s, ctx.run('npm', ['run', s], { cwd }).status === 0 ? 'pass' : 'fail']));
+/**
+ * A failed gate's output that says the environment, not the build, failed: a module or package that is not installed
+ * (a fresh worktree without node_modules) or a command the shell does not know (a missing tool such as gitleaks).
+ */
+const ENV_ERRORS = /** @type {const} */ ([
+  ['module not found', /cannot find (module|package)|err_module_not_found|module not found/i],
+  ['command not recognized', /is not recognized as (an internal or external command|the name of a cmdlet)|command not found|: not found\b/i],
+]);
+/** The environmental cause of a failed run, if its output names one. @param {RunResult} r @returns {string | undefined} */
+export function envCause(r) {
+  const text = `${r.stdout ?? ''}\n${r.stderr ?? ''}`;
+  return ENV_ERRORS.find(([, re]) => re.test(text))?.[0];
 }
-/** The charter's command-line gates of one repo. @param {Ctx} ctx @param {Repo} repo @param {string} cwd @returns {Record<string, 'pass' | 'fail'>} */
-function runRepoGates(ctx, repo, cwd) {
-  return Object.fromEntries(repo.gates.filter((g) => g.when === 'land').map((g) => [g.run, ctx.run(g.run, [], { cwd, shell: true }).status === 0 ? 'pass' : 'fail']));
+/** One gate run: pass, or fail with its environmental cause noted in `env`. @param {RunResult} r @param {string} k @param {Record<string, string>} [env] */
+function gateState(r, k, env) {
+  if (r.status === 0) return 'pass';
+  const cause = envCause(r);
+  if (cause && env) env[k] = cause;
+  return 'fail';
+}
+/** npm scripts in a checkout. @param {Ctx} ctx @param {string[]} scripts @param {string} [cwd] @param {Record<string, string>} [env] @returns {Record<string, 'pass' | 'fail'>} */
+function runGates(ctx, scripts, cwd = ctx.root, env) {
+  return Object.fromEntries(scripts.map((s) => [s, gateState(ctx.run('npm', ['run', s], { cwd }), s, env)]));
+}
+/** The charter's command-line gates of one repo. @param {Ctx} ctx @param {Repo} repo @param {string} cwd @param {Record<string, string>} [env] @returns {Record<string, 'pass' | 'fail'>} */
+function runRepoGates(ctx, repo, cwd, env) {
+  return Object.fromEntries(repo.gates.filter((g) => g.when === 'land').map((g) => [g.run, gateState(ctx.run(g.run, [], { cwd, shell: true }), g.run, env)]));
+}
+/** A failed gate's reason, its environmental cause in brackets. @param {string} k @param {Record<string, string>} env */
+const failWhy = (k, env) => `${k} failed${env[k] ? ` (environmental: ${env[k]})` : ''}`;
+
+/**
+ * True when every reason of a red is environmental: a gate failed with a missing module or an unknown command, or an
+ * npm ci failed; e2e results missing or stale count only beside such a reason (a suite that could not start wrote none).
+ * @param {unknown} reasons
+ */
+export function environmentalRed(reasons) {
+  if (!Array.isArray(reasons) || !reasons.length) return false;
+  const env = (/** @type {unknown} */ r) => typeof r === 'string' && (/\(environmental: [^)]+\)$/.test(r) || /^npm ci in .+ failed/.test(r));
+  const follows = (/** @type {unknown} */ r) => typeof r === 'string' && /^e2e \w+: (missing|stale)$/.test(r);
+  return reasons.some(env) && reasons.every((r) => env(r) || follows(r));
 }
 
 /**
@@ -1062,19 +1096,21 @@ const E2E_SCRIPTS = REQUIRED_E2E.map((p) => `e2e:${p}`);
  * @param {Ctx} ctx @param {Repo} repo @param {string} dir @param {number} sinceMs
  */
 function verifyTree(ctx, repo, dir, sinceMs) {
+  /** @type {Record<string, string>} */
+  const env = {};
   if (repo.name !== 'dowser') {
-    const gates = runRepoGates(ctx, repo, dir);
-    const why = Object.entries(gates).filter(([, s]) => s !== 'pass').map(([k]) => `${k} failed`);
-    return { green: !why.length, why, verified: { gates } };
+    const gates = runRepoGates(ctx, repo, dir, env);
+    const why = Object.entries(gates).filter(([, s]) => s !== 'pass').map(([k]) => failWhy(k, env));
+    return { green: !why.length, why, verified: { gates, ...(Object.keys(env).length ? { env } : {}) } };
   }
   // a lockfile newer than its installed tree (a merge added a dependency) is installed first: npm ci, or red
   const deps = syncDeps(ctx);
   const charterRuns = repo.gates.filter((g) => g.when === 'land').map((g) => g.run);
   const e2e = E2E_SCRIPTS.filter((s) => !charterRuns.some((r) => new RegExp(`\\bnpm run ${s}(\\s|$)`).test(r)));
-  const gates = { ...runGates(ctx, ['typecheck', 'test', ...e2e]), ...runRepoGates(ctx, repo, dir) };
+  const gates = { ...runGates(ctx, ['typecheck', 'test', ...e2e], ctx.root, env), ...runRepoGates(ctx, repo, dir, env) };
   const u = uatSince(ctx.root, sinceMs);
-  const why = [...deps.why, ...Object.entries(gates).filter(([, s]) => s !== 'pass').map(([k]) => `${k} failed`), ...u.why];
-  return { green: !why.length, why, verified: { deps: deps.deps, gates, uat: u.uat } };
+  const why = [...deps.why, ...Object.entries(gates).filter(([, s]) => s !== 'pass').map(([k]) => failWhy(k, env)), ...u.why];
+  return { green: !why.length, why, verified: { deps: deps.deps, gates, ...(Object.keys(env).length ? { env } : {}), uat: u.uat } };
 }
 
 /** @param {Ctx} ctx @param {Record<string, string | true>} f */
@@ -1535,6 +1571,9 @@ export function selfUat(u) {
   return { pass: runs.reduce((n, x) => n + (Number(x.pass) || 0), 0), fail: runs.reduce((n, x) => n + (Number(x.fail) || 0), 0) };
 }
 
+/** A red whose only reasons were environmental, answered by a later green at a descendant head. @param {number} by */
+const SUPERSEDED = (by) => `red (environmental?) superseded by c${by} green`;
+
 const short = (/** @type {unknown} */ s) => (typeof s === 'string' ? s.slice(0, 7) : '');
 
 /** One landing in words. @param {any} l @param {string} [branch] */
@@ -1570,11 +1609,15 @@ export function repoSummaries(d) {
     const verified = cs.reduce((n, r) => n + E2E_PROJECTS.reduce((m, p) => m + (r.verified?.uat?.[p]?.pass ?? 0), 0), 0);
     const anyVerified = cs.some((r) => E2E_PROJECTS.some((p) => typeof r.verified?.uat?.[p]?.pass === 'number'));
     const self = cs.reduce((n, r) => n + selfUat(r.self_reported?.uat).pass, 0);
+    // a repo without e2e suites: its verified UAT is the land gates cycle end ran itself, per cycle
+    const gates = anyVerified ? [] : [...cs].sort((a, b) => a.n - b.n).filter((r) => r.verified?.gates && typeof r.verified.gates === 'object' && Object.keys(r.verified.gates).length)
+      .map((r) => { const v = Object.values(r.verified.gates); return { n: r.n, pass: v.filter((x) => x === 'pass').length, of: v.length }; });
     return {
-      repo, cycles: cs.length, green: cs.filter((r) => r.green).length, red: cs.filter((r) => !r.green).map((r) => r.n),
+      repo, cycles: cs.length, green: cs.filter((r) => r.green).length, red: cs.filter((r) => !r.green && r.superseded_by === undefined).map((r) => r.n),
+      superseded: cs.filter((r) => !r.green && r.superseded_by !== undefined).map((r) => ({ n: r.n, by: r.superseded_by })),
       scans: scans.length, scanned: scans.reduce((n, s) => n + (s.cards?.created ?? 0), 0), cost: scans.reduce((n, s) => n + (typeof s.cost_usd === 'number' ? s.cost_usd : 0), 0),
       accepted: kinds.accept ?? 0, built, rejected: kinds.reject ?? 0, snoozed: kinds.snooze ?? 0, merged: kinds.merge ?? 0, carried: kinds.carried ?? 0,
-      landed: landingWords(d.landings[repo], d.branches?.[repo]), uat: { verified: anyVerified ? verified : undefined, self },
+      landed: landingWords(d.landings[repo], d.branches?.[repo]), uat: { verified: anyVerified ? verified : undefined, gates, self },
     };
   }).filter((s) => s.cycles || s.scans || d.landings[s.repo] || (d.commits?.[s.repo] ?? []).length);
 }
@@ -1609,10 +1652,13 @@ export function renderReport(d) {
   const sums = repoSummaries(d);
   if (sums.length) {
     for (const s of sums) {
-      const cyc = s.cycles ? `${s.cycles} cycles (${s.green} green${s.red.length ? `, ${s.red.length} red: ${s.red.map((n) => `c${n}`).join(', ')}` : ''})` : 'no cycle';
+      const sup = s.superseded.map((x) => `, c${x.n} ${SUPERSEDED(x.by)}`).join('');
+      const cyc = s.cycles ? `${s.cycles} cycles (${s.green} green${s.red.length ? `, ${s.red.length} red: ${s.red.map((n) => `c${n}`).join(', ')}` : ''}${sup})` : 'no cycle';
       const scan = s.scans ? `${s.scanned} cards scanned in ${s.scans} scans ($${s.cost.toFixed(2)})` : 'no scan';
       const verdicts = `accepted ${s.accepted}, built ${s.built.length}${s.built.length ? ` (${refList(s.built)})` : ''}; rejected ${s.rejected}, snoozed ${s.snoozed}${s.merged ? `, merged ${s.merged}` : ''}, carried to tomorrow ${s.carried}`;
-      const uat = `UAT pass: verified ${s.uat.verified ?? 'none (no runner results)'}, self-reported ${s.uat.self}`;
+      const g = s.uat.gates;
+      const gatesWords = g.length ? `gates ${g.reduce((n, x) => n + x.pass, 0)} passed of ${g.reduce((n, x) => n + x.of, 0)} (${g.map((x) => `c${x.n} ${x.pass}/${x.of}`).join(', ')}; no e2e suite)` : undefined;
+      const uat = `UAT pass: verified ${s.uat.verified ?? gatesWords ?? 'none (no runner results)'}, self-reported ${s.uat.self}`;
       L.push(`- **${s.repo}**: ${cyc}; ${scan}; ${verdicts}; landed: ${s.landed}; ${uat}.`);
     }
     const cost = d.scans.reduce((n, s) => n + (typeof s.cost_usd === 'number' ? s.cost_usd : 0), 0);
@@ -1648,7 +1694,8 @@ export function renderReport(d) {
   L.push('', `Cycles: ${d.cycles.length}, green ${d.cycles.filter((r) => r.green).length}.`);
   for (const r of d.cycles) {
     const re = r.reverified ? `, reverified at ${String(r.head).slice(0, 7)} (first ${r.reverified.first.green ? 'green' : `red: ${(r.reverified.first.red_because ?? []).join('; ')}`})` : '';
-    L.push(`- ${r.n} ${r.repo ?? 'dowser'} ${r.target}: ${r.green ? 'green' : `red (${(r.red_because ?? []).join('; ')})`}${re}${r.quota && !r.quota.ok ? ', the day\'s reject share under 20%' : ''}`);
+    const state = r.green ? 'green' : r.superseded_by !== undefined ? `${SUPERSEDED(r.superseded_by)} (${(r.red_because ?? []).join('; ')})` : `red (${(r.red_because ?? []).join('; ')})`;
+    L.push(`- ${r.n} ${r.repo ?? 'dowser'} ${r.target}: ${state}${re}${r.quota && !r.quota.ok ? ', the day\'s reject share under 20%' : ''}`);
   }
   L.push('', '## Scans and costs', '');
   if (d.scans.length) {
@@ -1828,13 +1875,32 @@ export function dayCommits(ctx, day, charter) {
   return out;
 }
 
+/**
+ * Marks each red cycle whose reasons were all environmental (environmentalRed) and that a later green cycle of the same
+ * repo answers at its head or a descendant of it: `superseded_by` is that green cycle's n (the first). A red with any
+ * other reason, or with no such green, stays an open red. Ancestry is read in the repo's day worktree, else its charter
+ * path. @param {Ctx} ctx @param {any[]} cycles @param {any} day @param {any} charter
+ */
+export function supersede(ctx, cycles, day, charter) {
+  return cycles.map((r) => {
+    if (r.green || typeof r.head !== 'string' || !environmentalRed(r.red_because)) return r;
+    const repo = r.repo ?? 'dowser';
+    const dir = repo === 'dowser' ? ctx.root : [day?.repos?.[repo]?.worktree, (charter?.repos ?? []).find((/** @type {any} */ x) => x.name === repo)?.path]
+      .find((p) => typeof p === 'string' && existsSync(p));
+    if (!dir) return r;
+    const by = cycles.filter((c) => (c.repo ?? 'dowser') === repo && c.green && c.n > r.n && typeof c.head === 'string').sort((a, b) => a.n - b.n)
+      .find((c) => c.head === r.head || gitOkIn(ctx, dir, 'merge-base', '--is-ancestor', r.head, c.head));
+    return by ? { ...r, superseded_by: by.n } : r;
+  });
+}
+
 /** @param {Ctx} ctx @param {Record<string, string | true>} f */
 function report(ctx, f) {
   const day = readJson(paths(ctx.root).day);
   const date = typeof f.date === 'string' ? f.date : day?.date ?? localDate(ctx.now());
   if (!DATE_RE.test(date)) throw new UsageError('--date is YYYY-MM-DD');
   const charter = readJson(paths(ctx.root).charter);
-  const cycles = cycleRows(ctx.root, date);
+  const cycles = supersede(ctx, cycleRows(ctx.root, date), day, charter);
   const scans = readJsonl(join(ctx.home, 'scans.jsonl')).filter((s) => typeof s.ts === 'string' && localDate(new Date(s.ts)) === date);
   const bar = readJson(join(paths(ctx.root).records, 'modules.json'));
   const directions = Object.values(readDirections(ctx).proposed);

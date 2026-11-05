@@ -147,6 +147,13 @@ held a port), is not fixed by reverting the build. Fix the cause, then run `T cy
 - It appends a `kind: "reverify"` row (`head`, `of_head`, `before`, `green`, `red_because`, `verified`). The cycle's
   row is never rewritten. The newest verdict per cycle is what the bar, `report` (as "reverified at ...") and `land`
   (the rollback target) read. A green reverify moves the day's last green to HEAD.
+- A gate whose output names a missing module or an unknown command is recorded as `<gate> failed (environmental:
+  module not found | command not recognized)` (`verified.env` keeps the cause). A red whose only reasons are such
+  (or a failed `npm ci`, with e2e results missing beside them) and that a later green cycle of the same repo answers
+  at its head or a descendant reads in the report as "red (environmental?) superseded by c<m> green", not an open
+  red. Any other reason keeps it open.
+- A repo without e2e suites (bp, personas) reports its verified UAT as the land gates `cycle end` ran itself:
+  "verified gates n passed of m (c<k> p/q, ...)", never "none".
 
 ## The cycle file
 
