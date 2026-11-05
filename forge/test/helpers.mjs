@@ -21,6 +21,8 @@ export const MCP_URL = 'https://mcp.atlassian.com/forge/test-app-id';
 const bind = (v) => (typeof v === 'boolean' ? Number(v) : /** @type {any} */ (v));
 
 /**
+ * `tx` runs `fn` as is, like the Forge SQL port (adapters/forge-sql.mjs): the core must stay correct without
+ * rollback (core/ports.mjs), so the tests run under the production guarantee, not a stronger one.
  * @returns {Db & {raw: DatabaseSync, failNext?: RegExp}}
  */
 export function sqliteDb() {
@@ -43,10 +45,7 @@ export function sqliteDb() {
         throw e;
       }
     },
-    async tx(fn) {
-      raw.exec('BEGIN');
-      try { const out = await fn(); raw.exec('COMMIT'); return out; } catch (e) { raw.exec('ROLLBACK'); throw e; }
-    },
+    async tx(fn) { return fn(); },
   };
   return db;
 }

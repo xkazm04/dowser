@@ -9,8 +9,8 @@
 // Transactions. @forge/sql 4.0.9 sends every statement as its own HTTP request (`sql.prepare(q).bindParams()
 // .execute()` -> POST /api/v1/execute; out/sql.js), and the Forge SQL query policy allows one statement per
 // request and rejects `SET autocommit` - so there is no way to hold a transaction open across statements.
-// `tx(fn)` is therefore atomic where the backend can be (the SQLite test port) and a plain sequential call on
-// Forge. The core never relies on it for correctness: every status move is a compare-and-set
+// `tx(fn)` is therefore a plain sequential call on Forge, and the SQLite test port matches it (test/helpers.mjs),
+// so a reliance on rollback fails a test. The core never relies on it for correctness: every status move is a compare-and-set
 // (`UPDATE ... WHERE status = ?` + affectedRows), ids come from a CAS counter, inserts are check-then-insert
 // guarded by UNIQUE, and a decision whose verdict row did not land is repaired from the decision stamp on the
 // proposal row before every pull (verdicts.mjs `repairVerdicts`).
