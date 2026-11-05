@@ -916,7 +916,7 @@ const isStrings = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string
  */
 const SCAN_INFO = /** @type {Record<string, [string, (v: unknown) => boolean]>} */ ({
   cost_usd: ['a number', (v) => typeof v === 'number'], minutes: ['a number', (v) => typeof v === 'number'], turns: ['a whole number', (v) => Number.isInteger(v)],
-  run_id: ['text', (v) => typeof v === 'string'], head: ['a commit', (v) => typeof v === 'string' && /^[0-9a-f]{7,40}$/i.test(v)],
+  run_id: ['text', (v) => typeof v === 'string'], ref: ['a branch or commit name (the ledger row ref)', (v) => typeof v === 'string' && v.trim() !== ''], head: ['a commit', (v) => typeof v === 'string' && /^[0-9a-f]{7,40}$/i.test(v)],
   pushed: ['a list of refs', isStrings], lens_states: ['text', (v) => typeof v === 'string'],
 });
 const BUILT_INFO = /** @type {Record<string, [string, (v: unknown) => boolean]>} */ ({
@@ -975,7 +975,7 @@ export function validateCycleFile(raw, o) {
     if (per[d.module] > MAX_DIRECTIONS) throw new Refusal(`at most ${MAX_DIRECTIONS} pending directions per module (${d.module})`);
   }
   if (raw.scan !== undefined) {
-    if (typeof raw.scan?.project_key !== 'string' || !Number.isInteger(raw.scan.created)) throw new UsageError('scan is {project_key, created, cost_usd?, minutes?, turns?, run_id?, head?, pushed?, lens_states?}');
+    if (typeof raw.scan?.project_key !== 'string' || !Number.isInteger(raw.scan.created)) throw new UsageError('scan is {project_key, created, cost_usd?, minutes?, turns?, run_id?, ref?, head?, pushed?, lens_states?}');
     checkInfo(raw.scan, SCAN_INFO, 'scan');
   }
   const persona = raw.uat && typeof raw.uat === 'object' ? raw.uat.persona_pass : undefined;

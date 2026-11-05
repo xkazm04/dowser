@@ -146,7 +146,7 @@ held a port), is not fixed by reverting the build. Fix the cause, then run `T cy
 The top-level keys are closed (an unknown one is a usage error). Inside them a runner may add informational keys,
 stored as written. These are known and type-checked:
 
-- `scan`: `cost_usd` and `minutes` (numbers), `turns` (a whole number), `run_id` (text), `head` (the commit
+- `scan`: `cost_usd` and `minutes` (numbers), `turns` (a whole number), `run_id` (text), `ref` (the branch scanned, the ledger row's `ref`), `head` (the commit
   scanned), `pushed` (the refs pushed to the inbox) and `lens_states` (text, each lens's state).
 - `built[]`: `slice` ("1/2"), `commits` and `specs` (lists), `qa` (who wrote the specs, e.g. `subagent`).
 - `uat` is free-form, and all of it is self-reported: the runner's own e2e counts, its gate results, where its

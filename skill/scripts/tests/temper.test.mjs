@@ -528,7 +528,7 @@ test('cycle file: cycle 1\'s runner file (2026-11-05) is accepted as written, in
   const o = { target: 'lenses', metModules: [], proposedPerModule: {} };
   assert.equal(validateCycleFile(cycle1, o).length, 4);
   for (const [path, bad] of /** @type {[string, (c: any) => void][]} */ ([['scan.turns', (c) => { c.scan.turns = '49'; }], ['scan.head', (c) => { c.scan.head = 'HEAD'; }],
-    ['scan.pushed', (c) => { c.scan.pushed = 'DW-56'; }], ['built DW-58.qa', (c) => { c.built[0].qa = true; }], ['built DW-58.commits', (c) => { c.built[0].commits = 'c0feeb4'; }]])) {
+    ['scan.pushed', (c) => { c.scan.pushed = 'DW-56'; }], ['scan.ref', (c) => { c.scan.ref = 5; }], ['built DW-58.qa', (c) => { c.built[0].qa = true; }], ['built DW-58.commits', (c) => { c.built[0].commits = 'c0feeb4'; }]])) {
     const c = structuredClone(cycle1);
     bad(c);
     assert.throws(() => validateCycleFile(c, o), (e) => e instanceof Error && e.message.startsWith(path), path);
