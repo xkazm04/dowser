@@ -182,21 +182,27 @@ export function factsTable(card) {
 /** The paragraph an issue created from a sample card opens with. */
 export const SAMPLE_NOTE = "Created from Dowser sample data: a scan of Dowser's own public repository.";
 
+/** The paragraph a delegate's issue opens with. @param {string} name e.g. "Temper (delegate)" */
+export const delegateNote = (name) => `Accepted by ${name} through delegated triage, not by a person.`;
+
 /**
  * The description of the issue an accept creates (contract amendment 3, the UI preview shows the same order):
  * the facts table, the rationale, "Expected benefit" (impact and why, then the body's Expected impact), "Where it
  * is and how to reproduce" (the code and doc places the card names, linked, then the body's Flow steps), the rest of
  * the body (issueOutline), the supporting views under "Supporting views" when the card has any, the evidence list
  * with links, then "Proposed by Dowser (DW-n)". `o.sample` (a card of the
- * sample inbox) opens it with SAMPLE_NOTE, so the issue says where it came from before anything else.
+ * sample inbox) opens it with SAMPLE_NOTE, so the issue says where it came from before anything else. `o.delegate`
+ * (the delegate's display name, "Temper (delegate)") opens it with delegateNote, so the issue says no person accepted
+ * it even where Jira refused the `dowser-delegate` label.
  * @param {Card} card
  * @param {string} [inboxUrl]
- * @param {{sample?: boolean}} [o]
+ * @param {{sample?: boolean, delegate?: string}} [o]
  * @returns {AdfDoc}
  */
 export function issueDescription(card, inboxUrl, o = {}) {
   /** @type {AdfNode[]} */
-  const content = [...(o.sample ? [paragraph([text(SAMPLE_NOTE)])] : []), factsTable(card), paragraph(inline(String(card.rationale)))];
+  const content = [...(o.delegate ? [paragraph([text(delegateNote(o.delegate))])] : []), ...(o.sample ? [paragraph([text(SAMPLE_NOTE)])] : []),
+    factsTable(card), paragraph(inline(String(card.rationale)))];
   const o2 = issueOutline(card);
   if (o2.benefit) {
     content.push(heading(3, 'Expected benefit'));

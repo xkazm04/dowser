@@ -10,6 +10,7 @@
 import { REASONS, decisionProblem, isOneOf } from '../shared/model.mjs';
 import { issueDescription, mergeComment } from './adf.mjs';
 import { cardOf, toCard, toVerdict } from './cards.mjs';
+import { delegateName } from './names.mjs';
 import { writeIssueProperty } from './issue-property.mjs';
 import { counterValue, evidenceOfMany, findProposal, inboxRowsByKey, insertMany, isSampleKey, needInbox, nextCounter, nextCounterBlock, proposalsMatching, toProposal } from './store.mjs';
 import { DELEGATE_KIND, DELEGATE_LABEL, NOTE_MAX, REF_RE, SAMPLE_LABEL, VERDICT_STATUSES } from './types.mjs';
@@ -201,13 +202,15 @@ export async function accept(deps, args, who) {
   } else {
     const card = await cardOf(db, p);
     // A sample card's issue is real but marked: the label and an opening line say it came from sample data. A
-    // delegate's accept is labelled too, so Jira shows which issues no person accepted.
+    // delegate's accept is labelled too, so Jira shows which issues no person accepted, and its description opens
+    // with a line naming the delegate: the adapter drops labels when a project's create screen refuses them.
     const sample = isSampleKey(p.project_key);
-    const labels = [...(sample ? [SAMPLE_LABEL] : []), ...(who.by.startsWith(`${DELEGATE_KIND}:`) ? [DELEGATE_LABEL] : [])];
+    const delegate = who.by.startsWith(`${DELEGATE_KIND}:`) ? delegateName(who.by) : undefined;
+    const labels = [...(sample ? [SAMPLE_LABEL] : []), ...(delegate ? [DELEGATE_LABEL] : [])];
     try {
       issue = await deps.jira.createIssue({
         projectKey: /** @type {string} */ (projectKey), issueTypeId: /** @type {string} */ (issueTypeId), summary: card.title,
-        description: issueDescription(card, await links.inboxUrl(p.ref), { sample }),
+        description: issueDescription(card, await links.inboxUrl(p.ref), { sample, delegate }),
         ...(labels.length ? { labels } : {}),
       });
     } catch (e) {

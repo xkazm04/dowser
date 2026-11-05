@@ -496,7 +496,9 @@ The whole call is `forbidden` when the inbox has no delegation, or its last day 
 the message says a person switches it on (or renews it) in Dowser Settings. Otherwise each verdict, in order, goes
 through the same decision path as a person's in the inbox, with the caller's own checks (Create issues for an
 accept, Add comments for a merge into a Jira issue), and is recorded with `decided_by` `delegate:temper`. An accept
-creates the Jira issue labelled `dowser-delegate`.
+creates the Jira issue labelled `dowser-delegate`, and its description opens with a line naming the delegate
+("Accepted by Temper (delegate) through delegated triage, not by a person."), so the mark holds when a project's create
+screen refuses the label and the issue is created without it.
 
 Output: `{results: [{ref, result, why?, issue_ref?}], more?}`, one result per verdict looked at, in order.
 
