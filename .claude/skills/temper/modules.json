@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "_note": "The 8 Dowser modules the /temper stability bar is applied to (references/bar.md). contexts: context-map.json plus the lens-scan context supplement (every context belongs to a module; skill/scripts/tests/temper.test.mjs checks it). focus: the temper-scan --focus of the module's scans (the scan-yield part matches the ledger's focus exactly). uat: regexes over e2e result spec names, or \"tests\" for a module whose surface is the CLI (the quality-snapshot gates). coverage: regexes over e2e-coverage ids (every derived id belongs to a module).",
+  "modules": {
+    "skill-store": {
+      "contexts": ["proposal-model", "proposal-model-supplement", "scoring-and-trust"],
+      "focus": "area:skill/scripts/lib",
+      "uat": "tests",
+      "coverage": []
+    },
+    "lenses": {
+      "contexts": ["lens-templates", "skill-procedure"],
+      "focus": "area:skill/lenses",
+      "uat": "tests",
+      "coverage": []
+    },
+    "triage": {
+      "contexts": ["triage-memory", "triage-memory-supplement"],
+      "focus": "area:skill/scripts/lib/memory.mjs",
+      "uat": "tests",
+      "coverage": []
+    },
+    "forge-core": {
+      "contexts": ["forge-core", "forge-backend-shell", "forge-tests"],
+      "focus": "area:forge/src",
+      "uat": ["^e2e/local/"],
+      "coverage": ["^resolver:", "^fail:"]
+    },
+    "inbox-ui": {
+      "contexts": ["forge-inbox-ui", "forge-ui-shell", "forge-app"],
+      "focus": "area:forge/static/app/src/routes/inbox",
+      "uat": [
+        "^e2e/fixture/surfaces\\.spec\\.mjs > surface (inbox|panel|panel-none|byline|banner)[ &]",
+        "^e2e/fixture/conditions\\.spec\\.mjs > ",
+        "^e2e/fixture/fail\\.spec\\.mjs > .* on (inbox|panel|byline)",
+        "^e2e/fixture/flows\\.spec\\.mjs > (byline|inbox):",
+        "^e2e/local/surfaces\\.spec\\.mjs > local core: surface (inbox|panel|panel-none|byline|banner)[ &]",
+        "^e2e/local/triage\\.spec\\.mjs > ",
+        "^e2e/live/live\\.spec\\.mjs > live: the (inbox|Accept)"
+      ],
+      "coverage": [
+        "^route:(inbox|dowser-evidence|dowser-doc-impact|dowser-doc-banner)$",
+        "^(resolver|fail):(inbox|proposal|verdict|panel|byline|sample|setup)\\.",
+        "^fixture:(area|calls|empty|fail|failonce|lens|mode|nocomment|nomcp|page|project|ref|sample|slow)$"
+      ]
+    },
+    "insights-ui": {
+      "contexts": ["forge-insights-ui"],
+      "focus": "area:forge/static/app/src/routes/reflect",
+      "uat": [
+        "^e2e/fixture/surfaces\\.spec\\.mjs > surface (map|reflect|settings) ",
+        "^e2e/fixture/fail\\.spec\\.mjs > .* on (map|reflect|settings)",
+        "^e2e/fixture/flows\\.spec\\.mjs > (settings|learning):",
+        "^e2e/fixture/delegation\\.spec\\.mjs > ",
+        "^e2e/local/surfaces\\.spec\\.mjs > local core: surface (map|reflect|settings) ",
+        "^e2e/live/live\\.spec\\.mjs > live: every sidebar tab"
+      ],
+      "coverage": [
+        "^route:(map|reflect|settings)$",
+        "^(resolver|fail):(map|reflect|rule|outcome|settings|jira|direction)\\.",
+        "^fixture:delegation$"
+      ]
+    },
+    "connections": {
+      "contexts": ["skill-scripts"],
+      "focus": "area:skill/scripts/lib/sync.mjs",
+      "uat": ["^e2e/local/triage\\.spec\\.mjs > "],
+      "coverage": []
+    },
+    "tooling": {
+      "contexts": ["dev-tooling", "skill-tests"],
+      "focus": "area:tools",
+      "uat": "tests",
+      "coverage": []
+    }
+  }
+}
