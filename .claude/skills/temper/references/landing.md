@@ -12,6 +12,11 @@ Production, tags and releases are never part of a landing. The guard denies them
   the gates (`typecheck`, `test`, `e2e:coverage`, plus `forge:typecheck`, `forge:test` and `forge:check-shared` when
   forge/ changed, plus the charter's gates), and fixture and local e2e results newer than HEAD with a pass and no fail.
   A live fail blocks; live unverifiable does not.
+- **Dependencies first.** Before the gates, `land` (dry run included: it touches only `node_modules`) checks root,
+  `forge` and `forge/static/app`: when a folder's `package-lock.json` is not what its `node_modules/.package-lock.json`
+  says is installed, it runs `npm ci` there (`checks.deps`). A failed `npm ci` is a reason not to land. Cycle 1 of
+  2026-11-05 went red only because the main checkout's root `node_modules` predated a merge that added
+  `@playwright/test`.
 - **Green:** `git checkout master`, `git merge --ff-only loop/<date>`, `git push origin master`. When forge/ changed,
   it then stops leftover vite dev servers, runs `npm ci --prefix forge`, `npm ci --prefix forge/static/app` and
   `npm run forge:build-ui` (see below), then `forge deploy -e development --non-interactive`, and

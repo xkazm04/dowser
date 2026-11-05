@@ -6,12 +6,12 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
-  renderReport, secretScan, startQuestions, triageLimits, uatPart, viteServersIn,
+  DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, depDrift, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
+  renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
 } from '../../../.claude/skills/temper/scripts/temper.mjs';
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
 import { derivedIds } from '../../../tools/e2e-coverage.mjs';
@@ -282,6 +282,223 @@ test('cycle end: local-only verdicts are recorded as delegate:temper with the ca
   // directions only for a module at the bar
   put(file, { target: 'tooling', directions: [{ id: 'x', module: 'tooling', title: 't', evidence: 'e', value: 'v', size: 'S', first_slice: 'f' }] });
   assert.match(main(['cycle', 'end', '--file', file], w.ctx).out.error, /does not meet the bar/);
+});
+
+test('cycle end: the runner\'s skill_issues are checked, stored in the row, and the report groups them by where, newest first', () => {
+  const w = world();
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  const file = join(w.work, 'c.json');
+  const issue = (/** @type {string} */ where, /** @type {string} */ what) => ({ where, what, evidence: `ev ${what}`, fix: `fix ${what}` });
+  main(['cycle', 'begin', '--target', 'tooling'], w.ctx);
+  put(file, { target: 'tooling', skill_issues: [issue('temper.mjs CYCLE_KEYS', 'old one'), issue('cycle.md section 6', 'cover runs where')] });
+  const a = main(['cycle', 'end', '--file', file], w.ctx);
+  assert.notEqual(a.code, 2, JSON.stringify(a.out));
+  assert.deepEqual(a.out.self_reported.skill_issues.map((/** @type {any} */ x) => x.where), ['temper.mjs CYCLE_KEYS', 'cycle.md section 6']);
+  w.at(Date.now() + 5000);
+  main(['cycle', 'begin', '--target', 'tooling'], w.ctx);
+  put(file, { target: 'tooling', skill_issues: [issue('temper.mjs CYCLE_KEYS', 'new one')] });
+  main(['cycle', 'end', '--file', file], w.ctx);
+  const md = readFileSync(main(['report'], w.ctx).out.written, 'utf8');
+  const sec = md.slice(md.indexOf('## Skill issues'));
+  assert.ok(sec.indexOf('### temper.mjs CYCLE_KEYS') < sec.indexOf('### cycle.md section 6'), 'the group with the newest issue first');
+  assert.ok(sec.indexOf('c2 (dowser): new one.') < sec.indexOf('c1 (dowser): old one.'), 'newest first within a group');
+  assert.match(sec, /- c1 \(dowser\): cover runs where\. Evidence: ev cover runs where\. Fix: fix cover runs where\./);
+  // the shape is checked: a missing field or an unknown key is a usage error, and nothing is recorded
+  for (const bad of [[{ where: 'x', what: 'y', evidence: 'z' }], [{ ...issue('x', 'y'), severity: 'high' }], [{ ...issue('x', 'y'), fix: ' ' }], 'none']) {
+    main(['cycle', 'begin', '--target', 'tooling'], w.ctx);
+    put(file, { target: 'tooling', skill_issues: bad });
+    const r = main(['cycle', 'end', '--file', file], w.ctx);
+    assert.equal(r.code, 2, JSON.stringify(bad));
+    assert.match(r.out.error, /skill_issues/);
+    rmSync(join(w.root, '.temper', 'cycle-dowser.json'));
+  }
+  assert.match(renderReport({ date: 'd', commits: [], landings: {}, cycles: [], scans: [], directions: [], questions: [], later: [] }), /## Skill issues\n\nNone\./);
+});
+
+test('dependency drift: cycle end and land run npm ci where a lockfile is newer than its node_modules, and a failed install is red', () => {
+  const w = world();
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  const pkg = (/** @type {string} */ name, /** @type {string} */ v) => ({ [`node_modules/${name}`]: { version: v, resolved: `https://r/${name}-${v}.tgz`, integrity: `sha512-${name}${v}`, dev: true } });
+  const lock = (/** @type {any} */ packages) => ({ name: 'x', version: '1.0.0', lockfileVersion: 3, requires: true, packages });
+  // root: a merge added @playwright/test to the lockfile, the installed tree predates it (cycle 1's red)
+  put(join(w.root, 'package-lock.json'), lock({ '': { name: 'x' }, ...pkg('typescript', '7.0.2'), ...pkg('@playwright/test', '1.64.1'),
+    'node_modules/@esbuild/aix-ppc64': { version: '0.1.0', optional: true } }));
+  put(join(w.root, 'node_modules', '.package-lock.json'), lock(pkg('typescript', '7.0.2')));
+  // forge: in sync (an optional package for another platform is absent, which is no drift)
+  put(join(w.root, 'forge', 'package-lock.json'), lock({ '': { name: 'f' }, ...pkg('react', '19.0.0'), 'node_modules/@esbuild/aix-ppc64': { version: '0.1.0', optional: true } }));
+  put(join(w.root, 'forge', 'node_modules', '.package-lock.json'), lock(pkg('react', '19.0.0')));
+  // forge/static/app: never installed
+  put(join(w.root, 'forge', 'static', 'app', 'package-lock.json'), lock({ '': { name: 'a' }, ...pkg('vite', '7.0.0') }));
+  assert.equal(depDrift(w.root).state, 'drift');
+  assert.equal(depDrift(join(w.root, 'forge')).state, 'in sync');
+  assert.equal(depDrift(join(w.root, 'forge', 'static', 'app')).why, 'node_modules has no .package-lock.json');
+  assert.equal(depDrift(join(w.root, 'skill')).state, 'no lockfile');
+  /** @type {{cwd?: string, before: string[]}[]} */
+  const ci = [];
+  /** @type {string[]} */
+  const order = [];
+  let ciExit = 0;
+  const ctx = { ...w.ctx, run: /** @type {import('../../../.claude/skills/temper/scripts/temper.mjs').Runner} */ ((c, a, o) => {
+    if (c === 'npm' && a[0] === 'ci') { ci.push({ cwd: o?.cwd, before: [...order] }); return { status: ciExit, stdout: '' }; }
+    if (c === 'npm') order.push(a[1]);
+    return w.ctx.run(c, a, o);
+  }) };
+  const file = join(w.work, 'c.json');
+  put(file, { target: 'tooling' });
+  main(['cycle', 'begin', '--target', 'tooling'], ctx);
+  const a = main(['cycle', 'end', '--file', file], ctx);
+  assert.deepEqual(ci.map((x) => x.cwd), [w.root, join(w.root, 'forge', 'static', 'app')], 'npm ci where drifted, never where in sync');
+  assert.ok(ci.every((x) => x.before.length === 0), 'before any gate');
+  assert.deepEqual(a.out.verified.deps, { '.': { state: 'installed', why: "the installed tree is not the lockfile's" }, forge: { state: 'in sync' },
+    'forge/static/app': { state: 'installed', why: 'node_modules has no .package-lock.json' } });
+  assert.ok(!(a.out.red_because ?? []).some((/** @type {string} */ x) => /npm ci/.test(x)));
+  // a failed npm ci is a red with its reason
+  ciExit = 1; ci.length = 0;
+  main(['cycle', 'begin', '--target', 'tooling'], ctx);
+  const b = main(['cycle', 'end', '--file', file], ctx);
+  assert.equal(b.code, 1);
+  assert.equal(b.out.green, false);
+  assert.match(b.out.red_because[0], /^npm ci in \. failed \(exit 1; the installed tree is not the lockfile's\)$/);
+  assert.equal(b.out.verified.deps['.'].state, 'failed');
+  // land checks the same before its gates, and a failed install is a reason not to land
+  put(join(w.root, 'feature.txt'), 'x\n');
+  g(w.root, 'add', 'feature.txt'); g(w.root, 'commit', '-q', '-m', 'feat: x');
+  put(join(w.root, 'e2e', 'results', 'fixture.json'), [row('a')]);
+  put(join(w.root, 'e2e', 'results', 'local.json'), [row('b')]);
+  const l = main(['land', '--dry-run'], ctx);
+  assert.equal(l.out.decision, 'rollback');
+  assert.ok(l.out.reasons.some((/** @type {string} */ x) => /^npm ci in \. failed/.test(x)), JSON.stringify(l.out.reasons));
+  assert.equal(l.out.checks.deps['forge/static/app'].state, 'failed');
+  ciExit = 0;
+  assert.equal(main(['land', '--dry-run'], ctx).out.decision, 'land');
+});
+
+test('cycle end: runs fixture and local e2e itself on the merged tree (once, when a charter gate already names them)', () => {
+  const w = world();
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  /** @type {string[]} */
+  const npm = [];
+  const ctx = { ...w.ctx, run: /** @type {import('../../../.claude/skills/temper/scripts/temper.mjs').Runner} */ ((c, a, o) => {
+    if (c === 'npm' && /^e2e:(fixture|local)$/.test(a[1])) {
+      npm.push(a[1]);
+      put(join(w.root, 'e2e', 'results', `${a[1].slice(4)}.json`), [row(`e2e/${a[1].slice(4)}/x.spec.mjs > x`)]);
+      return { status: 0, stdout: '' };
+    }
+    if (c === 'npm') npm.push(a[1]);
+    if (o?.shell) npm.push(c);
+    return w.ctx.run(c, a, o);
+  }) };
+  const file = join(w.work, 'c.json');
+  put(file, { target: 'tooling' });
+  main(['cycle', 'begin', '--target', 'tooling'], ctx);
+  const a = main(['cycle', 'end', '--file', file], ctx);
+  assert.equal(a.out.green, true, JSON.stringify(a.out.red_because));
+  assert.deepEqual(npm, ['typecheck', 'test', 'e2e:fixture', 'e2e:local']);
+  assert.equal(a.out.verified.uat.fixture.state, 'fresh', 'the results it wrote count');
+  // a charter that already runs them as land gates: no second run
+  const c = JSON.parse(readFileSync(join(w.root, '.temper', 'charter.json'), 'utf8'));
+  c.repos[0].gates = [{ run: 'npm run e2e:fixture -- --repeat-each 3', when: 'land' }];
+  put(join(w.root, '.temper', 'charter.json'), c);
+  npm.length = 0;
+  main(['cycle', 'begin', '--target', 'tooling'], ctx);
+  main(['cycle', 'end', '--file', file], ctx);
+  assert.deepEqual(npm, ['typecheck', 'test', 'e2e:local', 'npm run e2e:fixture -- --repeat-each 3']);
+});
+
+test('cycle reverify: the same gates and e2e on the cycle\'s unchanged tree; its row is the newest verdict for the bar, report and land', () => {
+  const w = world();
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  /** @type {Record<string, number>} */
+  const exits = { typecheck: 1 };
+  /** @type {string[]} */
+  const npm = [];
+  const ctx = { ...w.ctx, run: /** @type {import('../../../.claude/skills/temper/scripts/temper.mjs').Runner} */ ((c, a, o) => {
+    if (c !== 'npm') return w.ctx.run(c, a, o);
+    npm.push(a[1]);
+    if (/^e2e:(fixture|local)$/.test(a[1])) put(join(w.root, 'e2e', 'results', `${a[1].slice(4)}.json`), [row(`e2e/${a[1].slice(4)}/x.spec.mjs > x`)]);
+    return { status: exits[a[1]] ?? 0, stdout: '' };
+  }) };
+  const day = () => JSON.parse(readFileSync(join(w.root, '.temper', 'day.json'), 'utf8'));
+  const base = day().last_green;
+  main(['cycle', 'begin', '--target', 'tooling'], ctx);
+  put(join(w.root, 'feature.txt'), 'a slice\n');
+  g(w.root, 'add', 'feature.txt'); g(w.root, 'commit', '-q', '-m', 'feat: a slice');
+  const file = join(w.work, 'c.json');
+  put(file, { target: 'tooling' });
+  const red = main(['cycle', 'end', '--file', file], ctx);
+  assert.equal(red.code, 1);
+  assert.deepEqual(red.out.red_because, ['typecheck failed'], 'an environmental red (the stale tree)');
+  assert.equal(day().last_green, base);
+  // usage and refusals that leave nothing behind
+  assert.equal(main(['cycle', 'reverify'], ctx).code, 2);
+  assert.equal(main(['cycle', 'reverify', '--n', 'x'], ctx).code, 2);
+  assert.match(main(['cycle', 'reverify', '--n', '9'], ctx).out.error, /no cycle 9/);
+  // the record commit rides on top: still the same tree
+  put(join(w.root, 'docs', 'evals', 'temper', 'note.md'), 'records\n');
+  g(w.root, 'add', 'docs'); g(w.root, 'commit', '-q', '-m', 'chore(temper): cycle 1 record');
+  writeFileSync(join(w.root, 'README.md'), '# dirty\n');
+  assert.match(main(['cycle', 'reverify', '--n', '1'], ctx).out.error, /uncommitted changes outside docs\/evals\/temper/);
+  g(w.root, 'checkout', '-q', '--', 'README.md');
+  // the environment is fixed: a red reverify first (still failing), then a green one
+  exits.test = 1;
+  const r1 = main(['cycle', 'reverify', '--n', '1'], ctx);
+  assert.equal(r1.code, 1);
+  assert.equal(r1.out.kind, 'reverify');
+  assert.equal(day().last_green, base, 'a red reverify moves nothing');
+  exits.typecheck = 0; exits.test = 0; npm.length = 0;
+  w.at(Date.now());
+  const r2 = main(['cycle', 'reverify', '--n', '1'], ctx);
+  assert.equal(r2.code, 0, JSON.stringify(r2.out));
+  const head = g(w.root, 'rev-parse', 'HEAD');
+  assert.deepEqual([r2.out.green, r2.out.head, r2.out.of_head, r2.out.before.green], [true, head, red.out.head, false]);
+  assert.deepEqual(npm, ['typecheck', 'test', 'e2e:fixture', 'e2e:local'], 'the same gates and e2e as cycle end');
+  assert.equal(r2.out.verified.uat.local.state, 'fresh');
+  assert.equal(day().last_green, head);
+  // the cycle row is kept; the newest verdict is what the readers see
+  const raw = readFileSync(join(w.root, 'docs', 'evals', 'temper', '2026-11-05.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(raw.map((x) => x.kind), ['cycle', 'reverify', 'reverify']);
+  const md = readFileSync(main(['report'], ctx).out.written, 'utf8');
+  assert.match(md, new RegExp(`- 1 dowser tooling: green, reverified at ${head.slice(0, 7)} \\(first red: typecheck failed\\)`));
+  assert.match(md, /Cycles: 1, green 1\./);
+  // land: a later red commit rolls back to the reverified head, not to the day's base
+  put(join(w.root, 'feature.txt'), 'a broken slice\n');
+  g(w.root, 'commit', '-q', '-am', 'feat: broken');
+  exits.test = 1;
+  const l = main(['land', '--dry-run'], ctx);
+  assert.equal(l.out.decision, 'rollback');
+  assert.equal(l.out.target, head);
+  // HEAD moved past the cycle with a build commit: refused
+  assert.match(main(['cycle', 'reverify', '--n', '1'], ctx).out.error, /more than record-only commits \(feature\.txt\)/);
+});
+
+test('cycle file: cycle 1\'s runner file (2026-11-05) is accepted as written, informational keys included; a documented key of the wrong type is not', () => {
+  // C:/Users/kazda/.temper/runs/cycle-1-dowser.json, long texts shortened; every key it carried is kept
+  const cycle1 = {
+    target: "lenses",
+    scan: {"project_key":"dowser-temper","created":4,"cost_usd":2.9141,"minutes":9,"turns":49,"run_id":"r-20261105190038-8655","head":"7cd6cd9","pushed":["DW-56","DW-57","DW-58","DW-59"],"lens_states":"opportunity partial (Teamwork Graph goals Validati..."},
+    verdicts: [{"ref":"DW-57","verdict":"accept","inbox":"dowser-temper","recorded":"local","note":"security-cra.md:56 says `<lockfile path>..."},{"ref":"DW-58","verdict":"accept","inbox":"dowser-temper","recorded":"local","note":"doc-drift.md:74 pipes the 120-day log in..."},{"ref":"DW-56","verdict":"accept","inbox":"dowser-temper","recorded":"local","note":"security-cra.md:58 and SKILL.md:244 make..."},{"ref":"DW-59","verdict":"snooze","until":"2026-11-19","inbox":"dowser-temper","recorded":"local","note":"real (record JSONL dominates the securit..."}],
+    built: [{"ref":"DW-58","size":"XS","slice":"1/1","commits":["c0feeb4","f45e3b1"],"specs":["skill/scripts/tests/lens-packs-c1.test.mjs"],"qa":"subagent"},{"ref":"DW-57","size":"XS","slice":"1/1","commits":["c0feeb4","4bf7ae3"],"specs":["skill/scripts/tests/lens-packs-c1.test.mjs"],"qa":"subagent"},{"ref":"DW-56","size":"S","slice":"1/1","commits":["c0feeb4","4bf7ae3"],"specs":["skill/scripts/tests/lens-packs-c1.test.mjs"],"qa":"subagent"}],
+    uat: {"e2e_fixture":{"exit":0,"pass":53,"fail":0},"e2e_local":{"exit":0,"pass":12,"fail":0},"results":"C:/Users/kazda/.temper/worktrees/dowser-c1/e2e/results/{fixture,local}.json","gates":{"typecheck":0,"test":"309/309"},"persona_pass":"not run: the cycle changed only lens packs and SKI..."},
+    findings: [],
+    outcomes: [],
+    directions: [],
+    parked: [{"item":"DW-59","why":"snoozed to 2026-11-19: needs a call on which tool folders the shared exclusion covers"},{"item":"lens-scan p-a3b5bd","why":"stale: fixed in skill 0.3.0 (install.mjs:205 passe..."}],
+    notes: "Specs: QA subagent wrote skill/scripts/tests/lens-packs-c1.t...",
+    skill_issues: [{"where":"temper.mjs validateCycleFile (CYCLE_KEYS)","what":"cycle end rejects any key outside CYCLE_KEYS, so the skill_issues key the cycle-runner brief requires makes `T cycle end` exit 2","evidence":"temper.mjs:66 CYCLE_KEYS has no skill_issues; :696 throws `unknown cycle key`","fix":"add skill_issues (and qa on built items, documented) to the cycle shape, or have the director strip it before cycle end"}],
+  };
+  const o = { target: 'lenses', metModules: [], proposedPerModule: {} };
+  assert.equal(validateCycleFile(cycle1, o).length, 4);
+  for (const [path, bad] of /** @type {[string, (c: any) => void][]} */ ([['scan.turns', (c) => { c.scan.turns = '49'; }], ['scan.head', (c) => { c.scan.head = 'HEAD'; }],
+    ['scan.pushed', (c) => { c.scan.pushed = 'DW-56'; }], ['built DW-58.qa', (c) => { c.built[0].qa = true; }], ['built DW-58.commits', (c) => { c.built[0].commits = 'c0feeb4'; }]])) {
+    const c = structuredClone(cycle1);
+    bad(c);
+    assert.throws(() => validateCycleFile(c, o), (e) => e instanceof Error && e.message.startsWith(path), path);
+  }
+  assert.throws(() => validateCycleFile({ ...cycle1, persona: 'x' }, o), /unknown cycle key persona/, 'the top level stays closed');
 });
 
 test('cycle end: appends the quality-snapshot row itself when none was written since the cycle began, so the instrument fills', () => {

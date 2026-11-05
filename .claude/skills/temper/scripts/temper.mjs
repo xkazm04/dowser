@@ -12,14 +12,17 @@
 //   repo start --repo <name> [--paths a,b] [--title t]   another build repo's branch in a worktree (+ its ledger)
 //   repo end --repo <name> [--status t]
 //   cycle begin --target <module>|direction:<id> | --repo <name> --target <focus>
-//   cycle end --file <cycle.json> [--repo <r>]   runs the gates, reads the e2e results, appends the row; the open
+//   cycle end --file <cycle.json> [--repo <r>]   npm ci where a lockfile is newer than its node_modules (root, forge,
+//                                          forge/static/app), then the gates, reads the e2e results, appends the row; the open
 //                                          cycle is the --repo's, else the file's repo's, else the only one open
+//   cycle reverify --n <n> [--repo <r>]   the same gates and e2e again on cycle n's unchanged tree (HEAD past it only by
+//                                          record-only commits); appends a kind "reverify" row, the cycle's newest verdict
 //   triage check --verdicts <json> --inbox <key>   reject/snooze share and the day's caps, before verdicts are recorded
 //   modules bar [--instruments <dir>]      the five-part bar per Dowser module; writes docs/evals/temper/modules.json
 //   proposals resolve --id <p> --commit <sha> [--note t]   a landed fix of a lens-scan proposal, for the bar
 //                                          (docs/evals/temper/resolved.json; the lens-scan store is never written)
 //   clock [--rate-limited --until <iso>]   {elapsed_min, remaining_min, ends_at, drain, stop}
-//   report [--date YYYY-MM-DD]             writes docs/evals/temper/<date>.md
+//   report [--date YYYY-MM-DD]             writes docs/evals/temper/<date>.md (with the runners' skill issues, by where)
 //   land [--repo <name>] [--dry-run]       the repo's own landing law (charter repos[].landing):
 //                                          loop-ff (Dowser): ff master, push origin master, deploy Forge development
 //                                            when green; red: reset loop/<date> to the last green commit
@@ -31,6 +34,7 @@
 // files, the scan ledger, quality-snapshot rows, e2e-coverage) is `verified`; what only the director's cycle file
 // claims is `self-reported`; a missing, stale or signed-out instrument is `unverifiable`, never a pass.
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,7 +67,9 @@ export const QUALITY_KEYS = ['long_functions', 'dup_windows', 'lib_cycles', 'tod
 const PARTS = /** @type {const} */ (['uat', 'proposals', 'scan_yield', 'quality', 'coverage']);
 const CHARTER_KEYS = ['repos', 'until', 'out_of_bounds', 'limits', 'delegation', 'live'];
 const REPO_KEYS = ['name', 'path', 'inbox_key', 'build', 'landing', 'gates', 'ledger', 'caps'];
-const CYCLE_KEYS = ['target', 'repo', 'scan', 'other_scans', 'verdicts', 'built', 'uat', 'findings', 'outcomes', 'directions', 'parked', 'notes'];
+const CYCLE_KEYS = ['target', 'repo', 'scan', 'other_scans', 'verdicts', 'built', 'uat', 'findings', 'outcomes', 'directions', 'parked', 'notes', 'skill_issues'];
+/** What the cycle runner learned about the loop itself: each issue names where (a file, step or brief), what, the evidence and the fix. */
+const SKILL_ISSUE_KEYS = ['where', 'what', 'evidence', 'fix'];
 const VERDICT_KINDS = ['accept', 'reject', 'snooze', 'merge'];
 const VERDICT_KEYS = ['ref', 'verdict', 'reason', 'note', 'into', 'until', 'inbox', 'recorded'];
 /** Each landing kind's defaults: the branch, and the refspecs a push may target (guard.mjs reads the same). */
@@ -501,12 +507,36 @@ function clock(ctx, f) {
 
 // ------------------------------------------------------------------------------------------------ cycles
 
-/** Cycle rows of one day, or of every day. @param {string} root @param {string} [date] */
-export function cycleRows(root, date) {
+/** The raw rows (cycle and reverify) of one day, or of every day. @param {string} root @param {string} [date] */
+function dayRows(root, date) {
   const dir = paths(root).records;
   if (!existsSync(dir)) return [];
   const files = date ? [`${date}.jsonl`] : readdirSync(dir).filter((n) => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(n)).sort();
-  return files.flatMap((n) => readJsonl(join(dir, n))).filter((r) => r.kind === 'cycle');
+  return files.flatMap((n) => readJsonl(join(dir, n)));
+}
+
+/**
+ * Each cycle with its newest verdict: a later `kind: "reverify"` row of the same date, repo and n replaces the cycle's
+ * head, green, red_because and verified, and `reverified` keeps what it replaced. The bar, the report and land read
+ * these. @param {any[]} rows
+ */
+export function newestVerdicts(rows) {
+  const key = (/** @type {any} */ r) => `${r.date}|${r.repo ?? 'dowser'}|${r.n}`;
+  /** @type {Map<string, any>} */
+  const last = new Map();
+  for (const r of rows) if (r.kind === 'reverify') last.set(key(r), r);
+  return rows.filter((r) => r.kind === 'cycle').map((c) => {
+    const v = last.get(key(c));
+    if (!v) return c;
+    const { red_because: _rb, ...rest } = c;
+    return { ...rest, head: v.head, green: v.green, ...(v.green ? {} : { red_because: v.red_because ?? [] }), verified: v.verified,
+      reverified: { at: v.at, first: { head: c.head, green: c.green, ...(c.red_because ? { red_because: c.red_because } : {}) } } };
+  });
+}
+
+/** Cycle rows of one day, or of every day, each with its newest verdict. @param {string} root @param {string} [date] */
+export function cycleRows(root, date) {
+  return newestVerdicts(dayRows(root, date));
 }
 
 /** The other repos are scanned every second day: due when the ledger has no scan of the inbox today or yesterday. @param {Ctx} ctx @param {any} charter @param {string} date */
@@ -624,6 +654,77 @@ export function uatSince(root, sinceMs) {
   return { uat, green: !why.length, why };
 }
 
+/** Dowser's package folders: each installed tree must match its lockfile before a gate runs there. */
+export const DEP_DIRS = ['.', 'forge', 'forge/static/app'];
+
+/**
+ * The comparable content of a lockfile's `packages`: one line per installed package (`node_modules/...`, never the root
+ * entry, never an optional one, which a platform may skip), sorted. npm's hidden lockfile
+ * (node_modules/.package-lock.json) has the same entries for what is installed, so the two projections hash alike
+ * exactly when the tree is the lockfile's.
+ * @param {any} lock @returns {{required: string[], optional: Map<string, string>}}
+ */
+function lockProjection(lock) {
+  const required = [];
+  /** @type {Map<string, string>} */
+  const optional = new Map();
+  for (const [k, v] of Object.entries(lock?.packages ?? {})) {
+    if (!k.startsWith('node_modules/') && !k.includes('/node_modules/')) continue;
+    const line = `${k} ${/** @type {any} */ (v)?.version ?? ''} ${/** @type {any} */ (v)?.integrity ?? /** @type {any} */ (v)?.resolved ?? ''}`;
+    if (/** @type {any} */ (v)?.optional) optional.set(k, line); else required.push(line);
+  }
+  return { required: required.sort(), optional };
+}
+
+/** @param {string[]} lines */
+const hashLines = (lines) => createHash('sha256').update(lines.join('\n')).digest('hex').slice(0, 16);
+
+/**
+ * Whether one folder's node_modules is its package-lock.json: `no lockfile`, `in sync`, or `drift` with why. A missing
+ * or unreadable hidden lockfile is drift (the tree was never installed by npm 7+, or predates the lockfile).
+ * @param {string} dir @returns {{state: 'no lockfile' | 'in sync' | 'drift', lock?: string, installed?: string, why?: string}}
+ */
+export function depDrift(dir) {
+  const lockFile = join(dir, 'package-lock.json');
+  if (!existsSync(lockFile)) return { state: 'no lockfile' };
+  /** @param {string} f */
+  const parse = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')); } catch { return undefined; } };
+  const lock = lockProjection(parse(lockFile));
+  const lockHash = hashLines(lock.required);
+  const hidden = join(dir, 'node_modules', '.package-lock.json');
+  if (!existsSync(hidden)) return { state: 'drift', lock: lockHash, why: 'node_modules has no .package-lock.json' };
+  const raw = parse(hidden);
+  if (!raw) return { state: 'drift', lock: lockHash, why: 'node_modules/.package-lock.json is unreadable' };
+  const inst = lockProjection(raw);
+  const instHash = hashLines(inst.required);
+  if (instHash !== lockHash) return { state: 'drift', lock: lockHash, installed: instHash, why: 'the installed tree is not the lockfile\'s' };
+  for (const [k, line] of inst.optional) if (lock.optional.get(k) !== line) return { state: 'drift', lock: lockHash, installed: instHash, why: `optional ${k} differs from the lockfile` };
+  return { state: 'in sync', lock: lockHash, installed: instHash };
+}
+
+/**
+ * Before the gates: every Dowser package folder whose node_modules is not its lockfile gets `npm ci` first. A failed
+ * install is a red with its reason (a gate run on a stale tree fails for a reason that is not the build's).
+ * @param {Ctx} ctx @returns {{deps: Record<string, {state: string, why?: string, exit?: number | null}>, why: string[]}}
+ */
+export function syncDeps(ctx) {
+  /** @type {Record<string, {state: string, why?: string, exit?: number | null}>} */
+  const deps = {};
+  const why = [];
+  for (const d of DEP_DIRS) {
+    const dir = d === '.' ? ctx.root : join(ctx.root, d);
+    const s = depDrift(dir);
+    if (s.state !== 'drift') { if (s.state === 'in sync') deps[d] = { state: s.state }; continue; }
+    const r = ctx.run('npm', ['ci'], { cwd: dir });
+    if (r.status === 0) deps[d] = { state: 'installed', why: /** @type {string} */ (s.why) };
+    else {
+      deps[d] = { state: 'failed', why: /** @type {string} */ (s.why), exit: r.status };
+      why.push(`npm ci in ${d} failed (exit ${r.status}; ${s.why})`);
+    }
+  }
+  return { deps, why };
+}
+
 /** npm scripts in a checkout. @param {Ctx} ctx @param {string[]} scripts @param {string} [cwd] @returns {Record<string, 'pass' | 'fail'>} */
 function runGates(ctx, scripts, cwd = ctx.root) {
   return Object.fromEntries(scripts.map((s) => [s, ctx.run('npm', ['run', s], { cwd }).status === 0 ? 'pass' : 'fail']));
@@ -688,6 +789,41 @@ export function triageLimits(verdicts, earlier, caps) {
 /** Today's earlier verdicts of an inbox, from the cycle rows. @param {string} root @param {string} date @param {string} inbox */
 const verdictsToday = (root, date, inbox) => cycleRows(root, date).flatMap((r) => r.self_reported?.verdicts ?? []).filter((v) => v.inbox === inbox);
 
+/** @param {unknown} v */
+const isStrings = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string');
+/**
+ * The informational keys a runner's cycle file may carry (references/cycle.md), with their types. They are stored as
+ * written (self-reported); a key not listed here is kept too, but a listed one of the wrong type is a usage error.
+ */
+const SCAN_INFO = /** @type {Record<string, [string, (v: unknown) => boolean]>} */ ({
+  cost_usd: ['a number', (v) => typeof v === 'number'], minutes: ['a number', (v) => typeof v === 'number'], turns: ['a whole number', (v) => Number.isInteger(v)],
+  run_id: ['text', (v) => typeof v === 'string'], head: ['a commit', (v) => typeof v === 'string' && /^[0-9a-f]{7,40}$/i.test(v)],
+  pushed: ['a list of refs', isStrings], lens_states: ['text', (v) => typeof v === 'string'],
+});
+const BUILT_INFO = /** @type {Record<string, [string, (v: unknown) => boolean]>} */ ({
+  slice: ['text like 1/2', (v) => typeof v === 'string'], commits: ['a list of commits', isStrings], specs: ['a list of paths', isStrings],
+  qa: ['text (who wrote the specs: subagent, ...)', (v) => typeof v === 'string'],
+});
+/** @param {any} o @param {Record<string, [string, (v: unknown) => boolean]>} spec @param {string} at */
+function checkInfo(o, spec, at) {
+  for (const [k, [what, ok]] of Object.entries(spec)) if (o[k] !== undefined && !ok(o[k])) throw new UsageError(`${at}.${k} is ${what}`);
+}
+
+/**
+ * The runner's skill issues: a list of {where, what, evidence, fix}, each a non-empty string, no other key.
+ * @param {unknown} arr
+ */
+export function checkSkillIssues(arr) {
+  const shape = `skill_issues is a list of {${SKILL_ISSUE_KEYS.join(', ')}}, each a non-empty string`;
+  if (!Array.isArray(arr)) throw new UsageError(shape);
+  arr.forEach((x, i) => {
+    if (!x || typeof x !== 'object' || Array.isArray(x)) throw new UsageError(`skill_issues[${i}] is an object: ${shape}`);
+    for (const k of Object.keys(x)) if (!SKILL_ISSUE_KEYS.includes(k)) throw new UsageError(`unknown key skill_issues[${i}].${k} (${SKILL_ISSUE_KEYS.join(', ')})`);
+    for (const k of SKILL_ISSUE_KEYS) if (typeof x[k] !== 'string' || !x[k].trim()) throw new UsageError(`skill_issues[${i}] needs ${k}: ${shape}`);
+  });
+  return arr;
+}
+
 /**
  * Checks the director's cycle file. @param {any} raw @param {{target: string, metModules: string[], proposedPerModule: Record<string, number>}} o
  */
@@ -696,9 +832,13 @@ export function validateCycleFile(raw, o) {
   for (const k of Object.keys(raw)) if (!CYCLE_KEYS.includes(k)) throw new UsageError(`unknown cycle key ${k} (${CYCLE_KEYS.join(', ')})`);
   if (raw.target !== o.target) throw new UsageError(`target ${raw.target} is not the open cycle's ${o.target}`);
   for (const k of ['built', 'other_scans', 'findings', 'outcomes', 'directions', 'parked']) if (raw[k] !== undefined && !Array.isArray(raw[k])) throw new UsageError(`${k} is a list`);
-  for (const b of raw.built ?? []) if (typeof b?.ref !== 'string' || !['XS', 'S', 'M', 'L', 'XL'].includes(b.size)) throw new UsageError('each built item is {ref, size: XS..XL, slice?, commits?, specs?}');
+  for (const b of raw.built ?? []) {
+    if (typeof b?.ref !== 'string' || !['XS', 'S', 'M', 'L', 'XL'].includes(b.size)) throw new UsageError('each built item is {ref, size: XS..XL, slice?, commits?, specs?, qa?}');
+    checkInfo(b, BUILT_INFO, `built ${b.ref}`);
+  }
   for (const x of raw.outcomes ?? []) if (typeof x?.ref !== 'string' || !['right', 'partly', 'wrong'].includes(x.rating) || typeof x.basis !== 'string') throw new UsageError('each outcome is {ref, rating: right|partly|wrong, basis}');
   for (const x of raw.parked ?? []) if (typeof x?.item !== 'string' || typeof x.why !== 'string') throw new UsageError('each parked entry is {item, why}');
+  if (raw.skill_issues !== undefined) checkSkillIssues(raw.skill_issues);
   const per = { ...o.proposedPerModule };
   for (const d of raw.directions ?? []) {
     for (const k of ['id', 'module', 'title', 'evidence', 'value', 'size', 'first_slice']) if (typeof d?.[k] !== 'string' || !d[k].trim()) throw new UsageError(`each direction has ${k}`);
@@ -707,7 +847,10 @@ export function validateCycleFile(raw, o) {
     per[d.module] = (per[d.module] ?? 0) + 1;
     if (per[d.module] > MAX_DIRECTIONS) throw new Refusal(`at most ${MAX_DIRECTIONS} pending directions per module (${d.module})`);
   }
-  if (raw.scan !== undefined && (typeof raw.scan?.project_key !== 'string' || !Number.isInteger(raw.scan.created))) throw new UsageError('scan is {project_key, created, cost_usd?}');
+  if (raw.scan !== undefined) {
+    if (typeof raw.scan?.project_key !== 'string' || !Number.isInteger(raw.scan.created)) throw new UsageError('scan is {project_key, created, cost_usd?, minutes?, turns?, run_id?, head?, pushed?, lens_states?}');
+    checkInfo(raw.scan, SCAN_INFO, 'scan');
+  }
   return raw.verdicts === undefined ? [] : checkVerdicts(raw.verdicts);
 }
 
@@ -728,6 +871,31 @@ function qualityRowOf(ctx, open) {
   if (r.status !== 0) return { state: 'failed', exit: r.status };
   const now = fresh();
   return now ? { state: 'appended', ...(typeof now.head === 'string' ? { head: now.head } : {}) } : { state: 'no row written' };
+}
+
+/** The e2e projects every Dowser cycle runs. */
+const E2E_SCRIPTS = REQUIRED_E2E.map((p) => `e2e:${p}`);
+
+/**
+ * The independent check of one repo's tree, the same for cycle end and cycle reverify. Dowser: npm ci where a lockfile
+ * is newer than its node_modules, typecheck and test, the e2e projects (unless a charter gate already runs them), the
+ * charter's land gates, then the e2e result files newer than `sinceMs`. Another repo: its charter land gates.
+ * @param {Ctx} ctx @param {Repo} repo @param {string} dir @param {number} sinceMs
+ */
+function verifyTree(ctx, repo, dir, sinceMs) {
+  if (repo.name !== 'dowser') {
+    const gates = runRepoGates(ctx, repo, dir);
+    const why = Object.entries(gates).filter(([, s]) => s !== 'pass').map(([k]) => `${k} failed`);
+    return { green: !why.length, why, verified: { gates } };
+  }
+  // a lockfile newer than its installed tree (a merge added a dependency) is installed first: npm ci, or red
+  const deps = syncDeps(ctx);
+  const charterRuns = repo.gates.filter((g) => g.when === 'land').map((g) => g.run);
+  const e2e = E2E_SCRIPTS.filter((s) => !charterRuns.some((r) => new RegExp(`\\bnpm run ${s}(\\s|$)`).test(r)));
+  const gates = { ...runGates(ctx, ['typecheck', 'test', ...e2e]), ...runRepoGates(ctx, repo, dir) };
+  const u = uatSince(ctx.root, sinceMs);
+  const why = [...deps.why, ...Object.entries(gates).filter(([, s]) => s !== 'pass').map(([k]) => `${k} failed`), ...u.why];
+  return { green: !why.length, why, verified: { deps: deps.deps, gates, uat: u.uat } };
 }
 
 /** @param {Ctx} ctx @param {Record<string, string | true>} f */
@@ -767,17 +935,15 @@ function cycleEnd(ctx, f) {
   const isDowser = repo.name === 'dowser';
   const dir = isDowser ? ctx.root : day.repos?.[repo.name]?.worktree;
   const head = gitIn(ctx, dir, 'rev-parse', 'HEAD');
-  const gates = isDowser ? { ...runGates(ctx, ['typecheck', 'test']), ...runRepoGates(ctx, repo, dir) } : runRepoGates(ctx, repo, dir);
-  const u = isDowser ? uatSince(ctx.root, Date.parse(open.begun_at)) : { uat: {}, green: true, why: [] };
+  const v = verifyTree(ctx, repo, dir, Date.parse(open.begun_at));
   const quality = isDowser ? qualityRowOf(ctx, open) : undefined;
-  const gatesGreen = Object.values(gates).every((s) => s === 'pass');
   const quota = rejectShare(countKinds(verdicts));
   const { target: _t, repo: _r, ...claims } = raw;
-  const green = gatesGreen && u.green;
+  const green = v.green;
   const row = {
     kind: 'cycle', n: open.n, date: open.date, repo: repo.name, target: open.target, begun_at: open.begun_at, ended_at: ctx.now().toISOString(), head,
-    green, ...(green ? {} : { red_because: [...Object.entries(gates).filter(([, s]) => s !== 'pass').map(([k]) => `${k} failed`), ...u.why] }),
-    verified: { gates, ...(isDowser ? { uat: u.uat } : {}), ...(quality ? { quality } : {}) },
+    green, ...(green ? {} : { red_because: v.why }),
+    verified: { ...v.verified, ...(quality ? { quality } : {}) },
     quota,
     self_reported: { ...claims, ...(raw.verdicts ? { verdicts } : {}) },
   };
@@ -789,6 +955,52 @@ function cycleEnd(ctx, f) {
     for (const d of raw.directions) dirs.proposed[d.id] = { ...d, proposed_on: open.date };
     writeJson(p.directions, dirs);
   }
+  return row;
+}
+
+/**
+ * cycle reverify --n <n> [--repo r]: re-runs the same gates and e2e on the unchanged tree of a cycle of the day, for a
+ * red that was environmental (a stale node_modules, a dead dev server). HEAD must be the cycle's head, or past it only
+ * by record-only commits (docs/evals/temper/), and the tree must be clean outside the records. It appends a
+ * `kind: "reverify"` row, which becomes the cycle's newest verdict; a green one moves the day's last green to HEAD.
+ * The cycle's own row is never rewritten.
+ * @param {Ctx} ctx @param {Record<string, string | true>} f
+ */
+function cycleReverify(ctx, f) {
+  const charter = needCharter(ctx);
+  const day = needDay(ctx);
+  const n = typeof f.n === 'string' && /^\d+$/.test(f.n) ? Number(f.n) : NaN;
+  if (!Number.isInteger(n) || n < 1) throw new UsageError('cycle reverify needs --n <cycle number>');
+  const rows = dayRows(ctx.root, day.date);
+  const mine = rows.filter((r) => r.kind === 'cycle' && r.n === n && (typeof f.repo !== 'string' || (r.repo ?? 'dowser') === f.repo));
+  if (!mine.length) throw new Refusal(`no cycle ${n}${typeof f.repo === 'string' ? ` in ${f.repo}` : ''} on ${day.date}`);
+  const c = mine[0];
+  const repo = repoOf(charter, c.repo ?? 'dowser');
+  const isDowser = repo.name === 'dowser';
+  const dir = isDowser ? ctx.root : day.repos?.[repo.name]?.worktree;
+  if (typeof dir !== 'string' || !existsSync(dir)) throw new Refusal(`${repo.name}'s day worktree is gone`);
+  if (typeof c.head !== 'string') throw new Refusal(`cycle ${n} recorded no head`);
+  const head = gitIn(ctx, dir, 'rev-parse', 'HEAD');
+  const RECORDS = 'docs/evals/temper/';
+  if (head !== c.head) {
+    if (!gitOkIn(ctx, dir, 'merge-base', '--is-ancestor', c.head, head)) throw new Refusal(`HEAD ${head.slice(0, 7)} is not past cycle ${n}'s head ${c.head.slice(0, 7)}: a reverify checks that cycle's tree only`);
+    const changed = gitIn(ctx, dir, 'diff', '--name-only', c.head, head).split(/\r?\n/).filter(Boolean).filter((x) => !x.startsWith(RECORDS));
+    if (changed.length) throw new Refusal(`HEAD moved past cycle ${n}'s head ${c.head.slice(0, 7)} with more than record-only commits (${changed.slice(0, 5).join(', ')}${changed.length > 5 ? ', ...' : ''}): end a new cycle instead`);
+  }
+  const dirty = ctx.run('git', ['-C', dir, 'status', '--porcelain', '--untracked-files=no']).stdout.split(/\r?\n/).filter(Boolean)
+    .filter((l) => !l.slice(3).replaceAll('\\', '/').startsWith(RECORDS));
+  if (dirty.length) throw new Refusal(`${dir} has uncommitted changes outside ${RECORDS}: a reverify checks the committed tree`);
+  const start = ctx.now();
+  const v = verifyTree(ctx, repo, dir, start.getTime());
+  const prev = newestVerdicts(rows).find((r) => r.n === n && (r.repo ?? 'dowser') === repo.name);
+  const row = {
+    kind: 'reverify', n, date: c.date, repo: repo.name, target: c.target, at: start.toISOString(), head, of_head: c.head,
+    before: { green: prev?.green ?? c.green, ...(prev?.red_because ? { red_because: prev.red_because } : {}) },
+    green: v.green, ...(v.green ? {} : { red_because: v.why }), verified: v.verified,
+  };
+  mkdirSync(paths(ctx.root).records, { recursive: true });
+  appendFileSync(join(paths(ctx.root).records, `${c.date}.jsonl`), `${JSON.stringify(row)}\n`);
+  if (v.green && isDowser) { day.last_green = head; writeJson(paths(ctx.root).day, day); }
   return row;
 }
 
@@ -936,7 +1148,7 @@ export function readInstruments(ctx, { dir, inbox }) {
       ...(Array.isArray(props) && Array.isArray(st?.features) ? { lens: { proposals: props, features: st.features } } : {}),
       ...(res && typeof res === 'object' ? { resolved: res } : {}),
       scans: readJsonl(at('scans.jsonl')), quality: readJsonl(at('quality.jsonl')),
-      cycles: existsSync(at('cycles.jsonl')) ? readJsonl(at('cycles.jsonl')) : cycleRows(ctx.root),
+      cycles: existsSync(at('cycles.jsonl')) ? newestVerdicts(readJsonl(at('cycles.jsonl'))) : cycleRows(ctx.root),
       ...(cov ? { coverage: cov } : {}), ...(inbox ? { inbox } : {}),
     };
   }
@@ -1043,7 +1255,10 @@ export function renderReport(d) {
   const cp = claims.reduce((n, u) => n + (Number(u.pass) || 0), 0), cf = claims.reduce((n, u) => n + (Number(u.fail) || 0), 0);
   L.push(`| self-reported (cycle files) | ${cp} | ${cf} | | ${cp + cf ? `${Math.round((100 * cp) / (cp + cf))}%` : 'n/a'} |`);
   L.push('', `Cycles: ${d.cycles.length}, green ${d.cycles.filter((r) => r.green).length}.`);
-  for (const r of d.cycles) L.push(`- ${r.n} ${r.repo ?? 'dowser'} ${r.target}: ${r.green ? 'green' : `red (${(r.red_because ?? []).join('; ')})`}${r.quota && !r.quota.ok ? ', reject share under 20%' : ''}`);
+  for (const r of d.cycles) {
+    const re = r.reverified ? `, reverified at ${String(r.head).slice(0, 7)} (first ${r.reverified.first.green ? 'green' : `red: ${(r.reverified.first.red_because ?? []).join('; ')}`})` : '';
+    L.push(`- ${r.n} ${r.repo ?? 'dowser'} ${r.target}: ${r.green ? 'green' : `red (${(r.red_because ?? []).join('; ')})`}${re}${r.quota && !r.quota.ok ? ', reject share under 20%' : ''}`);
+  }
   L.push('', '## Scans and costs', '');
   if (d.scans.length) {
     L.push('| inbox | focus | cards created | minutes | cost |', '|---|---|---|---|---|');
@@ -1077,7 +1292,36 @@ export function renderReport(d) {
   const parked = d.cycles.flatMap((r) => r.self_reported?.parked ?? []);
   L.push('', '## Parked', '');
   if (parked.length) for (const p of parked) L.push(`- ${p.item}: ${p.why}`); else L.push('None.');
+  L.push('', '## Skill issues', '');
+  const groups = skillIssueGroups(d.cycles);
+  if (groups.length) {
+    L.push('What the cycle runners found wrong with the loop itself (self-reported), by where, newest first.');
+    for (const [where, items] of groups) {
+      L.push('', `### ${where}`, '');
+      const end = (/** @type {string} */ s) => s.trim().replace(/([^.!?])$/, '$1.');
+      for (const x of items) L.push(`- c${x.n} (${x.repo}): ${end(x.what)} Evidence: ${end(x.evidence)} Fix: ${end(x.fix)}`);
+    }
+  } else L.push('None.');
   return `${L.join('\n')}\n`;
+}
+
+/**
+ * The cycles' skill issues grouped by `where`: the newest cycle's first, both across and within the groups.
+ * @param {any[]} cycles @returns {[string, {n: number, repo: string, what: string, evidence: string, fix: string}[]][]}
+ */
+export function skillIssueGroups(cycles) {
+  const newest = [...cycles].sort((a, b) => String(b.ended_at ?? '').localeCompare(String(a.ended_at ?? '')) || (b.n ?? 0) - (a.n ?? 0));
+  /** @type {Map<string, {n: number, repo: string, what: string, evidence: string, fix: string}[]>} */
+  const by = new Map();
+  for (const r of newest) {
+    for (const x of r.self_reported?.skill_issues ?? []) {
+      if (!x || typeof x.where !== 'string') continue;
+      const key = x.where.trim();
+      if (!by.has(key)) by.set(key, []);
+      by.get(key)?.push({ n: r.n, repo: r.repo ?? 'dowser', what: x.what, evidence: x.evidence, fix: x.fix });
+    }
+  }
+  return [...by.entries()];
 }
 
 /**
@@ -1192,12 +1436,15 @@ export function landPlan(ctx, day, repo) {
   if (!ahead) return { repo: 'dowser', landing: 'loop-ff', decision: 'none', branch, head, reasons: ['nothing on the branch beyond master'], steps: [] };
   if (!gitOk(ctx, 'merge-base', '--is-ancestor', 'master', branch)) reasons.push('master moved since the day started: a fast-forward is impossible');
   const forgeChanged = git(ctx, 'diff', '--name-only', `master...${branch}`, '--', 'forge/') !== '';
+  // the gates run on the tree the lockfiles name: a folder whose node_modules predates its lockfile gets npm ci first
+  const deps = syncDeps(ctx);
+  reasons.push(...deps.why);
   const gates = { ...runGates(ctx, ['typecheck', 'test', 'e2e:coverage', ...(forgeChanged ? ['forge:typecheck', 'forge:test', 'forge:check-shared'] : [])]),
     ...(repo ? runRepoGates(ctx, repo, ctx.root) : {}) };
   for (const [k, s] of Object.entries(gates)) if (s !== 'pass') reasons.push(`${k} failed`);
   const u = uatSince(ctx.root, Number(git(ctx, 'log', '-1', '--format=%ct')) * 1000);
   reasons.push(...u.why);
-  const checks = { gates, uat: u.uat, forge_changed: forgeChanged, ahead };
+  const checks = { deps: deps.deps, gates, uat: u.uat, forge_changed: forgeChanged, ahead };
   const deploy = forgeChanged && repo?.landing.deploy !== undefined ? repo.landing.deploy : forgeChanged && !repo ? 'forge-development' : undefined;
   if (!reasons.length) {
     const forgeDir = join(ctx.root, 'forge');
@@ -1315,8 +1562,8 @@ function land(ctx, f) {
 
 // ------------------------------------------------------------------------------------------------- main
 
-const SPEC = { values: ['from', 'operator', 'date', 'approve', 'veto', 'target', 'file', 'verdicts', 'instruments', 'inbox', 'until', 'repo', 'paths', 'title', 'status', 'id', 'commit', 'note'], bool: ['dry-run', 'rate-limited'] };
-const USAGE = 'usage: temper.mjs charter init --from <json> --operator <name> | charter show | day start|resume|end | repo start|end --repo <r> | cycle begin --target <t> [--repo <r>] | cycle end --file <f> | triage check --verdicts <f> --inbox <k> | modules bar | proposals resolve --id <p> --commit <sha> [--note t] | clock | report | land [--repo <r>] [--dry-run]';
+const SPEC = { values: ['from', 'operator', 'date', 'approve', 'veto', 'target', 'file', 'verdicts', 'instruments', 'inbox', 'until', 'repo', 'paths', 'title', 'status', 'id', 'commit', 'note', 'n'], bool: ['dry-run', 'rate-limited'] };
+const USAGE = 'usage: temper.mjs charter init --from <json> --operator <name> | charter show | day start|resume|end | repo start|end --repo <r> | cycle begin --target <t> [--repo <r>] | cycle end --file <f> | cycle reverify --n <n> [--repo <r>] | triage check --verdicts <f> --inbox <k> | modules bar | proposals resolve --id <p> --commit <sha> [--note t] | clock | report | land [--repo <r>] [--dry-run]';
 
 /**
  * Runs one command. @param {string[]} argv @param {Ctx} [ctx]
@@ -1334,13 +1581,13 @@ export function main(argv, ctx = realCtx()) {
       'charter init': () => charterInit(ctx, f), 'charter show': () => needCharter(ctx),
       'day start': () => dayStart(ctx, f), 'day resume': () => dayResume(ctx), 'day end': () => dayEnd(ctx),
       'repo start': () => repoStart(ctx, f), 'repo end': () => repoEnd(ctx, f),
-      'cycle begin': () => cycleBegin(ctx, f), 'cycle end': () => cycleEnd(ctx, f), 'triage check': () => triageCheck(ctx, f),
+      'cycle begin': () => cycleBegin(ctx, f), 'cycle end': () => cycleEnd(ctx, f), 'cycle reverify': () => cycleReverify(ctx, f), 'triage check': () => triageCheck(ctx, f),
       'modules bar': () => modulesBar(ctx, f), 'proposals resolve': () => proposalsResolve(ctx, f), 'clock ': () => clock(ctx, f), 'report ': () => report(ctx, f), 'land ': () => land(ctx, f),
     };
     const run = table[`${cmd} ${sub}`];
     if (!run) throw new UsageError(`unknown command ${[cmd, sub].filter(Boolean).join(' ') || '(none)'}`);
     const out = run();
-    const red = (cmd === 'land' && out.ok === false && !out.dry_run) || (cmd === 'cycle' && sub === 'end' && out.green === false);
+    const red = (cmd === 'land' && out.ok === false && !out.dry_run) || (cmd === 'cycle' && ['end', 'reverify'].includes(sub) && out.green === false);
     return { code: red ? 1 : 0, out };
   } catch (e) {
     if (e instanceof UsageError) return { code: 2, out: { ok: false, error: e.message, usage: USAGE } };
