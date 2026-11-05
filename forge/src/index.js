@@ -4,7 +4,7 @@
 // The keys and shapes are the contract in src/core/types.mjs and docs/contracts/forge-mcp-2.md.
 import ResolverPkg from '@forge/resolver';
 import { getAppContext } from '@forge/api';
-import { actionName, isConsent, isSchemaBehind, resolverAllowed, runResolver, runRovo, runTool } from './core/app.mjs';
+import { RESOLVERS, actionName, isConsent, isSchemaBehind, resolverAllowed, runResolver, runRovo, runTool } from './core/app.mjs';
 import { forgeDb, runMigrations } from './adapters/forge-sql.mjs';
 import { backfillIssueProperties } from './core/issue-property.mjs';
 import { onIssueEvent } from './core/delivery.mjs';
@@ -86,10 +86,9 @@ const safe = async (fn, consent = false) => {
 };
 
 const resolver = new Resolver();
-/** @type {(keyof ResolverContract)[]} */
-const KEYS = ['inbox.list', 'proposal.get', 'verdict.accept', 'verdict.reject', 'verdict.snooze', 'verdict.merge',
-  'settings.get', 'settings.set', 'jira.projects', 'panel.forIssue', 'map.data', 'byline.forPage', 'reflect.data', 'rule.decide', 'outcome.record',
-  'direction.get', 'direction.set', 'sample.load', 'sample.remove', 'setup.status'];
+// Every core resolver is defined, so a key added to RESOLVERS cannot be left off a hand-kept list here
+// (MODULE_KEYS still decides which module may call it).
+const KEYS = /** @type {(keyof ResolverContract)[]} */ (Object.keys(RESOLVERS));
 for (const key of KEYS) {
   resolver.define(key, async ({ payload, context }) => {
     // The issue panel is the only surface that decides from inside an issue; everything else is the inbox.
