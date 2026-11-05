@@ -68,10 +68,28 @@ async function openIfExists(d, acc, a) {
   if (typeof a.project_key === 'string' && (await getInbox(d.db, a.project_key))) await openProject(acc, a);
 }
 
-/** Every ref of a bulk decision must be openable; a non-string is left to the handler's own validation. */
-/** @param {Access} acc @param {unknown} refs */
+/**
+ * Every ref of a bulk decision must be openable; a non-string is left to the handler's own validation. Answers the
+ * refs with each openable one as its DW ref, so the handler finds the very item the check opened (an fp that another,
+ * closed inbox also holds is never looked up again across every inbox).
+ * @param {Access} acc @param {unknown} refs
+ * @returns {Promise<unknown>}
+ */
 async function openRefs(acc, refs) {
-  if (Array.isArray(refs)) for (const r of refs) if (typeof r === 'string') await acc.proposal(r);
+  if (!Array.isArray(refs)) return refs;
+  const strs = refs.filter((r) => typeof r === 'string');
+  const items = strs.length ? await acc.proposals(strs) : [];
+  let i = 0;
+  return refs.map((r) => (typeof r === 'string' ? items[i++].ref : r));
+}
+
+/**
+ * Opens the item `a[key]` names and answers `a` with it as its DW ref (see openRefs).
+ * @param {Access} acc @param {Record<string, any>} a @param {string} [key]
+ */
+async function openRef(acc, a, key = 'ref') {
+  const p = await acc.proposal(needStr(a, key));
+  return { p, args: { ...a, [key]: p.ref } };
 }
 
 /**
@@ -96,6 +114,7 @@ async function openAccept(d, acc, ref, jiraProjectKey) {
   const p = await acc.proposal(ref);
   const target = jiraProjectKey ?? (await getInbox(d.db, p.project_key))?.jira_project_key;
   if (target) await needJira(acc, 'CREATE_ISSUES', { projectKey: target });
+  return p.ref;
 }
 
 /**
@@ -104,11 +123,12 @@ async function openAccept(d, acc, ref, jiraProjectKey) {
  * @param {Access} acc @param {unknown} ref @param {unknown} into
  */
 async function openMerge(acc, ref, into) {
-  if (typeof ref !== 'string') return;
-  await acc.proposal(ref);
-  if (typeof into !== 'string') return;
+  if (typeof ref !== 'string') return { ref, into };
+  const p = await acc.proposal(ref);
+  if (typeof into !== 'string') return { ref: p.ref, into };
   if (!REF_RE.test(into) && !FP_RE.test(into) && ISSUE_KEY_RE.test(into)) await needJira(acc, 'ADD_COMMENTS', { issueKey: into });
-  else if (REF_RE.test(into) || FP_RE.test(into)) await acc.proposal(into);
+  else if (REF_RE.test(into) || FP_RE.test(into)) return { ref: p.ref, into: (await acc.proposal(into)).ref };
+  return { ref: p.ref, into };
 }
 
 /** @type {Record<typeof TOOL_NAMES[number], Handler>} */
@@ -126,11 +146,11 @@ const TOOLS = {
   dowser_memory_pull: async (d, a, _, acc) => { await openProject(acc, a); return memoryPull(d, a); },
   // the work queue (core/work.mjs): the inbox's access rule, and a report comments only where the caller may
   dowser_work_list: async (d, a, _, acc) => { await openProject(acc, a); return workList(d, a); },
-  dowser_work_get: async (d, a, _, acc) => { await acc.proposal(needStr(a, 'ref')); return workGet(d, a); },
+  dowser_work_get: async (d, a, _, acc) => workGet(d, (await openRef(acc, a)).args),
   dowser_work_report: async (d, a, id, acc) => {
-    const p = await acc.proposal(needStr(a, 'ref'));
+    const { p, args } = await openRef(acc, a);
     if (p.issue_ref) await needJira(acc, 'ADD_COMMENTS', { issueKey: p.issue_ref });
-    return workReport(d, a, deciderOf(id));
+    return workReport(d, args, deciderOf(id));
   },
 };
 
@@ -231,14 +251,14 @@ export const RESOLVERS = {
     if (area && !project) throw new AppError('bad-input', 'area needs project_key: areas belong to one inbox');
     return listInbox(d.db, { project_key: project, status: optStr(p, 'status'), lens: optStr(p, 'lens'), area, cursor: optStr(p, 'cursor'), pretriaged: p.pretriaged === true || undefined, visible: await acc.visibleKeys() });
   },
-  'proposal.get': async (d, p, _, __, acc) => { await acc.proposal(needStr(p, 'ref')); return getProposal(d, needStr(p, 'ref')); },
+  'proposal.get': async (d, p, _, __, acc) => getProposal(d, (await acc.proposal(needStr(p, 'ref'))).ref),
   'verdict.accept': async (d, p, id, via, acc) => {
-    await openAccept(d, acc, needStr(p, 'ref'), optStr(p, 'jira_project_key'));
-    return accept(d, { ref: needStr(p, 'ref'), jira_project_key: optStr(p, 'jira_project_key'), issue_type_id: optStr(p, 'issue_type_id'), note: p.note }, who(id, via));
+    const ref = await openAccept(d, acc, needStr(p, 'ref'), optStr(p, 'jira_project_key'));
+    return accept(d, { ref, jira_project_key: optStr(p, 'jira_project_key'), issue_type_id: optStr(p, 'issue_type_id'), note: p.note }, who(id, via));
   },
-  'verdict.reject': async (d, p, id, via, acc) => { await openRefs(acc, p.refs); return reject(d, { refs: p.refs, reason: p.reason, note: p.note }, who(id, via)); },
-  'verdict.snooze': async (d, p, id, via, acc) => { await openRefs(acc, p.refs); return snooze(d, { refs: p.refs, note: p.note, until: p.until }, who(id, via)); },
-  'verdict.merge': async (d, p, id, via, acc) => { await openMerge(acc, p.ref, p.into); return merge(d, { ref: p.ref, into: p.into }, who(id, via)); },
+  'verdict.reject': async (d, p, id, via, acc) => reject(d, { refs: await openRefs(acc, p.refs), reason: p.reason, note: p.note }, who(id, via)),
+  'verdict.snooze': async (d, p, id, via, acc) => snooze(d, { refs: await openRefs(acc, p.refs), note: p.note, until: p.until }, who(id, via)),
+  'verdict.merge': async (d, p, id, via, acc) => merge(d, await openMerge(acc, p.ref, p.into), who(id, via)),
   'settings.get': async (d, _, __, ___, acc) => ({ inboxes: await inboxSummaries(d.db, await acc.visibleKeys()) }),
   'settings.set': (d, p, _, __, acc) => setSettings(d, p, acc),
   'jira.projects': async (d) => {
@@ -259,10 +279,10 @@ export const RESOLVERS = {
   'map.data': async (d, p, _, __, acc) => { await openProject(acc, p); return mapData(d.db, needStr(p, 'project_key')); },
   'byline.forPage': async (d, p, _, __, acc) => bylineForPage(d.db, needStr(p, 'page_id'), await acc.visibleKeys()),
   // a footer comment as the person (core/doc-drift.mjs): the item must be one they may open; Confluence decides the rest
-  'byline.draftFix': async (d, p, _, __, acc) => { await acc.proposal(needStr(p, 'ref')); return draftFix(d, p); },
+  'byline.draftFix': async (d, p, _, __, acc) => draftFix(d, (await openRef(acc, p)).args),
   'reflect.data': async (d, p, _, __, acc) => { await openProject(acc, p); return reflectData(d, p); },
   'rule.decide': async (d, p, id, _, acc) => { await openProject(acc, p); return ruleDecide(d, p, id); },
-  'outcome.record': async (d, p, id, _, acc) => { await acc.proposal(needStr(p, 'ref')); return outcomeRecord(d, p, id); },
+  'outcome.record': async (d, p, id, _, acc) => outcomeRecord(d, (await openRef(acc, p)).args, id),
   'direction.get': async (d, p, _, __, acc) => { await openProject(acc, p); return directionGet(d, p); },
   'direction.set': async (d, p, id, _, acc) => { await openProject(acc, p); return directionSet(d, p, id); },
   // The first-run screen. Load and remove check their own access (core/sample.mjs): load opens an existing sample
@@ -380,10 +400,11 @@ const ROVO = {
   dowser_inbox_list: rovoList,
   dowser_proposal_explain: rovoExplain,
   dowser_verdict_record: async (d, a, id, acc) => {
-    if (a.status === 'merged') await openMerge(acc, a.ref, a.merged_into);
-    else if (a.status === 'accepted' && typeof a.ref === 'string') await openAccept(d, acc, a.ref, undefined);
-    else await openRefs(acc, [a.ref]);
-    const { card } = await record(d, { ref: a.ref, status: a.status, reason: a.reason, note: a.note, merged_into: a.merged_into }, who(id, 'rovo'));
+    let { ref, merged_into: into } = a;
+    if (a.status === 'merged') ({ ref, into } = await openMerge(acc, a.ref, a.merged_into));
+    else if (a.status === 'accepted' && typeof a.ref === 'string') ref = await openAccept(d, acc, a.ref, undefined);
+    else [ref] = /** @type {unknown[]} */ (await openRefs(acc, [a.ref]));
+    const { card } = await record(d, { ref, status: a.status, reason: a.reason, note: a.note, merged_into: into }, who(id, 'rovo'));
     return { recorded: card.status, card: brief(card) };
   },
 };

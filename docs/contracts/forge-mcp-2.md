@@ -91,6 +91,10 @@ byline and the Rovo agent. A push to a key that has no inbox yet creates it for 
 write to Jira as the app, but only after checking that the caller holds Create issues (accept) or Add comments
 (merge into an issue) there. Anything else answers `forbidden`.
 
+A tool that names an item by `ref` (a DW ref or an fp) answers the same `forbidden` for an item the caller may not
+open and for one that does not exist, and the message names neither the inbox nor its Jira project: a closed inbox
+reveals nothing, not even that it holds the item. An fp is looked up among the inboxes the caller may open only.
+
 A protocol fault (unknown method, malformed JSON-RPC) is a JSON-RPC `error`, not a tool result. When any tool
 errors, the skill says so in plain words and continues **unconnected**. A failed `dowser_verdicts_pull` also
 disables the push for that run (a half-synced memory must not push).

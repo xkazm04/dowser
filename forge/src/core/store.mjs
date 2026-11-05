@@ -292,6 +292,21 @@ export async function listInboxRows(db) {
   return (await db.query('SELECT * FROM inboxes ORDER BY project_key')).map(toInbox);
 }
 
+/**
+ * The inbox rows of `keys`, in one IN read per STATEMENT_PARAMS_MAX keys; a key with no inbox is absent.
+ * @param {Db} db
+ * @param {string[]} keys
+ * @returns {Promise<Map<string, InboxRow>>}
+ */
+export async function inboxRowsByKey(db, keys) {
+  /** @type {Map<string, InboxRow>} */
+  const out = new Map();
+  for (const chunk of inChunks([...new Set(keys)])) {
+    for (const r of await db.query(`SELECT * FROM inboxes WHERE project_key IN (${marks(chunk.length)})`, chunk)) out.set(String(r.project_key), toInbox(r));
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------------------------- proposals
 
 /** @param {unknown} v @returns {string[]} */
@@ -344,6 +359,27 @@ export async function proposalRowsByFp(db, projectKey, fps) {
 }
 
 /**
+ * Every proposal each of `refs` names, by inbox ref (`DW-12`) or fingerprint (an fp may sit in several inboxes), in
+ * one IN read per kind of ref; a ref that is neither form is `bad-input`. Keys are the trimmed refs; a ref nothing
+ * matches maps to an empty list. Whether the caller may open them is not decided here (core/access.mjs).
+ * @param {Db} db
+ * @param {unknown[]} refs
+ * @returns {Promise<Map<string, ProposalRow[]>>}
+ */
+export async function proposalsMatching(db, refs) {
+  const keys = [...new Set(refs.map((ref) => String(ref ?? '').trim()))];
+  for (const r of keys) if (!REF_RE.test(r) && !FP_RE.test(r)) throw new AppError('bad-input', `${JSON.stringify(r)} is neither an inbox ref (DW-12) nor a fingerprint`);
+  /** @type {Map<string, ProposalRow[]>} */
+  const out = new Map(keys.map((r) => [r, []]));
+  for (const [col, test] of /** @type {const} */ ([['ref', REF_RE], ['fp', FP_RE]])) {
+    for (const chunk of inChunks(keys.filter((r) => test.test(r)))) {
+      for (const row of await db.query(`SELECT * FROM proposals WHERE ${col} IN (${marks(chunk.length)}) ORDER BY id`, chunk)) out.get(String(row[col]))?.push(toProposal(row));
+    }
+  }
+  return out;
+}
+
+/**
  * A proposal by inbox ref (`DW-12`) or by fingerprint (any project; an fp in two projects is ambiguous).
  * @param {Db} db
  * @param {string} ref
@@ -351,14 +387,10 @@ export async function proposalRowsByFp(db, projectKey, fps) {
  */
 export async function findProposal(db, ref) {
   const r = String(ref ?? '').trim();
-  /** @type {Row[]} */
-  let rows;
-  if (REF_RE.test(r)) rows = await db.query('SELECT * FROM proposals WHERE ref = ?', [r]);
-  else if (FP_RE.test(r)) rows = await db.query('SELECT * FROM proposals WHERE fp = ?', [r]);
-  else throw new AppError('bad-input', `${JSON.stringify(r)} is neither an inbox ref (DW-12) nor a fingerprint`);
+  const rows = /** @type {ProposalRow[]} */ ((await proposalsMatching(db, [r])).get(r));
   if (rows.length === 0) throw new AppError('bad-input', `no Dowser proposal ${r}`);
   if (rows.length > 1) throw new AppError('bad-input', `fingerprint ${r} is in more than one inbox; use its DW ref`);
-  return toProposal(rows[0]);
+  return rows[0];
 }
 
 // ----------------------------------------------------------------------------------------------- evidence
