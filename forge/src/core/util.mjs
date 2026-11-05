@@ -87,6 +87,11 @@ export function omitAbsent(o) {
  */
 export const sqlv = (v) => (v === undefined ? null : v);
 
+/** The `unauthorized` message for a missing user grant from the adapter's asPerson; index.js `safe` says the same
+ * words (forge/test/grant-message.test.mjs holds both). An MCP caller has no consent screen, so it names the place
+ * where the grant is given. */
+export const GRANT_MESSAGE = 'Dowser needs your permission to read Jira on your behalf; open Dowser in Jira once and allow access';
+
 /** @param {unknown} v @returns {v is string} */
 export const str = (v) => typeof v === 'string' && v.trim().length > 0;
 

@@ -32,7 +32,7 @@
 import * as forgeApi from '@forge/api';
 import { htmlToText, trimText } from '../core/adf.mjs';
 import { BODY_MAX, TICKET_FIELDS, ticketItem } from '../core/sources.mjs';
-import { AppError, ISSUE_KEY_RE, errTag, omitAbsent } from '../core/util.mjs';
+import { AppError, GRANT_MESSAGE, ISSUE_KEY_RE, errTag, omitAbsent } from '../core/util.mjs';
 
 /**
  * @typedef {import('../core/ports.mjs').Jira} Jira
@@ -114,7 +114,7 @@ const httpError = (message, status, fields) => Object.assign(new Error(message),
  */
 async function asPerson(fn) {
   try { return await fn(); } catch (e) {
-    if (e instanceof api.NeedsAuthenticationError) throw new AppError('unauthorized', 'Dowser needs your permission to read on your behalf; allow access and retry');
+    if (e instanceof api.NeedsAuthenticationError) throw new AppError('unauthorized', GRANT_MESSAGE);
     throw e;
   }
 }

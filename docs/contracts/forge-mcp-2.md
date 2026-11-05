@@ -73,7 +73,7 @@ A failure the caller can act on is a tool result with `isError: true`. Its JSON 
 | `bad-input` | arguments are missing or have the wrong shape |
 | `bad-cursor` | the `cursor` was not issued by this server, or it expired. Pull again without `cursor`; re-ingesting is idempotent |
 | `unknown-project` | Forge has no inbox for `project_key` |
-| `unauthorized` | the token is missing, expired or lacks scope. The harness signs in again |
+| `unauthorized` | the token is missing, expired or lacks scope: the harness signs in again. Or (the scan source tools, which read as the person) the person has not granted Dowser access to read on their behalf; signing in does not create that grant, so the message says to open Dowser in Jira once and allow access |
 | `forbidden` | signed in, but this account may not open the inbox for `project_key` (see "Inbox access"), or may not make that change in Jira, or (`dowser_verdicts_record`) the inbox has no delegated triage that holds today. Not retried; the message says what would allow it. Additive (2026-10-30) |
 | `unavailable` | Jira, Confluence or TWG did not answer. Retry on the next run, not in a loop |
 
