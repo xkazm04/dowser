@@ -408,6 +408,73 @@ test('cycle end: runs fixture and local e2e itself on the merged tree (once, whe
   assert.deepEqual(npm, ['typecheck', 'test', 'e2e:local', 'npm run e2e:fixture -- --repeat-each 3']);
 });
 
+test('cycle reverify: the same gates and e2e on the cycle\'s unchanged tree; its row is the newest verdict for the bar, report and land', () => {
+  const w = world();
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  /** @type {Record<string, number>} */
+  const exits = { typecheck: 1 };
+  /** @type {string[]} */
+  const npm = [];
+  const ctx = { ...w.ctx, run: /** @type {import('../../../.claude/skills/temper/scripts/temper.mjs').Runner} */ ((c, a, o) => {
+    if (c !== 'npm') return w.ctx.run(c, a, o);
+    npm.push(a[1]);
+    if (/^e2e:(fixture|local)$/.test(a[1])) put(join(w.root, 'e2e', 'results', `${a[1].slice(4)}.json`), [row(`e2e/${a[1].slice(4)}/x.spec.mjs > x`)]);
+    return { status: exits[a[1]] ?? 0, stdout: '' };
+  }) };
+  const day = () => JSON.parse(readFileSync(join(w.root, '.temper', 'day.json'), 'utf8'));
+  const base = day().last_green;
+  main(['cycle', 'begin', '--target', 'tooling'], ctx);
+  put(join(w.root, 'feature.txt'), 'a slice\n');
+  g(w.root, 'add', 'feature.txt'); g(w.root, 'commit', '-q', '-m', 'feat: a slice');
+  const file = join(w.work, 'c.json');
+  put(file, { target: 'tooling' });
+  const red = main(['cycle', 'end', '--file', file], ctx);
+  assert.equal(red.code, 1);
+  assert.deepEqual(red.out.red_because, ['typecheck failed'], 'an environmental red (the stale tree)');
+  assert.equal(day().last_green, base);
+  // usage and refusals that leave nothing behind
+  assert.equal(main(['cycle', 'reverify'], ctx).code, 2);
+  assert.equal(main(['cycle', 'reverify', '--n', 'x'], ctx).code, 2);
+  assert.match(main(['cycle', 'reverify', '--n', '9'], ctx).out.error, /no cycle 9/);
+  // the record commit rides on top: still the same tree
+  put(join(w.root, 'docs', 'evals', 'temper', 'note.md'), 'records\n');
+  g(w.root, 'add', 'docs'); g(w.root, 'commit', '-q', '-m', 'chore(temper): cycle 1 record');
+  writeFileSync(join(w.root, 'README.md'), '# dirty\n');
+  assert.match(main(['cycle', 'reverify', '--n', '1'], ctx).out.error, /uncommitted changes outside docs\/evals\/temper/);
+  g(w.root, 'checkout', '-q', '--', 'README.md');
+  // the environment is fixed: a red reverify first (still failing), then a green one
+  exits.test = 1;
+  const r1 = main(['cycle', 'reverify', '--n', '1'], ctx);
+  assert.equal(r1.code, 1);
+  assert.equal(r1.out.kind, 'reverify');
+  assert.equal(day().last_green, base, 'a red reverify moves nothing');
+  exits.typecheck = 0; exits.test = 0; npm.length = 0;
+  w.at(Date.now());
+  const r2 = main(['cycle', 'reverify', '--n', '1'], ctx);
+  assert.equal(r2.code, 0, JSON.stringify(r2.out));
+  const head = g(w.root, 'rev-parse', 'HEAD');
+  assert.deepEqual([r2.out.green, r2.out.head, r2.out.of_head, r2.out.before.green], [true, head, red.out.head, false]);
+  assert.deepEqual(npm, ['typecheck', 'test', 'e2e:fixture', 'e2e:local'], 'the same gates and e2e as cycle end');
+  assert.equal(r2.out.verified.uat.local.state, 'fresh');
+  assert.equal(day().last_green, head);
+  // the cycle row is kept; the newest verdict is what the readers see
+  const raw = readFileSync(join(w.root, 'docs', 'evals', 'temper', '2026-11-05.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(raw.map((x) => x.kind), ['cycle', 'reverify', 'reverify']);
+  const md = readFileSync(main(['report'], ctx).out.written, 'utf8');
+  assert.match(md, new RegExp(`- 1 dowser tooling: green, reverified at ${head.slice(0, 7)} \\(first red: typecheck failed\\)`));
+  assert.match(md, /Cycles: 1, green 1\./);
+  // land: a later red commit rolls back to the reverified head, not to the day's base
+  put(join(w.root, 'feature.txt'), 'a broken slice\n');
+  g(w.root, 'commit', '-q', '-am', 'feat: broken');
+  exits.test = 1;
+  const l = main(['land', '--dry-run'], ctx);
+  assert.equal(l.out.decision, 'rollback');
+  assert.equal(l.out.target, head);
+  // HEAD moved past the cycle with a build commit: refused
+  assert.match(main(['cycle', 'reverify', '--n', '1'], ctx).out.error, /more than record-only commits \(feature\.txt\)/);
+});
+
 test('cycle end: appends the quality-snapshot row itself when none was written since the cycle began, so the instrument fills', () => {
   const w = world();
   charter(w);

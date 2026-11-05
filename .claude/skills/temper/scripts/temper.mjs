@@ -15,6 +15,8 @@
 //   cycle end --file <cycle.json> [--repo <r>]   npm ci where a lockfile is newer than its node_modules (root, forge,
 //                                          forge/static/app), then the gates, reads the e2e results, appends the row; the open
 //                                          cycle is the --repo's, else the file's repo's, else the only one open
+//   cycle reverify --n <n> [--repo <r>]   the same gates and e2e again on cycle n's unchanged tree (HEAD past it only by
+//                                          record-only commits); appends a kind "reverify" row, the cycle's newest verdict
 //   triage check --verdicts <json> --inbox <key>   reject/snooze share and the day's caps, before verdicts are recorded
 //   modules bar [--instruments <dir>]      the five-part bar per Dowser module; writes docs/evals/temper/modules.json
 //   proposals resolve --id <p> --commit <sha> [--note t]   a landed fix of a lens-scan proposal, for the bar
@@ -505,12 +507,36 @@ function clock(ctx, f) {
 
 // ------------------------------------------------------------------------------------------------ cycles
 
-/** Cycle rows of one day, or of every day. @param {string} root @param {string} [date] */
-export function cycleRows(root, date) {
+/** The raw rows (cycle and reverify) of one day, or of every day. @param {string} root @param {string} [date] */
+function dayRows(root, date) {
   const dir = paths(root).records;
   if (!existsSync(dir)) return [];
   const files = date ? [`${date}.jsonl`] : readdirSync(dir).filter((n) => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(n)).sort();
-  return files.flatMap((n) => readJsonl(join(dir, n))).filter((r) => r.kind === 'cycle');
+  return files.flatMap((n) => readJsonl(join(dir, n)));
+}
+
+/**
+ * Each cycle with its newest verdict: a later `kind: "reverify"` row of the same date, repo and n replaces the cycle's
+ * head, green, red_because and verified, and `reverified` keeps what it replaced. The bar, the report and land read
+ * these. @param {any[]} rows
+ */
+export function newestVerdicts(rows) {
+  const key = (/** @type {any} */ r) => `${r.date}|${r.repo ?? 'dowser'}|${r.n}`;
+  /** @type {Map<string, any>} */
+  const last = new Map();
+  for (const r of rows) if (r.kind === 'reverify') last.set(key(r), r);
+  return rows.filter((r) => r.kind === 'cycle').map((c) => {
+    const v = last.get(key(c));
+    if (!v) return c;
+    const { red_because: _rb, ...rest } = c;
+    return { ...rest, head: v.head, green: v.green, ...(v.green ? {} : { red_because: v.red_because ?? [] }), verified: v.verified,
+      reverified: { at: v.at, first: { head: c.head, green: c.green, ...(c.red_because ? { red_because: c.red_because } : {}) } } };
+  });
+}
+
+/** Cycle rows of one day, or of every day, each with its newest verdict. @param {string} root @param {string} [date] */
+export function cycleRows(root, date) {
+  return newestVerdicts(dayRows(root, date));
 }
 
 /** The other repos are scanned every second day: due when the ledger has no scan of the inbox today or yesterday. @param {Ctx} ctx @param {any} charter @param {string} date */
@@ -906,6 +932,52 @@ function cycleEnd(ctx, f) {
   return row;
 }
 
+/**
+ * cycle reverify --n <n> [--repo r]: re-runs the same gates and e2e on the unchanged tree of a cycle of the day, for a
+ * red that was environmental (a stale node_modules, a dead dev server). HEAD must be the cycle's head, or past it only
+ * by record-only commits (docs/evals/temper/), and the tree must be clean outside the records. It appends a
+ * `kind: "reverify"` row, which becomes the cycle's newest verdict; a green one moves the day's last green to HEAD.
+ * The cycle's own row is never rewritten.
+ * @param {Ctx} ctx @param {Record<string, string | true>} f
+ */
+function cycleReverify(ctx, f) {
+  const charter = needCharter(ctx);
+  const day = needDay(ctx);
+  const n = typeof f.n === 'string' && /^\d+$/.test(f.n) ? Number(f.n) : NaN;
+  if (!Number.isInteger(n) || n < 1) throw new UsageError('cycle reverify needs --n <cycle number>');
+  const rows = dayRows(ctx.root, day.date);
+  const mine = rows.filter((r) => r.kind === 'cycle' && r.n === n && (typeof f.repo !== 'string' || (r.repo ?? 'dowser') === f.repo));
+  if (!mine.length) throw new Refusal(`no cycle ${n}${typeof f.repo === 'string' ? ` in ${f.repo}` : ''} on ${day.date}`);
+  const c = mine[0];
+  const repo = repoOf(charter, c.repo ?? 'dowser');
+  const isDowser = repo.name === 'dowser';
+  const dir = isDowser ? ctx.root : day.repos?.[repo.name]?.worktree;
+  if (typeof dir !== 'string' || !existsSync(dir)) throw new Refusal(`${repo.name}'s day worktree is gone`);
+  if (typeof c.head !== 'string') throw new Refusal(`cycle ${n} recorded no head`);
+  const head = gitIn(ctx, dir, 'rev-parse', 'HEAD');
+  const RECORDS = 'docs/evals/temper/';
+  if (head !== c.head) {
+    if (!gitOkIn(ctx, dir, 'merge-base', '--is-ancestor', c.head, head)) throw new Refusal(`HEAD ${head.slice(0, 7)} is not past cycle ${n}'s head ${c.head.slice(0, 7)}: a reverify checks that cycle's tree only`);
+    const changed = gitIn(ctx, dir, 'diff', '--name-only', c.head, head).split(/\r?\n/).filter(Boolean).filter((x) => !x.startsWith(RECORDS));
+    if (changed.length) throw new Refusal(`HEAD moved past cycle ${n}'s head ${c.head.slice(0, 7)} with more than record-only commits (${changed.slice(0, 5).join(', ')}${changed.length > 5 ? ', ...' : ''}): end a new cycle instead`);
+  }
+  const dirty = ctx.run('git', ['-C', dir, 'status', '--porcelain', '--untracked-files=no']).stdout.split(/\r?\n/).filter(Boolean)
+    .filter((l) => !l.slice(3).replaceAll('\\', '/').startsWith(RECORDS));
+  if (dirty.length) throw new Refusal(`${dir} has uncommitted changes outside ${RECORDS}: a reverify checks the committed tree`);
+  const start = ctx.now();
+  const v = verifyTree(ctx, repo, dir, start.getTime());
+  const prev = newestVerdicts(rows).find((r) => r.n === n && (r.repo ?? 'dowser') === repo.name);
+  const row = {
+    kind: 'reverify', n, date: c.date, repo: repo.name, target: c.target, at: start.toISOString(), head, of_head: c.head,
+    before: { green: prev?.green ?? c.green, ...(prev?.red_because ? { red_because: prev.red_because } : {}) },
+    green: v.green, ...(v.green ? {} : { red_because: v.why }), verified: v.verified,
+  };
+  mkdirSync(paths(ctx.root).records, { recursive: true });
+  appendFileSync(join(paths(ctx.root).records, `${c.date}.jsonl`), `${JSON.stringify(row)}\n`);
+  if (v.green && isDowser) { day.last_green = head; writeJson(paths(ctx.root).day, day); }
+  return row;
+}
+
 /** @param {Ctx} ctx @param {Record<string, string | true>} f */
 function triageCheck(ctx, f) {
   if (typeof f.verdicts !== 'string') throw new UsageError('triage check needs --verdicts <json>');
@@ -1050,7 +1122,7 @@ export function readInstruments(ctx, { dir, inbox }) {
       ...(Array.isArray(props) && Array.isArray(st?.features) ? { lens: { proposals: props, features: st.features } } : {}),
       ...(res && typeof res === 'object' ? { resolved: res } : {}),
       scans: readJsonl(at('scans.jsonl')), quality: readJsonl(at('quality.jsonl')),
-      cycles: existsSync(at('cycles.jsonl')) ? readJsonl(at('cycles.jsonl')) : cycleRows(ctx.root),
+      cycles: existsSync(at('cycles.jsonl')) ? newestVerdicts(readJsonl(at('cycles.jsonl'))) : cycleRows(ctx.root),
       ...(cov ? { coverage: cov } : {}), ...(inbox ? { inbox } : {}),
     };
   }
@@ -1157,7 +1229,10 @@ export function renderReport(d) {
   const cp = claims.reduce((n, u) => n + (Number(u.pass) || 0), 0), cf = claims.reduce((n, u) => n + (Number(u.fail) || 0), 0);
   L.push(`| self-reported (cycle files) | ${cp} | ${cf} | | ${cp + cf ? `${Math.round((100 * cp) / (cp + cf))}%` : 'n/a'} |`);
   L.push('', `Cycles: ${d.cycles.length}, green ${d.cycles.filter((r) => r.green).length}.`);
-  for (const r of d.cycles) L.push(`- ${r.n} ${r.repo ?? 'dowser'} ${r.target}: ${r.green ? 'green' : `red (${(r.red_because ?? []).join('; ')})`}${r.quota && !r.quota.ok ? ', reject share under 20%' : ''}`);
+  for (const r of d.cycles) {
+    const re = r.reverified ? `, reverified at ${String(r.head).slice(0, 7)} (first ${r.reverified.first.green ? 'green' : `red: ${(r.reverified.first.red_because ?? []).join('; ')}`})` : '';
+    L.push(`- ${r.n} ${r.repo ?? 'dowser'} ${r.target}: ${r.green ? 'green' : `red (${(r.red_because ?? []).join('; ')})`}${re}${r.quota && !r.quota.ok ? ', reject share under 20%' : ''}`);
+  }
   L.push('', '## Scans and costs', '');
   if (d.scans.length) {
     L.push('| inbox | focus | cards created | minutes | cost |', '|---|---|---|---|---|');
@@ -1461,8 +1536,8 @@ function land(ctx, f) {
 
 // ------------------------------------------------------------------------------------------------- main
 
-const SPEC = { values: ['from', 'operator', 'date', 'approve', 'veto', 'target', 'file', 'verdicts', 'instruments', 'inbox', 'until', 'repo', 'paths', 'title', 'status', 'id', 'commit', 'note'], bool: ['dry-run', 'rate-limited'] };
-const USAGE = 'usage: temper.mjs charter init --from <json> --operator <name> | charter show | day start|resume|end | repo start|end --repo <r> | cycle begin --target <t> [--repo <r>] | cycle end --file <f> | triage check --verdicts <f> --inbox <k> | modules bar | proposals resolve --id <p> --commit <sha> [--note t] | clock | report | land [--repo <r>] [--dry-run]';
+const SPEC = { values: ['from', 'operator', 'date', 'approve', 'veto', 'target', 'file', 'verdicts', 'instruments', 'inbox', 'until', 'repo', 'paths', 'title', 'status', 'id', 'commit', 'note', 'n'], bool: ['dry-run', 'rate-limited'] };
+const USAGE = 'usage: temper.mjs charter init --from <json> --operator <name> | charter show | day start|resume|end | repo start|end --repo <r> | cycle begin --target <t> [--repo <r>] | cycle end --file <f> | cycle reverify --n <n> [--repo <r>] | triage check --verdicts <f> --inbox <k> | modules bar | proposals resolve --id <p> --commit <sha> [--note t] | clock | report | land [--repo <r>] [--dry-run]';
 
 /**
  * Runs one command. @param {string[]} argv @param {Ctx} [ctx]
@@ -1480,13 +1555,13 @@ export function main(argv, ctx = realCtx()) {
       'charter init': () => charterInit(ctx, f), 'charter show': () => needCharter(ctx),
       'day start': () => dayStart(ctx, f), 'day resume': () => dayResume(ctx), 'day end': () => dayEnd(ctx),
       'repo start': () => repoStart(ctx, f), 'repo end': () => repoEnd(ctx, f),
-      'cycle begin': () => cycleBegin(ctx, f), 'cycle end': () => cycleEnd(ctx, f), 'triage check': () => triageCheck(ctx, f),
+      'cycle begin': () => cycleBegin(ctx, f), 'cycle end': () => cycleEnd(ctx, f), 'cycle reverify': () => cycleReverify(ctx, f), 'triage check': () => triageCheck(ctx, f),
       'modules bar': () => modulesBar(ctx, f), 'proposals resolve': () => proposalsResolve(ctx, f), 'clock ': () => clock(ctx, f), 'report ': () => report(ctx, f), 'land ': () => land(ctx, f),
     };
     const run = table[`${cmd} ${sub}`];
     if (!run) throw new UsageError(`unknown command ${[cmd, sub].filter(Boolean).join(' ') || '(none)'}`);
     const out = run();
-    const red = (cmd === 'land' && out.ok === false && !out.dry_run) || (cmd === 'cycle' && sub === 'end' && out.green === false);
+    const red = (cmd === 'land' && out.ok === false && !out.dry_run) || (cmd === 'cycle' && ['end', 'reverify'].includes(sub) && out.green === false);
     return { code: red ? 1 : 0, out };
   } catch (e) {
     if (e instanceof UsageError) return { code: 2, out: { ok: false, error: e.message, usage: USAGE } };

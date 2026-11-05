@@ -41,7 +41,9 @@ scans that the loop starts keep theirs.
    tree (the runner's own results are self-reported). Write the cycle file (with its `repo` when it is not Dowser),
    run `T cycle end --file <cycle.json> [--repo <r>]`,
    and commit `docs/evals/temper/`
-   (`chore(temper): cycle <n> record`). On exit 1 (red), revert this cycle's build commits (`git revert`) so the
+   (`chore(temper): cycle <n> record`). When the red was environmental (a stale `node_modules`, a dead server) and
+   the cause is fixed, `T cycle reverify --n <n>` re-runs the same gates and e2e on that cycle's unchanged tree
+   (references/cycle.md). Otherwise, on exit 1 (red), revert this cycle's build commits (`git revert`) so the
    branch is back at the last green tree, and park the item with its reason.
 
 ## 2. Day end

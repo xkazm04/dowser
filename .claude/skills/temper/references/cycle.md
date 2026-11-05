@@ -77,6 +77,19 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   rating stays the operator's, so nothing is written to Forge.
 - `T modules bar`, then the cycle file and `T cycle end`.
 
+## Reverify an environmental red
+
+A red caused by the environment, not by the build (the main checkout's `node_modules` predated a merge, a dev server
+held a port), is not fixed by reverting the build. Fix the cause, then run `T cycle reverify --n <n> [--repo <r>]`.
+
+- It runs exactly what `cycle end` runs (dependency sync, gates, fixture and local e2e) on that cycle's tree, and
+  reads only e2e results written after it started.
+- HEAD must be the cycle's recorded head, or past it only by record-only commits (changes under
+  `docs/evals/temper/`), and the tree must be clean outside the records. Anything else is refused: end a new cycle.
+- It appends a `kind: "reverify"` row (`head`, `of_head`, `before`, `green`, `red_because`, `verified`). The cycle's
+  row is never rewritten. The newest verdict per cycle is what the bar, `report` (as "reverified at ...") and `land`
+  (the rollback target) read. A green reverify moves the day's last green to HEAD.
+
 ## The cycle file
 
 ```json
