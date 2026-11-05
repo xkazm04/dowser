@@ -12,7 +12,8 @@
 //   repo start --repo <name> [--paths a,b] [--title t]   another build repo's branch in a worktree (+ its ledger)
 //   repo end --repo <name> [--status t]
 //   cycle begin --target <module>|direction:<id> | --repo <name> --target <focus>
-//   cycle end --file <cycle.json>          runs the gates, reads the e2e results, appends the row
+//   cycle end --file <cycle.json> [--repo <r>]   runs the gates, reads the e2e results, appends the row; the open
+//                                          cycle is the --repo's, else the file's repo's, else the only one open
 //   triage check --verdicts <json> --inbox <key>   reject/snooze share and the day's caps, before verdicts are recorded
 //   modules bar [--instruments <dir>]      the five-part bar per Dowser module; writes docs/evals/temper/modules.json
 //   clock [--rate-limited --until <iso>]   {elapsed_min, remaining_min, ends_at, drain, stop}
@@ -109,11 +110,37 @@ export const paths = (root) => ({
   state: join(root, '.temper'),
   charter: join(root, '.temper', 'charter.json'),
   day: join(root, '.temper', 'day.json'),
-  cycle: join(root, '.temper', 'cycle.json'),
+  /** the one open cycle file of the first version (repo dowser); read as Dowser's open cycle so a live day continues */
+  legacyCycle: join(root, '.temper', 'cycle.json'),
   directions: join(root, '.temper', 'directions.json'),
   records: join(root, 'docs', 'evals', 'temper'),
   results: join(root, 'e2e', 'results'),
 });
+
+/** The open cycle of one repo: one file per repo, so builds in several repos run in parallel. @param {string} root @param {string} repo */
+export const cycleFile = (root, repo) => join(root, '.temper', `cycle-${repo}.json`);
+
+/**
+ * Every open cycle, by repo, with the file that holds it. The first version's `.temper/cycle.json` counts as the open
+ * cycle of the repo it names (dowser when it names none), unless that repo already has its own file.
+ * @param {string} root @returns {Record<string, {file: string, cycle: any}>}
+ */
+export function openCycles(root) {
+  const dir = join(root, '.temper');
+  /** @type {Record<string, {file: string, cycle: any}>} */
+  const out = {};
+  if (!existsSync(dir)) return out;
+  for (const n of readdirSync(dir).sort()) {
+    const m = n.match(/^cycle-([a-z0-9][a-z0-9-]*)\.json$/);
+    if (m) out[m[1]] = { file: join(dir, n), cycle: readJson(join(dir, n)) };
+  }
+  const legacy = readJson(paths(root).legacyCycle);
+  if (legacy) { const r = typeof legacy.repo === 'string' ? legacy.repo : 'dowser'; if (!out[r]) out[r] = { file: paths(root).legacyCycle, cycle: { ...legacy, repo: r } }; }
+  return out;
+}
+
+/** "cycle 1 (lenses) in dowser, cycle 2 (area:src) in bp" @param {Record<string, {cycle: any}>} open */
+const describeOpen = (open) => Object.entries(open).map(([r, o]) => `cycle ${o.cycle.n} (${o.cycle.target}) in ${r}`).join(', ');
 
 /** @param {string} file @returns {any} undefined when the file is absent */
 export function readJson(file) {
@@ -315,7 +342,7 @@ function dayStart(ctx, f) {
   for (const [n, text] of records) writeFileSync(join(p.records, n), text);
   const day = { date, branch, base, last_green: base, started_at: ctx.now().toISOString(), repos: {} };
   writeJson(p.day, day);
-  if (existsSync(p.cycle)) rmSync(p.cycle);
+  for (const o of Object.values(openCycles(ctx.root))) rmSync(o.file);
   return { ...day, clock: clockOf(ctx, day), other_repos_due: otherReposDue(ctx, charter, date), approved: approve, vetoed: veto };
 }
 
@@ -330,15 +357,17 @@ function dayResume(ctx) {
   }
   day.resumed = [...(day.resumed ?? []), ctx.now().toISOString()];
   writeJson(paths(ctx.root).day, day);
-  const open = readJson(paths(ctx.root).cycle);
-  return { date: day.date, branch: day.branch, repos: day.repos ?? {}, ...(open ? { open_cycle: open } : {}), clock: clockOf(ctx, day),
-    next: open ? `cycle ${open.n} (${open.target}) was open: re-read its files and finish it with cycle end` : 'cycle begin' };
+  const open = openCycles(ctx.root);
+  const cycles = Object.values(open).map((o) => o.cycle);
+  return { date: day.date, branch: day.branch, repos: day.repos ?? {}, ...(cycles.length ? { open_cycles: cycles } : {}), clock: clockOf(ctx, day),
+    next: cycles.length ? `${describeOpen(open)} ${cycles.length > 1 ? 'were' : 'was'} open: re-read the files and finish each with cycle end --file <f> --repo <r>` : 'cycle begin' };
 }
 
 /** @param {Ctx} ctx */
 function dayEnd(ctx) {
   const day = needDay(ctx);
-  if (existsSync(paths(ctx.root).cycle)) throw new Refusal('a cycle is still open: end it first (cycle end)');
+  const openNow = openCycles(ctx.root);
+  if (Object.keys(openNow).length) throw new Refusal(`${describeOpen(openNow)} still open: end each first (cycle end --file <f> --repo <r>)`);
   const open = Object.entries(day.repos ?? {}).filter(([, r]) => /** @type {any} */ (r).registered && !/** @type {any} */ (r).ended_at).map(([k]) => k);
   if (open.length) throw new Refusal(`deregister first: repo end --repo ${open.join(', ')}`);
   day.ended_at = ctx.now().toISOString();
@@ -476,13 +505,12 @@ function cycleBegin(ctx, f) {
   const charter = needCharter(ctx);
   const day = needDay(ctx);
   if (day.ended_at) throw new Refusal(`the day ${day.date} has ended`);
-  const p = paths(ctx.root);
-  const open = readJson(p.cycle);
-  if (open) throw new Refusal(`cycle ${open.n} (${open.target}) is still open: end it first`);
   const c = clockOf(ctx, day);
   if (c.drain) throw new Refusal(c.rate_limited_until ? `draining: rate-limited until ${c.rate_limited_until}` : `draining: ${c.remaining_min} min left before ${c.ends_at}`);
   if (typeof f.target !== 'string') throw new UsageError('cycle begin needs --target <module>|direction:<id> (or --repo <name> --target <focus>)');
   const repo = typeof f.repo === 'string' ? repoOf(charter, f.repo) : dowserRepo(charter);
+  const openNow = openCycles(ctx.root);
+  if (openNow[repo.name]) throw new Refusal(`cycle ${openNow[repo.name].cycle.n} (${openNow[repo.name].cycle.target}) is still open in ${repo.name}: end it first (one open cycle per repo)`);
   /** @type {Record<string, unknown>} */
   let t;
   if (repo.name === 'dowser') t = resolveTarget(ctx, f.target);
@@ -494,8 +522,11 @@ function cycleBegin(ctx, f) {
     t = { kind: 'focus', focus, worktree: day.repos[repo.name].worktree, branch: day.repos[repo.name].branch, item_gates: repo.gates.filter((g) => g.when === 'item').map((g) => g.run) };
   }
   const head = repo.name === 'dowser' ? git(ctx, 'rev-parse', 'HEAD') : gitIn(ctx, day.repos[repo.name].worktree, 'rev-parse', 'HEAD');
-  const cycle = { n: cycleRows(ctx.root, day.date).length + 1, date: day.date, repo: repo.name, target: f.target, begun_at: ctx.now().toISOString(), head };
-  writeJson(p.cycle, cycle);
+  // numbers stay unique per day across repos: past the day's rows and every open cycle
+  const n = Math.max(0, ...cycleRows(ctx.root, day.date).map((r) => (Number.isInteger(r.n) ? r.n : 0)),
+    ...Object.values(openNow).filter((o) => o.cycle.date === day.date).map((o) => (Number.isInteger(o.cycle.n) ? o.cycle.n : 0))) + 1;
+  const cycle = { n, date: day.date, repo: repo.name, target: f.target, begun_at: ctx.now().toISOString(), head };
+  writeJson(cycleFile(ctx.root, repo.name), cycle);
   const scan = (/** @type {string} */ path, /** @type {string} */ inbox, /** @type {unknown} */ focus) =>
     `node tools/temper-scan.mjs --repo "${path}" --project-key ${inbox}${typeof focus === 'string' ? ` --focus "${focus}"` : ''} --budget-usd 8`;
   return {
@@ -639,11 +670,18 @@ function cycleEnd(ctx, f) {
   const charter = needCharter(ctx);
   const day = needDay(ctx);
   const p = paths(ctx.root);
-  const open = readJson(p.cycle);
-  if (!open) throw new Refusal('no open cycle: run cycle begin');
   if (typeof f.file !== 'string') throw new UsageError('cycle end needs --file <cycle.json>');
   const raw = readJson(resolve(f.file));
   if (raw === undefined) throw new UsageError(`--file ${f.file} does not exist`);
+  // which open cycle: --repo, else the file's repo, else the only one open
+  const all = openCycles(ctx.root);
+  if (typeof f.repo === 'string' && typeof raw?.repo === 'string' && f.repo !== raw.repo) throw new UsageError(`--repo ${f.repo} and the file's repo ${raw.repo} differ`);
+  const want = typeof f.repo === 'string' ? f.repo : typeof raw?.repo === 'string' ? raw.repo : undefined;
+  if (!Object.keys(all).length) throw new Refusal('no open cycle: run cycle begin');
+  if (want === undefined && Object.keys(all).length > 1) throw new UsageError(`${describeOpen(all)} are open: name the repo (the file's repo, or --repo <r>)`);
+  const slot = want === undefined ? Object.values(all)[0] : all[want];
+  if (!slot) throw new Refusal(`no open cycle in ${want} (open: ${describeOpen(all)})`);
+  const open = slot.cycle;
   const bar = readJson(join(p.records, 'modules.json'));
   const dirs = readDirections(ctx);
   /** @type {Record<string, number>} */
@@ -679,7 +717,7 @@ function cycleEnd(ctx, f) {
   };
   mkdirSync(p.records, { recursive: true });
   appendFileSync(join(p.records, `${open.date}.jsonl`), `${JSON.stringify(row)}\n`);
-  rmSync(p.cycle);
+  rmSync(slot.file);
   if (green && isDowser) { day.last_green = head; writeJson(p.day, day); }
   if (raw.directions?.length) {
     for (const d of raw.directions) dirs.proposed[d.id] = { ...d, proposed_on: open.date };
@@ -1029,7 +1067,8 @@ export function landPlan(ctx, day, repo) {
   if (!gitOk(ctx, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`)) throw new Refusal(`${branch} is gone`);
   if (git(ctx, 'rev-parse', '--abbrev-ref', 'HEAD') !== branch) throw new Refusal(`check out ${branch} first`);
   if (!cleanTree(ctx)) throw new Refusal('the working tree has uncommitted changes');
-  if (existsSync(paths(ctx.root).cycle)) throw new Refusal('a cycle is still open: end it first');
+  const openNow = openCycles(ctx.root);
+  if (Object.keys(openNow).length) throw new Refusal(`${describeOpen(openNow)} still open: end each first`);
   const ahead = Number(git(ctx, 'rev-list', '--count', `master..${branch}`));
   const head = git(ctx, 'rev-parse', 'HEAD');
   if (!ahead) return { repo: 'dowser', landing: 'loop-ff', decision: 'none', branch, head, reasons: ['nothing on the branch beyond master'], steps: [] };
@@ -1062,6 +1101,8 @@ export function landPlan(ctx, day, repo) {
 export function repoLand(ctx, day, repo, dry) {
   const s = day.repos?.[repo.name];
   if (!s) throw new Refusal(`${repo.name} was not started today (repo start)`);
+  const openNow = openCycles(ctx.root);
+  if (Object.keys(openNow).length) throw new Refusal(`${describeOpen(openNow)} still open: end each first`);
   const wt = s.worktree;
   if (!cleanTree(ctx, wt)) throw new Refusal(`${repo.name}: ${wt} has uncommitted changes`);
   const head0 = gitIn(ctx, wt, 'rev-parse', 'HEAD');

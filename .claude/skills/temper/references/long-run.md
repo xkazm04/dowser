@@ -28,7 +28,9 @@
 
 ## Resume a killed day
 
-`T day resume` checks out the day branch, notes the resume, and prints the open cycle, if any, and the clock. When a
+`T day resume` checks out the day branch, notes the resume, and prints every open cycle (`open_cycles`, one per repo)
+and the clock. A `.temper/cycle.json` left by the first version is read as the open cycle of the repo it names
+(Dowser), so a day begun before per-repo cycles continues; end it with `T cycle end --file <f> --repo dowser`. When a
 cycle was open, re-read its files: the cycle row is missing, and the subagents' result files are in the temp folder.
 Re-run the step that has no result file. If you cannot tell, end the cycle red with a `parked` note and start a new
 one. Worktrees of other repos survive in `~/.temper/worktrees/`, and `day.json` keeps them under `repos`.

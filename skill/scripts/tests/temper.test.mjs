@@ -392,6 +392,52 @@ test('repo start/land: bp rebases onto origin/master and pushes HEAD:master only
   assert.equal(main(['day', 'end'], w.ctx).code, 0);
 });
 
+/** Dowser plus a bp build repo under one charter, the day started. @param {ReturnType<typeof world>} w */
+function twoRepoDay(w) {
+  const { bp } = otherRepos(w);
+  const draft = join(w.work, 'draft2.json');
+  put(draft, { repos: [{ name: 'dowser', path: w.root, inbox_key: 'dowser-temper', build: true },
+    { name: 'bp', path: bp, inbox_key: 'bp-temper', build: true, landing: { kind: 'rebase-push' }, gates: ['npm run check'] }] });
+  assert.equal(main(['charter', 'init', '--from', draft, '--operator', 'Op'], w.ctx).code, 0);
+  assert.equal(main(['day', 'start', '--date', '2026-11-05'], w.ctx).code, 0);
+  assert.equal(main(['repo', 'start', '--repo', 'bp'], w.ctx).code, 0);
+  return { bp };
+}
+
+test('cycles per repo: bp begins while Dowser\'s cycle is open (the first version\'s cycle.json included), numbers stay unique, end resolves by repo', () => {
+  const w = world();
+  twoRepoDay(w);
+  // the live day of the first version: .temper/cycle.json holds Dowser's cycle 1
+  const legacy = join(w.root, '.temper', 'cycle.json');
+  put(legacy, { n: 1, date: '2026-11-05', repo: 'dowser', target: 'lenses', begun_at: new Date(Date.now() - 120000).toISOString(), head: g(w.root, 'rev-parse', 'HEAD') });
+  assert.match(main(['cycle', 'begin', '--target', 'tooling'], w.ctx).out.error, /cycle 1 \(lenses\) is still open in dowser/);
+  const b = main(['cycle', 'begin', '--repo', 'bp', '--target', 'area:README.md'], w.ctx);
+  assert.equal(b.code, 0, JSON.stringify(b.out));
+  assert.equal(b.out.n, 2, 'a number unique across repos');
+  assert.ok(existsSync(join(w.root, '.temper', 'cycle-bp.json')));
+  assert.match(main(['cycle', 'begin', '--repo', 'bp', '--target', 'area:README.md'], w.ctx).out.error, /still open in bp/);
+  const resumed = main(['day', 'resume'], w.ctx);
+  assert.deepEqual(resumed.out.open_cycles.map((/** @type {any} */ c) => [c.repo, c.n]), [['bp', 2], ['dowser', 1]]);
+  assert.match(main(['day', 'end'], w.ctx).out.error, /cycle 2 \(area:README.md\) in bp, cycle 1 \(lenses\) in dowser still open/);
+  assert.match(main(['land', '--dry-run'], w.ctx).out.error, /still open/);
+  assert.match(main(['land', '--repo', 'bp', '--dry-run'], w.ctx).out.error, /still open/);
+  const file = join(w.work, 'c.json');
+  put(file, { target: 'lenses' });
+  assert.equal(main(['cycle', 'end', '--file', file], w.ctx).code, 2, 'two open and no repo named');
+  assert.equal(main(['cycle', 'end', '--file', file, '--repo', 'personas'], w.ctx).code, 1, 'no open cycle there');
+  put(file, { target: 'area:README.md', repo: 'bp' });
+  const e = main(['cycle', 'end', '--file', file], w.ctx);
+  assert.equal(e.code, 0, JSON.stringify(e.out));
+  assert.deepEqual([e.out.repo, e.out.n], ['bp', 2]);
+  assert.equal(existsSync(join(w.root, '.temper', 'cycle-bp.json')), false);
+  // Dowser's cycle begun by the first version ends through --repo (the file names none), and its file goes
+  put(file, { target: 'lenses' });
+  const d = main(['cycle', 'end', '--file', file, '--repo', 'dowser'], w.ctx);
+  assert.deepEqual([d.out.repo, d.out.n, d.out.target], ['dowser', 1, 'lenses']);
+  assert.equal(existsSync(legacy), false);
+  assert.equal(main(['cycle', 'begin', '--target', 'tooling'], w.ctx).out.n, 3);
+});
+
 test('secretScan: env files and token shapes in added lines, never .env.example, names only', () => {
   assert.deepEqual(secretScan('a.txt\n.env.example\nsub/.env.local', '+++ b/a.txt\n+hello'), { clean: false, hits: [{ file: 'sub/.env.local', pattern: 'env-file' }] });
   assert.equal(secretScan('a.txt', '+++ b/a.txt\n-AKIAABCDEFGHIJKLMNOP\n+fine').clean, true, 'a removed line is no leak');

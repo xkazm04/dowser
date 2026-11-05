@@ -35,13 +35,17 @@ scans that the loop starts keep theirs.
    repo is `--repo <name> --target "area: <path>"`.
 3. `T cycle begin --target <t> [--repo <r>]`, then run the cycle as references/cycle.md says. Its steps are scan,
    triage, build, simulated UAT and update.
-4. Write the cycle file, run `T cycle end --file <cycle.json>`, and commit `docs/evals/temper/`
+   Each repo has its own open cycle (`.temper/cycle-<repo>.json`), so a bp cycle can run beside a Dowser one. Cycle
+   numbers stay unique across repos for the day.
+4. Write the cycle file (with its `repo` when it is not Dowser), run `T cycle end --file <cycle.json> [--repo <r>]`,
+   and commit `docs/evals/temper/`
    (`chore(temper): cycle <n> record`). On exit 1 (red), revert this cycle's build commits (`git revert`) so the
    branch is back at the last green tree, and park the item with its reason.
 
 ## 2. Day end
 
-1. Finish or abandon the open cycle (`T cycle end`). Never leave one open.
+1. Finish or abandon every open cycle (`T cycle end --repo <r>` for each). Never leave one open: `day end` and `land`
+   refuse while any repo has one.
 2. `T modules bar`, then `T report`, then commit the records.
 3. `T land --dry-run --repo <name>` for each repo, then `T land --repo <name>` (Dowser last). See
    references/landing.md. Then `T repo end --repo <name>` for each started repo.
