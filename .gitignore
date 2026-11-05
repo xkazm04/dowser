@@ -16,3 +16,6 @@ node_modules/
 /.claude/rules/ai-registry-technical-writing.md
 /.ai/skill-runs.local.jsonl
 # END ai-registry linked skills
+
+# bp product blueprint: machine-local scan store (adopt-bp)
+.ai/lens-scan/
