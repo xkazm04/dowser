@@ -4,7 +4,7 @@ description: "Use when someone types /dowser, asks what the product should build
 argument-hint: "[goal: <text> | area: <path>]"
 category: workflow
 memory: user
-version: 0.2.0
+version: 0.3.0
 tags: backlog, product-discovery, triage, scan, jira
 ---
 # Dowser

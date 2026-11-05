@@ -1,6 +1,6 @@
 {
   "name": "dowser",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Dowser local-scan skill: evidence-backed, fingerprinted backlog proposals from a checked-out repo.",
   "type": "module",
