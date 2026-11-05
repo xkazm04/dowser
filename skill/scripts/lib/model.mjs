@@ -50,6 +50,8 @@ export const MVP_RULES = /** @type {const} */ (['top-score', 'override']);
 export const MACHINE_DECIDER = 'machine:dowser';
 /** The scan-score/1 breakdown keys, in order. */
 export const SCORE_PART_KEYS = /** @type {const} */ (['impact', 'confidence_w', 'effort_div', 'risk_factor', 'formula']);
+/** The score formulas a consumer accepts. A formula change is a new name (scan-score/2), added here, never an edit. */
+export const SCORE_FORMULAS = /** @type {const} */ (['scan-score/1']);
 /**
  * Length caps on the free-text and list fields of a candidate (chars for strings, items for lists). They bound
  * what one record may store, here and on push. Each sits well above what real scans write (measured on a
@@ -531,9 +533,17 @@ function computedProblem(o) {
     const x = extraKey(sp, [...SCORE_PART_KEYS]) ?? SCORE_PART_KEYS.find((k) => sp[k] === undefined);
     if (x) return `score_parts:${x} is unknown or missing`;
     if (!str(sp.formula)) return 'score_parts.formula:required';
+    if (!isOneOf(SCORE_FORMULAS, sp.formula)) return `score_parts.formula:must be one of ${SCORE_FORMULAS.join('|')}`;
     for (const k of ['impact', 'confidence_w', 'effort_div', 'risk_factor']) {
       if (typeof sp[k] !== 'number' || !Number.isFinite(sp[k])) return `score_parts.${k}:must be a number`;
     }
+    // the inbox sorts on score: it must be the number its own breakdown, on the record's own impact, produces
+    if (o.impact !== undefined && sp.impact !== o.impact) return 'score_parts.impact:must equal impact';
+    const n = /** @type {Record<string, number>} */ (sp);
+    if (!(n.effort_div > 0)) return 'score_parts.effort_div:must be above 0';
+    const expect = Math.round(((10 * n.impact * n.confidence_w) / n.effort_div) * n.risk_factor * 10) / 10;
+    // effort_div travels rounded to 3 decimals, so allow the rounding that adds
+    if (Math.abs(expect - /** @type {number} */ (o.score)) > 0.1 + 1e-9) return `score:does not match score_parts (${sp.formula} gives ${expect})`;
   }
   if (o.band !== undefined && !isOneOf(BANDS, o.band)) return `band:must be one of ${BANDS.join('|')}`;
   if (o.mvp !== undefined && o.mvp !== true) return 'mvp:true on a lens\'s top finding (omit otherwise)';

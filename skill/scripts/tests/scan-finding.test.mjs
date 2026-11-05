@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { COMPUTED_KEYS, DECIDER_GUARDS, MACHINE_DECIDER, deciderAllowed, sliceKey, validateCandidate } from '../lib/model.mjs';
+import { COMPUTED_KEYS, DECIDER_GUARDS, MACHINE_DECIDER, STORE_OWNED, deciderAllowed, sliceKey, validateCandidate } from '../lib/model.mjs';
 import { getProposal, move, openStore, propose, runFinish, runStart } from '../lib/store.mjs';
 import { allocateRun } from '../lib/budget.mjs';
 import { contextPack } from '../lib/memory.mjs';
@@ -43,7 +43,7 @@ test('validate: the judge writes impact/why, risk, category, a predicted verdict
   assert.match(ok({ effort: { size: 'S', score: 0 } }), /^effort\.score:/);
   assert.match(ok({ impact: 3, impact_why: 'two\nlines' }), /^impact_why:one line/);
   for (const k of COMPUTED_KEYS) assert.match(ok({ [k]: k === 'mvp' ? true : 'x' }), new RegExp(`^store-computed-field:${k}`), k);
-  const wire = validateCandidate({ ...candidate(), score: 12.5, score_parts: { impact: 3, confidence_w: 0.95, effort_div: 1.111, risk_factor: 0.75, formula: 'scan-score/1' }, band: 'reserve', mvp: true, pretriaged_by: MACHINE_DECIDER }, { wire: true });
+  const wire = validateCandidate({ ...candidate(), score: 19.2, score_parts: { impact: 3, confidence_w: 0.95, effort_div: 1.111, risk_factor: 0.75, formula: 'scan-score/1' }, band: 'reserve', mvp: true, pretriaged_by: MACHINE_DECIDER }, { wire: true });
   assert.equal(wire.ok, true, wire.ok ? '' : wire.why);
 });
 
@@ -274,5 +274,27 @@ test('trust lose rule: a snooze of a machine pre-triaged card is a reversal, and
     assert.deepEqual(syncTrust(s.db), [], '19 items since the reset');
     decide(s, 1, 'reject', 'rejected', 'c');
     assert.deepEqual(syncTrust(s.db).map((e) => [e.from, e.to, e.n]), [[0, 1, 20]]);
+  } finally { s.done(); }
+});
+
+test('wire: a score its own breakdown and impact do not produce is refused; the store\'s own scores pass', () => {
+  const why = (/** @type {Record<string, unknown>} */ o) => { const r = validateCandidate({ ...candidate(), ...o }, { wire: true }); return r.ok ? 'ok' : r.why; };
+  // impact 2, confidence high, size S, blast low: scan-score/1 gives 16.2
+  const honest = { impact: 2, impact_why: 'x', confidence: 'high', score: 16.2, score_parts: { impact: 2, confidence_w: 0.95, effort_div: 1.111, risk_factor: 0.95, formula: 'scan-score/1' } };
+  assert.equal(why(honest), 'ok');
+  assert.match(why({ ...honest, score: 95 }), /^score:does not match score_parts \(scan-score\/1 gives 16\.2\)/);
+  assert.match(why({ ...honest, score_parts: { ...honest.score_parts, formula: 'made-up' } }), /^score_parts\.formula:must be one of scan-score\/1/);
+  assert.match(why({ ...honest, score: 95, score_parts: { impact: 9, confidence_w: 7, effort_div: 0.1, risk_factor: 3, formula: 'made-up' } }), /^score_parts\.formula:/);
+  assert.match(why({ ...honest, score: 61.6, score_parts: { ...honest.score_parts, impact: 8 } }), /^score_parts\.impact:must equal impact/);
+  // every score the store computes passes its own wire check
+  const s = fresh();
+  try {
+    for (const [i, c] of /** @type {const} */ ([[8, 'medium', 'M', 'low'], [7, 'high', 'S', 'low'], [10, 'low', 'XL', 'high'], [1, 'high', 'XS', 'medium']]).entries()) {
+      const fp = String(s.prop({ topic: `scored ${i}`, anchors: [`src/s${i}.js`], impact: c[0], impact_why: 'x', confidence: c[1], effort: { size: c[2] }, delivery_risk: { blast: c[3] } }).fp);
+      // as Forge's push checks it: the store-owned fields (status, ...) are dropped first
+      const rec = Object.fromEntries(Object.entries(proposalRecord(s.db, fp)).filter(([k]) => !STORE_OWNED.includes(k)));
+      const r = validateCandidate(rec, { wire: true });
+      assert.equal(r.ok, true, r.ok ? '' : r.why);
+    }
   } finally { s.done(); }
 });
