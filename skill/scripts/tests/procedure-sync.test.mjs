@@ -120,3 +120,10 @@ test('the lens order in SKILL.md section 5 is LENSES, and every pack loads', () 
   assert.deepEqual([...m[1].matchAll(/`([a-z-]+)`/g)].map((x) => x[1]), [...LENSES]);
   for (const lens of LENSES) assert.equal(loadLensPack(lens).id, lens);
 });
+
+test('every --focus value SKILL.md tells the agent to pass is one run start accepts (no space after the colon)', () => {
+  const md = readFileSync(join(SKILL, 'SKILL.md'), 'utf8');
+  const values = [...md.matchAll(/--focus "([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(values.length >= 2, 'SKILL.md names the goal and area forms');
+  for (const v of values) assert.match(v, /^(goal|area):\S/, `--focus "${v}" is refused by run start`);
+});
