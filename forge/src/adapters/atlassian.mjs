@@ -25,7 +25,7 @@
 import * as forgeApi from '@forge/api';
 import { htmlToText, trimText } from '../core/adf.mjs';
 import { BODY_MAX, TICKET_FIELDS, ticketItem } from '../core/sources.mjs';
-import { AppError, ISSUE_KEY_RE, omitAbsent } from '../core/util.mjs';
+import { AppError, ISSUE_KEY_RE, errTag, omitAbsent } from '../core/util.mjs';
 
 /**
  * @typedef {import('../core/ports.mjs').Jira} Jira
@@ -242,14 +242,21 @@ export const users = {
     /** @type {Record<string, string>} */
     const out = {};
     const ids = [...new Set(accountIds)].filter((a) => /^[A-Za-z0-9:_-]{1,128}$/.test(a));
+    /** @type {string[]} */
+    const failed = [];
     for (let i = 0; i < ids.length; i += 50) {
       try {
         const q = new URLSearchParams({ maxResults: '50' });
         for (const id of ids.slice(i, i + 50)) q.append('accountId', id);
         const page = await json(await api.asApp().requestJira(api.route`/rest/api/3/user/bulk?${q}`), 'Jira user bulk');
         for (const u of /** @type {any[]} */ (page.values ?? [])) if (u.accountId && u.displayName) out[String(u.accountId)] = String(u.displayName);
-      } catch { /* omit this batch's names */ }
+      } catch (e) {
+        failed.push(errTag(e)); // omit this batch's names
+      }
     }
+    // One line per call, so a lasting failure (a revoked read:jira-user scope, a 403) shows in the logs: the status of
+    // each failed batch and how many there were, never the ids.
+    if (failed.length) console.warn(JSON.stringify({ dowser: 'warn', what: 'user names', failed_batches: failed.length, batches: Math.ceil(ids.length / 50), errors: [...new Set(failed)] }));
     return out;
   },
 };

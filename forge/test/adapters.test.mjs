@@ -107,12 +107,20 @@ test('users.names skips a failed batch and keeps the others', async () => {
     return { status: 200, body: { values: asked.map((a) => ({ accountId: a, displayName: `Name ${a}` })) } };
   });
   const warn = console.warn;
-  console.warn = () => {};
+  /** @type {string[]} */
+  const lines = [];
+  console.warn = (/** @type {unknown} */ l) => { lines.push(String(l)); };
   try {
     const out = await users.names(ids);
     assert.equal(calls.length, 2, 'two batches of at most 50');
     assert.ok(calls.every((c) => c.who === 'app'));
     assert.deepEqual(Object.keys(out), ids.slice(50), 'the failed first batch is omitted, the second kept');
+    assert.equal(lines.length, 1, 'one warn line per call');
+    assert.deepEqual(JSON.parse(lines[0]), { dowser: 'warn', what: 'user names', failed_batches: 1, batches: 2, errors: ['HTTP 500'] });
+    assert.doesNotMatch(lines[0], /acc-/, 'never the ids');
+    lines.length = 0;
+    await users.names(ids.slice(50));
+    assert.deepEqual(lines, [], 'no failure, no line');
   } finally {
     console.warn = warn;
   }
