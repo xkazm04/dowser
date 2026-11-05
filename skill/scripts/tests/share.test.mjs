@@ -43,3 +43,27 @@ test('share keeps the Proposed line of a body written with CRLF line endings', (
   assert.match(out.markdown, /\*\*Proposed:\*\* Export orders as a CSV file\.\n/);
   assert.doesNotMatch(out.markdown, /\r/, 'no carriage return leaks into the markdown');
 });
+
+test('share --run keeps a run\'s cards after a later run re-sees them; the later run lists only what it created or grew', () => {
+  const r1 = runStart(db, { mode: 'full' }).id;
+  const a = String(propose(db, r1, candidate({ topic: 'reseen-card', title: 'Reseen card' }), { kinds: KINDS }).fp);
+  db.prepare("UPDATE proposals SET status = 'verified' WHERE fp = ?").run(a);
+  runFinish(db, { runId: r1, lenses: {} });
+
+  const r2 = runStart(db, { mode: 'full' }).id;
+  assert.equal(propose(db, r2, candidate({ topic: 'reseen-card', title: 'Reseen card' }), { kinds: KINDS }).result, 'duplicate');
+  const b = String(propose(db, r2, candidate({ topic: 'grown-card', title: 'Grown card', anchors: ['src/grown.js'] }), { kinds: KINDS }).fp);
+  db.prepare("UPDATE proposals SET status = 'verified' WHERE fp = ?").run(b);
+  runFinish(db, { runId: r2, lenses: {} });
+
+  assert.match(shareRun(db, r1).markdown, /## Reseen card/, 'r1 keeps its card');
+  const two = shareRun(db, r2);
+  assert.doesNotMatch(two.markdown, /## Reseen card/, 'a duplicate line neither created nor grew it in r2');
+  assert.match(two.markdown, /## Grown card/);
+
+  const r3 = runStart(db, { mode: 'full' }).id;
+  const grew = propose(db, r3, candidate({ topic: 'reseen-card', title: 'Reseen card',
+    evidence: [{ type: 'code', ref: 'src/auth.js:2', quote: 'return check(user.password);' }, { type: 'git', ref: 'abc1234' }] }), { kinds: KINDS });
+  assert.equal(grew.result, 'evidence-grew');
+  assert.match(shareRun(db, r3).markdown, /## Reseen card/, 'new evidence in r3: grown in r3');
+});
