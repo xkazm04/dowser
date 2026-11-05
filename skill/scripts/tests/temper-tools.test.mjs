@@ -417,10 +417,21 @@ test('temper-cards: lists a scan home\'s cards (status, lens, title, evidence re
     assert.deepEqual(out.cards[0].evidence, [{ type: 'code', ref: 'src/auth.js:2', path: 'src/auth.js', line: 2 }], 'quotes only with --quotes');
     assert.equal(listCards({ home: temperHome, key, quotes: true }).cards[0].evidence[0].quote, 'return check(user.password);');
     assert.deepEqual(listCards({ home: temperHome, key, status: 'rejected' }).cards, []);
-    const tool = (/** @type {string[]} */ ...a) => spawnSync(process.execPath, [join(ROOT, 'tools', 'temper-cards.mjs'), ...a], { encoding: 'utf8', env: { ...process.env, TEMPER_HOME: temperHome } });
+    assert.equal(out.cards[0].rationale, undefined, 'the rationale and body only with --full');
+    // --full: what the QA step writes acceptance from (the rationale, the body's sections, the Evaluation as acceptance)
+    const full = listCards({ home: temperHome, key, full: true }).cards[0];
+    assert.equal(full.rationale, 'Login compares the raw password.');
+    assert.deepEqual(full.sections, { Summary: 's', Description: 'd', Flow: 'f', 'Expected impact': 'e', Evaluation: 'v' });
+    assert.equal(full.acceptance, 'v');
+    assert.deepEqual([full.effort.size, full.confidence, full.confidence_why], ['S', 'high', 'direct quote']);
+    assert.equal(full.evidence[0].quote, 'return check(user.password);', '--full includes the quotes');
+    const tool =(/** @type {string[]} */ ...a) => spawnSync(process.execPath, [join(ROOT, 'tools', 'temper-cards.mjs'), ...a], { encoding: 'utf8', env: { ...process.env, TEMPER_HOME: temperHome } });
     const ok = tool('--project-key', key);
     assert.equal(ok.status, 0, ok.stderr);
     assert.equal(JSON.parse(ok.stdout).cards[0].fp, fp);
+    const fullOut = tool('--project-key', key, '--full');
+    assert.equal(fullOut.status, 0, fullOut.stderr);
+    assert.equal(JSON.parse(fullOut.stdout).cards[0].sections.Flow, 'f');
     assert.equal(tool('--project-key', 'personas-temper').status, 1, 'no scan wrote that home');
     assert.equal(tool('--project-key', key, '--lens', 'nope').status, 2);
     assert.equal(tool().status, 2);

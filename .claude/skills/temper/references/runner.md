@@ -54,7 +54,8 @@ repo's master. Landing is the director's.
 3. **Build** the accepted cards, highest value first, as many as fit in about 90 minutes, any size (an XL is staged
    in slices; build the first). Check every bound first (cycle.md section 4): the registered paths, a baseline the
    fix moves, a file the repo marks as needing a human. Then, per item:
-   - **QA first.** A separate QA subagent writes the failing spec from the card's Flow and acceptance criteria only,
+   - **QA first.** A separate QA subagent writes the failing spec from the card's Flow and acceptance criteria only
+     (`node tools/temper-cards.mjs --project-key <inbox> --full` prints them: `sections.Flow`, `acceptance`),
      proves it fails on the base, and commits it alone. It greps the repo's test folders for the old behaviour (the
      old message, value, flag or claim) and updates those tests in the same spec commit, and lists every red test
      on the base as new spec, old behaviour updated here, or unrelated (that stops the item). When QA patches

@@ -34,7 +34,8 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
 ## 3. Triage (delegate:temper)
 
 - List the cards with `node tools/temper-cards.mjs --project-key <inbox> [--status s] [--quotes]` (or the scan's
-  `report`). Not `dowser.mjs list --repo <path>`: the scan keys the store by the inbox key (the clone's origin is set to
+  `report`). `--full` adds the rationale, impact, effort, confidence, the body's sections (Flow, Expected impact) and
+  `acceptance` (the Evaluation section): hand that to the QA step, so it quotes the card instead of inventing criteria. Not `dowser.mjs list --repo <path>`: the scan keys the store by the inbox key (the clone's origin is set to
   it), so the real checkout maps to another project and lists nothing.
 - A subagent reads every new card against the code it quotes. Accept only a card that is real (the evidence holds
   at HEAD), in direction, and inside the charter's bounds. Reject with the honest reason code. Snooze what is real but
