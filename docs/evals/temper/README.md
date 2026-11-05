@@ -143,6 +143,9 @@ node tools/temper-scan.mjs --repo <path> --project-key <k> [--ref r] [--focus "g
   `~/.temper`). The next scan of the same key pulls the verdicts and follows the rules.
 - The scan keeps every card (the delegate triages later, through `temper-verdicts`), pushes it to the inbox and
   sends the areas.
+- A scan takes 10-15 minutes. Every 60 s it writes a heartbeat to stderr, `temper-scan: <n> min elapsed, last step:
+  <tool> <command or path>` (read from the scan's stream-json events; the elapsed time alone when no step came yet).
+  stdout stays the one JSON object at the end, so a runner waits on the heartbeat to tell a working scan from a hung one.
 - Each scan appends one row to `~/.temper/scans.jsonl`: `{ts, repo, ref, ref_from, head, sha, project_key, focus?, ok, minutes,
   cost_usd?, turns?, cards: {created, moved, pushed, by_status}, report}`. `ref` is the scanned branch (or commit),
   `ref_from` how it was chosen (`flag`, `day` or `head`), `head` and `sha` the short and full commit. `report` is

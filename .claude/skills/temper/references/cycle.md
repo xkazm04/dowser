@@ -25,6 +25,8 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   what was scanned. It is one scan per cycle, and its ledger row (`~/.temper/scans.jsonl`) is the scan-yield instrument of the bar.
   The row's `report` names `~/.temper/scans/<stamp>-<inbox>.json`: the row, the scan's summary and every card it
   created or moved (`{fp, ref, status, lens, title, evidence, created}`). The clone is deleted after the scan.
+  While it runs, stderr gets a heartbeat every 60 s (`temper-scan: <n> min elapsed, last step: <tool> ...`): no
+  heartbeat for several minutes means a hung scan, not a slow one. Run it in the background and watch stderr.
 - Other repos: `scan.others_due` lists those with no scan today or yesterday, so each is scanned every second day,
   read-only, into its own inbox.
 - A full four-lens scan costs about $8 (n=1, bp, 2026-11-05). A focused one-area scan costs far less: $2.91 and

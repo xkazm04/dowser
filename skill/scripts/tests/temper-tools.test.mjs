@@ -15,7 +15,7 @@ import { listCards, scanStore } from '../../../tools/temper-cards.mjs';
 import { cardCounts, parseScanArgs, reportFile, resolveScanRef, scanPrompt, writeReport } from '../../../tools/temper-scan.mjs';
 import { adfOf, closeTickets, dedupeJql, fileFindings, planFindings, findingFp, fpLabel, jiraClient, parseFindings, parseTicketArgs, summaryOf } from '../../../tools/temper-tickets.mjs';
 import { ForbiddenError, checkVerdict, forbiddenToday, parseVerdictArgs, parseVerdicts, recordVerdicts, rememberForbidden } from '../../../tools/temper-verdicts.mjs';
-import { cloneRepo, scanArgs } from '../../../tools/scan-workspace.mjs';
+import { cloneRepo, heartbeatLine, runScanStream, scanArgs, streamResult, toolStep } from '../../../tools/scan-workspace.mjs';
 import { candidate, gitRepo, removeDir, tempDir } from './_fixture.mjs';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -152,6 +152,40 @@ test('scanArgs: project and local settings only, the one MCP config, no Schedule
   assert.equal(a[a.indexOf('--disallowedTools') + 1], 'ScheduleWakeup');
   assert.equal(a[a.indexOf('--max-budget-usd') + 1], '8');
   assert.ok(!scanArgs({ prompt: 'p', mcpConfig: 'm', addDir: 'T' }).includes('--max-budget-usd'));
+});
+
+test('runScanStream: a heartbeat line every interval on the side channel (elapsed, the last tool step), the answer from the stream\'s result line', async () => {
+  const a = scanArgs({ prompt: 'p', mcpConfig: 'm', addDir: 'T', stream: true });
+  assert.deepEqual(a.slice(a.indexOf('--output-format'), a.indexOf('--output-format') + 3), ['--output-format', 'stream-json', '--verbose']);
+  assert.equal(heartbeatLine(125000), 'temper-scan: 2 min elapsed', 'without a step: the elapsed time only');
+  assert.equal(toolStep({ type: 'assistant', message: { content: [{ type: 'text', text: 'x' }, { type: 'tool_use', name: 'Bash', input: { command: 'node dowser.mjs\n  verify' } }] } }), 'Bash node dowser.mjs verify');
+  assert.equal(toolStep({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: 'x'.repeat(100) } }] } })?.length, 'Read '.length + 82);
+  assert.equal(toolStep({ type: 'user', message: { content: [] } }), undefined);
+  assert.deepEqual(streamResult('{"type":"system"}\nnot json\n{"type":"result","result":"done","total_cost_usd":1.5}\n'), { type: 'result', result: 'done', total_cost_usd: 1.5 });
+  const work = tempDir('scan-stream');
+  try {
+    // a stand-in claude: one tool step, a pause, the result line
+    const fake = join(work, 'fake-claude.mjs');
+    writeFileSync(fake, [
+      "const say = (o) => process.stdout.write(JSON.stringify(o) + '\\n');",
+      "say({ type: 'system', subtype: 'init' });",
+      "say({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Grep', input: { pattern: 'TODO' } }] } });",
+      "setTimeout(() => { say({ type: 'result', subtype: 'success', is_error: false, result: 'summary', total_cost_usd: 0.25, num_turns: 3 }); }, 400);",
+    ].join('\n'));
+    /** @type {string[]} */
+    const beats = [];
+    const r = await runScanStream(['-p', 'x'], { work, w: { repo: work, home: work }, everyMs: 100, beat: (l) => beats.push(l),
+      claude: { command: process.execPath, args: [fake], shell: false, resolved: fake } });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.deepEqual([r.result.result, r.result.total_cost_usd, r.result.num_turns], ['summary', 0.25, 3]);
+    assert.ok(beats.length >= 2, `beats: ${beats.length}`);
+    assert.ok(beats.every((l) => /^temper-scan: \d+ min elapsed/.test(l)));
+    assert.match(beats.at(-1) ?? '', /, last step: Grep TODO$/);
+    assert.match(readFileSync(join(work, 'claude.json'), 'utf8'), /"type":"result"/, 'the whole stream is kept');
+    writeFileSync(fake, "process.stdout.write(JSON.stringify({ type: 'result', is_error: true, result: 'x' }) + '\\n'); process.exit(1);");
+    const bad = await runScanStream([], { work, w: { repo: work, home: work }, beat: () => {}, claude: { command: process.execPath, args: [fake], shell: false, resolved: fake } });
+    assert.deepEqual([bad.ok, bad.status], [false, 1]);
+  } finally { removeDir(work); }
 });
 
 test('cardCounts: created vs moved, pushed by external ref, per status', () => {
