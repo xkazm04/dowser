@@ -92,7 +92,8 @@ export function checkSample(raw) {
  * `sample.load`: replays the sample into SAMPLE_KEY as the caller (who becomes the inbox's creator): proposals in
  * pushes of SAMPLE_CHUNK, then the areas, then the trust. Resumable: a load cut short (a function timeout) leaves an
  * inbox that a second load completes, filing only the records it does not hold yet. A complete sample answers
- * `already: true` and writes nothing; a sample loaded by someone the caller cannot see is `forbidden`.
+ * `already: true` and writes nothing. The sample is open to everyone (core/access.mjs), so a second person on the site
+ * who presses Load gets the loaded sample (`already: true`), never a refusal.
  *
  * Time budget: a Forge resolver has 25 s and a Forge SQL statement costs 30-60 ms. The load files cards in pushes
  * of SAMPLE_CHUNK and starts no new step (a chunk, the areas, the trust) once `budgetMs` of its own time
@@ -113,7 +114,7 @@ export async function loadSample(deps, accountId, sample = SELF_SCAN, { budgetMs
   const s = checkSample(sample);
   const { db } = deps;
   const inbox = await getInbox(db, SAMPLE_KEY);
-  if (inbox) await accessFor(deps, accountId).inbox(SAMPLE_KEY); // forbidden names what would open it
+  if (inbox) await accessFor(deps, accountId).inbox(SAMPLE_KEY); // open to everyone; kept so the sample follows the one access rule
   const have = new Set(inbox ? (await db.query('SELECT fp FROM proposals WHERE project_key = ?', [SAMPLE_KEY])).map((r) => String(r.fp)) : []);
   const todo = s.proposals.filter((p) => !have.has(String(p.fp)));
   const areasDone = inbox !== undefined && Number((await db.query('SELECT COUNT(*) AS n FROM areas WHERE project_key = ?', [SAMPLE_KEY]))[0]?.n ?? 0) === s.areas.length;

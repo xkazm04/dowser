@@ -84,6 +84,9 @@ secret.
   project.
 - An inbox without one is open to its **creator**, the account whose first push (proposals or areas) created
   it, until a project is set. Setting one needs Browse and Create issues there.
+- The **sample inbox** (`dowser-sample`) is open to every account that can use the app: it is a scan of a public
+  repository, and everyone on a site may try it. Accept and merge from it still need the caller's own Jira
+  permission; removing it stays with the person who loaded it and Jira admins.
 - A **Jira admin** may open every inbox.
 
 Every tool that names a `project_key` checks this as the calling account, and so do the inbox, the panel, the

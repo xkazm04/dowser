@@ -2,10 +2,14 @@
 // Who may see and decide an inbox. An inbox follows Jira's own permissions, so there is no Dowser user list:
 //  - an inbox with a Jira project set (Settings) is open to whoever may browse that project;
 //  - an inbox without one is open to its creator (the account whose first push made it) until a project is set;
-//  - a Jira admin (global ADMINISTER) may open every inbox, so none is ever orphaned.
+//  - a Jira admin (global ADMINISTER) may open every inbox, so none is ever orphaned;
+//  - the sample inbox (SAMPLE_KEY, core/sample.mjs) is open to everyone who can use the app: it is a scan of a public
+//    repository, and every evaluator on a site must be able to try it, not only the one who loaded it. Jira writes
+//    from it (accept, merge) still need the caller's own Jira permission, and removing it stays the loader's or an
+//    admin's (sample.mjs removeSample).
 // Everything else answers `forbidden`. The dispatch door (app.mjs) builds one Access per call and checks it
 // before a handler runs; Jira answers are asked as the user (Perms port) and cached for the call.
-import { inboxRowsByKey, listInboxRows, needInbox, proposalsMatching } from './store.mjs';
+import { inboxRowsByKey, isSampleKey, listInboxRows, needInbox, proposalsMatching } from './store.mjs';
 import { AppError } from './util.mjs';
 import { deciderOf } from './verdicts.mjs';
 
@@ -30,7 +34,7 @@ import { deciderOf } from './verdicts.mjs';
 function denied(inbox) {
   const how = inbox.jira_project_key
     ? `it follows Jira project ${inbox.jira_project_key}: ask for Browse permission there`
-    : 'until a Jira project is set for it in Dowser settings, only the person who first pushed to it and Jira admins can open it';
+    : 'until a Jira project is set for it in Dowser settings, only the person whose first push created it and Jira admins can open it';
   return new AppError('forbidden', `You cannot open the Dowser inbox ${inbox.project_key}; ${how}`);
 }
 
@@ -70,6 +74,7 @@ export function accessFor(deps, accountId) {
 
   /** @type {Access['canSee']} */
   const canSee = async (inbox) => {
+    if (isSampleKey(inbox.project_key)) return true;
     if (inbox.jira_project_key) {
       if (await may('BROWSE_PROJECTS', { projectKey: inbox.jira_project_key })) return true;
     } else if (inbox.created_by === me) {

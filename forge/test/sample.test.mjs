@@ -154,14 +154,19 @@ test('every MCP write to the reserved key is refused with bad-input, loaded or n
   assert.ok(Array.isArray((await tool(d, 'dowser_verdicts_pull', { project_key: SAMPLE_KEY })).verdicts));
 });
 
-test('an existing sample opens like any inbox: someone who cannot see it gets forbidden from load', async () => {
+test('the sample is open to everyone on the site: a second, non-admin person loads, lists and decides it', async () => {
   const d = makeDeps();
   await res(d, 'sample.load');
   d.perms.deny.add('ADMINISTER');
-  const out = await res(d, 'sample.load', {}, OTHER);
-  assert.equal(out.error, 'forbidden');
-  d.perms.deny.clear();
-  assert.deepEqual(await res(d, 'sample.load', {}, OTHER), { project_key: SAMPLE_KEY, created: 0, already: true }, 'a Jira admin sees it');
+  assert.deepEqual(await res(d, 'sample.load', {}, OTHER), { project_key: SAMPLE_KEY, created: 0, already: true }, 'Load answers the loaded sample, not forbidden');
+  const list = await res(d, 'inbox.list', {}, OTHER);
+  assert.deepEqual(list.inboxes.map((/** @type {any} */ i) => i.project_key), [SAMPLE_KEY], 'the second person sees it, so no first-run screen');
+  const ref = list.groups[0].items[0].ref;
+  assert.equal((await res(d, 'verdict.snooze', { refs: [ref] }, OTHER)).cards[0].status, 'snoozed', 'and may triage it');
+  d.perms.deny.add('CREATE_ISSUES:SHOP');
+  const acc = await res(d, 'verdict.accept', { ref: list.groups[0].items[1].ref, jira_project_key: 'SHOP', issue_type_id: '10001' }, OTHER);
+  assert.equal(acc.error, 'forbidden', 'a Jira write from the sample still needs their own Jira permission');
+  assert.equal((await res(d, 'sample.remove', {}, OTHER)).error, 'forbidden', 'removing it stays the loader or an admin');
 });
 
 test('accepting a sample card creates a labelled, marked Jira issue; a scan card does not', async () => {
