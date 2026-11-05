@@ -18,6 +18,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnClaude } from './claude-bin.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CLI = join(ROOT, 'skill/scripts/dowser.mjs');
@@ -53,7 +54,10 @@ function tool(name, args) {
   const argFile = join(WORK, `${name}.args.json`);
   writeFileSync(argFile, JSON.stringify(args));
   const prompt = `Read the JSON object in the file ${argFile.replace(/\\/g, '/')}. Call the MCP tool from the "dowser" server whose name ends with "${name}" or "${name}_development" or "${name}_staging", passing exactly that object's keys and values as the arguments, unedited. Then output ONLY the raw text of the tool result, verbatim, with no commentary and no code fences.`;
-  const out = execFileSync(process.env.CLAUDE_BIN ?? 'claude', ['-p', prompt, '--allowedTools', 'mcp__dowser__*', 'Read', '--output-format', 'text'], { encoding: 'utf8', cwd: ROOT, timeout: 300000 });
+  const r = spawnClaude(['-p', prompt, '--allowedTools', 'mcp__dowser__*', 'Read', '--output-format', 'text'], { encoding: 'utf8', cwd: ROOT, timeout: 300000 });
+  if (r.status !== 0) { console.error(`claude -p for ${name} -> ${r.status}${r.error ? ` (${r.error.message})` : ''}
+${r.stderr ?? ''}`); process.exit(1); }
+  const out = r.stdout;
   writeFileSync(join(WORK, `${name}.result.txt`), out);
   const m = out.match(/\{[\s\S]*\}/);
   if (!m) { console.error(`no JSON in the ${name} output:\n${out}`); process.exit(1); }

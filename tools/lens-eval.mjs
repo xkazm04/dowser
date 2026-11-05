@@ -26,7 +26,7 @@
 // copy has no origin, so its project key is `local-<hash of its path>`. The mock is seeded from a copy of
 // _sources.json whose `directions` is re-keyed to the key `dowser init` reports, so `dowser_direction_get` answers
 // the scan with the team direction the scorer's `excluded_by_direction` / `focus_by_direction` items assume.
-// Env: CLAUDE_BIN (default `claude`). Exit codes: 0 scored (or dry run), 1 the scan failed, 2 bad arguments.
+// Env: CLAUDE_BIN (default `claude`; an npm-installed claude.cmd works on Windows, see tools/claude-bin.mjs). Exit codes: 0 scored (or dry run), 1 the scan failed, 2 bad arguments.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { appendFileSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -36,6 +36,7 @@ import { LENSES, isOneOf } from '../skill/scripts/lib/model.mjs';
 import { dowserHome } from '../skill/scripts/lib/paths.mjs';
 import { emittedOf, scoreLens } from '../skill/scripts/lib/score.mjs';
 import { callTool, seeded } from './mock-forge-mcp.mjs';
+import { resolveClaude, spawnClaude } from './claude-bin.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 /** The placeholder project key the fixture's direction seed is written under. */
@@ -45,6 +46,8 @@ const CLI = join(ROOT, 'skill/scripts/dowser.mjs');
 const INSTALL = join(ROOT, 'skill/install.mjs');
 const MOCK = join(ROOT, 'tools/mock-forge-mcp.mjs');
 const CLAUDE = process.env.CLAUDE_BIN ?? 'claude';
+/** How CLAUDE is started here (an npm claude.cmd on Windows runs its target directly: tools/claude-bin.mjs). */
+const CLAUDE_CMD = resolveClaude(CLAUDE);
 const ALLOWED_TOOLS = ['Bash', 'Read', 'Grep', 'Glob', 'Write', 'Edit', 'Skill', 'mcp__dowser__*'];
 
 /** @typedef {{lens: string, model?: string, budget?: string, evals: string, keep: boolean, dryRun: boolean, devLink: boolean}} Opts */
@@ -284,6 +287,7 @@ try {
         const { lenses } = callTool(seeded(seed), 'dowser_direction_get', call);
         return { seed: seedFile, call, answer_for_lens: lenses[o.lens] ?? 'none seeded', lenses_seeded: Object.keys(lenses) };
       })(),
+      claude: CLAUDE_CMD,
       budget: budget ?? 'none in the pack frontmatter',
       npm_audit_shim: o.lens === 'security-cra' ? { bin, serves: `${join(FIXTURE, '_auditor')} (<dir>/npm-audit.json per manifest directory)`, forwards_to: realNpm ?? 'nothing (no npm found)' } : 'not used for this lens',
       steps: [
@@ -298,7 +302,7 @@ try {
     }, null, 2));
   } else {
     console.error(`lens-eval: scanning ${o.lens} ${version} in ${w.repo} (this calls Claude and costs tokens)`);
-    const r = spawnSync(CLAUDE, args, { cwd: w.repo, env, encoding: 'utf8', timeout: 45 * 60000, maxBuffer: 64 * 1024 * 1024 });
+    const r = spawnClaude(args, { cwd: w.repo, env, encoding: 'utf8', timeout: 45 * 60000, maxBuffer: 64 * 1024 * 1024 }, CLAUDE_CMD);
     writeFileSync(join(work, 'claude.json'), r.stdout ?? '');
     writeFileSync(join(work, 'claude.stderr.txt'), r.stderr ?? '');
     /** @type {any} */
