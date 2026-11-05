@@ -11,7 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, depDrift, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
-  renderReport, secretScan, startQuestions, triageLimits, uatPart, viteServersIn,
+  renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
 } from '../../../.claude/skills/temper/scripts/temper.mjs';
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
 import { derivedIds } from '../../../tools/e2e-coverage.mjs';
@@ -473,6 +473,32 @@ test('cycle reverify: the same gates and e2e on the cycle\'s unchanged tree; its
   assert.equal(l.out.target, head);
   // HEAD moved past the cycle with a build commit: refused
   assert.match(main(['cycle', 'reverify', '--n', '1'], ctx).out.error, /more than record-only commits \(feature\.txt\)/);
+});
+
+test('cycle file: cycle 1\'s runner file (2026-11-05) is accepted as written, informational keys included; a documented key of the wrong type is not', () => {
+  // C:/Users/kazda/.temper/runs/cycle-1-dowser.json, long texts shortened; every key it carried is kept
+  const cycle1 = {
+    target: "lenses",
+    scan: {"project_key":"dowser-temper","created":4,"cost_usd":2.9141,"minutes":9,"turns":49,"run_id":"r-20261105190038-8655","head":"7cd6cd9","pushed":["DW-56","DW-57","DW-58","DW-59"],"lens_states":"opportunity partial (Teamwork Graph goals Validati..."},
+    verdicts: [{"ref":"DW-57","verdict":"accept","inbox":"dowser-temper","recorded":"local","note":"security-cra.md:56 says `<lockfile path>..."},{"ref":"DW-58","verdict":"accept","inbox":"dowser-temper","recorded":"local","note":"doc-drift.md:74 pipes the 120-day log in..."},{"ref":"DW-56","verdict":"accept","inbox":"dowser-temper","recorded":"local","note":"security-cra.md:58 and SKILL.md:244 make..."},{"ref":"DW-59","verdict":"snooze","until":"2026-11-19","inbox":"dowser-temper","recorded":"local","note":"real (record JSONL dominates the securit..."}],
+    built: [{"ref":"DW-58","size":"XS","slice":"1/1","commits":["c0feeb4","f45e3b1"],"specs":["skill/scripts/tests/lens-packs-c1.test.mjs"],"qa":"subagent"},{"ref":"DW-57","size":"XS","slice":"1/1","commits":["c0feeb4","4bf7ae3"],"specs":["skill/scripts/tests/lens-packs-c1.test.mjs"],"qa":"subagent"},{"ref":"DW-56","size":"S","slice":"1/1","commits":["c0feeb4","4bf7ae3"],"specs":["skill/scripts/tests/lens-packs-c1.test.mjs"],"qa":"subagent"}],
+    uat: {"e2e_fixture":{"exit":0,"pass":53,"fail":0},"e2e_local":{"exit":0,"pass":12,"fail":0},"results":"C:/Users/kazda/.temper/worktrees/dowser-c1/e2e/results/{fixture,local}.json","gates":{"typecheck":0,"test":"309/309"},"persona_pass":"not run: the cycle changed only lens packs and SKI..."},
+    findings: [],
+    outcomes: [],
+    directions: [],
+    parked: [{"item":"DW-59","why":"snoozed to 2026-11-19: needs a call on which tool folders the shared exclusion covers"},{"item":"lens-scan p-a3b5bd","why":"stale: fixed in skill 0.3.0 (install.mjs:205 passe..."}],
+    notes: "Specs: QA subagent wrote skill/scripts/tests/lens-packs-c1.t...",
+    skill_issues: [{"where":"temper.mjs validateCycleFile (CYCLE_KEYS)","what":"cycle end rejects any key outside CYCLE_KEYS, so the skill_issues key the cycle-runner brief requires makes `T cycle end` exit 2","evidence":"temper.mjs:66 CYCLE_KEYS has no skill_issues; :696 throws `unknown cycle key`","fix":"add skill_issues (and qa on built items, documented) to the cycle shape, or have the director strip it before cycle end"}],
+  };
+  const o = { target: 'lenses', metModules: [], proposedPerModule: {} };
+  assert.equal(validateCycleFile(cycle1, o).length, 4);
+  for (const [path, bad] of /** @type {[string, (c: any) => void][]} */ ([['scan.turns', (c) => { c.scan.turns = '49'; }], ['scan.head', (c) => { c.scan.head = 'HEAD'; }],
+    ['scan.pushed', (c) => { c.scan.pushed = 'DW-56'; }], ['built DW-58.qa', (c) => { c.built[0].qa = true; }], ['built DW-58.commits', (c) => { c.built[0].commits = 'c0feeb4'; }]])) {
+    const c = structuredClone(cycle1);
+    bad(c);
+    assert.throws(() => validateCycleFile(c, o), (e) => e instanceof Error && e.message.startsWith(path), path);
+  }
+  assert.throws(() => validateCycleFile({ ...cycle1, persona: 'x' }, o), /unknown cycle key persona/, 'the top level stays closed');
 });
 
 test('cycle end: appends the quality-snapshot row itself when none was written since the cycle began, so the instrument fills', () => {

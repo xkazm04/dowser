@@ -789,6 +789,26 @@ export function triageLimits(verdicts, earlier, caps) {
 /** Today's earlier verdicts of an inbox, from the cycle rows. @param {string} root @param {string} date @param {string} inbox */
 const verdictsToday = (root, date, inbox) => cycleRows(root, date).flatMap((r) => r.self_reported?.verdicts ?? []).filter((v) => v.inbox === inbox);
 
+/** @param {unknown} v */
+const isStrings = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string');
+/**
+ * The informational keys a runner's cycle file may carry (references/cycle.md), with their types. They are stored as
+ * written (self-reported); a key not listed here is kept too, but a listed one of the wrong type is a usage error.
+ */
+const SCAN_INFO = /** @type {Record<string, [string, (v: unknown) => boolean]>} */ ({
+  cost_usd: ['a number', (v) => typeof v === 'number'], minutes: ['a number', (v) => typeof v === 'number'], turns: ['a whole number', (v) => Number.isInteger(v)],
+  run_id: ['text', (v) => typeof v === 'string'], head: ['a commit', (v) => typeof v === 'string' && /^[0-9a-f]{7,40}$/i.test(v)],
+  pushed: ['a list of refs', isStrings], lens_states: ['text', (v) => typeof v === 'string'],
+});
+const BUILT_INFO = /** @type {Record<string, [string, (v: unknown) => boolean]>} */ ({
+  slice: ['text like 1/2', (v) => typeof v === 'string'], commits: ['a list of commits', isStrings], specs: ['a list of paths', isStrings],
+  qa: ['text (who wrote the specs: subagent, ...)', (v) => typeof v === 'string'],
+});
+/** @param {any} o @param {Record<string, [string, (v: unknown) => boolean]>} spec @param {string} at */
+function checkInfo(o, spec, at) {
+  for (const [k, [what, ok]] of Object.entries(spec)) if (o[k] !== undefined && !ok(o[k])) throw new UsageError(`${at}.${k} is ${what}`);
+}
+
 /**
  * The runner's skill issues: a list of {where, what, evidence, fix}, each a non-empty string, no other key.
  * @param {unknown} arr
@@ -812,7 +832,10 @@ export function validateCycleFile(raw, o) {
   for (const k of Object.keys(raw)) if (!CYCLE_KEYS.includes(k)) throw new UsageError(`unknown cycle key ${k} (${CYCLE_KEYS.join(', ')})`);
   if (raw.target !== o.target) throw new UsageError(`target ${raw.target} is not the open cycle's ${o.target}`);
   for (const k of ['built', 'other_scans', 'findings', 'outcomes', 'directions', 'parked']) if (raw[k] !== undefined && !Array.isArray(raw[k])) throw new UsageError(`${k} is a list`);
-  for (const b of raw.built ?? []) if (typeof b?.ref !== 'string' || !['XS', 'S', 'M', 'L', 'XL'].includes(b.size)) throw new UsageError('each built item is {ref, size: XS..XL, slice?, commits?, specs?}');
+  for (const b of raw.built ?? []) {
+    if (typeof b?.ref !== 'string' || !['XS', 'S', 'M', 'L', 'XL'].includes(b.size)) throw new UsageError('each built item is {ref, size: XS..XL, slice?, commits?, specs?, qa?}');
+    checkInfo(b, BUILT_INFO, `built ${b.ref}`);
+  }
   for (const x of raw.outcomes ?? []) if (typeof x?.ref !== 'string' || !['right', 'partly', 'wrong'].includes(x.rating) || typeof x.basis !== 'string') throw new UsageError('each outcome is {ref, rating: right|partly|wrong, basis}');
   for (const x of raw.parked ?? []) if (typeof x?.item !== 'string' || typeof x.why !== 'string') throw new UsageError('each parked entry is {item, why}');
   if (raw.skill_issues !== undefined) checkSkillIssues(raw.skill_issues);
@@ -824,7 +847,10 @@ export function validateCycleFile(raw, o) {
     per[d.module] = (per[d.module] ?? 0) + 1;
     if (per[d.module] > MAX_DIRECTIONS) throw new Refusal(`at most ${MAX_DIRECTIONS} pending directions per module (${d.module})`);
   }
-  if (raw.scan !== undefined && (typeof raw.scan?.project_key !== 'string' || !Number.isInteger(raw.scan.created))) throw new UsageError('scan is {project_key, created, cost_usd?}');
+  if (raw.scan !== undefined) {
+    if (typeof raw.scan?.project_key !== 'string' || !Number.isInteger(raw.scan.created)) throw new UsageError('scan is {project_key, created, cost_usd?, minutes?, turns?, run_id?, head?, pushed?, lens_states?}');
+    checkInfo(raw.scan, SCAN_INFO, 'scan');
+  }
   return raw.verdicts === undefined ? [] : checkVerdicts(raw.verdicts);
 }
 

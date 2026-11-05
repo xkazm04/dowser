@@ -101,6 +101,15 @@ held a port), is not fixed by reverting the build. Fix the cause, then run `T cy
  "skill_issues": [{"where": "temper.mjs cycleEnd", "what": "...", "evidence": "file:line or a run's output", "fix": "..."}]}
 ```
 
+The top-level keys are closed (an unknown one is a usage error). Inside them a runner may add informational keys,
+stored as written. These are known and type-checked:
+
+- `scan`: `cost_usd` and `minutes` (numbers), `turns` (a whole number), `run_id` (text), `head` (the commit
+  scanned), `pushed` (the refs pushed to the inbox) and `lens_states` (text, each lens's state).
+- `built[]`: `slice` ("1/2"), `commits` and `specs` (lists), `qa` (who wrote the specs, e.g. `subagent`).
+- `uat` is free-form, and all of it is self-reported: the runner's own e2e counts, its gate results, where its
+  result files are and `persona_pass` (run, or why not). `cycle end` reads none of it.
+
 `skill_issues` is what the runner learned about the loop itself (this skill, its scripts, the brief). Each entry
 has exactly `where`, `what`, `evidence` and `fix`, each a non-empty string. `cycle end` stores them in the row's
 `self_reported`, and `report` lists them in its "Skill issues" section, grouped by `where`, newest first.
