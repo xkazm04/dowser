@@ -11,6 +11,7 @@
 import { migrationRunner, sql } from '@forge/sql';
 import { DUPLICATE_RE, DuplicateKey } from '../core/util.mjs';
 import { MIGRATIONS } from '../sql/migrations.mjs';
+import { runMigrationsWith } from '../sql/schema.mjs';
 
 /** @typedef {import('../core/ports.mjs').Db} Db */
 
@@ -44,10 +45,11 @@ export const forgeDb = {
 };
 
 /**
- * Runs the schema migrations (the `migrate` trigger on install and upgrade).
+ * Runs the schema migrations (the `migrate` trigger on install and upgrade). A statement applied by a run whose
+ * checkpoint INSERT failed is recorded instead of failing every later run (sql/schema.mjs).
  * @returns {Promise<string[]>} the names that ran now
  */
 export async function runMigrations() {
-  for (const m of MIGRATIONS) migrationRunner.enqueue(m.name, m.statement);
-  return migrationRunner.run();
+  const record = (/** @type {string} */ name) => sql.prepare('INSERT INTO __migrations (name) VALUES (?)').bindParams(name).execute();
+  return runMigrationsWith(migrationRunner, record, MIGRATIONS);
 }
