@@ -42,9 +42,15 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   reject cap), so a cycle
   that decides one or two good cards is not pushed into a dishonest reject. Within the day's caps, check the verdicts file first with
   `T triage check --verdicts <file> --inbox <key>`. Exit 1 means look again for the weak cards.
-- One verdicts file serves both tools: `[{ref, verdict, reason?, note?, into?, until?, inbox?, recorded?}]`. `reason` is a
-  reject's code only (model.mjs REASONS); a snooze or an accept says why in `note`. `inbox` (when given) must be the
-  inbox checked, and `recorded` is `live` or `local`; temper-verdicts checks both and never sends them.
+- One verdicts file serves both tools: `[{ref, verdict, reason?, note?, into?, until?, inbox?, recorded?, deferred?}]`.
+  `reason` is a reject's code only (model.mjs REASONS); a snooze or an accept says why in `note`. `inbox` (when given)
+  must be the inbox checked, and `recorded` is `live` or `local`; temper-verdicts checks both and never sends them.
+- **Carried to tomorrow.** A real card that you would accept, but the day's accept cap is reached, is a snooze with
+  `deferred: "cap"` (and a `note`). It is counted apart, as `carried`: it does not count toward the reject-or-snooze
+  floor or the rejects cap, because the cap made the call, not the triage. It is valid only once the inbox's accepts
+  today reach the cap (`triage check` and `cycle end` refuse it under the cap). The report lists these cards under
+  "Carried to tomorrow", and the next day's start dialog asks about them first. Forge still records a live one as a
+  snooze. `deferred` is a ledger key too: checked, never sent.
 - Record them live with `node tools/temper-verdicts.mjs --project-key <k> --verdicts <file>`. When it answers
   `{forbidden: true, record_as: "local"}` and exit 1 (no valid delegation in Jira Settings), the verdicts are **local
   only**. It remembers the answer for the inbox for the day, so later cycles get it without a `claude -p` call; pass

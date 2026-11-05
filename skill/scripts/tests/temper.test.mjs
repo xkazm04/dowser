@@ -1079,3 +1079,57 @@ test('cycle.md: QA updates the tests that encode the old behaviour in the spec c
   assert.ok(build.indexOf('Check every bound before QA starts') < build.indexOf('A **QA subagent**'), 'the bounds come before QA');
   assert.match(build, /QA never patches source to prove a spec can pass/);
 });
+
+test('cap-deferred snoozes: counted apart (no floor, no rejects cap), only at the cap, carried to tomorrow in the report and asked first', () => {
+  const v = (/** @type {string} */ verdict, n = 1, extra = {}) => Array.from({ length: n }, (_, i) => ({ ref: `DW-${verdict}-${i}`, verdict, ...extra }));
+  const caps = { accepts_per_day: 2, rejects_per_day: 1 };
+  const carried = v('snooze', 3, { deferred: 'cap' });
+  // at the cap: the three carried snoozes lift no share (2 accepts, 0 rejects is 0%) and use none of the rejects cap
+  const at = triageLimits([...v('accept', 2), ...carried], [], caps);
+  assert.deepEqual([at.counts.carried, at.counts.snooze, at.decided, at.today.rejects, at.today.carried, at.deferral_ok], [3, undefined, 2, 0, 3, true]);
+  assert.equal(at.floor_ok, false, 'a carried snooze is no reject-or-snooze');
+  assert.equal(triageLimits([...v('accept', 2), ...v('reject'), ...carried], [], caps).ok, true, 'over the rejects cap of 1 only if they counted');
+  // under the cap a deferral is no honest reason
+  const under = triageLimits([...v('accept'), ...v('reject'), ...carried], [], caps);
+  assert.equal(under.ok, false);
+  assert.match(under.why.join(), /3 snoozes say deferred: "cap", but only 1 of 2 accepts are used today/);
+  // the shape: deferred is "cap", on a snooze only, in both tools; stripped before the call
+  assert.deepEqual(parseVerdicts([{ ref: 'DW-1', verdict: 'snooze', note: 'cap', deferred: 'cap' }], 'dowser-temper'), [{ ref: 'DW-1', verdict: 'snooze', note: 'cap' }]);
+  assert.throws(() => parseVerdicts([{ ref: 'DW-1', verdict: 'accept', deferred: 'cap' }]), /only on a snooze/);
+  assert.throws(() => parseVerdicts([{ ref: 'DW-1', verdict: 'snooze', deferred: 'later' }]), /deferred is "cap"/);
+
+  const w = world();
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  const file = join(w.work, 'v.json');
+  const accepts = Array.from({ length: DEFAULT_CAPS.accepts_per_day }, (_, i) => ({ ref: `DW-${i + 1}`, verdict: 'accept' }));
+  const rejects = [{ ref: 'DW-20', verdict: 'reject', reason: 'false-positive' }, { ref: 'DW-21', verdict: 'reject', reason: 'false-positive' }, { ref: 'DW-22', verdict: 'reject', reason: 'false-positive' }];
+  const defer = [{ ref: 'DW-30', verdict: 'snooze', note: 'real XS doc fix', deferred: 'cap' }, { ref: 'DW-31', verdict: 'snooze', deferred: 'cap' }];
+  put(file, [...accepts.slice(0, 5), ...rejects, ...defer]);
+  const early = main(['triage', 'check', '--verdicts', file, '--inbox', 'dowser-temper'], w.ctx);
+  assert.equal(early.code, 1, 'five of ten accepts used: no deferral yet');
+  assert.match(early.out.error, /deferred: "cap"/);
+  put(file, [...accepts, ...rejects, ...defer]);
+  const ok = main(['triage', 'check', '--verdicts', file, '--inbox', 'dowser-temper'], w.ctx);
+  assert.equal(ok.code, 0, JSON.stringify(ok.out));
+  assert.deepEqual([ok.out.decided, ok.out.today.carried, ok.out.today.rejects], [13, 2, 3]);
+  // cycle end records them apart, refuses a deferral under the cap, and the report carries them to tomorrow
+  main(['cycle', 'begin', '--target', 'tooling'], w.ctx);
+  const cf = join(w.work, 'c.json');
+  const mark = (/** @type {any[]} */ vs) => vs.map((x) => ({ ...x, inbox: 'dowser-temper', recorded: 'local' }));
+  put(cf, { target: 'tooling', verdicts: mark([accepts[0], ...defer]) });
+  const refused = main(['cycle', 'end', '--file', cf], w.ctx);
+  assert.equal(refused.code, 1);
+  assert.match(refused.out.error, /deferred: "cap"/);
+  put(cf, { target: 'tooling', verdicts: mark([...accepts, ...rejects, ...defer]) });
+  const end = main(['cycle', 'end', '--file', cf], w.ctx);
+  assert.notEqual(end.code, 2, JSON.stringify(end.out));
+  assert.deepEqual([end.out.quota.carried, end.out.quota.decided, end.out.quota.ok], [2, 13, true]);
+  const md = readFileSync(main(['report'], w.ctx).out.written, 'utf8');
+  assert.match(md, /\| dowser-temper \| local only .* \| 10 \| 3 \| 0 \| 0 \| 2 \|/);
+  assert.match(md, /Carried to tomorrow \(snoozed only because the day's accept cap was reached.*\): 2\.\n- DW-30 \(dowser-temper\): real XS doc fix\n- DW-31 \(dowser-temper\)/);
+  const cycles = [{ n: 1, self_reported: { verdicts: mark([...defer, { ref: 'DW-31', verdict: 'accept' }]) } }];
+  const { questions } = startQuestions({ date: '2026-11-06', charter: { delegation: { 'dowser-temper': { until: '2026-11-06' } } }, directions: [], cycles, liveState: 'signed-in' });
+  assert.match(questions[0], /^1 cards were carried to today because the accept cap was reached \(dowser-temper: DW-30\)/, 'a card re-decided later that day is not carried');
+  assert.match(questions[1], /delegation for dowser-temper/);
+});

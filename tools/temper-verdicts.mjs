@@ -13,7 +13,8 @@
 // `ref` is DW-n; a reject needs a reason (skill/scripts/lib/model.mjs REASONS; `other` needs a note); a merge needs
 // `into` (DW-n, a 16-hex fp or a Jira issue key); `until` (YYYY-MM-DD) goes only with a snooze; a snooze's why goes in
 // `note` (reason is a reject's code). The same file passes `temper.mjs triage check`, and it may carry the cycle
-// file's ledger keys `inbox` (must equal --project-key) and `recorded` (live|local): they are checked, never sent.
+// file's ledger keys `inbox` (must equal --project-key), `recorded` (live|local) and `deferred` ("cap", only on a
+// snooze: snoozed only because the day's accept cap is reached): they are checked, never sent.
 // The tool answers {results: [{ref, result: recorded|refused, why?, issue_ref?}], more?}; with `more`, the verdicts not
 // answered yet are sent again until none is left. Output: JSON {project_key, recorded, refused, results}.
 // When Forge answers `forbidden` (no valid delegation in the inbox's Settings), the output is
@@ -35,7 +36,7 @@ const INTO_RE = /^(DW-[1-9][0-9]*|[0-9a-f]{16}|[A-Z][A-Z0-9_]{0,63}-[1-9][0-9]*)
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const KEYS = ['ref', 'verdict', 'reason', 'note', 'into', 'until'];
 /** The cycle file's keys on a verdict: checked here, stripped before the call. */
-const LEDGER_KEYS = ['inbox', 'recorded'];
+const LEDGER_KEYS = ['inbox', 'recorded', 'deferred'];
 /** Rounds of `more` before giving up (a tool that never shrinks the pending list). */
 const MAX_ROUNDS = 20;
 const USAGE = 'usage: node tools/temper-verdicts.mjs --project-key <k> --verdicts <json> [--retry] [--dry-run]';
@@ -81,6 +82,7 @@ export function checkVerdict(raw, i, projectKey) {
   }
   const s = /** @type {Record<string, string>} */ (v);
   if (s.recorded !== undefined && !['live', 'local'].includes(s.recorded)) throw new UsageError(`${at}: recorded is live or local`);
+  if (s.deferred !== undefined && (s.deferred !== 'cap' || s.verdict !== 'snooze')) throw new UsageError(`${at}: deferred is "cap", and only on a snooze (snoozed only because the day's accept cap is reached)`);
   if (s.inbox !== undefined && projectKey !== undefined && s.inbox !== projectKey) throw new UsageError(`${at}: inbox ${s.inbox} is not ${projectKey}`);
   if (!REF_RE.test(s.ref ?? '')) throw new UsageError(`${at}: ref must be DW-n`);
   if (!isOneOf(VERDICTS, s.verdict)) throw new UsageError(`${at}: verdict must be one of ${VERDICTS.join(', ')}`);
