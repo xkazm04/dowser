@@ -24,6 +24,7 @@
 //   setup.status          &calls=<n> tool calls seen (default 0); &nomcp leaves mcp_url out
 //   &fail=sample.load | sample.remove | setup.status   that call fails
 import { setGlobalTheme } from '@atlaskit/tokens/set-global-theme';
+import { linkQuery } from './link.js';
 import {
   AREAS, CARDS, GROUP_OF, HISTORY, INBOXES, PROJECTS, PUSHES, REFLECT, SAMPLE_AREAS, SAMPLE_CARDS, SAMPLE_INBOX, SAMPLE_KEY, SAMPLE_PUSH, SAMPLE_REFLECT,
 } from './fixture.js';
@@ -314,15 +315,6 @@ export async function invoke(key, payload = {}) {
     if (e && typeof e === 'object' && 'error' in e) return e;
     throw e;
   }
-}
-
-/** The deep-link part of a query (`?ref=&project=&lens=&area=`, as components/deeplink.js reads it), or ''. */
-const LINK_KEYS = ['ref', 'project', 'lens', 'area'];
-function linkQuery(q) {
-  const out = new URLSearchParams();
-  for (const k of LINK_KEYS) if (q.has(k)) out.set(k, q.get(k));
-  const s = out.toString();
-  return s ? `?${s}` : '';
 }
 
 export const view = {
