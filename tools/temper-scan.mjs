@@ -28,6 +28,9 @@
 // ref is the scanned branch (or commit), ref_from says how it was chosen (flag, day, head), head the short sha, sha the full one;
 // report is <temper home>/scans/<stamp>-<project-key>.json: the row, the scan's summary and every card the scan created
 // or moved as {fp, ref?, status, lens, title, evidence, created} (tools/temper-cards.mjs lists the whole scan home).
+// While the scan runs (10-15 minutes), a heartbeat line goes to stderr every 60 s: `temper-scan: <n> min elapsed, last
+// step: <tool> <command or path>` (the step read from the scan's stream-json events; without one, the elapsed time
+// only). stdout stays the one JSON object, printed at the end.
 // Exit codes: 0 done (or dry run), 1 the scan failed, 2 bad arguments.
 import { existsSync, appendFileSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -35,7 +38,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FOCUS_RE, LENSES, isOneOf } from '../skill/scripts/lib/model.mjs';
 import { liveDowserServer, writeMcpConfig } from './live-mcp.mjs';
-import { changedCards, cloneRepo, dowserCli, git, gitOk, installSkill, removeWork, runScan, scanArgs, stamp, statusMap } from './scan-workspace.mjs';
+import { changedCards, cloneRepo, dowserCli, git, gitOk, installSkill, removeWork, runScanStream, scanArgs, stamp, statusMap } from './scan-workspace.mjs';
 import { cardRow } from './temper-cards.mjs';
 import { UsageError, checkProjectKey, isMain, parseFlags, temperHome } from './temper-lib.mjs';
 
@@ -146,7 +149,7 @@ export function writeReport(file, row, summary, changed, before) {
 }
 
 /** @param {ScanOpts} o */
-function main(o) {
+async function main(o) {
   const home = temperHome();
   const work = mkdtempSync(join(tmpdir(), 'temper-scan-'));
   const w = { repo: join(work, 'repo'), home: o.dryRun ? join(work, 'home') : join(home, 'homes', o.projectKey) };
@@ -167,7 +170,7 @@ function main(o) {
     if (key !== o.projectKey) throw new Error(`the clone's project key is ${key}, not ${o.projectKey}`);
     dowserCli(w, 'prefs', 'set', 'mode=dev');
     const mcpConfig = writeMcpConfig(join(work, 'mcp.json'), server);
-    const args = scanArgs({ prompt: scanPrompt(o), mcpConfig, addDir: tmpdir(), model: o.model, budget: o.budget });
+    const args = scanArgs({ prompt: scanPrompt(o), mcpConfig, addDir: tmpdir(), model: o.model, budget: o.budget, stream: true });
     const plan = { repo: o.repo, ...scanned, hidden: cloned.hidden, project_key: o.projectKey, ...(o.focus ? { focus: o.focus } : {}), lenses: o.lenses,
       dowser_home: o.dryRun ? join(home, 'homes', o.projectKey) : w.home, ledger: join(home, 'scans.jsonl'), mcp: { type: server.type, ...(server.url ? { url: server.url } : {}) },
       ...(o.budget ? { budget_usd: Number(o.budget) } : {}), work };
@@ -177,7 +180,7 @@ function main(o) {
     }
     console.error(`temper-scan: scanning ${o.repo} ${ref}@${cloned.head} into the live inbox ${o.projectKey} (this calls Claude and costs tokens)`);
     const before = statusMap(w);
-    const scan = runScan(args, { work, w });
+    const scan = await runScanStream(args, { work, w });
     const r = scan.result ?? {};
     let cards = { created: 0, moved: 0, pushed: 0, by_status: {} };
     /** @type {any[]} */
@@ -206,7 +209,7 @@ function main(o) {
 }
 
 if (isMain(import.meta.url)) {
-  try { main(parseScanArgs(process.argv.slice(2))); } catch (e) {
+  try { await main(parseScanArgs(process.argv.slice(2))); } catch (e) {
     if (!(e instanceof UsageError)) throw e;
     console.error(`temper-scan: ${e.message}\n${USAGE}`);
     process.exitCode = 2;

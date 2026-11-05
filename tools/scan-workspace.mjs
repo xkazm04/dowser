@@ -4,7 +4,7 @@
 // (hidden paths left out by a sparse checkout), the skill installed there at project scope, the dowser CLI run against
 // the clone with its own DOWSER_HOME, one `claude -p` scan, and the cards the scan created or moved. Nothing here
 // writes into the source repository.
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, lstatSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -85,12 +85,15 @@ export function removeWork(work, repo) {
  * ScheduleWakeup is denied: a scan that sets a fallback heartbeat while its lens agents run keeps `claude -p` alive
  * until the wakeup fires (a 30-minute heartbeat held a finished 11-minute scan open for 33 minutes, 2026-11-05),
  * and the answer is then the wakeup's turn, not the run summary.
- * @param {{prompt: string, mcpConfig: string, addDir: string, model?: string, budget?: string}} o
+ * `stream`: `--output-format stream-json --verbose` (one JSON event a line, the last the same result object `json`
+ * prints), so a long scan can say what it is doing (runScanStream).
+ * @param {{prompt: string, mcpConfig: string, addDir: string, model?: string, budget?: string, stream?: boolean}} o
  * @returns {string[]}
  */
 export function scanArgs(o) {
   return ['-p', o.prompt, '--setting-sources', 'project,local', '--mcp-config', o.mcpConfig, '--strict-mcp-config', '--add-dir', o.addDir,
-    '--allowedTools', ...SCAN_TOOLS, '--disallowedTools', 'ScheduleWakeup', '--output-format', 'json', ...(o.model ? ['--model', o.model] : []), ...(o.budget ? ['--max-budget-usd', o.budget] : [])];
+    '--allowedTools', ...SCAN_TOOLS, '--disallowedTools', 'ScheduleWakeup', '--output-format', ...(o.stream ? ['stream-json', '--verbose'] : ['json']),
+    ...(o.model ? ['--model', o.model] : []), ...(o.budget ? ['--max-budget-usd', o.budget] : [])];
 }
 
 /**
@@ -110,6 +113,87 @@ export function runScan(args, o) {
   try { result = JSON.parse(r.stdout); } catch { /* not JSON: ok is false below */ }
   const ok = r.status === 0 && typeof result === 'object' && result !== null && !result.is_error && 'result' in result;
   return { ok, status: r.status, ...(r.error ? { error: r.error.message } : {}), result, minutes: Math.round((Date.now() - started) / 60000) };
+}
+
+/**
+ * The last tool step one stream-json event names, as `Tool detail` (the command, path or pattern, cut to 80
+ * characters), or undefined when the event calls no tool. @param {any} ev @returns {string | undefined}
+ */
+export function toolStep(ev) {
+  const uses = ev?.type === 'assistant' && Array.isArray(ev.message?.content) ? ev.message.content.filter((/** @type {any} */ c) => c?.type === 'tool_use') : [];
+  const u = uses.at(-1);
+  if (!u || typeof u.name !== 'string') return undefined;
+  const i = u.input ?? {};
+  const detail = [i.command, i.file_path, i.path, i.pattern, i.skill, i.description].find((v) => typeof v === 'string' && v.trim());
+  const one = typeof detail === 'string' ? detail.replace(/\s+/g, ' ').trim() : '';
+  return one ? `${u.name} ${one.length > 80 ? `${one.slice(0, 79)}...` : one}` : u.name;
+}
+
+/** The heartbeat line: elapsed minutes, and the last tool step when the stream gave one. @param {number} ms @param {string} [step] */
+export const heartbeatLine = (ms, step) => `temper-scan: ${Math.floor(ms / 60000)} min elapsed${step ? `, last step: ${step}` : ''}`;
+
+/**
+ * The result object of a stream-json answer: its last `type: "result"` line (the object `--output-format json` prints).
+ * @param {string} text @returns {any}
+ */
+export function streamResult(text) {
+  let result;
+  for (const line of String(text).split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try { const ev = JSON.parse(line); if (ev?.type === 'result') result = ev; } catch { /* a partial line */ }
+  }
+  return result ?? {};
+}
+
+/**
+ * runScan with a heartbeat: the scan runs with `scanArgs({stream: true})` arguments, and every `everyMs` (60 s)
+ * `beat` gets heartbeatLine (elapsed, the last tool step). The answer is the same as runScan's, read from the
+ * stream's result line; the whole stream is kept as claude.json.
+ * @param {string[]} args @param {{work: string, w: Workspace, timeoutMs?: number, everyMs?: number, beat?: (line: string) => void, claude?: import('./claude-bin.mjs').ClaudeCommand}} o
+ * @returns {Promise<{ok: boolean, status: number | null, error?: string, result: any, minutes: number}>}
+ */
+export function runScanStream(args, o) {
+  const started = Date.now();
+  const c = o.claude ?? resolveClaude();
+  const beat = o.beat ?? ((/** @type {string} */ l) => console.error(l));
+  /** @type {import('node:child_process').SpawnOptionsWithStdioTuple<'ignore', 'pipe', 'pipe'>} */
+  const opts = { cwd: o.w.repo, env: { ...process.env, DOWSER_HOME: o.w.home }, stdio: ['ignore', 'pipe', 'pipe'] };
+  const quote = (/** @type {string} */ a) => `"${String(a).replace(/"/g, '""')}"`;
+  /** @type {import('node:child_process').ChildProcessByStdio<null, import('node:stream').Readable, import('node:stream').Readable>} */
+  const child = c.shell ? spawn([c.command, ...c.args, ...args].map(quote).join(' '), { ...opts, shell: true }) : spawn(c.command, [...c.args, ...args], opts);
+  /** @type {string[]} */
+  const out = [];
+  /** @type {string[]} */
+  const err = [];
+  let pending = '';
+  /** @type {string | undefined} */
+  let step;
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (/** @type {string} */ d) => {
+    out.push(d);
+    const lines = (pending + d).split(/\r?\n/);
+    pending = lines.pop() ?? '';
+    for (const l of lines) { try { step = toolStep(JSON.parse(l)) ?? step; } catch { /* not an event */ } }
+  });
+  child.stderr.on('data', (/** @type {string} */ d) => err.push(d));
+  const timer = setInterval(() => beat(heartbeatLine(Date.now() - started, step)), o.everyMs ?? 60000);
+  /** @type {string | undefined} */
+  let error;
+  const kill = setTimeout(() => { error = 'timed out'; child.kill(); }, o.timeoutMs ?? 90 * 60000);
+  return new Promise((done) => {
+    child.on('error', (e) => { error = e.message; });
+    child.on('close', (status) => {
+      clearInterval(timer);
+      clearTimeout(kill);
+      const stdout = out.join('');
+      writeFileSync(join(o.work, 'claude.json'), stdout);
+      writeFileSync(join(o.work, 'claude.stderr.txt'), err.join(''));
+      const result = streamResult(stdout);
+      const ok = status === 0 && !error && !result.is_error && 'result' in result;
+      done({ ok, status, ...(error ? { error } : {}), result, minutes: Math.round((Date.now() - started) / 60000) });
+    });
+  });
 }
 
 /** The store's fp -> status map, taken before a scan. @param {Workspace} w @returns {Map<string, string>} */

@@ -12,7 +12,7 @@ These are operator records, not Dowser runner surfaces, so they have no guided-m
 | file | written by | what |
 |---|---|---|
 | `<date>.jsonl` | `temper.mjs cycle end`, `cycle reverify` | one row per cycle, and a reverify row per re-check (below) |
-| `<date>.md` | `temper.mjs report` | the morning report: Needs you (at most 3 questions), commits and landings, UAT verified vs self-reported, scans and costs, verdicts (live and local-only apart, and the cards carried to tomorrow), the bar per module, direction proposals, parked items |
+| `<date>.md` | `temper.mjs report` | the morning report: a Summary per repo first (cycles green/red, cards scanned, accepted and built with refs, rejected, snoozed, carried, landed, scan cost, UAT passes verified vs self-reported; the skill-hardening commit count), Needs you (at most 3 questions; one accept-cap question for every inbox at its cap), commits by repo (product first; record and merge commits folded to a count; skill-hardening commits in their own group), UAT verified vs self-reported, scans and costs, verdicts (live and local-only apart, and the cards carried to tomorrow), the bar per module, direction proposals, parked items (once per item and repo, with the newest reason; an item built later drops out) |
 | `modules.json` | `temper.mjs modules bar` | the stability bar per module, `next` (the least-stable), and the pending direction proposals |
 | `quality.jsonl` | `tools/quality-snapshot.mjs --append` | one structural snapshot per cycle; the bar's quality part compares the last two. `tests`, `tests_fail` and `tests_status` are the skill suite, `forge_tests`, `forge_tests_fail` and `forge_tests_status` the Forge suite; a row without the `forge_` fields predates them (not measured) |
 | `resolved.json` | `temper.mjs proposals resolve` | lens-scan proposals whose fix landed, `{commit, subject, resolved_at, by, status_then, tier, note?}` per id |
@@ -143,13 +143,17 @@ node tools/temper-scan.mjs --repo <path> --project-key <k> [--ref r] [--focus "g
   `~/.temper`). The next scan of the same key pulls the verdicts and follows the rules.
 - The scan keeps every card (the delegate triages later, through `temper-verdicts`), pushes it to the inbox and
   sends the areas.
+- A scan takes 10-15 minutes. Every 60 s it writes a heartbeat to stderr, `temper-scan: <n> min elapsed, last step:
+  <tool> <command or path>` (read from the scan's stream-json events; the elapsed time alone when no step came yet).
+  stdout stays the one JSON object at the end, so a runner waits on the heartbeat to tell a working scan from a hung one.
 - Each scan appends one row to `~/.temper/scans.jsonl`: `{ts, repo, ref, ref_from, head, sha, project_key, focus?, ok, minutes,
   cost_usd?, turns?, cards: {created, moved, pushed, by_status}, report}`. `ref` is the scanned branch (or commit),
   `ref_from` how it was chosen (`flag`, `day` or `head`), `head` and `sha` the short and full commit. `report` is
   `~/.temper/scans/<stamp>-<project-key>.json`: the row, the scan's summary and each card the scan created or moved,
   `{fp, ref?, url?, status, lens, title, evidence: [{type, ref, path?, line?}], created}`.
 - To list a scan home's cards later, run `node tools/temper-cards.mjs --project-key <k> [--status s] [--lens l]
-  [--quotes]`. `dowser.mjs list --repo <path>` on the real checkout reads another project (its origin) and lists
+  [--quotes] [--full]`; `--full` adds each card's rationale, impact, effort, confidence, body sections by heading and
+  `acceptance` (its Evaluation section). `dowser.mjs list --repo <path>` on the real checkout reads another project (its origin) and lists
   nothing.
 - `--dry-run` clones, installs and prints the plan (inbox key, Dowser home, ledger, MCP server). It does not call
   Claude and writes nothing under the Temper home.

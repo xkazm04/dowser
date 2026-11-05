@@ -11,7 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, depDrift, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
-  capQuestions, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
+  capQuestions, commitGroups, commitKind, parkedGroups, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
 } from '../../../.claude/skills/temper/scripts/temper.mjs';
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
 import { derivedIds } from '../../../tools/e2e-coverage.mjs';
@@ -347,7 +347,7 @@ test('cycle end: the runner\'s skill_issues are checked, stored in the row, and 
     assert.match(r.out.error, /skill_issues/);
     rmSync(join(w.root, '.temper', 'cycle-dowser.json'));
   }
-  assert.match(renderReport({ date: 'd', commits: [], landings: {}, cycles: [], scans: [], directions: [], questions: [], later: [] }), /## Skill issues\n\nNone\./);
+  assert.match(renderReport({ date: 'd', commits: {}, landings: {}, cycles: [], scans: [], directions: [], questions: [], later: [] }), /## Skill issues\n\nNone\./);
 });
 
 test('dependency drift: cycle end and land run npm ci where a lockfile is newer than its node_modules, and a failed install is red', () => {
@@ -963,15 +963,16 @@ test('report: verified vs self-reported UAT, live and local-only verdicts apart,
   assert.match(questions[1], /1 verdicts are local only/);
   assert.match(questions[2], /ship-x/);
   assert.equal(later.length, 2);
-  const md = renderReport({ date: '2026-11-05', commits: ['abc feat: x'], landings: { dowser: { decision: 'land', ok: true, pushed: 'master', deployed: 'development' } },
+  const md = renderReport({ date: '2026-11-05', commits: { dowser: [{ sha: 'abc', subject: 'feat: x', parents: 1, files: ['skill/x.mjs'] }] },
+    landings: { dowser: { decision: 'land', ok: true, head: 'abc1234def', pushed: 'master', deployed: 'development' } },
     cycles, scans: [{ project_key: 'bp-temper', cards: { created: 10 }, minutes: 11, cost_usd: 7.86 }], bar: undefined, directions, questions, later });
   assert.match(md, /\| verified \(runner results\) \| 3 \| 1 \| 2 \| 75% \|/);
   assert.match(md, /\| self-reported \(cycle files\) \| 10 \| 0 \| \| 100% \|/);
   assert.match(md, /\| bp-temper \| local only/);
   assert.match(md, /\| dowser-temper \| live \(Forge recorded\) \| 1 \| 0 \| 0 \| 0 \|/);
   assert.match(md, /Total: 1 scans, \$7\.86/);
-  assert.match(md, /- dowser: land, pushed master, deployed development\./);
-  assert.match(md, /- DW-7: XL/);
+  assert.match(md, /### dowser\n\nLanding: pushed abc1234 to master, deployed development\.\n\n- abc feat: x/);
+  assert.match(md, /### dowser\n\n- DW-7 \(c1\): XL/);
   assert.match(md, /\*\*ship-x\*\* \(tooling, M\)/);
 });
 
@@ -1162,14 +1163,114 @@ test('an inbox at its accept cap: Needs you gives the numbers and asks for real 
   const cycles = [{ n: 1, self_reported: { verdicts: [...accepts('dowser-temper', 10), { ref: 'DW-40', verdict: 'snooze', deferred: 'cap', inbox: 'dowser-temper', recorded: 'local' }, ...accepts('bp-temper', 2)] } }];
   assert.deepEqual(capQuestions(charter, cycles), ['dowser-temper reached its accept cap: 10 of 10 accepts, 1 real cards carried to the next day. Its caps are the defaults (10 accepts, 30 rejects a day), not a choice of yours: set real caps for it in the charter (repos[].caps, in the start dialog).']);
   cycles[0].self_reported.verdicts.push(...accepts('bp-temper', 1).map((v) => ({ ...v, ref: 'DW-9' })));
-  assert.match(capQuestions(charter, cycles)[1], /^bp-temper reached its accept cap: 3 of 3 accepts\. Its caps are 3 accepts and 9 rejects a day: set real caps/);
+  // two inboxes at their cap make one question that lists both, so the other questions keep their places
+  const both = capQuestions(charter, cycles);
+  assert.equal(both.length, 1);
+  assert.equal(both[0], '2 inboxes reached their accept cap: dowser-temper 10 of 10 (1 real cards carried to the next day) on the default caps; '
+    + 'bp-temper 3 of 3 on caps of 3 accepts and 9 rejects a day. Set real caps for each in the charter (repos[].caps, in the start dialog).');
   const { questions, later } = startQuestions({ date: '2026-11-05', charter, directions: [], cycles, liveState: 'signed-in' });
   assert.match(questions[0], /carried to today/);
-  assert.match(questions[1], /dowser-temper reached its accept cap/);
-  assert.match(questions[2], /bp-temper reached its accept cap/);
-  const md = renderReport({ date: '2026-11-05', commits: [], landings: {}, cycles: [], scans: [], directions: [], questions, later });
-  assert.match(md, /## Needs you\n\n1\. .*\n2\. dowser-temper reached its accept cap: 10 of 10 accepts/);
+  assert.match(questions[1], /^2 inboxes reached their accept cap: dowser-temper 10 of 10 .*; bp-temper 3 of 3/);
+  assert.match(questions[2], /verdicts are local only/, 'the third place goes to the next question');
+  const md = renderReport({ date: '2026-11-05', commits: {}, landings: {}, cycles: [], scans: [], directions: [], questions, later });
+  assert.match(md, /## Needs you\n\n1\. .*\n2\. 2 inboxes reached their accept cap/);
+  const allDefault = capQuestions({ repos: charter.repos.map((r) => ({ ...r, caps: DEFAULT_CAPS })) }, [{ n: 1, self_reported: { verdicts: [...accepts('dowser-temper', 10), ...accepts('bp-temper', 10)] } }]);
+  assert.match(allDefault[0], /dowser-temper 10 of 10 on the default caps; bp-temper 10 of 10 on the default caps\. The defaults \(10 accepts, 30 rejects a day\) are not a choice of yours: set real caps for each/);
   assert.deepEqual(capQuestions(charter, [{ n: 1, self_reported: { verdicts: accepts('dowser-temper', 9) } }]), [], 'under the cap: nothing to ask');
+});
+
+test('report commits: product, skill hardening, record and merge commits told apart; refs collapse to ranges', () => {
+  const c = (/** @type {string} */ subject, /** @type {string[]} */ files, parents = 1) => ({ sha: 's', subject, parents, files });
+  assert.equal(commitKind(c('fix(forge): x (DW-1)', ['forge/src/a.mjs', 'forge/test/a.test.mjs'])), 'product');
+  assert.equal(commitKind(c('feat(temper): x', ['.claude/skills/temper/scripts/temper.mjs', 'skill/scripts/tests/temper.test.mjs', 'docs/evals/temper/README.md'])), 'skill');
+  assert.equal(commitKind(c('feat(temper): x', ['tools/temper-scan.mjs', 'tools/scan-workspace.mjs'])), 'skill');
+  assert.equal(commitKind(c('feat(temper): x', ['tools/temper-scan.mjs', 'skill/scripts/lib/model.mjs'])), 'product', 'a skill commit that also changes the product is product');
+  assert.equal(commitKind(c('chore(temper): cycle 4 record', ['docs/evals/temper/2026-11-05.jsonl', 'docs/evals/temper/quality.jsonl'])), 'record');
+  assert.equal(commitKind(c('chore(temper): x', ['tools/quality-snapshot.mjs'])), 'product', 'chore(temper) outside the records is no record');
+  assert.equal(commitKind(c('merge: temper cycle 4', [], 2)), 'merge');
+  const g2 = commitGroups({ dowser: [c('merge: m', [], 2), c('chore(temper): r', ['docs/evals/temper/q.jsonl']), c('fix: p', ['skill/a.mjs']), c('feat(temper): s', ['tools/temper-cards.mjs'])], bp: [c('fix: b', ['x.ts'])] });
+  assert.deepEqual(g2.repos.map(([r, x]) => [r, x.product.map((p) => p.subject), x.record, x.merge]), [['dowser', ['fix: p'], 1, 1], ['bp', ['fix: b'], 0, 0]]);
+  assert.deepEqual(g2.skill.map((x) => [x.repo, x.c.subject]), [['dowser', 'feat(temper): s']]);
+  const log = '\x1eabc1234\x1fp1\x1f1762300000\x1ffix: a (DW-1)\n\nsrc/a.ts\nsrc/b.ts\n\x1edef5678\x1fp1 p2\x1f1762300001\x1fmerge: b\n';
+  assert.deepEqual(parseCommitLog(log), [{ sha: 'abc1234', subject: 'fix: a (DW-1)', parents: 1, at: 1762300000000, files: ['src/a.ts', 'src/b.ts'] },
+    { sha: 'def5678', subject: 'merge: b', parents: 2, at: 1762300001000, files: [] }]);
+  assert.equal(refList(['DW-102', 'DW-100', 'DW-101', 'DW-105', 'DW-106', 'DW-109']), 'DW-100..DW-102, DW-105, DW-106, DW-109');
+  assert.equal(refList(['DW-1', 'p-a3b5bd']), 'DW-1, p-a3b5bd', 'a non-ref list stays as it is');
+});
+
+test('report parked: one row per item and repo with its newest reason, a later build drops it', () => {
+  const cycles = [
+    { n: 1, repo: 'personas', ended_at: '2026-11-05T19:00:00Z', self_reported: { parked: [{ item: 'DW-47', why: 'oldest' }, { item: 'DW-55', why: 'census baseline' }] } },
+    { n: 2, repo: 'bp', ended_at: '2026-11-05T19:30:00Z', self_reported: { parked: [{ item: 'DW-47', why: 'a bp card of the same ref' }] } },
+    { n: 3, repo: 'personas', ended_at: '2026-11-05T20:00:00Z', self_reported: { built: [{ ref: 'DW-55' }], parked: [{ item: 'DW-47 ', why: 'middle' }] } },
+    { n: 4, repo: 'personas', ended_at: '2026-11-05T21:00:00Z', self_reported: { parked: [{ item: 'DW-47', why: 'newest: needs a human' }, { item: 'DW-55 follow-up (KeyEntryRow)', why: 'own card' }] } },
+  ];
+  const p = parkedGroups(cycles);
+  assert.deepEqual(p.repos, [
+    ['personas', [{ item: 'DW-47', why: 'newest: needs a human', n: 4, times: 3 }, { item: 'DW-55 follow-up (KeyEntryRow)', why: 'own card', n: 4, times: 1 }]],
+    ['bp', [{ item: 'DW-47', why: 'a bp card of the same ref', n: 2, times: 1 }]],
+  ]);
+  assert.deepEqual(p.unparked, [{ repo: 'personas', item: 'DW-55', n: 3 }]);
+  const md = renderReport({ date: 'd', commits: {}, landings: {}, cycles, scans: [], directions: [], questions: [], later: [] });
+  assert.equal(md.match(/^- DW-47 /gm)?.length, 2, 'once per repo');
+  assert.match(md, /### personas\n\n- DW-47 \(c4, parked 3 times\): newest: needs a human\n- DW-55 follow-up \(KeyEntryRow\) \(c4\): own card\n\n### bp\n\n- DW-47 \(c2\): a bp card/);
+  assert.match(md, /Built since they were parked: DW-55 \(personas, c3\)\./);
+  const { later } = startQuestions({ date: '2026-11-05', charter: { delegation: {} }, directions: [{ id: 'x' }], cycles, liveState: 'unverifiable' });
+  assert.deepEqual(later, ['3 items are parked (personas 2, bp 1; see Parked): unpark, drop or decide?']);
+});
+
+test('report from a synthetic ledger: the summary per repo, commits by repo with records and merges folded, skill hardening apart', () => {
+  const w = world();
+  const { bp } = twoRepoDay(w);
+  const day0 = JSON.parse(readFileSync(join(w.root, '.temper', 'day.json'), 'utf8'));
+  const commit = (/** @type {string} */ dir, /** @type {string} */ msg, /** @type {Record<string, string>} */ files) => {
+    for (const [f, t] of Object.entries(files)) put(join(dir, f), t);
+    g(dir, 'add', ...Object.keys(files)); g(dir, 'commit', '-q', '-m', msg);
+  };
+  commit(w.root, 'fix(skill): the product fix (DW-1)', { 'skill/a.mjs': 'a\n' });
+  commit(w.root, 'feat(temper): the loop hardens', { '.claude/skills/temper/x.md': 'x\n', 'tools/temper-x.mjs': 'x\n' });
+  commit(w.root, 'chore(temper): cycle 1 record', { 'docs/evals/temper/quality.jsonl': '{}\n' });
+  g(w.root, 'checkout', '-q', '-b', 'temper/c3');
+  commit(w.root, 'fix(forge): the c3 fix (DW-3)', { 'forge/b.mjs': 'b\n' });
+  g(w.root, 'checkout', '-q', day0.branch);
+  g(w.root, 'merge', '-q', '--no-ff', '-m', 'merge: temper cycle 3', 'temper/c3');
+  const wt = day0.repos.bp.worktree;
+  commit(wt, 'fix(ledger): the bp fix (DW-10)', { 'src/l.ts': 'l\n' });
+  const day = { ...day0, landings: { bp: { decision: 'land', ok: true, head: g(wt, 'rev-parse', 'HEAD'), pushed: 'HEAD:master' } } };
+  put(join(w.root, '.temper', 'day.json'), day);
+  const v = (/** @type {string} */ inbox, /** @type {string} */ ref, /** @type {string} */ verdict, o = {}) => ({ ref, verdict, inbox, recorded: 'local', ...o });
+  const rows = [
+    { kind: 'cycle', n: 1, date: '2026-11-05', repo: 'dowser', target: 'tooling', ended_at: '2026-11-05T19:00:00Z', green: true, verified: { uat: { fixture: { pass: 5, fail: 0 } } },
+      self_reported: { uat: { e2e_fixture: { pass: 5, fail: 0 }, e2e_local: { pass: 2, fail: 0 } }, built: [{ ref: 'DW-1' }],
+        verdicts: [v('dowser-temper', 'DW-1', 'accept'), v('dowser-temper', 'DW-2', 'reject'), v('dowser-temper', 'DW-3', 'snooze'), v('dowser-temper', 'DW-4', 'snooze', { deferred: 'cap' })],
+        parked: [{ item: 'DW-3', why: 'old' }, { item: 'DW-9', why: 'first' }] } },
+    { kind: 'cycle', n: 2, date: '2026-11-05', repo: 'bp', target: 'area:src', ended_at: '2026-11-05T19:30:00Z', green: false, red_because: ['npm run check failed'], verified: {},
+      self_reported: { uat: { pass: 7, fail: 0 }, built: [{ ref: 'DW-10' }, { ref: 'DW-11' }], verdicts: [v('bp-temper', 'DW-10', 'accept'), v('bp-temper', 'DW-11', 'accept')], parked: [{ item: 'DW-12', why: 'bp' }] } },
+    { kind: 'cycle', n: 3, date: '2026-11-05', repo: 'dowser', target: 'forge-core', ended_at: '2026-11-05T20:00:00Z', green: true, verified: {},
+      self_reported: { built: [{ ref: 'DW-3' }], verdicts: [v('dowser-temper', 'DW-3', 'accept')], parked: [{ item: 'DW-9', why: 'newest' }] } },
+  ];
+  put(join(w.root, 'docs', 'evals', 'temper', '2026-11-05.jsonl'), rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+  const ts = new Date('2026-11-05T18:00:00').toISOString();
+  put(join(w.home, 'scans.jsonl'), [{ ts, project_key: 'dowser-temper', ok: true, cards: { created: 4 }, cost_usd: 2.5 }, { ts, project_key: 'bp-temper', ok: true, cards: { created: 10 }, cost_usd: 7.86 },
+    { ts, project_key: 'bp-temper', ok: true, cards: { created: 3 }, cost_usd: 1 }].map((r) => JSON.stringify(r)).join('\n') + '\n');
+  const r = main(['report'], w.ctx);
+  assert.equal(r.code, 0, JSON.stringify(r.out));
+  const md = readFileSync(r.out.written, 'utf8');
+  const summary = md.slice(md.indexOf('## Summary'), md.indexOf('## Needs you'));
+  assert.match(summary, /- \*\*dowser\*\*: 2 cycles \(2 green\); 4 cards scanned in 1 scans \(\$2\.50\); accepted 2, built 2 \(DW-1, DW-3\); rejected 1, snoozed 0, carried to tomorrow 1; landed: not landed \(on loop\/2026-11-05\); UAT pass: verified 5, self-reported 7\./,
+    'DW-3 counts once, at its newest verdict');
+  assert.match(summary, new RegExp(`- \\*\\*bp\\*\\*: 1 cycles \\(0 green, 1 red: c2\\); 13 cards scanned in 2 scans \\(\\$8\\.86\\); accepted 2, built 2 \\(DW-10, DW-11\\); rejected 0, snoozed 0, carried to tomorrow 0; landed: pushed ${g(wt, 'rev-parse', '--short=7', 'HEAD')} to HEAD:master; UAT pass: verified none \\(no runner results\\), self-reported 7\\.`));
+  assert.match(summary, /- \*\*\/temper itself\*\*: 1 skill-hardening commits; scans cost \$11\.36 in all\./);
+  assert.ok(md.indexOf('## Summary') < md.indexOf('## Needs you') && md.indexOf('## Needs you') < md.indexOf('## Commits'), 'the summary first, then what needs the operator');
+  const commits = md.slice(md.indexOf('## Commits'), md.indexOf('## UAT'));
+  assert.match(commits, /### dowser\n\nLanding: not landed \(on loop\/2026-11-05\)\.\n\n- \w+ fix\(forge\): the c3 fix \(DW-3\)\n- \w+ fix\(skill\): the product fix \(DW-1\)\n- and 1 record commits \(chore\(temper\) under docs\/evals\/temper\) and 1 merges, not listed\n/);
+  assert.match(commits, /### bp\n\nLanding: pushed \w+ to HEAD:master\.\n\n- \w+ fix\(ledger\): the bp fix \(DW-10\)\n/);
+  assert.match(commits, /### Skill hardening \(\/temper: .*\): 1\n\n- \w+ feat\(temper\): the loop hardens\n/);
+  assert.ok(commits.indexOf('### dowser') < commits.indexOf('### Skill hardening') && commits.indexOf('### bp') < commits.indexOf('### Skill hardening'), 'product commits first');
+  assert.doesNotMatch(commits, /cycle 1 record|merge: temper cycle 3/);
+  const parked = md.slice(md.indexOf('## Parked'), md.indexOf('## Skill issues'));
+  assert.match(parked, /### dowser\n\n- DW-9 \(c3, parked 2 times\): newest\n\n### bp\n\n- DW-12 \(c2\): bp\n\nBuilt since they were parked: DW-3 \(dowser, c3\)\./);
+  assert.ok(bp);
 });
 
 test('cycle begin prints the runner block: the brief, the launch inputs, the caps used and left, the work tree and the cycle file', () => {

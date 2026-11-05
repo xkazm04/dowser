@@ -25,6 +25,8 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   what was scanned. It is one scan per cycle, and its ledger row (`~/.temper/scans.jsonl`) is the scan-yield instrument of the bar.
   The row's `report` names `~/.temper/scans/<stamp>-<inbox>.json`: the row, the scan's summary and every card it
   created or moved (`{fp, ref, status, lens, title, evidence, created}`). The clone is deleted after the scan.
+  While it runs, stderr gets a heartbeat every 60 s (`temper-scan: <n> min elapsed, last step: <tool> ...`): no
+  heartbeat for several minutes means a hung scan, not a slow one. Run it in the background and watch stderr.
 - Other repos: `scan.others_due` lists those with no scan today or yesterday, so each is scanned every second day,
   read-only, into its own inbox.
 - A full four-lens scan costs about $8 (n=1, bp, 2026-11-05). A focused one-area scan costs far less: $2.91 and
@@ -34,7 +36,8 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
 ## 3. Triage (delegate:temper)
 
 - List the cards with `node tools/temper-cards.mjs --project-key <inbox> [--status s] [--quotes]` (or the scan's
-  `report`). Not `dowser.mjs list --repo <path>`: the scan keys the store by the inbox key (the clone's origin is set to
+  `report`). `--full` adds the rationale, impact, effort, confidence, the body's sections (Flow, Expected impact) and
+  `acceptance` (the Evaluation section): hand that to the QA step, so it quotes the card instead of inventing criteria. Not `dowser.mjs list --repo <path>`: the scan keys the store by the inbox key (the clone's origin is set to
   it), so the real checkout maps to another project and lists nothing.
 - A subagent reads every new card against the code it quotes. Accept only a card that is real (the evidence holds
   at HEAD), in direction, and inside the charter's bounds. Reject with the honest reason code. Snooze what is real but
@@ -54,7 +57,8 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   "Carried to tomorrow", and the next day's start dialog asks about them first. Forge still records a live one as a
   snooze. `deferred` is a ledger key too: checked, never sent. When an inbox's accepts reach the cap, the report's
   Needs you says so with the numbers and asks the operator for real caps in the charter (`repos[].caps`; a charter
-  that set none runs on the defaults, 10 accepts and 30 rejects a day).
+  that set none runs on the defaults, 10 accepts and 30 rejects a day). Several inboxes at their cap make one
+  question that lists them all.
 - Record them live with `node tools/temper-verdicts.mjs --project-key <k> --verdicts <file>`. When it answers
   `{forbidden: true, record_as: "local"}` and exit 1 (no valid delegation in Jira Settings), the verdicts are **local
   only**. It remembers the answer for the inbox for the day, so later cycles get it without a `claude -p` call; pass

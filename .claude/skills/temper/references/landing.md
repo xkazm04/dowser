@@ -70,4 +70,5 @@ Production, tags and releases are never part of a landing. The guard denies them
 ## After a landing
 
 `day.json` keeps each landing (`decision`, `ok`, `stage`, `pushed`, `deployed`, `target`, `reasons`). The next
-morning's report shows them under "Commits and landings".
+morning's report shows each in its repo's Summary line (`landed: pushed <sha> to <ref>`, or `not landed (on <branch>)`)
+and as the `Landing:` line of the repo's group under "Commits".

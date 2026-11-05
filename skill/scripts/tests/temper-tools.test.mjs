@@ -15,7 +15,7 @@ import { listCards, scanStore } from '../../../tools/temper-cards.mjs';
 import { cardCounts, parseScanArgs, reportFile, resolveScanRef, scanPrompt, writeReport } from '../../../tools/temper-scan.mjs';
 import { adfOf, closeTickets, dedupeJql, fileFindings, planFindings, findingFp, fpLabel, jiraClient, parseFindings, parseTicketArgs, summaryOf } from '../../../tools/temper-tickets.mjs';
 import { ForbiddenError, checkVerdict, forbiddenToday, parseVerdictArgs, parseVerdicts, recordVerdicts, rememberForbidden } from '../../../tools/temper-verdicts.mjs';
-import { cloneRepo, scanArgs } from '../../../tools/scan-workspace.mjs';
+import { cloneRepo, heartbeatLine, runScanStream, scanArgs, streamResult, toolStep } from '../../../tools/scan-workspace.mjs';
 import { candidate, gitRepo, removeDir, tempDir } from './_fixture.mjs';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -152,6 +152,40 @@ test('scanArgs: project and local settings only, the one MCP config, no Schedule
   assert.equal(a[a.indexOf('--disallowedTools') + 1], 'ScheduleWakeup');
   assert.equal(a[a.indexOf('--max-budget-usd') + 1], '8');
   assert.ok(!scanArgs({ prompt: 'p', mcpConfig: 'm', addDir: 'T' }).includes('--max-budget-usd'));
+});
+
+test('runScanStream: a heartbeat line every interval on the side channel (elapsed, the last tool step), the answer from the stream\'s result line', async () => {
+  const a = scanArgs({ prompt: 'p', mcpConfig: 'm', addDir: 'T', stream: true });
+  assert.deepEqual(a.slice(a.indexOf('--output-format'), a.indexOf('--output-format') + 3), ['--output-format', 'stream-json', '--verbose']);
+  assert.equal(heartbeatLine(125000), 'temper-scan: 2 min elapsed', 'without a step: the elapsed time only');
+  assert.equal(toolStep({ type: 'assistant', message: { content: [{ type: 'text', text: 'x' }, { type: 'tool_use', name: 'Bash', input: { command: 'node dowser.mjs\n  verify' } }] } }), 'Bash node dowser.mjs verify');
+  assert.equal(toolStep({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: 'x'.repeat(100) } }] } })?.length, 'Read '.length + 82);
+  assert.equal(toolStep({ type: 'user', message: { content: [] } }), undefined);
+  assert.deepEqual(streamResult('{"type":"system"}\nnot json\n{"type":"result","result":"done","total_cost_usd":1.5}\n'), { type: 'result', result: 'done', total_cost_usd: 1.5 });
+  const work = tempDir('scan-stream');
+  try {
+    // a stand-in claude: one tool step, a pause, the result line
+    const fake = join(work, 'fake-claude.mjs');
+    writeFileSync(fake, [
+      "const say = (o) => process.stdout.write(JSON.stringify(o) + '\\n');",
+      "say({ type: 'system', subtype: 'init' });",
+      "say({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Grep', input: { pattern: 'TODO' } }] } });",
+      "setTimeout(() => { say({ type: 'result', subtype: 'success', is_error: false, result: 'summary', total_cost_usd: 0.25, num_turns: 3 }); }, 400);",
+    ].join('\n'));
+    /** @type {string[]} */
+    const beats = [];
+    const r = await runScanStream(['-p', 'x'], { work, w: { repo: work, home: work }, everyMs: 100, beat: (l) => beats.push(l),
+      claude: { command: process.execPath, args: [fake], shell: false, resolved: fake } });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.deepEqual([r.result.result, r.result.total_cost_usd, r.result.num_turns], ['summary', 0.25, 3]);
+    assert.ok(beats.length >= 2, `beats: ${beats.length}`);
+    assert.ok(beats.every((l) => /^temper-scan: \d+ min elapsed/.test(l)));
+    assert.match(beats.at(-1) ?? '', /, last step: Grep TODO$/);
+    assert.match(readFileSync(join(work, 'claude.json'), 'utf8'), /"type":"result"/, 'the whole stream is kept');
+    writeFileSync(fake, "process.stdout.write(JSON.stringify({ type: 'result', is_error: true, result: 'x' }) + '\\n'); process.exit(1);");
+    const bad = await runScanStream([], { work, w: { repo: work, home: work }, beat: () => {}, claude: { command: process.execPath, args: [fake], shell: false, resolved: fake } });
+    assert.deepEqual([bad.ok, bad.status], [false, 1]);
+  } finally { removeDir(work); }
 });
 
 test('cardCounts: created vs moved, pushed by external ref, per status', () => {
@@ -417,10 +451,21 @@ test('temper-cards: lists a scan home\'s cards (status, lens, title, evidence re
     assert.deepEqual(out.cards[0].evidence, [{ type: 'code', ref: 'src/auth.js:2', path: 'src/auth.js', line: 2 }], 'quotes only with --quotes');
     assert.equal(listCards({ home: temperHome, key, quotes: true }).cards[0].evidence[0].quote, 'return check(user.password);');
     assert.deepEqual(listCards({ home: temperHome, key, status: 'rejected' }).cards, []);
-    const tool = (/** @type {string[]} */ ...a) => spawnSync(process.execPath, [join(ROOT, 'tools', 'temper-cards.mjs'), ...a], { encoding: 'utf8', env: { ...process.env, TEMPER_HOME: temperHome } });
+    assert.equal(out.cards[0].rationale, undefined, 'the rationale and body only with --full');
+    // --full: what the QA step writes acceptance from (the rationale, the body's sections, the Evaluation as acceptance)
+    const full = listCards({ home: temperHome, key, full: true }).cards[0];
+    assert.equal(full.rationale, 'Login compares the raw password.');
+    assert.deepEqual(full.sections, { Summary: 's', Description: 'd', Flow: 'f', 'Expected impact': 'e', Evaluation: 'v' });
+    assert.equal(full.acceptance, 'v');
+    assert.deepEqual([full.effort.size, full.confidence, full.confidence_why], ['S', 'high', 'direct quote']);
+    assert.equal(full.evidence[0].quote, 'return check(user.password);', '--full includes the quotes');
+    const tool =(/** @type {string[]} */ ...a) => spawnSync(process.execPath, [join(ROOT, 'tools', 'temper-cards.mjs'), ...a], { encoding: 'utf8', env: { ...process.env, TEMPER_HOME: temperHome } });
     const ok = tool('--project-key', key);
     assert.equal(ok.status, 0, ok.stderr);
     assert.equal(JSON.parse(ok.stdout).cards[0].fp, fp);
+    const fullOut = tool('--project-key', key, '--full');
+    assert.equal(fullOut.status, 0, fullOut.stderr);
+    assert.equal(JSON.parse(fullOut.stdout).cards[0].sections.Flow, 'f');
     assert.equal(tool('--project-key', 'personas-temper').status, 1, 'no scan wrote that home');
     assert.equal(tool('--project-key', key, '--lens', 'nope').status, 2);
     assert.equal(tool().status, 2);
