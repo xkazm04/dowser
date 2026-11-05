@@ -292,3 +292,24 @@ test('sample.load at 40 ms a statement completes in one call: the bundled self-s
   const outBig = await loadSample(big, ME, sample);
   assert.deepEqual(outBig, { project_key: 'dowser-sample', created: 50 }, `${big.db.count()} statements`);
 });
+
+test('byline.forPage on a page nothing names: one statement and no Jira permission call, whatever the inbox count', async () => {
+  const d = counted();
+  for (let i = 0; i < 20; i++) {
+    const pk = `github-com-Acme-R${i}`;
+    await tool(d, 'dowser_proposals_push', pushArgs([record({ topic: `t${i}`, doc_impact: i === 7 ? ['4242'] : undefined })], { project_key: pk }));
+    await res(d, 'settings.set', { project_key: pk, jira_project_key: `P${i}`, issue_type_id: '10001' });
+  }
+  d.db.reset();
+  d.perms.calls.length = 0;
+  assert.deepEqual(await res(d, 'byline.forPage', { page_id: '999' }), { count: 0, cards: [] });
+  assert.equal(d.db.count(), 1, 'one indexed read of page_links');
+  assert.equal(d.perms.calls.length, 0, 'no permission asked');
+
+  d.db.reset();
+  d.perms.calls.length = 0;
+  const hit = await res(d, 'byline.forPage', { page_id: '4242' });
+  assert.deepEqual(hit.cards.map((/** @type {any} */ c) => c.project_key), ['github-com-Acme-R7']);
+  assert.deepEqual(d.perms.calls.map((c) => c.on?.projectKey), ['P7'], 'only the inbox the page names is checked');
+  assert.ok(d.db.count() <= 6, `${d.db.count()} statements`);
+});

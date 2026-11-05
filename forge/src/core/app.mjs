@@ -273,11 +273,16 @@ export const RESOLVERS = {
     const key = needStr(p, 'issue_key');
     if (!ISSUE_KEY_RE.test(key)) throw new AppError('bad-input', `${key} is not a Jira issue key`);
     const out = await panelForIssue(d, key);
-    if (out.card && !(await acc.visibleKeys()).includes(out.card.project_key)) return { history: [] };
+    if (out.card && !(await acc.visibleAmong([out.card.project_key])).length) return { history: [] };
     return out;
   },
   'map.data': async (d, p, _, __, acc) => { await openProject(acc, p); return mapData(d.db, needStr(p, 'project_key')); },
-  'byline.forPage': async (d, p, _, __, acc) => bylineForPage(d.db, needStr(p, 'page_id'), await acc.visibleKeys()),
+  // Permissions are asked only for the inboxes the page's items sit in. The sample stays out of a byline unless it is
+  // the only inbox the caller can see (store.mjs itemScope), and only that case needs every inbox.
+  'byline.forPage': async (d, p, _, __, acc) => bylineForPage(d.db, needStr(p, 'page_id'), async (keys) => {
+    const vis = await acc.visibleAmong(keys);
+    return vis.length > 0 && vis.every((k) => isSampleKey(k)) ? acc.visibleKeys() : vis;
+  }),
   // a footer comment as the person (core/doc-drift.mjs): the item must be one they may open; Confluence decides the rest
   'byline.draftFix': async (d, p, _, __, acc) => draftFix(d, (await openRef(acc, p)).args),
   'reflect.data': async (d, p, _, __, acc) => { await openProject(acc, p); return reflectData(d, p); },

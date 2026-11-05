@@ -24,6 +24,7 @@ import { deciderOf } from './verdicts.mjs';
  *   proposal: (ref: string) => Promise<ProposalRow>,
  *   proposals: (refs: string[]) => Promise<ProposalRow[]>,
  *   visibleKeys: () => Promise<string[]>,
+ *   visibleAmong: (keys: string[]) => Promise<string[]>,
  * }} Access
  */
 
@@ -118,6 +119,14 @@ export function accessFor(deps, accountId) {
     inbox,
     proposals,
     proposal: async (ref) => (await proposals([ref]))[0],
+    // The keys among `keys` the caller may open: one IN read and a permission answer per named inbox only, for a
+    // view that already knows which inboxes it touches (the page byline, the issue panel).
+    visibleAmong: async (keys) => {
+      if (keys.length === 0) return [];
+      const rows = [...(await inboxRowsByKey(deps.db, keys)).values()];
+      const ok = await Promise.all(rows.map((r) => canSee(r)));
+      return rows.filter((_, i) => ok[i]).map((r) => r.project_key).sort();
+    },
     visibleKeys: async () => {
       const rows = await listInboxRows(deps.db);
       const ok = await Promise.all(rows.map((r) => canSee(r)));
