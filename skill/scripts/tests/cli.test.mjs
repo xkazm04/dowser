@@ -219,3 +219,24 @@ test('--help lists each command\'s declared flags from the spec', async () => {
   const grown = { ...COMMANDS, share: { ...COMMANDS.share, flags: { ...COMMANDS.share.flags, 'brand-new': { arg: '<x>' } } } };
   assert.match(helpText(grown), /share --run <id> \[--brand-new <x>\]/, 'a flag added to the spec shows up in help');
 });
+
+test('a bug in a handler is error internal with its stack on stderr; a SQLite error stays unavailable (both exit 3)', async () => {
+  const { COMMANDS, main } = await import('../dowser.mjs');
+  const commands = /** @type {Record<string, any>} */ (COMMANDS);
+  commands['test-bug'] = { help: 'test only', run: (/** @type {any} */ a) => a.no.such.field };
+  commands['test-sqlite'] = { help: 'test only', run: () => { throw Object.assign(new Error('database is locked'), { code: 'ERR_SQLITE_ERROR' }); } };
+  try {
+    const bug = await main(['test-bug', '--repo', repo]);
+    assert.equal(bug.code, 3);
+    assert.equal(JSON.parse(bug.stdout).error, 'internal');
+    assert.match(bug.stderr, /internal error \(a Dowser bug, not the store\): TypeError/);
+    assert.match(bug.stderr, /\n\s+at /, 'the stack locates it');
+    const db = await main(['test-sqlite', '--repo', repo]);
+    assert.equal(db.code, 3);
+    assert.deepEqual(JSON.parse(db.stdout), { error: 'unavailable', message: 'database is locked' });
+    assert.equal(db.stderr, 'dowser: database is locked\n');
+  } finally {
+    delete commands['test-bug'];
+    delete commands['test-sqlite'];
+  }
+});

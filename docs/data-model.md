@@ -327,4 +327,4 @@ is refused with exit 2 (`no-head`).
 | 0 | ok |
 | 1 | partial: part of the input was invalid, refused or skipped, and the rest was applied (each item is reported, never dropped silently). `propose` (invalid lines), `ingest-push` (refused results), `ingest-verdicts` (unapplied verdicts), `ingest-sources` (skipped items), `ingest-direction` (skipped lenses) and `reflect ingest` (malformed entries) |
 | 2 | bad input, or a refused move (stdout names the current status) |
-| 3 | store or connection unavailable, or the command is not implemented yet (`{"error":"not-implemented","package":"WP2\|WP4"}`) |
+| 3 | store or connection unavailable (`{"error":"unavailable"}`, an unwrapped SQLite error included), the command is not implemented yet (`{"error":"not-implemented","package":"WP2\|WP4"}`), or a Dowser bug: any other unexpected exception is `{"error":"internal"}` with its stack on stderr |

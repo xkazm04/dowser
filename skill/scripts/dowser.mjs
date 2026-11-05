@@ -620,7 +620,15 @@ export async function main(argv) {
       return { code: e.code, stdout: `${JSON.stringify({ ...detail, message: e.message }, null, 2)}\n`, stderr: `dowser: ${e.message}\n` };
     }
     const msg = /** @type {Error} */ (e)?.message ?? String(e);
-    return { code: 3, stdout: `${JSON.stringify({ error: 'unavailable', message: msg }, null, 2)}\n`, stderr: `dowser: ${msg}\n` };
+    // a SQLite error the store did not wrap is still the store; anything else is a bug in dowser.mjs, so it says so
+    // and keeps its stack for the report (exit 3 either way: the procedure stops the step)
+    const sqlite = /** @type {{code?: unknown}} */ (e)?.code === 'ERR_SQLITE_ERROR';
+    const stack = !sqlite && e instanceof Error && e.stack ? e.stack : msg;
+    return {
+      code: 3,
+      stdout: `${JSON.stringify({ error: sqlite ? 'unavailable' : 'internal', message: msg }, null, 2)}\n`,
+      stderr: sqlite ? `dowser: ${msg}\n` : `dowser: internal error (a Dowser bug, not the store): ${stack}\n`,
+    };
   } finally {
     try { db?.close(); } catch { /* already closed */ }
   }
