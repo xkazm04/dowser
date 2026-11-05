@@ -19,6 +19,7 @@
     "e2e:fixture": "playwright test --project fixture",
     "e2e:local": "playwright test --project local",
     "e2e:live": "playwright test --project live",
+    "e2e:coverage": "node tools/e2e-coverage.mjs",
     "sbom": "node tools/sbom.mjs",
     "check-update": "node skill/install.mjs --check --harness claude"
   },

@@ -59,6 +59,35 @@ The live selectors for the Forge iframe (`iframe[src*="atlassian-dev.net"]`) and
 `pages` titles) are unconfirmed on a signed-in profile. Confirm them on the first signed-in run. Until then, the
 live suite has only been checked signed out, where it reports `unverifiable`.
 
+## Coverage: `@covers` tags and the baseline
+
+`npm run e2e:coverage` (`tools/e2e-coverage.mjs`) lists every id that the app's own sources define. It also lists the
+spec lines that cover each one:
+
+| id | derived from | covered when a spec |
+|---|---|---|
+| `route:<page>` | `forge/manifest.yml` `jira:globalPage` `pages` routes | renders that tab |
+| `route:<module>` | `forge/static/app/src/router.jsx` `MODULES` keys | renders that module's surface |
+| `resolver:<key>` | `forge/src/core/app.mjs` `RESOLVERS` | sees the key's success answer on the page, or reads it back |
+| `fail:<key>` | the same keys | forces `&fail=<key>` and sees the failure on the surface that calls it |
+| `fixture:<name>` | `params().get/has('<name>')` in `src/dev/bridge.js`, and `LINK_KEYS` in `src/dev/link.js` | exercises that hash parameter |
+
+A spec claims coverage with a comment line `// @covers <id> [<id> ...]` directly above the test, or above the table
+entry it generates. Any other id kind (`live:sidebar`, `live:issue-preview`) is free-form. Free ids are listed under
+`free` but never gated. An unknown id of a derived kind fails the tool, so a typo cannot pass for coverage. Tag a
+`resolver:` id only where the success path really runs. A failure case gets `fail:` only.
+
+`e2e/coverage-baseline.json` (`{"uncovered": [ids]}`) lists the ids allowed to stay uncovered. Today it is empty.
+The tool exits 1 when:
+
+- an id is uncovered and not in the baseline. New code needs a spec, not a baseline line.
+- a baseline id is covered now, or no longer exists (`stale`). Shrink the baseline with `--write`.
+- the baseline lists an id that it did not list at `--against` (default `HEAD`; `none` skips). The baseline may only
+  shrink.
+
+`npm test` runs the tool on the repository (`skill/scripts/tests/e2e-coverage.test.mjs`), so a new resolver key, a
+route or a fixture condition without a spec fails the test gate.
+
 ## Growing it
 
 To add a surface, a resolver or a fixture condition, write the spec and its `@covers` line in the same change. Put
