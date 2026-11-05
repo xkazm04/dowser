@@ -40,6 +40,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { coverage as e2eCoverage } from '../../../../tools/e2e-coverage.mjs';
 import { UsageError, checkProjectKey, isMain, parseFlags, temperHome } from '../../../../tools/temper-lib.mjs';
+import { parseVerdicts } from '../../../../tools/temper-verdicts.mjs';
 
 export const SKILL_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const REPO = resolve(SKILL_DIR, '..', '..', '..');
@@ -1012,9 +1013,10 @@ function triageCheck(ctx, f) {
   const r = (charter.repos ?? []).find((/** @type {Repo} */ x) => x.inbox_key === f.inbox);
   if (!r) throw new UsageError(`--inbox ${f.inbox} is not in the charter`);
   const raw = readJson(resolve(f.verdicts));
-  // the file temper-verdicts takes has no inbox or recorded: they are filled in for the check
-  const vs = checkVerdicts((Array.isArray(raw) ? raw : []).map((v) => ({ inbox: f.inbox, recorded: 'live', ...v })));
-  if (!vs.length) throw new UsageError('the verdicts file is a non-empty array of {ref, verdict, reason?}');
+  // one file for both tools: temper-verdicts' own contract check (inbox and recorded optional, inbox = --inbox), then
+  // the ledger defaults filled in for the caps
+  parseVerdicts(raw, f.inbox);
+  const vs = checkVerdicts(raw.map((/** @type {any} */ v) => ({ inbox: f.inbox, recorded: 'live', ...v })));
   const day = needDay(ctx);
   const lim = triageLimits(vs, verdictsToday(ctx.root, day.date, f.inbox), r.caps);
   if (!lim.ok) throw new Refusal(`${lim.why.join('; ')}: look again for the weak cards`);

@@ -16,6 +16,7 @@ import {
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
 import { derivedIds } from '../../../tools/e2e-coverage.mjs';
 import { dryRun } from '../../../tools/temper-dryrun.mjs';
+import { parseVerdicts } from '../../../tools/temper-verdicts.mjs';
 import { gitRepo, removeDir, tempDir } from './_fixture.mjs';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -260,6 +261,25 @@ test('triage limits: the 20% reject/snooze floor and the day\'s caps, where snoo
   const caps = { accepts_per_day: 2, rejects_per_day: 2 };
   assert.match(triageLimits([...v('accept'), ...v('reject')], v('accept', 2), caps).why.join(), /3 accepts today, over the cap of 2/);
   assert.match(triageLimits([...v('snooze'), ...v('merge')], v('reject'), caps).why.join(), /3 rejects, snoozes and merges today/);
+});
+
+test('one verdicts file passes both triage check and temper-verdicts: inbox and recorded are optional, checked, never sent', () => {
+  const w = world();
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  const file = join(w.work, 'v.json');
+  const vs = [{ ref: 'DW-1', verdict: 'accept', inbox: 'dowser-temper', recorded: 'local' }, { ref: 'DW-2', verdict: 'reject', reason: 'false-positive', inbox: 'dowser-temper', recorded: 'local' },
+    { ref: 'DW-3', verdict: 'snooze', note: 'after the store split', recorded: 'live' }];
+  put(file, vs);
+  const c = main(['triage', 'check', '--verdicts', file, '--inbox', 'dowser-temper'], w.ctx);
+  assert.equal(c.code, 0, JSON.stringify(c.out));
+  assert.deepEqual(parseVerdicts(vs, 'dowser-temper').map((v) => Object.keys(v).sort().join()), ['ref,verdict', 'reason,ref,verdict', 'note,ref,verdict'], 'the ledger keys are stripped before the call');
+  // the same refusals in both: a snooze's why is a note, and the inbox must be the one named
+  for (const bad of [[{ ...vs[2], reason: 'after the store split' }], [{ ...vs[0], inbox: 'bp-temper' }], [{ ...vs[0], recorded: 'maybe' }]]) {
+    put(file, bad);
+    assert.equal(main(['triage', 'check', '--verdicts', file, '--inbox', 'dowser-temper'], w.ctx).code, 2, JSON.stringify(bad));
+    assert.throws(() => parseVerdicts(bad, 'dowser-temper'), JSON.stringify(bad));
+  }
 });
 
 test('cycle end: local-only verdicts are recorded as delegate:temper with the caps, and a red gate makes the cycle red', () => {

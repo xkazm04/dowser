@@ -35,6 +35,9 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   not now. Merge duplicates into the accepted item.
 - At least 20% of decided cards are rejected or snoozed. Within the day's caps, check the verdicts file first with
   `T triage check --verdicts <file> --inbox <key>`. Exit 1 means look again for the weak cards.
+- One verdicts file serves both tools: `[{ref, verdict, reason?, note?, into?, until?, inbox?, recorded?}]`. `reason` is a
+  reject's code only (model.mjs REASONS); a snooze or an accept says why in `note`. `inbox` (when given) must be the
+  inbox checked, and `recorded` is `live` or `local`; temper-verdicts checks both and never sends them.
 - Record them live with `node tools/temper-verdicts.mjs --project-key <k> --verdicts <file>`. When it refuses with
   `forbidden` (no valid delegation in Jira Settings), the verdicts are **local only**. Put them in the cycle file with
   `recorded: "local"`. The live inbox keeps its cards undecided, and the report counts them apart.
