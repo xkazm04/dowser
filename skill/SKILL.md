@@ -35,7 +35,7 @@ Load them when a step names them.
 | 0 | ok | continue |
 | 1 | partial (some lines invalid, some items refused) | read the output, report each refused line, continue |
 | 2 | bad input or refused move | read the stated reason and current status; fix the input, or report the refusal; never retry blindly |
-| 3 | store or connection unavailable, or the command is not built yet | stop that step; report it in plain words; never write the store any other way |
+| 3 | store or connection unavailable, or the command is not built yet; `error: internal` is a Dowser bug, with its stack on stderr | stop that step; report it in plain words (for `internal`, as a Dowser bug with the stderr stack, not as the store being down); never write the store any other way |
 
 Check the exit code after every `dowser.mjs` call. A call whose code you did not check counts as
 a failed step.
@@ -234,9 +234,9 @@ For each lens, print one progress line (`<lens>: gathering (tickets 42, code)`),
    machine has (`npm audit` for a `package-lock.json`, `osv-scanner` for a lockfile it reads,
    `pip-audit` for `requirements*.txt` or `pyproject.toml`) in the root and in each manifest
    directory up to three levels below it, read-only, 60 s each, and caches every finding on the
-   run. Directories it did not audit are listed under `not_audited`. Its output lists each auditor as `ran` (with `found`) or
-   `skipped` (with `reason`). Cite only the `ref` values it returns as `dep` evidence. A skipped
-   auditor is a gap: record the lens as `partial: <auditor> skipped (<reason>)`. Never report "no
+   run. Directories it did not audit are listed under `not_audited`. Its output lists each auditor as `ran` (with `found`), `partial` (with `found`,
+   and `reason` naming the manifests it could not audit) or `skipped` (with `reason`). Cite only the `ref` values it returns as `dep` evidence. A skipped or
+   partial auditor is a gap: record the lens as `partial: <auditor> skipped (<reason>)`. Never report "no
    vulnerable dependencies" for an auditor that did not run.
 4. **Gather tolerantly.** Do the pack's gather steps. A missing file, an empty grep or a source
    that errors is recorded and the lens goes on. It never aborts the run. Record each gap in
@@ -302,7 +302,9 @@ carry a reason.
    a card never verifies). `git` and `sarif` evidence passes unchecked; the output says so, and a card
    with ONLY git/sarif evidence drops (`no-checkable-evidence`). Quotes are read at the run's head
    commit, the one the pushed links point at: a line that exists only as an uncommitted edit fails with
-   `why: uncommitted`, so quote committed code (or tell the runner to commit first). Print
+   `why: uncommitted`, so quote committed code (or tell the runner to commit first). A verified or
+   pushed card you re-proposed with new evidence keeps its status; only the new evidence is checked,
+   listed under `rechecked` (`checked`, or `held` with the note: that evidence is never sent). Print
    per lens, from its `per_lens` (`{lens: {emitted, verified, dropped}}`, the candidates this call
    checked): `<lens>: emitted <n>, verified <v>, dropped <d>`.
    Each quote check gives `line`, the line the quote was **found** on; `claimed_line` is your hint

@@ -285,7 +285,8 @@ Exit 0 when every result applied, 1 when any was refused, unknown, invalid or in
 `verified` and go out on the next push.
 
 **What goes into the outbox.** Every `verified` item that was not pushed yet, plus every `pushed` item whose
-evidence grew since its last push. Pushed evidence is tracked in `sync_state` (`push_seq:<fp>` = the fp's
+evidence grew since its last push. Only evidence `verify` has checked goes out: a row a re-propose added to a
+`verified` or `pushed` item waits until the next `verify` finds it, and one it does not find is held back for good. Pushed evidence is tracked in `sync_state` (`push_seq:<fp>` = the fp's
 highest evidence id at its last push; `outbox` snapshots the ids it sent in `outbox:last`, and `ingest-push`
 records those). Rejected, snoozed, merged, dropped and candidate items are never pushed.
 

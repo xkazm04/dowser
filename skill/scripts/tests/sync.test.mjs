@@ -9,6 +9,7 @@ import {
   RECORD_KEYS, getState, ingestPush, ingestSources, ingestVerdicts, outbox, readResponse, verdictsCursor,
 } from '../lib/sync.mjs';
 import { STORE_OWNED, validateCandidate } from '../lib/model.mjs';
+import { verifyRun } from '../lib/verify.mjs';
 import { KINDS, candidate, removeDir, tempDir } from './_fixture.mjs';
 
 /** @type {string} */ let dir;
@@ -112,8 +113,12 @@ test('ingest-push: created -> pushed with external_ref; re-push updated; evidenc
   assert.equal(ingestPush(db, { results: [{ fp, result: 'created', external_ref: 'DW-1' }] }).out.results[0].outcome, 'updated');
   assert.equal(transitionsOf(db, fp).length, n);
 
-  // new evidence on a pushed item -> back in the outbox, and an `updated` result keeps it pushed
-  assert.equal(propose(db, run, candidate({ topic: 'push lifecycle', evidence: [{ type: 'ticket', ref: 'SEC-77' }] }), { kinds: KINDS }).result, 'evidence-grew');
+  // new evidence on a pushed item -> back in the outbox once verify checked it, and an `updated` result keeps it pushed
+  assert.equal(propose(db, run, candidate({ topic: 'push lifecycle', evidence: [{ type: 'goal', ref: 'SEC-77' }] }), { kinds: KINDS }).result, 'evidence-grew');
+  assert.ok(!inOutbox(fp), 'unchecked evidence waits for verify');
+  ingestSources(db, { runId: run, type: 'goal', doc: { items: [{ ref: 'SEC-77', title: 'Plaintext' }] } });
+  const v = verifyRun(db, dir, run);
+  assert.deepEqual(v.rechecked?.map((x) => [x.fp, x.result]), [[fp, 'checked']]);
   assert.ok(inOutbox(fp));
   assert.equal(ingestPush(db, { results: [{ fp, result: 'updated', external_ref: 'DW-1' }] }).out.results[0].outcome, 'updated');
   assert.equal(statusOf(fp), 'pushed');

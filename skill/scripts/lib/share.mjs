@@ -31,8 +31,10 @@ export function shareRun(db, runId) {
   const run = getRun(db, runId);
   if (!run) throw new DowserError(`run ${runId} does not exist`, 2, { error: 'not-found', run_id: runId });
   const fps = /** @type {{fp: string}[]} */ (db.prepare(
-    `SELECT fp FROM proposals WHERE last_run_id = ? AND status IN (${KEPT.map(() => '?').join(', ')}) ORDER BY lens, created_at, fp`,
-  ).all(runId, ...KEPT)).map((r) => r.fp);
+    // created or grown in the run: last_run_id moves on every later propose line (a duplicate too), so it is not used
+    `SELECT fp FROM proposals p WHERE (first_run_id = ? OR EXISTS (SELECT 1 FROM evidence e WHERE e.fp = p.fp AND e.run_id = ?))
+      AND status IN (${KEPT.map(() => '?').join(', ')}) ORDER BY lens, created_at, fp`,
+  ).all(runId, runId, ...KEPT)).map((r) => r.fp);
   const cards = fps.map((fp) => /** @type {Record<string, any>} */ (getProposal(db, fp)));
   const lenses = Object.entries(run.lenses ?? {}).map(([l, r]) => `${l} ${/** @type {any} */ (r).state}`).join(', ');
   const head = [`# Dowser scan ${String(run.started_at).slice(0, 10)}`, '',

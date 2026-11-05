@@ -1,7 +1,7 @@
 // @ts-check
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { dbPath, dowserHome, isInside, normalizeRemote, projectKey } from '../lib/paths.mjs';
 import { authorsOf, diffNames, headSha } from '../lib/git.mjs';
@@ -64,4 +64,20 @@ test('git helpers: headSha, diffNames, authorsOf', () => {
   assert.equal(diffNames(repo, 'deadbeef', head), undefined, 'unknown sha -> undefined, not []');
   assert.deepEqual(authorsOf(repo, ['a.txt', 'b.txt', 'never.txt']), { 'a.txt': 2, 'b.txt': 1 }, 'unknown path omitted, never 0');
   assert.equal(headSha(home), undefined);
+});
+
+test('test git ignores the developer\'s global config: a global commit.gpgsign does not break gitRepo', () => {
+  const dir = tempDir('paths-gpg');
+  try {
+    const global = join(dir, 'gitconfig');
+    writeFiles(dir, { 'repo/.keep': '', gitconfig: '[commit]\n\tgpgsign = true\n[gpg]\n\tprogram = dowser-no-such-gpg\n' });
+    const fixture = new URL('./_fixture.mjs', import.meta.url).href;
+    const script = `import { gitRepo } from ${JSON.stringify(fixture)}; gitRepo(process.argv[1], { 'a.txt': 'a' });`;
+    const r = spawnSync(process.execPath, ['--input-type=module', '-e', script, join(dir, 'repo')], {
+      encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: global },
+    });
+    assert.equal(r.status, 0, r.stderr);
+  } finally {
+    removeDir(dir);
+  }
 });

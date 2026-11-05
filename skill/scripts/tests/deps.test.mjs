@@ -195,6 +195,26 @@ test('absent tools are "not installed"; an npm error report and a timeout are sk
     'package.json without package-lock.json; npm audit needs a lockfile');
 });
 
+test('pip-audit: one failing requirements file is named, the other files still run and their findings are cached', async () => {
+  const repo = repoWith({ 'requirements-dev.txt': 'nope==999\n', 'requirements.txt': 'flask==0.12\n' });
+  const run = runStart(db, { mode: 'full' }).id;
+  const { sys, calls } = fakeSys({
+    'pip-audit': (args) => args.includes('requirements-dev.txt')
+      ? { status: 2, stdout: '', stderr: 'ERROR: could not resolve nope==999' }
+      : answer({ dependencies: [{ name: 'flask', version: '0.12', vulns: [{ id: 'PYSEC-2019-179' }] }] }),
+  });
+  const out = (await runDeps(db, { root: repo, runId: run }, sys)).out;
+  assert.deepEqual(out.auditors.find((a) => a.tool === 'pip-audit'),
+    { tool: 'pip-audit', state: 'partial', found: 1, reason: 'requirements-dev.txt: ERROR: could not resolve nope==999' });
+  assert.deepEqual(calls.map((c) => c.args.at(-1)), ['requirements-dev.txt', 'requirements.txt'], 'the later file still runs');
+  assert.deepEqual(out.refs.map((r) => r.ref), ['requirements.txt#flask@0.12']);
+  assert.deepEqual(sourcesOf(db, run, 'dep').map((r) => r.ref), ['requirements.txt#flask@0.12'], 'cached, so verify finds the cited ref');
+
+  const allFail = (await runDeps(db, { root: repo, runId: run }, fakeSys({ 'pip-audit': () => ({ status: 2, stdout: '', stderr: 'ERROR: offline' }) }).sys)).out;
+  assert.deepEqual(allFail.auditors.find((a) => a.tool === 'pip-audit'),
+    { tool: 'pip-audit', state: 'skipped', reason: 'requirements-dev.txt: ERROR: offline; requirements.txt: ERROR: offline' });
+});
+
 test('the real System finds and runs an auditor stub on PATH, in the repo root', async () => {
   const bin = tempDir('deps-bin');
   dirs.push(bin);

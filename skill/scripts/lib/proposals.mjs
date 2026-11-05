@@ -153,7 +153,9 @@ export { resurfaces } from './model.mjs';
  *    meets the resurfacing rule moves to `candidate` (`evidence-grew`, with `resurfaced`); one that does not
  *    is `suppressed`. A `dropped` item with a NEW evidence key moves to `candidate` (a retry); with only known
  *    keys it stays dropped. Any other status: `evidence-grew` when a new key landed, else `duplicate`.
- *  - `provenance.run_id` is stamped from `runId`; a different one on the line is overwritten and noted.
+ *  - `provenance.run_id` is stamped from `runId`; a different one on the line is overwritten and noted. So is
+ *    `provenance.lens_version` from `opts.versions` (the loaded packs' versions) when it names the lens, so the
+ *    quality ledger and `predicted_by` key on the pack that ran, not on a version copied from an example.
  *  - an invalid candidate: `invalid:<why>`; nothing is written.
  *  - a line without `predicted_verdict` (the lens worker's verdict is mandatory, SKILL.md section 5 step 6) is
  *    still taken, with `warning: 'no-predicted-verdict'` on its result; a re-propose without one keeps the judge's
@@ -164,10 +166,10 @@ export { resurfaces } from './model.mjs';
  * @param {Db} db
  * @param {string} runId
  * @param {unknown} input
- * @param {{kinds: Record<string, readonly string[]>}} opts
+ * @param {{kinds: Record<string, readonly string[]>, versions?: Record<string, string>}} opts
  * @returns {ProposeResult}
  */
-export function propose(db, runId, input, { kinds }) {
+export function propose(db, runId, input, { kinds, versions }) {
   const run = requireRunning(db, runId);
   const v = validateCandidate(input);
   if (!v.ok) return { result: `invalid:${v.why}` };
@@ -181,9 +183,14 @@ export function propose(db, runId, input, { kinds }) {
     throw e;
   }
   if (c.fp !== undefined && c.fp !== fp) return { result: `invalid:fp-mismatch (computed ${fp})` };
-  const note = c.provenance.run_id !== undefined && c.provenance.run_id !== runId
-    ? `provenance.run_id ${c.provenance.run_id} replaced by ${runId}` : undefined;
-  const provenance = clean({ ...c.provenance, run_id: runId, model: c.provenance.model ?? run.model, harness: c.provenance.harness ?? run.harness, focus: c.provenance.focus ?? run.focus });
+  const packVersion = versions?.[c.lens];
+  const notes = [
+    ...(c.provenance.run_id !== undefined && c.provenance.run_id !== runId ? [`provenance.run_id ${c.provenance.run_id} replaced by ${runId}`] : []),
+    ...(packVersion !== undefined && c.provenance.lens_version !== packVersion
+      ? [`provenance.lens_version ${c.provenance.lens_version} replaced by ${packVersion} (lenses/${c.lens}.md)`] : []),
+  ];
+  const note = notes.length ? notes.join('; ') : undefined;
+  const provenance = clean({ ...c.provenance, run_id: runId, lens_version: packVersion ?? c.provenance.lens_version, model: c.provenance.model ?? run.model, harness: c.provenance.harness ?? run.harness, focus: c.provenance.focus ?? run.focus });
   const anchors = [...new Set(c.anchors.map(normalizeAnchor).filter(Boolean))].sort();
   const s = scoreOf(c);
   const judged = c.predicted_verdict === undefined
@@ -362,6 +369,57 @@ export function move(db, fp, to, { from, by, reason, note, into, runId, until, t
     appendTransition(db, { fp, from: current, to, by, at, reason, note, runId });
     return /** @type {Row} */ (clean(row));
   });
+}
+
+/**
+ * The evidence of `fp` that verify has checked (D8). Every row up to the evidence seq of its newest verify move
+ * (`candidate -> verified`), or of its hydrate insert (a card that arrives decided, checked where it was found), plus
+ * the rows a later `verify` re-checked on the verified or pushed card (sync_state `rechecked:<fp>`, a JSON list of
+ * evidence ids). A row added after that - a re-propose that grew a verified or pushed card, or a snoozed card's
+ * suppressed line - is unchecked: `outbox` holds it back until `verify` finds it (verify.mjs recheck).
+ * @param {Db} db
+ * @param {string} fp
+ * @returns {{through: number, ids: Set<number>}}
+ */
+export function checkedEvidence(db, fp) {
+  const t = /** @type {Row | undefined} */ (db.prepare(`SELECT MAX(evidence_seq) AS seq FROM transitions WHERE fp = ?
+    AND ((from_status = 'candidate' AND to_status = 'verified') OR (from_status IS NULL AND to_status <> 'candidate'))`).get(fp));
+  const s = /** @type {Row | undefined} */ (db.prepare('SELECT value FROM sync_state WHERE key = ?').get(`rechecked:${fp}`));
+  return { through: t?.seq == null ? 0 : Number(t.seq), ids: new Set(s ? /** @type {number[]} */ (JSON.parse(String(s.value))) : []) };
+}
+
+/**
+ * The evidence rows of `fp` verify has checked (`checkedEvidence`), oldest first: what `outbox` sends.
+ * @param {Db} db
+ * @param {string} fp
+ * @returns {Row[]}
+ */
+export function checkedEvidenceOf(db, fp) {
+  const { through, ids } = checkedEvidence(db, fp);
+  return evidenceOf(db, fp).filter((e) => Number(e.id) <= through || ids.has(Number(e.id)));
+}
+
+/**
+ * Records evidence ids verify re-checked and found on a verified or pushed card (sync_state `rechecked:<fp>`).
+ * @param {Db} db
+ * @param {string} fp
+ * @param {number[]} found
+ */
+export function markRechecked(db, fp, found) {
+  if (!found.length) return;
+  const ids = [...new Set([...checkedEvidence(db, fp).ids, ...found])].sort((a, b) => a - b);
+  db.prepare('INSERT INTO sync_state (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value')
+    .run(`rechecked:${fp}`, JSON.stringify(ids));
+}
+
+/**
+ * Fingerprints of `verified` or `pushed` proposals the run re-proposed (verify re-checks their new evidence).
+ * @param {Db} db
+ * @param {string} runId
+ * @returns {string[]}
+ */
+export function grownOfRun(db, runId) {
+  return /** @type {Row[]} */ (db.prepare("SELECT fp FROM proposals WHERE last_run_id = ? AND status IN ('verified', 'pushed') ORDER BY fp").all(runId)).map((r) => String(r.fp));
 }
 
 /**

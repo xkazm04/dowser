@@ -240,6 +240,8 @@ export const COMMANDS = {
       const runId = req(a, 'run');
       const file = req(a, 'file');
       const kinds = parseKinds(a);
+      // the loaded packs' versions: propose stamps provenance.lens_version from them, as it stamps run_id
+      const versions = Object.fromEntries(Object.keys(kinds).map((l) => [l, memory.loadLensPack(l).version]));
       /** @type {string} */
       let text;
       try { text = readFileSync(file, 'utf8'); } catch (e) { throw new DowserError(`--file ${file} is not readable (${/** @type {Error} */ (e).message})`, 2); }
@@ -261,7 +263,7 @@ export const COMMANDS = {
           lines.push({ line: i + 1, result: `invalid:json (${/** @type {Error} */ (e).message})` });
           return;
         }
-        const r = store.propose(db, runId, obj, { kinds });
+        const r = store.propose(db, runId, obj, { kinds, versions });
         counts[r.result.startsWith('invalid:') ? 'invalid' : r.result]++;
         if (r.warning === 'no-predicted-verdict') unpredicted++;
         if (r.clamped) clamped++;
@@ -275,7 +277,7 @@ export const COMMANDS = {
   verify: {
     flags: { run: RUN_FLAG, 'per-lens': { arg: '<n>' }, 'per-run': { arg: '<n>' } },
     help: 're-check code/doc quotes -> verified | dropped (verify-failed:<ref>); a ticket/page/goal/dep ref this run did not ' +
-      'ingest -> dropped (ref-not-ingested:<type>:<ref>); each check gives the line the quote was found on (claimed_line when the ' +
+      'ingest -> dropped (ref-not-ingested:<type>:<ref>); a verified/pushed card the run grew keeps its status and only its new evidence is checked -> rechecked: checked | held (held evidence is never sent); each check gives the line the quote was found on (claimed_line when the ' +
       'hint differs, drift when > 3 lines); bus_factor measured from git (anchor paths, 90 days before head); per_lens {emitted, ' +
       'verified, dropped}; then allocate the verified cards: each lens\'s MVP, then by score up to the pack budget (4) per lens, ' +
       'then free run slots (16 per run) to the best reserve of any lens -> band ranked; the rest band reserve (stored, pushed) -> allocation',
@@ -618,7 +620,15 @@ export async function main(argv) {
       return { code: e.code, stdout: `${JSON.stringify({ ...detail, message: e.message }, null, 2)}\n`, stderr: `dowser: ${e.message}\n` };
     }
     const msg = /** @type {Error} */ (e)?.message ?? String(e);
-    return { code: 3, stdout: `${JSON.stringify({ error: 'unavailable', message: msg }, null, 2)}\n`, stderr: `dowser: ${msg}\n` };
+    // a SQLite error the store did not wrap is still the store; anything else is a bug in dowser.mjs, so it says so
+    // and keeps its stack for the report (exit 3 either way: the procedure stops the step)
+    const sqlite = /** @type {{code?: unknown}} */ (e)?.code === 'ERR_SQLITE_ERROR';
+    const stack = !sqlite && e instanceof Error && e.stack ? e.stack : msg;
+    return {
+      code: 3,
+      stdout: `${JSON.stringify({ error: sqlite ? 'unavailable' : 'internal', message: msg }, null, 2)}\n`,
+      stderr: sqlite ? `dowser: ${msg}\n` : `dowser: internal error (a Dowser bug, not the store): ${stack}\n`,
+    };
   } finally {
     try { db?.close(); } catch { /* already closed */ }
   }

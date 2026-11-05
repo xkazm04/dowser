@@ -6,6 +6,15 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 
+// Test git never reads the developer's global or system config: a global commit.gpgsign, core.hooksPath or
+// init.templateDir would change or break every commit a test makes. Set on process.env when this module
+// loads (every test file that runs git imports it), so direct git calls and the CLIs a test spawns inherit it.
+const GIT_HOME = mkdtempSync(join(tmpdir(), 'dowser-gitconfig-'));
+writeFileSync(join(GIT_HOME, 'gitconfig'), '');
+process.env.GIT_CONFIG_GLOBAL = join(GIT_HOME, 'gitconfig');
+process.env.GIT_CONFIG_NOSYSTEM = '1';
+process.on('exit', () => rmSync(GIT_HOME, { recursive: true, force: true }));
+
 /** @param {string} prefix @returns {string} */
 export const tempDir = (prefix) => mkdtempSync(join(tmpdir(), `dowser-${prefix}-`));
 

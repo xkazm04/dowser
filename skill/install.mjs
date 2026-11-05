@@ -195,10 +195,14 @@ function check(opts) {
   }
   const from = opts.from ?? stamp.source?.repo_url;
   if (!from) fail(`the install at ${target} records no source repository; pass --from <git url or path of the Dowser repo>`, 3);
+  // install.json can be planted (a project-scope install lives in the checked-out repo), so its
+  // repo_url is untrusted: a value that starts with '-' would reach git as an option
+  // (--upload-pack=<cmd> runs a command). Refuse it, and end git's options with '--' as well.
+  if (from.startsWith('-')) fail(`refusing source ${JSON.stringify(redactUrl(from))}: a repository url or path cannot start with '-'`, 3);
   const installed = stamp.version;
   let listing;
   try {
-    listing = execFileSync('git', ['ls-remote', '--tags', '--refs', from], {
+    listing = execFileSync('git', ['ls-remote', '--tags', '--refs', '--', from], {
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30_000,
     });
   } catch (e) {

@@ -119,6 +119,11 @@ test('case 3: stages.push.pending is exactly the set outbox would send (store-wi
   await p.propose(run, [opp('alpha'), opp('beta')]);
   await p.cli('verify', '--run', run);
   await p.propose(run, [{ ...opp('old card'), evidence: [...QUOTE, { type: 'ticket', ref: 'SEC-77' }] }]);
+  const unchecked = await p.cli('run', 'status', '--run', run);
+  assert.deepEqual(unchecked.out.stages.push, { pending: 2, pushed: 1 }, 'the grown card waits until verify checks its new evidence');
+  assert.equal((await p.cli('ingest-sources', '--run', run, '--type', 'ticket', '--file', p.file({ items: [{ ref: 'SEC-77', title: 'Plaintext' }] }))).code, 0);
+  const v = await p.cli('verify', '--run', run);
+  assert.deepEqual(v.out.rechecked.map((/** @type {any} */ x) => [x.fp, x.result]), [[old, 'checked']]);
   const before = await p.cli('run', 'status', '--run', run);
   // what outbox returns for the same store (outbox itself writes outbox:last, so it runs after run status)
   const sent = JSON.parse((await p.cli('outbox', '--run', run)).out.proposals_json);

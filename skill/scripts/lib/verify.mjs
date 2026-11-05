@@ -14,6 +14,9 @@
 // valid. `git` and `sarif` evidence is passed through unchecked and reported as such - the agent judges it - but a
 // card whose evidence is ONLY git/sarif has nothing verify could check and drops with note `no-checkable-evidence`.
 // When several refs fail, the first in evidence order names the note.
+// A `verified` or `pushed` card the run grew (a re-propose with new evidence) is not moved: only its unchecked rows
+// are checked, those found are recorded (store.markRechecked) and sent by the next outbox, a failed one is held back
+// (store.checkedEvidence), so no unverified quote reaches the inbox.
 // Only the evidence the fingerprint's newest propose line carried is checked (store.assertedEvidence): a quote an
 // earlier line carried and the agent no longer emits is stale and never re-checked.
 // The bus factor (card 0abc6bdd204b318b) is measured here, not guessed by the agent: the distinct author e-mails of
@@ -26,7 +29,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { QUOTED_TYPES, isOneOf } from './model.mjs';
 import { parseRef, squash } from './fingerprint.mjs';
-import { assertedEvidence, candidatesOfRun, move, requireRunning } from './store.mjs';
+import { assertedEvidence, candidatesOfRun, checkedEvidence, grownOfRun, markRechecked, move, requireRunning } from './store.mjs';
 import { allocateRun } from './budget.mjs';
 import { loadLensPack } from './memory.mjs';
 import { commitDate, commitsSince, fileAt, hasCommit } from './git.mjs';
@@ -49,6 +52,7 @@ export const INGESTED_TYPES = /** @type {const} */ (['ticket', 'page', 'goal', '
  * @typedef {{type: string, ref: string, checked: false}} Unchecked
  * @typedef {{value: number, source: 'git-90d' | 'card', claimed?: number}} BusFactor
  * @typedef {{fp: string, result: 'verified' | 'dropped', note?: string, checks: Check[], sources: SourceCheck[], unchecked: Unchecked[], bus_factor?: BusFactor}} FpResult
+ * @typedef {{fp: string, result: 'checked' | 'held', note?: string, checks: Check[], sources: SourceCheck[], unchecked: Unchecked[]}} RecheckResult
  */
 
 export { squash, parseRef };
@@ -179,12 +183,15 @@ function measureBusFactor(db, fp, count) {
  * verified cards to ranked and reserve slots (budget.mjs allocateRun; `perLens` / `perRun` override the packs'
  * budget and the run cap of 16). `allocation` is that result. A verified card's bus factor is measured before its
  * move (see the header). `per_lens` counts per lens the candidates this call checked (`emitted`) and how many
- * verified and dropped; a lens this call checked nothing for is absent.
+ * verified and dropped; a lens this call checked nothing for is absent. A `verified` or `pushed` card the run
+ * re-proposed with new evidence keeps its status; that evidence alone is checked, and `rechecked` (omitted when
+ * none) lists each such card as `checked` (the rows go out with the next outbox) or `held` (a row failed: it never
+ * reaches the inbox; the note names it as for a drop).
  * @param {import('./store.mjs').Db} db
  * @param {string} root the repo root (read at the run's head commit when git has it, else its working tree)
  * @param {string} runId a running run
  * @param {{perLens?: number, perRun?: number}} [budget]
- * @returns {{run: string, verified: number, dropped: number, per_lens: Record<string, {emitted: number, verified: number, dropped: number}>, results: FpResult[], allocation: Record<string, any>}}
+ * @returns {{run: string, verified: number, dropped: number, per_lens: Record<string, {emitted: number, verified: number, dropped: number}>, results: FpResult[], rechecked?: RecheckResult[], allocation: Record<string, any>}}
  */
 export function verifyRun(db, root, runId, budget = {}) {
   const run = requireRunning(db, runId);
@@ -198,29 +205,44 @@ export function verifyRun(db, root, runId, budget = {}) {
   const results = [];
   /** @type {Record<string, {emitted: number, verified: number, dropped: number}>} */
   const perLens = {};
-  for (const fp of candidatesOfRun(db, runId)) {
+  /**
+   * Checks evidence rows: quotes at the run's head, ingested refs in the run's cache, git/sarif passed through.
+   * `failed` is the note of the first failure in evidence order; `found` the ids of the rows that passed.
+   * @param {Record<string, any>[]} rows
+   */
+  const checkRows = (rows) => {
     /** @type {Check[]} */
     const checks = [];
     /** @type {SourceCheck[]} */
     const sources = [];
     /** @type {Unchecked[]} */
     const unchecked = [];
+    /** @type {number[]} */
+    const found = [];
     /** @type {string | undefined} */
     let note;
-    for (const e of assertedEvidence(db, fp)) {
+    for (const e of rows) {
       const ref = String(e.ref);
+      let ok = true;
       if (isOneOf(QUOTED_TYPES, e.type)) {
         const f = findQuote(root, ref, String(e.quote ?? ''), { rev });
         checks.push({ type: e.type, ref, ...f });
-        if (f.found === false) note ??= `verify-failed:${ref}`;
+        if (f.found === false) { ok = false; note ??= `verify-failed:${ref}`; }
       } else if (isOneOf(INGESTED_TYPES, e.type)) {
         const ingested = cached.get(runId, e.type, ref.trim()) !== undefined;
         sources.push({ type: e.type, ref, ingested });
-        if (!ingested) note ??= `ref-not-ingested:${e.type}:${ref}`;
+        if (!ingested) { ok = false; note ??= `ref-not-ingested:${e.type}:${ref}`; }
       } else {
         unchecked.push({ type: e.type, ref, checked: false });
       }
+      if (ok) found.push(Number(e.id));
     }
+    return { checks, sources, unchecked, found, note };
+  };
+  for (const fp of candidatesOfRun(db, runId)) {
+    const checked = checkRows(assertedEvidence(db, fp));
+    const { checks, sources, unchecked } = checked;
+    let { note } = checked;
     if (!note && checks.length === 0 && sources.length === 0) note = 'no-checkable-evidence';
     const bus = note ? undefined : measureBusFactor(db, fp, count);
     /** @type {FpResult} */
@@ -234,12 +256,27 @@ export function verifyRun(db, root, runId, budget = {}) {
     pl.emitted++;
     pl[res.result]++;
   }
+  // a verified or pushed card the run grew: only its new, unchecked evidence is checked. The status stays (a person
+  // may already have seen the card); a row that passes is sent by the next outbox, one that fails is held back.
+  /** @type {RecheckResult[]} */
+  const rechecked = [];
+  for (const fp of grownOfRun(db, runId)) {
+    const { through, ids } = checkedEvidence(db, fp);
+    const fresh = assertedEvidence(db, fp).filter((e) => Number(e.id) > through && !ids.has(Number(e.id)));
+    if (!fresh.length) continue;
+    const { checks, sources, unchecked, found, note } = checkRows(fresh);
+    markRechecked(db, fp, found);
+    rechecked.push(note
+      ? { fp, result: 'held', note, checks, sources, unchecked }
+      : { fp, result: 'checked', checks, sources, unchecked });
+  }
   return {
     run: runId,
     verified: results.filter((r) => r.result === 'verified').length,
     dropped: results.filter((r) => r.result === 'dropped').length,
     per_lens: perLens,
     results,
+    ...(rechecked.length ? { rechecked } : {}),
     allocation: allocateRun(db, runId, { capOf: packBudget, ...budget }),
   };
 }

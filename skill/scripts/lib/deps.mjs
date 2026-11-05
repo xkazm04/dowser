@@ -2,7 +2,9 @@
 // `dowser deps` (lens-quality-plan WP4): runs the dependency auditors present on this machine (npm audit,
 // osv-scanner, pip-audit), read-only against the repo, normalises their findings to `dep` source items and caches
 // them on the run, so the security-cra lens cites them and `verify` can re-check a cited dep ref. An auditor that
-// is absent or fails is reported as skipped, never as "no vulnerabilities".
+// is absent or fails is reported as skipped, never as "no vulnerabilities"; one that fails on some of a
+// directory's manifests (pip-audit runs once per requirements file) is `partial`: `found` for the rest, `reason`
+// naming the manifests it could not audit.
 //
 // Read-only. Manifest directories are the root plus every directory up to MAX_DEPTH below it that holds a
 // manifest an auditor reads (workspaces, apps/*, services/*); node_modules, dot folders and build output are never
@@ -39,7 +41,7 @@ const NEVER_ENTER = new Set(['node_modules', 'vendor', 'dist', 'build', 'target'
 const TEST_PATH_RE = /(^|\/)(test|tests|__tests__|spec|fixtures?|__fixtures__|examples?|testdata)(\/|$)/;
 
 /**
- * @typedef {{tool: string, dir?: string, state: 'ran' | 'skipped', reason?: string, found?: number}} AuditorReport
+ * @typedef {{tool: string, dir?: string, state: 'ran' | 'partial' | 'skipped', reason?: string, found?: number}} AuditorReport
  * @typedef {{manifest: string, package: string, version: string, advisory: string, severity: typeof SEVERITIES[number],
  *   url?: string, fixed_in?: string, tool: string}} Finding
  * @typedef {{status: number | null, stdout: string, stderr: string, error?: Error}} SpawnResult
@@ -375,15 +377,20 @@ async function pipAudit(root, dir, files, sys) {
   if (!exe) return { report: { tool, state: 'skipped', reason: 'not installed' }, findings: [] };
   /** @type {Finding[]} */
   const findings = [];
+  /** @type {string[]} */
+  const failed = [];
+  // every target runs: one manifest that fails is named, and what the others found is kept
   for (const t of targets) {
     // exit 1 means "vulnerabilities found"; pip-audit resolves -r in a temp venv and installs nothing here
     const r = await sys.spawn(exe, ['-f', 'json', '--progress-spinner', 'off', ...t.args], join(root, dir));
     const why = failure(r, [0, 1]);
     const report = why ? undefined : parseJson(r.stdout);
-    if (!report) return { report: { tool, state: 'skipped', reason: `${t.manifest}: ${why ?? (firstLine(r.stderr) || 'output was not JSON')}` }, findings: [] };
+    if (!report) { failed.push(`${t.manifest}: ${why ?? (firstLine(r.stderr) || 'output was not JSON')}`); continue; }
     findings.push(...pipFindings(report, t.manifest));
   }
-  return finish(tool, findings);
+  if (failed.length === targets.length) return { report: { tool, state: 'skipped', reason: failed.join('; ') }, findings: [] };
+  const done = finish(tool, findings);
+  return failed.length ? { report: { ...done.report, state: 'partial', reason: failed.join('; ') }, findings } : done;
 }
 
 // ------------------------------------------------------------------------------------------------ run

@@ -17,23 +17,28 @@ with no origin gets `local-` plus the first 12 hex of sha256(realpath(repo root)
 Nothing is ever written inside the scanned repo. Paths are compared by real path, and a store path inside
 the repo is refused with exit 3.
 
-The store is SQLite through `node:sqlite` (Node >= 22.13) with WAL and `PRAGMA user_version = 6` (v4 added `proposals.artifacts_json`, a card's supporting views; v5 added `proposals.snooze_until`, the date a snoozed item wakes on; v6 added the scan-finding/1 columns and the trust tables). The DDL
-runs in one `BEGIN IMMEDIATE` transaction that re-reads the version. A file with another version is
-refused.
+The store is SQLite through `node:sqlite` (Node >= 22.13) with WAL and `PRAGMA user_version = 8`
+(`store-core.mjs` `USER_VERSION`; what each version added is under Migration). The DDL runs in one
+`BEGIN IMMEDIATE` transaction that re-reads the version.
 
-**Migration.** Version 2 (forge-mcp-2) adds `proposals.issue_ref` and `proposals.issue_url`. `openStore`
-upgrades a version 1 file in place, inside the same `BEGIN IMMEDIATE` transaction, after re-reading the
-version: `ALTER TABLE proposals ADD COLUMN issue_ref TEXT`, the same for `issue_url`, then
-`PRAGMA user_version = 2`. No row is rewritten, and both columns start NULL (absent). A new file is created
-at the current version. Version 3 adds the `outcomes` table (below): `CREATE TABLE IF NOT EXISTS` plus its index and
-triggers, then `PRAGMA user_version = 3`. Version 4 adds `proposals.artifacts_json`. Version 5 adds
-`proposals.snooze_until` (`ALTER TABLE proposals ADD COLUMN snooze_until TEXT`, then `PRAGMA user_version = 5`); it
-starts NULL (absent) on every existing row. Version 7 adds the `deliveries` table (below) the same way, and version 8 the `edges` table. Version 6 adds the scan-finding/1 columns to `proposals` (`impact`,
-`impact_why`, `risk`, `category`, `score`, `score_parts_json`, `band`, `mvp`, `mvp_rule`, `mvp_why`, `predicted_verdict`,
-`predicted_why`, `predicted_by`, `pretriaged_by`; `store-core.mjs` `V6_COLUMNS`) and the `trust_state` and
-`trust_events` tables, then `PRAGMA user_version = 6`; every existing row stays unscored, unallocated and without a
-prediction (NULL, never 0). An existing file is upgraded one step at a time (1 -> 2 -> 3 -> 4 -> 5 -> 6) and
-no row is rewritten. Any version other than 0 (new), 1, 2, 3, 4, 5 or 6 is refused with exit 3.
+**Migration.** A new file is created at the current version. An existing file is upgraded in place, one step
+at a time (1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8), inside the same `BEGIN IMMEDIATE` transaction, after re-reading
+the version. Columns and tables are only ever added; no row is rewritten, and every added column starts NULL
+(absent) on existing rows. Any version other than 0 (new) through 8 is refused with exit 3 (a file from a newer
+Dowser included). The steps:
+
+- 2 (forge-mcp-2): `proposals.issue_ref` and `proposals.issue_url` (`ALTER TABLE proposals ADD COLUMN ... TEXT`).
+- 3: the `outcomes` table (below): `CREATE TABLE IF NOT EXISTS` plus its index and triggers.
+- 4: `proposals.artifacts_json`, a card's supporting views.
+- 5: `proposals.snooze_until`, the date a snoozed item wakes on.
+- 6: the scan-finding/1 columns on `proposals` (`impact`, `impact_why`, `risk`, `category`, `score`,
+  `score_parts_json`, `band`, `mvp`, `mvp_rule`, `mvp_why`, `predicted_verdict`, `predicted_why`, `predicted_by`,
+  `pretriaged_by`; `store-core.mjs` `V6_COLUMNS`) and the `trust_state` and `trust_events` tables; every existing
+  row stays unscored, unallocated and without a prediction (NULL, never 0).
+- 7: the `deliveries` table (below).
+- 8: the `edges` table (below).
+
+Each step ends by setting `PRAGMA user_version` to its number.
 
 **CHECK lists.** Every enum-backed CHECK (`runs.mode`, `runs.status`; `proposals.lens`, `confidence`, `status`,
 `reason`, `category`, `band`, `mvp_rule`, `predicted_verdict`; `evidence.type`) is generated from the `model.mjs`
@@ -43,7 +48,7 @@ compares each stored list with the model's. A list the model grew (a new lens, s
 verdict) is widened by a table rebuild: `PRAGMA foreign_keys = OFF` outside the transaction, `BEGIN IMMEDIATE`, then
 create at the target shape, copy every column, drop, rename, recreate the indexes and triggers, keep the
 AUTOINCREMENT high-water, require an empty `PRAGMA foreign_key_check`, `COMMIT`, foreign keys back on. The columns do
-not change, so `user_version` stays 6 and an older Dowser still opens the file. A stored row holding a value the
+not change, so `user_version` stays where it is and an older Dowser at the same version still opens the file. A stored row holding a value the
 model no longer lists is refused with exit 3, and nothing is rebuilt. A list that already matches costs one
 `sqlite_master` read.
 
@@ -62,7 +67,7 @@ model no longer lists is refused with exit 3, and nothing is rebuilt. A list tha
 | `deliveries` | **append-only** (v7): delivery truth from the code. One row each time `delivery --run` finds an accepted card's state CHANGED: `fp`, `run_id`, `head_sha`, `state` (`present` = every quoted code/doc line still at the run's commit, `partly`, `resolved` = none left), `found` / `total` quotes, `commits_json` (`[{sha, at}]`, commits since the decision whose message names its Jira issue or inbox ref; NULL when none), `checked_at`. The newest row per fp is the current state. Written only by `delivery` (`lib/delivery.mjs`) | index (`fp`, `id`) |
 | `edges` | **append-only** (v8): the proposal relationship graph. `from_fp`, `to_fp` (both cards of this store), `kind` (`unblocks` = from is a prerequisite of to; `duplicate-of`, `follow-up-of`, `conflicts-with`, `related`), `by`, `at`, `note`. Written only by `link` (`lib/edges.mjs`); read by `show`, `links` and the allocation, which lifts a reserve card that `unblocks` a ranked card of the run over the weakest plain ranked card (`lifted`) | UNIQUE (`from_fp`, `to_fp`, `kind`); index (`to_fp`, `kind`) |
 | `sources_cache` | what a run fetched: tickets, pages and goals (`ingest-sources`), dependency advisories (`deps`) and the team's lens direction (`ingest-direction`). `verify` checks ticket, page, goal and dep refs against it. Ticket, page and goal text is dropped when the run ends; the direction rows (focus, exclude, notes, spaces) are kept as long as the store exists, until deleted (`SECURITY.md` says how) | PK (`run_id`, `type`, `ref`) |
-| `sync_state` | Forge sync bookkeeping: `verdicts_cursor`; `trust_through` (the last transition id the trust replay read); `push_seq:<fp>` (evidence id at last push); `outbox:last` (ids actually sent); `verdict:<fp>@<decided_at>` (idempotency). See `docs/contracts/forge-mcp-2.md` | PK `key` |
+| `sync_state` | Forge sync bookkeeping: `verdicts_cursor`; `trust_through` (the last transition id the trust replay read); `push_seq:<fp>` (evidence id at last push); `outbox:last` (ids actually sent); `rechecked:<fp>` (evidence ids `verify` re-checked and found on a verified or pushed card); `verdict:<fp>@<decided_at>` (idempotency). See `docs/contracts/forge-mcp-2.md` | PK `key` |
 
 Append-only is enforced twice. Triggers abort any UPDATE or DELETE on `evidence`, `transitions`, `outcomes`, `deliveries`, `edges` and
 `trust_events`, and a test greps the sources for such statements on the first two.
@@ -189,7 +194,7 @@ unmeasured. A missing `bus_factor` means it was not computed. A count of 0 is a 
 
 ```
 (new) --propose--> candidate --verify--> verified --triage--> rejected(reason) | snoozed | merged(into) | pushed
-                       \--verify--> dropped (note verify-failed:<ref> | ref-not-ingested:<type>:<ref>)
+                       \--verify--> dropped (note verify-failed:<ref> | ref-not-ingested:<type>:<ref> | no-checkable-evidence)
                                                                                pushed --Forge--> accepted | rejected | merged | snoozed
 verified --> accepted (offline acceptance; decider kind human only)
 snoozed  --> verified (unsnooze; or run start once snooze_until <= today, by skill:dowser) | candidate (resurfaced)
@@ -271,8 +276,10 @@ appended.
 `verify --run <id>` checks every `candidate` whose `last_run_id` is the run. It checks only the evidence
 the fingerprint's newest propose line carried (`store.assertedEvidence`), with that line's ref and line hint.
 A quote an earlier line carried and the newest line no longer does is stale and is never re-checked. Every
-such `code`/`doc` quote must be a whitespace-normalized substring of the file at the ref's path in the current
-working tree.
+such `code`/`doc` quote must be a whitespace-normalized substring of the file at the ref's path **at the run's
+head commit** (the commit the pushed links point at), when the run has one git can read; otherwise (a root that is
+not a git repo, or a head sha git no longer has) the current working tree is read. A quote found only in the
+working tree, an uncommitted edit, fails as `uncommitted`: the card's links would show a file without it.
 
 - With a `:line` hint, the result is `near-line` (within ±30 lines) or `in-file` (anywhere in the file). Each
   check's `line` is the line the quote was **found** on (the occurrence nearest the hint), `claimed_line` is the
@@ -282,12 +289,18 @@ working tree.
   into `delivery_risk.bus_factor` (a measured value wins over the card's; no commit in the window keeps the card's).
   After the moves, `verify` allocates the run's slots ("Budget, score and trust" above) and prints the result as
   `allocation`, beside `per_lens`: `{<lens>: {emitted, verified, dropped}}` for the candidates this call checked.
-- If any quote is missing, the item becomes `dropped` with note `verify-failed:<ref>`.
+- If any quote is missing (`quote-not-found`, `file-missing`, `uncommitted`, ...), the item becomes `dropped` with
+  note `verify-failed:<ref>`.
 - `ticket`, `page`, `goal` and `dep` refs must have been fetched by this run: each is looked up in the run's
   `sources_cache` (written by `ingest-sources` and `deps`). A ref that is not there drops the item with note
   `ref-not-ingested:<type>:<ref>`, so an unconnected run can never verify a card citing a ticket. When several
   refs fail, the first in evidence order names the note.
-- Only `git` and `sarif` evidence is passed through as `unchecked`. The agent judges it.
+- A `verified` or `pushed` card the run re-proposed with new evidence is not moved (a person may have seen it).
+  Only its new rows (newer than its verify move, not re-checked yet) are checked, by the same rules, and listed
+  under `rechecked` as `checked` or `held` (with the note a drop would carry). `outbox` sends only checked
+  evidence (`store.checkedEvidenceOf`), so a row that is held, or not checked yet, never reaches the inbox.
+- `git` and `sarif` evidence is passed through as `unchecked`; the agent judges it. A card whose evidence is only
+  `git`/`sarif` has nothing verify can check and is `dropped` with note `no-checkable-evidence`.
 
 ## Areas (`areas --run <id> [--top 40]`)
 
@@ -318,4 +331,4 @@ is refused with exit 2 (`no-head`).
 | 0 | ok |
 | 1 | partial: part of the input was invalid, refused or skipped, and the rest was applied (each item is reported, never dropped silently). `propose` (invalid lines), `ingest-push` (refused results), `ingest-verdicts` (unapplied verdicts), `ingest-sources` (skipped items), `ingest-direction` (skipped lenses) and `reflect ingest` (malformed entries) |
 | 2 | bad input, or a refused move (stdout names the current status) |
-| 3 | store or connection unavailable, or the command is not implemented yet (`{"error":"not-implemented","package":"WP2\|WP4"}`) |
+| 3 | store or connection unavailable (`{"error":"unavailable"}`, an unwrapped SQLite error included), the command is not implemented yet (`{"error":"not-implemented","package":"WP2\|WP4"}`), or a Dowser bug: any other unexpected exception is `{"error":"internal"}` with its stack on stderr |

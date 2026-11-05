@@ -97,7 +97,9 @@ export function parseRef(ref) {
   const m = s.match(tail);
   if (m) { line = Number(m[1]); s = s.slice(0, m.index); }
   if (line === undefined && frag) {
-    const lf = frag.match(/^L(\d+)/) ?? frag.match(tail);
+    // the rule normalizeAnchor uses: only a whole `L12`, `L12C3`, `L12-L20` fragment is a line, so a symbol
+    // such as `L10nProvider` stays a symbol
+    const lf = (LINE_FRAGMENT.test(frag) ? frag.match(/^L(\d+)/) : null) ?? frag.match(tail);
     if (lf) line = Number(lf[1]);
   }
   s = s.replace(/\/{2,}/g, '/').replace(/^(?:\.\/)+/, '');

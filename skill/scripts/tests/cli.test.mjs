@@ -143,6 +143,23 @@ test('propose without --kinds: the kinds come from the lens packs', () => {
   assert.equal(p.lines[0].result, 'created');
 });
 
+test('propose stamps provenance.lens_version from the loaded pack and notes a different one', async () => {
+  const { loadLensPack } = await import('../lib/memory.mjs');
+  const pack = loadLensPack('security-cra').version;
+  cli('init');
+  const run = freshRun();
+  const p = cli('propose', '--run', run, '--file', jsonl('version.jsonl', [
+    candidate({ kind: 'secret-exposure', topic: 'stale version copied', provenance: { lens_version: '0.0.1' } }),
+    candidate({ kind: 'secret-exposure', topic: 'right version', provenance: { lens_version: pack } }),
+  ]));
+  assert.equal(p.code, 0, p.stdout + p.stderr);
+  assert.equal(p.lines[0].note, `provenance.lens_version 0.0.1 replaced by ${pack} (lenses/security-cra.md)`);
+  assert.equal(p.lines[1].note, undefined, 'the pack\'s own version: no note');
+  const shown = cli('show', p.lines[0].fp);
+  assert.equal(shown.code, 0, shown.stderr);
+  assert.equal(shown.out.card.provenance.lens_version, pack);
+});
+
 test('propose --kinds must be a subset of the pack: kinds the pack lacks exit 2 and are named', () => {
   cli('init');
   const run = freshRun();
@@ -201,4 +218,25 @@ test('--help lists each command\'s declared flags from the spec', async () => {
   }
   const grown = { ...COMMANDS, share: { ...COMMANDS.share, flags: { ...COMMANDS.share.flags, 'brand-new': { arg: '<x>' } } } };
   assert.match(helpText(grown), /share --run <id> \[--brand-new <x>\]/, 'a flag added to the spec shows up in help');
+});
+
+test('a bug in a handler is error internal with its stack on stderr; a SQLite error stays unavailable (both exit 3)', async () => {
+  const { COMMANDS, main } = await import('../dowser.mjs');
+  const commands = /** @type {Record<string, any>} */ (COMMANDS);
+  commands['test-bug'] = { help: 'test only', run: (/** @type {any} */ a) => a.no.such.field };
+  commands['test-sqlite'] = { help: 'test only', run: () => { throw Object.assign(new Error('database is locked'), { code: 'ERR_SQLITE_ERROR' }); } };
+  try {
+    const bug = await main(['test-bug', '--repo', repo]);
+    assert.equal(bug.code, 3);
+    assert.equal(JSON.parse(bug.stdout).error, 'internal');
+    assert.match(bug.stderr, /internal error \(a Dowser bug, not the store\): TypeError/);
+    assert.match(bug.stderr, /\n\s+at /, 'the stack locates it');
+    const db = await main(['test-sqlite', '--repo', repo]);
+    assert.equal(db.code, 3);
+    assert.deepEqual(JSON.parse(db.stdout), { error: 'unavailable', message: 'database is locked' });
+    assert.equal(db.stderr, 'dowser: database is locked\n');
+  } finally {
+    delete commands['test-bug'];
+    delete commands['test-sqlite'];
+  }
 });

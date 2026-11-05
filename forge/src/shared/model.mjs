@@ -24,6 +24,8 @@ export const REASONS = /** @type {const} */ (['false-positive', 'already-known',
 export const EVIDENCE_TYPES = /** @type {const} */ (['code', 'doc', 'git', 'ticket', 'page', 'goal', 'dep', 'sarif']);
 /** A pushed record's `quote_sha` (wire mode): the first 16 hex of sha256 of the whitespace-normalised quote. */
 export const QUOTE_SHA_RE = /^[0-9a-f]{16}$/;
+/** A run's or card's `focus`: `goal:<text>` or `area:<path>` (the schema's provenance.focus pattern). */
+export const FOCUS_RE = /^(goal|area):\S/;
 /** Evidence types whose `quote` is mandatory and mechanically re-checked by `verify` (D8). */
 export const QUOTED_TYPES = /** @type {const} */ (['code', 'doc']);
 export const SIZES = /** @type {const} */ (['XS', 'S', 'M', 'L', 'XL']);
@@ -429,7 +431,7 @@ export function validateCandidate(input, opts = {}) {
     if (isOneOf(QUOTED_TYPES, e.type) && !str(e.quote) && !(wire && e.quote_sha !== undefined)) {
       return no(`evidence[${i}].quote:required for ${e.type} evidence${wire ? ' (or quote_sha)' : ''}`);
     }
-    if (e.quote !== undefined && typeof e.quote !== 'string') return no(`evidence[${i}].quote:must be a string`);
+    if (e.quote !== undefined && (typeof e.quote !== 'string' || e.quote.length === 0)) return no(`evidence[${i}].quote:must be a non-empty string (omit it when there is none)`);
     if (e.url !== undefined && !str(e.url)) return no(`evidence[${i}].url:must be a non-empty string`);
     if (e.url !== undefined && !isHttpsUrl(e.url)) return no(`evidence[${i}].url:must be an https:// URL`);
   }
@@ -476,6 +478,7 @@ export function validateCandidate(input, opts = {}) {
   for (const k of ['model', 'harness', 'run_id', 'focus']) {
     if (pv[k] !== undefined && !str(pv[k])) return no(`provenance.${k}:must be a non-empty string`);
   }
+  if (pv.focus !== undefined && !FOCUS_RE.test(String(pv.focus))) return no('provenance.focus:must be goal:<...> or area:<...>');
   for (const k of ['lens_version', 'model', 'harness', 'run_id', 'focus']) {
     const pl = long(`provenance.${k}`, pv[k], F.provenance); if (pl) return no(pl);
   }

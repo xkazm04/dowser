@@ -27,7 +27,7 @@ did not measure.
 | `confidence_why` | One sentence: what makes it this strong, and what would raise it. |
 | `doc_impact` | Docs or pages that must change when it ships (repo paths or page refs). Omit the key if none; do not write `[]` for "not checked". |
 | `delivery_risk` | `{blast: low|medium|high}`. Leave `bus_factor` out: the store measures it at `verify` (below). |
-| `provenance` | `{lens_version, model, harness, focus?}`: the pack's `version`, your model id, the harness, and `focus` on a focused run. You may omit `run_id`: `propose` stamps it from `--run`, and overwrites a different one with a `note`. |
+| `provenance` | `{lens_version, model, harness, focus?}`: the pack's `version`, your model id, the harness, and `focus` on a focused run. You may omit `run_id`: `propose` stamps it from `--run`, and overwrites a different one with a `note`. It stamps `lens_version` from the loaded pack the same way. |
 | `impact` | 1-10, from the lens pack's "Impact" table: defects, how bad if left (10 = data loss, breach, an outage on a main path); opportunities, the value if done. Omit it only when you cannot judge it: the card is then **unscored** and ranks after every scored card. |
 | `impact_why` | One line, at most 200 characters: the reason for the number. Required with `impact`. |
 | `risk` | 1-10, the risk of **making the change** (blast radius x irreversibility), never the severity. Omit it and the store reads `delivery_risk.blast` (low 2, medium 5, high 8). When you set both, they agree (see "Delivery risk"). |

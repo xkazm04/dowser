@@ -2,9 +2,10 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { getProposal, openStore, propose, runStart } from '../lib/store.mjs';
+import { getProposal, openStore, propose, runFinish, runStart } from '../lib/store.mjs';
 import { findQuote, parseRef, verifyRun } from '../lib/verify.mjs';
-import { ingestSources } from '../lib/sync.mjs';
+import { normalizeAnchor } from '../lib/fingerprint.mjs';
+import { ingestSources, outbox } from '../lib/sync.mjs';
 import { execFileSync } from 'node:child_process';
 import { KINDS, candidate, gitRepo, removeDir, tempDir, writeFiles } from './_fixture.mjs';
 
@@ -25,6 +26,14 @@ test('parseRef reads path and line hints', () => {
   assert.deepEqual(parseRef('src/a.js#L7-L9'), { path: 'src/a.js', line: 7 });
   assert.deepEqual(parseRef('src/a.js#login'), { path: 'src/a.js' });
   assert.deepEqual(parseRef('src\\a.js'), { path: 'src/a.js' });
+  assert.deepEqual(parseRef('src/a.js#L12C3'), { path: 'src/a.js', line: 12 });
+  assert.deepEqual(parseRef('src/a.js#login:5'), { path: 'src/a.js', line: 5 });
+});
+
+test('parseRef and normalizeAnchor agree: #L10nProvider is a symbol, not line 10', () => {
+  assert.deepEqual(parseRef('src/i18n.js#L10nProvider'), { path: 'src/i18n.js' });
+  assert.equal(normalizeAnchor('src/i18n.js#L10nProvider'), 'src/i18n.js#L10nProvider');
+  assert.deepEqual(parseRef('src/cache.js#L2Cache'), { path: 'src/cache.js' });
 });
 
 test('findQuote: whitespace-normalized, near the line or anywhere in the file', () => {
@@ -175,4 +184,35 @@ test('verifyRun reads quotes at the run head commit: an uncommitted quote fails,
     assert.equal(out.results.find((x) => x.fp === old.fp)?.result, 'verified', 'the pushed links show the committed line');
     assert.deepEqual(findQuote(g, 'src/a.js:1', 'export const uncommitted = 2;'), { found: 'near-line', line: 1 }, 'without a rev: the working tree');
   } finally { removeDir(g); }
+});
+
+test('evidence a re-propose adds to a verified or pushed card is checked by the next verify; a failed quote never reaches the outbox', () => {
+  writeFiles(repo, { 'src/grow.js': 'export function grow() {\n  return real();\n}\n// second real line\n' });
+  const real = { type: 'code', ref: 'src/grow.js:2', quote: 'return real();' };
+  const fake = { type: 'code', ref: 'src/grow.js:9', quote: 'THIS LINE DOES NOT EXIST' };
+  const second = { type: 'code', ref: 'src/grow.js:4', quote: '// second real line' };
+  const quotesSent = (/** @type {string} */ run, /** @type {string} */ fp) => {
+    const sent = JSON.parse(String(outbox(db, { projectKey: 'p', runId: run }).proposals_json));
+    return sent.find((/** @type {any} */ r) => r.fp === fp)?.evidence.map((/** @type {any} */ e) => e.quote);
+  };
+  const r1 = runStart(db, { mode: 'full' }).id;
+  const fp = String(propose(db, r1, candidate({ topic: 'grown after verify', evidence: [real] }), { kinds: KINDS }).fp);
+  assert.equal(verifyRun(db, repo, r1).results.find((r) => r.fp === fp)?.result, 'verified');
+  runFinish(db, { runId: r1, lenses: {} });
+
+  const r2 = runStart(db, { mode: 'full' }).id;
+  assert.equal(propose(db, r2, candidate({ topic: 'grown after verify', evidence: [real, fake] }), { kinds: KINDS }).result, 'evidence-grew');
+  assert.deepEqual(quotesSent(r2, fp), ['return real();'], 'before verify: the new quote is held back');
+  const v2 = verifyRun(db, repo, r2);
+  assert.deepEqual(v2.rechecked, [{ fp, result: 'held', note: 'verify-failed:src/grow.js:9', checks: [{ type: 'code', ref: fake.ref, found: false, why: 'quote-not-found' }], sources: [], unchecked: [] }]);
+  assert.equal(getProposal(db, fp)?.status, 'verified', 'the status stays: a person may have seen the card');
+  assert.deepEqual(quotesSent(r2, fp), ['return real();'], 'a quote verify did not find never goes out');
+  runFinish(db, { runId: r2, lenses: {} });
+
+  const r3 = runStart(db, { mode: 'full' }).id;
+  propose(db, r3, candidate({ topic: 'grown after verify', evidence: [real, second] }), { kinds: KINDS });
+  assert.deepEqual(verifyRun(db, repo, r3).rechecked?.map((x) => x.result), ['checked']);
+  assert.deepEqual(quotesSent(r3, fp), ['return real();', '// second real line']);
+  assert.equal(verifyRun(db, repo, r3).rechecked, undefined, 'checked once: nothing new to re-check');
+  runFinish(db, { runId: r3, lenses: {} });
 });
