@@ -356,7 +356,10 @@ push, not a sortable table.
     titles the field Description. **Accepted issue:** the description opens with a **facts table** (Impact n/10 and
     its reason; Score with its breakdown in one line, or "unscored"; Confidence and why; Effort n/10 with size and
     days; Risk n/10 with the blast radius; Lens / kind; "MVP of the <lens> lens" when it is one; each value clipped
-    to 300 characters), then the rationale, then the card body, then
+    to 300 characters), then the rationale, then **Expected benefit** (the impact and its reason, then the body's
+    Expected impact), then **Where it is and how to reproduce** (every code and doc place the card names, linked to
+    the scanned commit when the inbox has a repository URL, and the anchors no evidence covers, then the body's Flow
+    steps), then the rest of the card body, then
     **Supporting views** when the card has any, then **Evidence**, then "Proposed by Dowser (DW-n)". Each view is
     its message in bold, the view, then "From <refs>" in italics. A table or matrix becomes a Jira table, and a
     highlighted row is bold. A flow becomes a numbered list, and a marked step ends with "(friction)", "(failure)",

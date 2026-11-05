@@ -45,12 +45,14 @@ const headingAt = (content, h) => content.findIndex((n) => n.type === 'heading' 
 /** The blocks under "Supporting views", up to the Evidence heading. @param {any} doc @returns {any[]} */
 const views = (doc) => doc.content.slice(headingAt(doc.content, 'Supporting views') + 1, headingAt(doc.content, 'Evidence'));
 
-test('a card without artifacts produces exactly the ADF it did before artifacts existed, after the facts table', () => {
+test('a card without artifacts: facts, rationale, where it is, the body, evidence - and no Supporting views', () => {
   const inbox = 'https://acme.atlassian.net/inbox?ref=DW-4';
   const expected = {
     type: 'doc', version: 1, content: [
       factsTable(card()),
       { type: 'paragraph', content: [{ type: 'text', text: 'Carts vanish.' }] },
+      { type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: 'Where it is and how to reproduce' }] },
+      { type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'src/session/expire.ts:17', marks: [{ type: 'code' }] }] }] }] },
       ...markdownToAdf(BODY.replace('## Description', '## Details')),
       { type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: 'Evidence' }] },
       {

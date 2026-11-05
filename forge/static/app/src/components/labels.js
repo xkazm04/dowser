@@ -90,6 +90,65 @@ const scale10 = (v) => Number.isInteger(v) && v >= 1 && v <= 10;
 const posNum = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
 const clipText = (s, n) => { const t = String(s).replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
 
+const strV = (v) => typeof v === 'string' && v.trim().length > 0;
+const objV = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * Mirror of `bodyParts` and `issueOutline` in skill/scripts/lib/model.mjs (the server builds the Jira issue from
+ * that one; forge/test/ui-outline.test.mjs keeps the two equal). The card body's `## ` sections in order, `{heading, text}` (text trimmed; the text before the first heading is
+ * dropped). A body without headings is one section headed ''.
+ * @param {unknown} body
+ * @returns {{heading: string, text: string}[]}
+ */
+export function bodyParts(body) {
+  const src = String(body ?? '');
+  const parts = src.split(/^##[ \t]+(.+?)[ \t]*#*[ \t]*$/m);
+  if (parts.length === 1) return src.trim() ? [{ heading: '', text: src.trim() }] : [];
+  /** @type {{heading: string, text: string}[]} */
+  const out = [];
+  for (let i = 1; i < parts.length; i += 2) out.push({ heading: parts[i].trim(), text: String(parts[i + 1] ?? '').trim() });
+  return out;
+}
+
+const BENEFIT_RE = /^expected (impact|benefit)$/i;
+const FLOW_RE = /^(flow|steps|how to reproduce|reproduce)$/i;
+
+/**
+ * The outline the Jira issue (and the accept preview) is laid out by, so a person sees first what doing it buys and
+ * where to look: `benefit` (the judged impact with why, then the body's "Expected impact"), `where` (every place
+ * the card names: its code and doc evidence refs, with the web link a Forge card carries, then anchors no evidence
+ * ref already covers) and `steps` (the body's "Flow": the user path for a defect, the build order for a proposal),
+ * then `rest`, the remaining body sections as Markdown ("Description" shown as "Details"). Absent parts are omitted.
+ * @param {Record<string, any>} card  a proposal record or a Forge card
+ * @returns {{benefit?: {impact?: string, text?: string}, where?: {ref: string, link?: string}[], steps?: string, rest: string}}
+ */
+export function issueOutline(card) {
+  const sections = bodyParts(card.body);
+  const benefitText = sections.find((s) => BENEFIT_RE.test(s.heading))?.text;
+  const steps = sections.find((s) => FLOW_RE.test(s.heading))?.text;
+  const rest = sections
+    .filter((s) => !BENEFIT_RE.test(s.heading) && !FLOW_RE.test(s.heading))
+    .map((s) => (s.heading ? `## ${/^description$/i.test(s.heading) ? 'Details' : s.heading}\n${s.text}` : s.text))
+    .join('\n\n');
+  const impact = scale10(card.impact) ? `${card.impact}/10${card.impact_why ? ` - ${card.impact_why}` : ''}` : undefined;
+  /** @type {{ref: string, link?: string}[]} */
+  const where = [];
+  const seen = new Set();
+  for (const e of Array.isArray(card.evidence) ? card.evidence : []) {
+    if (!objV(e) || (e.type !== 'code' && e.type !== 'doc') || !strV(e.ref) || seen.has(e.ref)) continue;
+    seen.add(e.ref);
+    where.push(strV(e.link) ? { ref: e.ref, link: e.link } : { ref: e.ref });
+  }
+  const covered = (/** @type {string} */ a) => [...seen].some((r) => r.split(/[:#]/)[0] === a.split('#')[0]);
+  for (const a of Array.isArray(card.anchors) ? card.anchors : []) if (strV(a) && !covered(a) && !seen.has(a)) { seen.add(a); where.push({ ref: a }); }
+  /** @type {{benefit?: {impact?: string, text?: string}, where?: {ref: string, link?: string}[], steps?: string, rest: string}} */
+  const out = { rest };
+  if (impact || benefitText) out.benefit = { ...(impact ? { impact: clipText(impact, FACT_MAX) } : {}), ...(benefitText ? { text: benefitText } : {}) };
+  if (where.length) out.where = where;
+  if (steps) out.steps = steps;
+  return out;
+}
+
 /**
  * The facts table the issue opens with: a line-for-line mirror of `factsOf` in skill/scripts/lib/model.mjs (the
  * server's forge/src/core/adf.mjs builds the real table from that one; this copy only feeds the accept preview).
@@ -136,9 +195,15 @@ export function scoreBreakdown(parts) {
  * supporting views when there are any, an Evidence list, then "Proposed by Dowser (DW-n)". The server builds the
  * real issue (verdict.accept); this preview only mirrors it. `artifacts` is omitted when the card has none.
  * @param {{title: string, rationale?: string, body?: string, ref: string, evidence?: {type: string, ref: string, quote?: string}[], artifacts?: any[]}} card
+ * @returns {{summary: string, facts: {label: string, value: string}[], rationale: string, benefit?: {impact?: string, text?: string}, where?: {ref: string, link?: string}[], steps?: string, body: string, evidence: {type: string, ref: string, quote?: string}[], artifacts?: any[]}}
  */
 export function issuePreview(card) {
-  const preview = { summary: card.title, facts: factsOf(card), rationale: String(card.rationale ?? ''), body: String(card.body ?? '').replace(/^(\s*#{1,6}\s+)Description\s*#*\s*$/m, '$1Details'), evidence: card.evidence ?? [] };
+  const o = issueOutline(card);
+  const preview = {
+    summary: card.title, facts: factsOf(card), rationale: String(card.rationale ?? ''),
+    ...(o.benefit ? { benefit: o.benefit } : {}), ...(o.where ? { where: o.where } : {}), ...(o.steps ? { steps: o.steps } : {}),
+    body: o.rest, evidence: card.evidence ?? [],
+  };
   return Array.isArray(card.artifacts) && card.artifacts.length > 0 ? { ...preview, artifacts: card.artifacts } : preview;
 }
 

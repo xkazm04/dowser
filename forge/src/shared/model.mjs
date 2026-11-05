@@ -616,6 +616,61 @@ export function factsOf(card, lensNames = {}) {
 }
 
 /**
+ * The card body's `## ` sections in order, `{heading, text}` (text trimmed; the text before the first heading is
+ * dropped). A body without headings is one section headed ''.
+ * @param {unknown} body
+ * @returns {{heading: string, text: string}[]}
+ */
+export function bodyParts(body) {
+  const src = String(body ?? '');
+  const parts = src.split(/^##[ \t]+(.+?)[ \t]*#*[ \t]*$/m);
+  if (parts.length === 1) return src.trim() ? [{ heading: '', text: src.trim() }] : [];
+  /** @type {{heading: string, text: string}[]} */
+  const out = [];
+  for (let i = 1; i < parts.length; i += 2) out.push({ heading: parts[i].trim(), text: String(parts[i + 1] ?? '').trim() });
+  return out;
+}
+
+const BENEFIT_RE = /^expected (impact|benefit)$/i;
+const FLOW_RE = /^(flow|steps|how to reproduce|reproduce)$/i;
+
+/**
+ * The outline the Jira issue (and the accept preview) is laid out by, so a person sees first what doing it buys and
+ * where to look: `benefit` (the judged impact with why, then the body's "Expected impact"), `where` (every place
+ * the card names: its code and doc evidence refs, with the web link a Forge card carries, then anchors no evidence
+ * ref already covers) and `steps` (the body's "Flow": the user path for a defect, the build order for a proposal),
+ * then `rest`, the remaining body sections as Markdown ("Description" shown as "Details"). Absent parts are omitted.
+ * @param {Record<string, any>} card  a proposal record or a Forge card
+ * @returns {{benefit?: {impact?: string, text?: string}, where?: {ref: string, link?: string}[], steps?: string, rest: string}}
+ */
+export function issueOutline(card) {
+  const sections = bodyParts(card.body);
+  const benefitText = sections.find((s) => BENEFIT_RE.test(s.heading))?.text;
+  const steps = sections.find((s) => FLOW_RE.test(s.heading))?.text;
+  const rest = sections
+    .filter((s) => !BENEFIT_RE.test(s.heading) && !FLOW_RE.test(s.heading))
+    .map((s) => (s.heading ? `## ${/^description$/i.test(s.heading) ? 'Details' : s.heading}\n${s.text}` : s.text))
+    .join('\n\n');
+  const impact = scale10(card.impact) ? `${card.impact}/10${card.impact_why ? ` - ${card.impact_why}` : ''}` : undefined;
+  /** @type {{ref: string, link?: string}[]} */
+  const where = [];
+  const seen = new Set();
+  for (const e of Array.isArray(card.evidence) ? card.evidence : []) {
+    if (!obj(e) || (e.type !== 'code' && e.type !== 'doc') || !str(e.ref) || seen.has(e.ref)) continue;
+    seen.add(e.ref);
+    where.push(str(e.link) ? { ref: e.ref, link: e.link } : { ref: e.ref });
+  }
+  const covered = (/** @type {string} */ a) => [...seen].some((r) => r.split(/[:#]/)[0] === a.split('#')[0]);
+  for (const a of Array.isArray(card.anchors) ? card.anchors : []) if (str(a) && !covered(a) && !seen.has(a)) { seen.add(a); where.push({ ref: a }); }
+  /** @type {{benefit?: {impact?: string, text?: string}, where?: {ref: string, link?: string}[], steps?: string, rest: string}} */
+  const out = { rest };
+  if (impact || benefitText) out.benefit = { ...(impact ? { impact: clipText(impact, FACT_MAX) } : {}), ...(benefitText ? { text: benefitText } : {}) };
+  if (where.length) out.where = where;
+  if (steps) out.steps = steps;
+  return out;
+}
+
+/**
  * Checks a triage decision's fields: a reject needs a reason code, `other` needs a note.
  * @param {{to: string, reason?: string, note?: string}} d
  * @returns {string | undefined} why it is invalid, or undefined

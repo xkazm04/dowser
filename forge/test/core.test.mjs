@@ -163,9 +163,10 @@ test('accept creates the issue first, then records issue_ref/issue_url and an ac
     fp: record().fp, status: 'accepted', decided_by: `forge:${ME}`, decided_at: '2026-10-27T10:00:00.000Z',
     external_ref: 'DW-1', issue_ref: 'SHOP-41', issue_url: 'https://acme.atlassian.net/browse/SHOP-41',
   }]);
-  // the issue text: rationale, the five sections, the evidence list, then the closing line
+  // the issue text: rationale, Expected benefit (the body's Expected impact), Where it is and how to reproduce (the
+  // body's Flow), the remaining sections, the evidence list, then the closing line
   const text = adfToText(d.jira.created[0].description);
-  const order = ['Customers keep asking', 'Summary', 'Details', 'Flow', 'Expected impact', 'Evaluation', 'Evidence', 'Proposed by Dowser (DW-1)'];
+  const order = ['Customers keep asking', 'Expected benefit', 'Where it is and how to reproduce', 'Summary', 'Details', 'Evaluation', 'Evidence', 'Proposed by Dowser (DW-1)'];
   assert.ok(!/^Description$/m.test(text), 'Jira titles the field Description; the body does not repeat it');
   let at = -1;
   for (const s of order) { const i = text.indexOf(s, at + 1); assert.ok(i > at, `${s} in order`); at = i; }

@@ -3,7 +3,7 @@
 // comment a merge into a Jira issue adds (F5), and ADF / Confluence storage HTML to plain text for the
 // source tools. ADF reference: developer.atlassian.com/cloud/jira/platform/apis/document/structure/.
 
-import { artifactsProblem, factsOf } from '../shared/model.mjs';
+import { artifactsProblem, factsOf, issueOutline } from '../shared/model.mjs';
 
 /**
  * @typedef {import('./ports.mjs').AdfNode} AdfNode
@@ -184,8 +184,10 @@ export const SAMPLE_NOTE = "Created from Dowser sample data: a scan of Dowser's 
 
 /**
  * The description of the issue an accept creates (contract amendment 3, the UI preview shows the same order):
- * the facts table, the rationale, the card body (its five sections), the supporting views under "Supporting views"
- * when the card has any, the evidence list with links, then "Proposed by Dowser (DW-n)". `o.sample` (a card of the
+ * the facts table, the rationale, "Expected benefit" (impact and why, then the body's Expected impact), "Where it
+ * is and how to reproduce" (the code and doc places the card names, linked, then the body's Flow steps), the rest of
+ * the body (issueOutline), the supporting views under "Supporting views" when the card has any, the evidence list
+ * with links, then "Proposed by Dowser (DW-n)". `o.sample` (a card of the
  * sample inbox) opens it with SAMPLE_NOTE, so the issue says where it came from before anything else.
  * @param {Card} card
  * @param {string} [inboxUrl]
@@ -195,7 +197,18 @@ export const SAMPLE_NOTE = "Created from Dowser sample data: a scan of Dowser's 
 export function issueDescription(card, inboxUrl, o = {}) {
   /** @type {AdfNode[]} */
   const content = [...(o.sample ? [paragraph([text(SAMPLE_NOTE)])] : []), factsTable(card), paragraph(inline(String(card.rationale)))];
-  content.push(...markdownToAdf(issueBody(card.body)));
+  const o2 = issueOutline(card);
+  if (o2.benefit) {
+    content.push(heading(3, 'Expected benefit'));
+    if (o2.benefit.impact) content.push(paragraph([text('Impact: ', STRONG), ...inline(o2.benefit.impact)]));
+    if (o2.benefit.text) content.push(...markdownToAdf(o2.benefit.text));
+  }
+  if (o2.where || o2.steps) {
+    content.push(heading(3, 'Where it is and how to reproduce'));
+    if (o2.where) content.push(list(o2.where.map((w) => [text(w.ref, w.link ? [linkMark(w.link)] : [{ type: 'code' }])])));
+    if (o2.steps) content.push(...markdownToAdf(o2.steps));
+  }
+  if (o2.rest) content.push(...markdownToAdf(o2.rest));
   if (Array.isArray(card.artifacts) && card.artifacts.length > 0) {
     const refs = card.evidence.map((e) => e.ref);
     content.push(heading(3, 'Supporting views'), ...card.artifacts.flatMap((a) => artifactBlocks(a, refs)));

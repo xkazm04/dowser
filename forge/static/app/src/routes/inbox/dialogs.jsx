@@ -10,6 +10,7 @@ import { Button, Dialog, SectionMessage, Spinner } from '../../components/ui.jsx
 import { DW_REF_RE, JIRA_KEY_RE, REASONS, issuePreview, plural } from '../../components/labels.js';
 import { Markdown } from '../../components/Markdown.jsx';
 import { Artifact } from '../../components/Artifact.jsx';
+import { safeHref } from '../../safeHref.js';
 
 /**
  * Accept: target Jira project + issue type, pre-filled with the inbox default; preview of the issue.
@@ -120,6 +121,26 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
             </table>
           </div>
           <div className="dw-md"><p>{preview.rationale}</p></div>
+          {preview.benefit && (
+            <div className="dw-md">
+              <h4>Expected benefit</h4>
+              {preview.benefit.impact && <p><strong>Impact: </strong>{preview.benefit.impact}</p>}
+            </div>
+          )}
+          {preview.benefit?.text && <Markdown source={preview.benefit.text} />}
+          {(preview.where || preview.steps) && (
+            <div className="dw-md">
+              <h4>Where it is and how to reproduce</h4>
+              {preview.where && (
+                <ul>
+                  {preview.where.map((w) => (
+                    <li key={w.ref}>{w.link ? <a href={safeHref(w.link)} target="_blank" rel="noopener noreferrer">{w.ref}</a> : <code>{w.ref}</code>}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+          {preview.steps && <Markdown source={preview.steps} />}
           <Markdown source={preview.body} />
           {preview.artifacts && (
             <div className="dw-md dwr-arts--compact">
