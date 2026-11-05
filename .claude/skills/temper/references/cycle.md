@@ -77,7 +77,14 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
 - An exploratory persona pass (a subagent playing a product person on the fixture and local UI) runs when the cycle
   touched a UI surface (`forge/static/app/`, or a route or resolver a spec covers). A cycle that changed none (a
   CLI-only module, `"uat": "tests"` in modules.json) skips it and says so in `uat.persona_pass`
-  (`"skipped: no UI surface touched"`). The pass writes findings as
+  (`"skipped: no UI surface touched"`).
+- `"not-reachable: <why>"` is the state for a change a person would see, but that no UI surface the pass can drive
+  reaches: a server-only message or refusal the fixture bridge never produces, a Jira issue or comment body that the
+  local Jira double neither refuses nor renders. Name the paths and say which specs cover them instead. It is
+  neither a pass nor a skip: nobody walked the change. When a reachable UI path also changed, run the
+  pass on that path.
+- `uat.persona_pass` is one of `"run"` (or `"run: <what it found>"`), `"skipped: <why>"` or `"not-reachable: <why>"`;
+  `cycle end` refuses any other form. The pass writes findings as
   `{title, surface, steps, expected, actual, screenshot?, spec?}`. They are filed with
   `node tools/temper-tickets.mjs file --findings <json>` (deduped by fingerprint, labelled `temper-uat`).
 
@@ -128,7 +135,8 @@ stored as written. These are known and type-checked:
   scanned), `pushed` (the refs pushed to the inbox) and `lens_states` (text, each lens's state).
 - `built[]`: `slice` ("1/2"), `commits` and `specs` (lists), `qa` (who wrote the specs, e.g. `subagent`).
 - `uat` is free-form, and all of it is self-reported: the runner's own e2e counts, its gate results, where its
-  result files are and `persona_pass` (run, or why not). `cycle end` reads none of it.
+  result files are and `persona_pass` (its state, section 5). `cycle end` checks only the form of `persona_pass` and
+  trusts none of it.
 
 `skill_issues` is what the runner learned about the loop itself (this skill, its scripts, the brief). Each entry
 has exactly `where`, `what`, `evidence` and `fix`, each a non-empty string. `cycle end` stores them in the row's

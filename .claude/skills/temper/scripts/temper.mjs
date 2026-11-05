@@ -868,6 +868,14 @@ const BUILT_INFO = /** @type {Record<string, [string, (v: unknown) => boolean]>}
   slice: ['text like 1/2', (v) => typeof v === 'string'], commits: ['a list of commits', isStrings], specs: ['a list of paths', isStrings],
   qa: ['text (who wrote the specs: subagent, ...)', (v) => typeof v === 'string'],
 });
+/**
+ * The exploratory persona pass's states (references/cycle.md, Simulated UAT): `run` (with what it found after a colon),
+ * `skipped: <why>` (no UI surface touched), `not-reachable: <why>` (a UI-visible change that neither the fixture
+ * bridge nor the local doubles can reach, such as a server-only message or a Jira body). `not run: <why>` is the first
+ * runners' form, still read.
+ */
+const PERSONA_PASS_RE = /^(run(: \S.*)?|(skipped|not-reachable|not run): \S.*)$/s;
+const PERSONA_PASS_FORMS = '"run", "run: <what it found>", "skipped: <why>" or "not-reachable: <why>"';
 /** @param {any} o @param {Record<string, [string, (v: unknown) => boolean]>} spec @param {string} at */
 function checkInfo(o, spec, at) {
   for (const [k, [what, ok]] of Object.entries(spec)) if (o[k] !== undefined && !ok(o[k])) throw new UsageError(`${at}.${k} is ${what}`);
@@ -915,6 +923,8 @@ export function validateCycleFile(raw, o) {
     if (typeof raw.scan?.project_key !== 'string' || !Number.isInteger(raw.scan.created)) throw new UsageError('scan is {project_key, created, cost_usd?, minutes?, turns?, run_id?, head?, pushed?, lens_states?}');
     checkInfo(raw.scan, SCAN_INFO, 'scan');
   }
+  const persona = raw.uat && typeof raw.uat === 'object' ? raw.uat.persona_pass : undefined;
+  if (persona !== undefined && (typeof persona !== 'string' || !PERSONA_PASS_RE.test(persona))) throw new UsageError(`uat.persona_pass is ${PERSONA_PASS_FORMS}`);
   return raw.verdicts === undefined ? [] : checkVerdicts(raw.verdicts);
 }
 

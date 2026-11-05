@@ -530,6 +530,13 @@ test('cycle file: cycle 1\'s runner file (2026-11-05) is accepted as written, in
     assert.throws(() => validateCycleFile(c, o), (e) => e instanceof Error && e.message.startsWith(path), path);
   }
   assert.throws(() => validateCycleFile({ ...cycle1, persona: 'x' }, o), /unknown cycle key persona/, 'the top level stays closed');
+  // the persona pass has explicit states; a server-only change is not-reachable, never a silent pass
+  for (const ok of ['run', 'run: 2 findings filed', 'skipped: no UI surface touched', 'not-reachable: Jira comment bodies only; forge/test covers them']) {
+    assert.equal(validateCycleFile({ ...cycle1, uat: { ...cycle1.uat, persona_pass: ok } }, o).length, 4, ok);
+  }
+  for (const bad of ['passed', 'not-reachable', 'not-reachable: ', 'skipped', true]) {
+    assert.throws(() => validateCycleFile({ ...cycle1, uat: { ...cycle1.uat, persona_pass: bad } }, o), /uat\.persona_pass is "run", .*"not-reachable: <why>"/, String(bad));
+  }
 });
 
 test('cycle end: appends the quality-snapshot row itself when none was written since the cycle began, so the instrument fills', () => {
