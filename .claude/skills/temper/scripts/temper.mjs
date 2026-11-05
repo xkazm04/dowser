@@ -278,6 +278,9 @@ function needDay(ctx) {
 
 /** @param {Ctx} ctx @param {string} [dir] */
 const cleanTree = (ctx, dir = ctx.root) => gitIn(ctx, dir, 'status', '--porcelain', '--untracked-files=no') === '';
+/** Clean but for the day records (yesterday's report, regenerated at the start, rides onto the new branch). @param {Ctx} ctx */
+const cleanButRecords = (ctx) => ctx.run('git', ['-C', ctx.root, 'status', '--porcelain', '--untracked-files=no']).stdout.split(/\r?\n/).filter(Boolean)
+  .every((l) => l.slice(3).replaceAll('\\', '/').startsWith('docs/evals/temper/'));
 
 /** @param {Ctx} ctx */
 function readDirections(ctx) {
@@ -296,7 +299,7 @@ function dayStart(ctx, f) {
   if (prev && prev.date === date && !prev.ended_at) throw new Refusal(`the day ${date} is already started: run day resume`);
   const branch = dowserRepo(charter).landing.branch.replace('<date>', date);
   if (gitOk(ctx, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`)) throw new Refusal(`${branch} already exists: run day resume, or pick another --date`);
-  if (!cleanTree(ctx)) throw new Refusal('the working tree has uncommitted changes: commit or stash them first');
+  if (!cleanButRecords(ctx)) throw new Refusal('the working tree has uncommitted changes outside docs/evals/temper/: commit or stash them first');
   const dirs = readDirections(ctx);
   for (const id of [...approve, ...veto]) if (!dirs.proposed[id]) throw new UsageError(`direction ${id} is not a pending proposal`);
   for (const id of approve) { dirs.approved.push(id); delete dirs.proposed[id]; }
@@ -304,7 +307,12 @@ function dayStart(ctx, f) {
   if (approve.length || veto.length) writeJson(p.directions, dirs);
   const base = git(ctx, 'rev-parse', 'master');
   git(ctx, 'branch', branch, 'master');
+  // the day records ride onto the new branch, uncommitted (a red day's never reached master): set aside, then back
+  const records = readRecords(ctx.root);
+  if (records.size) gitOk(ctx, 'checkout', '-q', '--', 'docs/evals/temper');
   git(ctx, 'checkout', '-q', branch);
+  if (records.size) mkdirSync(p.records, { recursive: true });
+  for (const [n, text] of records) writeFileSync(join(p.records, n), text);
   const day = { date, branch, base, last_green: base, started_at: ctx.now().toISOString(), repos: {} };
   writeJson(p.day, day);
   if (existsSync(p.cycle)) rmSync(p.cycle);
@@ -1092,6 +1100,12 @@ export function repoLand(ctx, day, repo, dry) {
   return { ...out, decision: 'land', head, checks, reasons, steps: [['git', 'push', 'origin', 'HEAD:master']] };
 }
 
+/** The day records as they are now. @param {string} root @returns {Map<string, string>} */
+function readRecords(root) {
+  const dir = paths(root).records;
+  return new Map(existsSync(dir) ? readdirSync(dir).filter((n) => statSync(join(dir, n)).isFile()).map((n) => [n, readFileSync(join(dir, n), 'utf8')]) : []);
+}
+
 /** @param {Ctx} ctx @param {Record<string, string | true>} f */
 function land(ctx, f) {
   const day = needDay(ctx);
@@ -1105,6 +1119,8 @@ function land(ctx, f) {
   const dir = name === 'dowser' ? ctx.root : day.repos[name].worktree;
   /** @type {Record<string, unknown>} */
   const landing = { decision: plan.decision, at: ctx.now().toISOString(), head: plan.head };
+  // a rollback must not lose the day's records: they are read before the reset and written back after it (uncommitted)
+  const records = plan.decision === 'rollback' ? readRecords(ctx.root) : undefined;
   for (const [cmd, ...args] of plan.steps) {
     const r = ctx.run(cmd, cmd === 'git' ? ['-C', dir, ...args] : args, { cwd: cmd === 'git' ? undefined : ctx.root });
     const stage = cmd === 'git' ? `git ${args[0]}` : args.includes('forge:build-ui') ? 'build-ui' : args.at(-1)?.includes('install list') ? 'install list' : 'deploy';
@@ -1117,7 +1133,10 @@ function land(ctx, f) {
     }
   }
   if (landing.ok === undefined) landing.ok = ['land', 'none', 'commit-only'].includes(plan.decision);
-  if (plan.decision === 'rollback') landing.target = /** @type {any} */ (plan).target;
+  if (plan.decision === 'rollback') {
+    landing.target = /** @type {any} */ (plan).target;
+    if (records) { for (const [n, text] of records) { mkdirSync(paths(ctx.root).records, { recursive: true }); writeFileSync(join(paths(ctx.root).records, n), text); } landing.records_restored = records.size; }
+  }
   if (plan.decision === 'land' && landing.ok && /** @type {any} */ (plan).deploy) landing.deployed = /** @type {any} */ (plan).deploy;
   if (plan.reasons.length) landing.reasons = plan.reasons;
   if (name === 'dowser') day.landing = landing; else day.landings = { ...(day.landings ?? {}), [name]: landing };

@@ -296,6 +296,33 @@ test('land (Dowser, executed): more than one Forge installation row is a failed 
   assert.equal(installRows('no json'), undefined);
 });
 
+test('land (Dowser, executed red): the branch resets to the last green head and the day records survive the reset', () => {
+  const w = world({ npm: { test: 1 } });
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  const base = g(w.root, 'rev-parse', 'HEAD');
+  const rec = join(w.root, 'docs', 'evals', 'temper', '2026-11-05.jsonl');
+  put(rec, `${JSON.stringify({ kind: 'cycle', n: 1, date: '2026-11-05', repo: 'dowser', target: 'tooling', green: false, head: base })}\n`);
+  put(join(w.root, 'x.txt'), 'x\n');
+  g(w.root, 'add', '-A'); g(w.root, 'commit', '-q', '-m', 'feat: x, with the cycle record');
+  const r = main(['land'], w.ctx);
+  assert.equal(r.code, 1);
+  assert.equal(r.out.decision, 'rollback');
+  assert.equal(g(w.root, 'rev-parse', 'HEAD'), base);
+  assert.equal(r.out.landing.records_restored, 1);
+  assert.match(readFileSync(rec, 'utf8'), /"target":"tooling"/);
+  // a new day starts over a modified day record (yesterday's report), but not over other changes
+  put(join(w.root, 'docs', 'evals', 'temper', 'kept.md'), 'x\n');
+  g(w.root, 'add', '-A'); g(w.root, 'commit', '-q', '-m', 'chore: records');
+  put(join(w.root, 'docs', 'evals', 'temper', 'kept.md'), 'y\n');
+  assert.equal(main(['day', 'end'], w.ctx).code, 0);
+  const d2 = main(['day', 'start', '--date', '2026-11-06'], w.ctx);
+  assert.equal(d2.code, 0, JSON.stringify(d2.out));
+  main(['day', 'end'], w.ctx);
+  put(join(w.root, 'README.md'), 'changed\n');
+  assert.match(main(['day', 'start', '--date', '2026-11-07'], w.ctx).out.error, /outside docs\/evals\/temper/);
+});
+
 /** A bp-like repo with a bare origin, and a personas-like repo with an active-runs ledger script. @param {ReturnType<typeof world>} w */
 function otherRepos(w) {
   const origin = join(w.work, 'bp-origin.git');
