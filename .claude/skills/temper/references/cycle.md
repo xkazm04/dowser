@@ -34,8 +34,19 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   `instead`) in both the answer and the runner block: triage what is undecided, then the spec-only cycle, or a repo with
   accepts left. `--scan-anyway` keeps the command. `T clock` answers `inboxes_spent` and `all_inboxes_spent`; when every
   build inbox is spent, the day ends early (SKILL.md section 1) and the report's Summary gives the reason.
-- A full four-lens scan costs about $8 (n=1, bp, 2026-11-05). A focused one-area scan costs far less: $2.91 and
-  9 minutes (n=1, dowser, `area:skill/lenses`, 2026-11-05). Budget a focused cycle from the focused figure. Never call
+- What a scan costs, measured from `~/.temper/scans.jsonl` (all 15 rows of 2026-11-05, every one `ok`; n is small, so
+  these are the first night's evidence, not constants):
+
+  | inbox | scan | n | cost min / median / max | minutes min / median / max |
+  |---|---|---|---|---|
+  | bp | full | 1 | $7.86 | 33 |
+  | bp | focused | 4 | $3.92 / $4.23 / $4.64 | 10 / 11 / 15 |
+  | dowser | focused | 6 | $2.91 / $4.07 / $5.26 | 9 / 11 / 12 |
+  | personas | full | 1 | $4.02 | 9 |
+  | personas | focused | 3 | $4.67 / $5.24 / $5.37 | 14 / 14 / 14 |
+
+  Budget a focused cycle at $4 to $5.50 and up to 15 minutes, per repo as above. No full Dowser scan ran. The two full
+  rows are one run each and disagree by a factor of two, so plan a full scan at the $8 budget it runs under. Never call
   ScheduleWakeup inside a scan.
 
 ## 3. Triage (delegate:temper)
