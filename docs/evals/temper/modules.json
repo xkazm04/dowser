@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-05T20:06:17.791Z",
+  "at": "2026-11-05T21:16:24.288Z",
   "modules": {
     "skill-store": {
       "met": false,
@@ -7,7 +7,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (318) at e26f158"
+          "detail": "typecheck pass, tests pass (327) at 2acc138"
         },
         "proposals": {
           "state": "verified",
@@ -22,7 +22,7 @@
         "quality": {
           "state": "verified",
           "ok": true,
-          "detail": "not growing (4bf7ae3 -> e26f158)"
+          "detail": "not growing (e26f158 -> 2acc138)"
         },
         "coverage": {
           "state": "verified",
@@ -37,7 +37,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (318) at e26f158"
+          "detail": "typecheck pass, tests pass (327) at 2acc138"
         },
         "proposals": {
           "state": "verified",
@@ -52,7 +52,7 @@
         "quality": {
           "state": "verified",
           "ok": true,
-          "detail": "not growing (4bf7ae3 -> e26f158)"
+          "detail": "not growing (e26f158 -> 2acc138)"
         },
         "coverage": {
           "state": "verified",
@@ -67,7 +67,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (318) at e26f158"
+          "detail": "typecheck pass, tests pass (327) at 2acc138"
         },
         "proposals": {
           "state": "verified",
@@ -82,7 +82,7 @@
         "quality": {
           "state": "verified",
           "ok": true,
-          "detail": "not growing (4bf7ae3 -> e26f158)"
+          "detail": "not growing (e26f158 -> 2acc138)"
         },
         "coverage": {
           "state": "verified",
@@ -105,14 +105,14 @@
           "detail": "open at tier 0-2: p-a0950f (t2)"
         },
         "scan_yield": {
-          "state": "unverifiable",
+          "state": "verified",
           "ok": false,
-          "detail": "1 scan(s) with focus area:forge/src in the ledger; the bar needs two"
+          "detail": "last two scans created 7, 10 cards"
         },
         "quality": {
           "state": "verified",
           "ok": true,
-          "detail": "not growing (4bf7ae3 -> e26f158)"
+          "detail": "not growing (e26f158 -> 2acc138)"
         },
         "coverage": {
           "state": "verified",
@@ -142,7 +142,7 @@
         "quality": {
           "state": "verified",
           "ok": true,
-          "detail": "not growing (4bf7ae3 -> e26f158)"
+          "detail": "not growing (e26f158 -> 2acc138)"
         },
         "coverage": {
           "state": "verified",
@@ -172,7 +172,7 @@
         "quality": {
           "state": "verified",
           "ok": true,
-          "detail": "not growing (4bf7ae3 -> e26f158)"
+          "detail": "not growing (e26f158 -> 2acc138)"
         },
         "coverage": {
           "state": "verified",
@@ -202,7 +202,7 @@
         "quality": {
           "state": "verified",
           "ok": true,
-          "detail": "not growing (4bf7ae3 -> e26f158)"
+          "detail": "not growing (e26f158 -> 2acc138)"
         },
         "coverage": {
           "state": "verified",
@@ -217,7 +217,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (318) at e26f158"
+          "detail": "typecheck pass, tests pass (327) at 2acc138"
         },
         "proposals": {
           "state": "verified",
@@ -232,7 +232,7 @@
         "quality": {
           "state": "verified",
           "ok": true,
-          "detail": "not growing (4bf7ae3 -> e26f158)"
+          "detail": "not growing (e26f158 -> 2acc138)"
         },
         "coverage": {
           "state": "verified",
