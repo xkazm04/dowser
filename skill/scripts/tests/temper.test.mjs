@@ -271,6 +271,10 @@ test('triage limits: the 20% reject/snooze floor and the day\'s caps, where snoo
   // a card decided again today counts once for the floor, at its newest verdict (the caps count every decision)
   const re = triageLimits([{ ref: 'DW-1', verdict: 'accept' }], [{ ref: 'DW-1', verdict: 'snooze' }, { ref: 'DW-2', verdict: 'accept' }], DEFAULT_CAPS);
   assert.deepEqual([re.decided, re.ok, re.today.accepts, re.today.rejects], [2, false, 2, 1]);
+  // a merge is neither accept nor reject: out of the share, still against the reject cap (c5: 2 merges into DW-69)
+  const merged = triageLimits([...v('accept', 4), ...v('snooze'), ...v('merge', 2)], [], DEFAULT_CAPS);
+  assert.deepEqual([merged.decided, merged.share, merged.ok, merged.today.rejects], [5, 0.2, true, 3]);
+  assert.equal(triageLimits([...v('accept', 4), ...v('merge', 2)], [], DEFAULT_CAPS).ok, false, 'merges lift no share');
 });
 
 test('one verdicts file passes both triage check and temper-verdicts: inbox and recorded are optional, checked, never sent', () => {

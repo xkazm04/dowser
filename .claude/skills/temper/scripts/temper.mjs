@@ -846,9 +846,13 @@ function runRepoGates(ctx, repo, cwd) {
   return Object.fromEntries(repo.gates.filter((g) => g.when === 'land').map((g) => [g.run, ctx.run(g.run, [], { cwd, shell: true }).status === 0 ? 'pass' : 'fail']));
 }
 
-/** The reject/snooze share of decided cards. @param {Record<string, number>} c */
+/**
+ * The reject/snooze share of decided cards. A merge folds a card into another item: it is neither an accept nor a
+ * reject, so it stays out of the share (it still counts against Forge's reject cap, triageLimits).
+ * @param {Record<string, number>} c
+ */
 export function rejectShare(c) {
-  const decided = VERDICT_KINDS.reduce((n, k) => n + (c[k] ?? 0), 0);
+  const decided = (c.accept ?? 0) + (c.reject ?? 0) + (c.snooze ?? 0);
   const share = decided ? ((c.reject ?? 0) + (c.snooze ?? 0)) / decided : undefined;
   return { decided, ...(share !== undefined ? { share: Number(share.toFixed(3)) } : {}), ok: !decided || /** @type {number} */ (share) >= REJECT_SHARE };
 }
