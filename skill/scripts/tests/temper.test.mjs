@@ -11,11 +11,12 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, depDrift, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
-  capQuestions, checkFlakyGates, flakyQuestions, commitGroups, commitKind, cycleRows, cycleScratch, envCause, environmentalRed, parkedGroups, supersede, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
+  capQuestions, checkFlakyGates, flakyQuestions, repoFixmes, commitGroups, commitKind, cycleRows, cycleScratch, envCause, environmentalRed, parkedGroups, supersede, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
 } from '../../../.claude/skills/temper/scripts/temper.mjs';
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
 import { derivedIds } from '../../../tools/e2e-coverage.mjs';
 import { dryRun } from '../../../tools/temper-dryrun.mjs';
+import { fixmeSpecs, fixmesIn } from '../../../tools/temper-fixmes.mjs';
 import { parseVerdicts } from '../../../tools/temper-verdicts.mjs';
 import { gitRepo, removeDir, tempDir } from './_fixture.mjs';
 
@@ -1508,4 +1509,51 @@ test('flaky gates: cycle end accepts {gate, evidence}, the row keeps them, the r
   assert.deepEqual(crowded.later, [q], 'in Also waiting past the three');
   assert.match(renderReport({ date: 'd', commits: {}, landings: {}, cycles: [], scans: [], directions: [], questions: [], later: crowded.later }), /Also waiting: 2 flaky gates/);
   for (const f of ['runner.md', 'cycle.md']) assert.match(readFileSync(join(ROOT, '.claude/skills/temper/references', f), 'utf8'), /defect to file, never a pass to wave through/, f);
+});
+
+test('known-red specs: every test.fixme in a spec is found with its ticket, the report lists them per repo, the brief states the spec-only cycle', () => {
+  assert.deepEqual(fixmesIn([
+    "test.fixme('DW-1 the bar shows the count', async () => {});",
+    '// DW-2: blocked by the cap',
+    "test.fixme('no ticket on this line', () => {});",
+    '',
+    "test.describe.fixme('group', () => {});",
+    '',
+    '// test.fixme(commented out, DW-9)',
+    "test('fine', () => {});",
+    '',
+    'test.fixme(',
+    "  'DOW-3 a title on the next line', () => {});",
+  ].join('\n')), [{ line: 1, ticket: 'DW-1' }, { line: 3, ticket: 'DW-2' }, { line: 5, ticket: null }, { line: 10, ticket: 'DOW-3' }]);
+
+  const w = world();
+  const { bp } = twoRepoDay(w);
+  put(join(w.root, 'e2e', 'fixture', 'a.spec.mjs'), "test.fixme('DW-1 x', () => {});\n");
+  put(join(w.root, 'skill', 'x.test.mjs'), "assert(\"test.fixme('quoted')\");\n");
+  put(join(w.root, 'node_modules', 'p', 'a.spec.mjs'), "test.fixme('vendored', () => {});\n");
+  const day = JSON.parse(readFileSync(join(w.root, '.temper', 'day.json'), 'utf8'));
+  put(join(day.repos.bp.worktree, 'tests', 'b.spec.ts'), "test.fixme('no ticket', () => {});\n");
+  put(join(bp, 'tests', 'master-only.spec.ts'), "test.fixme('DW-5 not the day tree', () => {});\n");
+  assert.deepEqual(fixmeSpecs(w.root), [{ at: 'e2e/fixture/a.spec.mjs:1', ticket: 'DW-1' }]);
+  const c = JSON.parse(readFileSync(join(w.root, '.temper', 'charter.json'), 'utf8'));
+  const fixmes = repoFixmes(w.ctx, day, c);
+  assert.deepEqual(fixmes, { dowser: [{ at: 'e2e/fixture/a.spec.mjs:1', ticket: 'DW-1' }], bp: [{ at: 'tests/b.spec.ts:1', ticket: null }] }, 'the day worktree of a started repo');
+
+  const base = { date: 'd', commits: {}, landings: {}, cycles: [], scans: [], directions: [], questions: [], later: [] };
+  const md = renderReport({ ...base, fixmes });
+  assert.match(md, /## Known-red specs \(test\.fixme\)/);
+  assert.match(md, /### dowser: 1\n\n- e2e\/fixture\/a\.spec\.mjs:1: DW-1/);
+  assert.match(md, /### bp: 1 \(1 naming no ticket\)\n\n- tests\/b\.spec\.ts:1: no ticket/);
+  assert.match(renderReport(base), /## Known-red specs \(test\.fixme\)\n\nNone\./);
+  assert.match(renderReport({ ...base, fixmes: { dowser: [] } }), /## Known-red specs \(test\.fixme\)\n\nNone\./);
+  const out = main(['report', '--date', '2026-11-05'], w.ctx);
+  assert.equal(out.code, 0, JSON.stringify(out.out));
+  assert.match(readFileSync(out.out.written, 'utf8'), /e2e\/fixture\/a\.spec\.mjs:1: DW-1/, 'the report command reads the trees');
+
+  const brief = readFileSync(join(ROOT, '.claude/skills/temper/references/runner.md'), 'utf8');
+  const spec = brief.slice(brief.indexOf('## The spec-only cycle'), brief.indexOf('## A gate that fails'));
+  assert.match(spec, /When the accept cap is reached/);
+  assert.match(spec, /\*\*without\*\* `test\.fixme\(\.\.\.\)`/);
+  assert.match(spec, /removes the `test\.fixme` first/);
+  assert.match(spec, /a known-red spec is not coverage/);
 });

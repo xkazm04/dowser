@@ -93,8 +93,10 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   acceptance command (a quote or grep check that fails on the base and passes after), written by the QA subagent
   before the build and listed in `built[].specs` as the command, with `qa` saying who wrote it.
 - **Builder subagents** work in worktrees off the day branch (`loop/<date>`, or the repo's `temper/<date>`
-  worktree from `repo start`). They never edit their item's specs. They run the repo's item gates (personas:
+  worktree from `repo start`). They never edit their item's specs (a `test.fixme` mark they remove as the red control is the one exception). They run the repo's item gates (personas:
   `npm run verify:affected -- --files <files>`).
+- At the accept cap, a cycle may be spec-only: findings become specs proven red once, then marked `test.fixme(...)`
+  naming their ticket (runner.md, "The spec-only cycle"). `e2e:coverage` and the report count them.
 - Any size. An XL item is staged in slices, each slice gated and committed on its own. Merge each green slice into
   the day branch.
 - **Merge first, then verify.** The runner builds in its worktree, and its gate and e2e results there are

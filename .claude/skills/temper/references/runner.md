@@ -111,6 +111,23 @@ the director's landing still checks the diff; you still never commit a secret or
    specs, qa}]`, uat, findings, outcomes, directions, parked, notes, skill_issues, flaky_gates. Then stop every server
    you started.
 
+## The spec-only cycle
+
+When the accept cap is reached, the cycle builds nothing and still turns what it learns into proof: its UAT findings
+become specs asserting the correct behaviour, so tomorrow's builder starts from a red spec, not a paragraph.
+
+1. File the finding first (step 4): its ticket is the spec's name.
+2. Write the spec from the finding's `expected`, run it once **without** `test.fixme(...)` and see it fail on the
+   defect, not on a typo or a missing fixture. A spec that passes shows no defect: delete it and correct the finding.
+3. Mark it `test.fixme(...)` with the ticket in its title or on the line beside it, and commit the spec alone. No
+   `@covers` tag yet: a known-red spec is not coverage. The suite stays green, and every gate still runs.
+4. In the cycle file, `built` stays empty and `uat.fixmes` lists `[{spec, ticket, red}]`, `red` being the failure you
+   saw. Say "spec-only" in `notes`.
+
+The next day's builder of that ticket removes the `test.fixme` first and sees the spec fail: that is its red control,
+and removing the mark is the one spec edit a builder may make. `npm run e2e:coverage` and the morning report count every
+`test.fixme(` in a `*.spec.*` file, naming the ones with no ticket, so a growing list of known-red specs stays in view.
+
 ## A gate that fails, then passes on rerun
 
 A flaky gate is a defect to file, never a pass to wave through (cycle.md, "A flaky gate is a defect"). Read the first

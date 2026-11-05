@@ -42,6 +42,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renam
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { coverage as e2eCoverage } from '../../../../tools/e2e-coverage.mjs';
+import { fixmeSpecs } from '../../../../tools/temper-fixmes.mjs';
 import { UsageError, checkProjectKey, isMain, parseFlags, temperHome } from '../../../../tools/temper-lib.mjs';
 import { parseVerdicts } from '../../../../tools/temper-verdicts.mjs';
 
@@ -1674,7 +1675,7 @@ export function refList(refs) {
 /**
  * The morning report's markdown (operator-facing; not a Dowser runner surface, so it has no guided form). Read in two
  * minutes: the summary per repo first, then what needs the operator, the commits by repo, the rest after.
- * @param {{date: string, commits: Record<string, Commit[]>, landings: Record<string, any>, branches?: Record<string, string>, charter?: any, cycles: any[], scans: any[], bar?: any, directions: any[], questions: string[], later: string[]}} d
+ * @param {{date: string, commits: Record<string, Commit[]>, landings: Record<string, any>, branches?: Record<string, string>, charter?: any, cycles: any[], scans: any[], bar?: any, directions: any[], questions: string[], later: string[], fixmes?: Record<string, {at: string, ticket: string | null}[]>}} d
  */
 export function renderReport(d) {
   const L = [`# /temper - ${d.date}`, ''];
@@ -1729,6 +1730,16 @@ export function renderReport(d) {
     const state = r.green ? 'green' : r.superseded_by !== undefined ? `${SUPERSEDED(r.superseded_by)} (${(r.red_because ?? []).join('; ')})` : `red (${(r.red_because ?? []).join('; ')})`;
     L.push(`- ${r.n} ${r.repo ?? 'dowser'} ${r.target}: ${state}${re}${r.quota && !r.quota.ok ? ', the day\'s reject share under 20%' : ''}`);
   }
+  L.push('', '## Known-red specs (test.fixme)', '');
+  const known = Object.entries(d.fixmes ?? {}).filter(([, xs]) => xs.length);
+  if (known.length) {
+    L.push('Specs that assert correct behaviour the code does not have yet. They do not fail the suite, so this list is the only place they show.');
+    for (const [repo, xs] of known) {
+      const bare = xs.filter((x) => !x.ticket).length;
+      L.push('', `### ${repo}: ${xs.length}${bare ? ` (${bare} naming no ticket)` : ''}`, '');
+      for (const x of xs) L.push(`- ${x.at}: ${x.ticket ?? 'no ticket'}`);
+    }
+  } else L.push('None.');
   L.push('', '## Scans and costs', '');
   if (d.scans.length) {
     L.push('| inbox | focus | scanned | cards created | minutes | cost |', '|---|---|---|---|---|---|');
@@ -1939,6 +1950,22 @@ export function supersede(ctx, cycles, day, charter) {
   });
 }
 
+/**
+ * The known-red specs of each build repo as its tree stands now: Dowser's checkout, a started repo's day worktree, else
+ * its charter path. @param {Ctx} ctx @param {any} day @param {any} charter
+ * @returns {Record<string, {at: string, ticket: string | null}[]>}
+ */
+export function repoFixmes(ctx, day, charter) {
+  /** @type {Record<string, {at: string, ticket: string | null}[]>} */
+  const out = { dowser: fixmeSpecs(ctx.root) };
+  for (const r of charter?.repos ?? []) {
+    if (r?.name === 'dowser' || !r?.build) continue;
+    const dir = [day?.repos?.[r.name]?.worktree, r.path].find((p) => typeof p === 'string' && existsSync(p));
+    if (dir) out[r.name] = fixmeSpecs(dir);
+  }
+  return out;
+}
+
 /** @param {Ctx} ctx @param {Record<string, string | true>} f */
 function report(ctx, f) {
   const day = readJson(paths(ctx.root).day);
@@ -1956,7 +1983,7 @@ function report(ctx, f) {
   const liveState = live && live.rows.length && !live.rows.some((r) => r.state === 'unverifiable') ? 'signed-in' : 'unverifiable';
   const { questions, later } = startQuestions({ date, charter, directions, cycles, liveState });
   const landings = today ? { ...(day.landing ? { dowser: day.landing } : {}), ...(day.landings ?? {}) } : {};
-  const md = renderReport({ date, commits, landings, branches, charter, cycles, scans, bar, directions, questions, later });
+  const md = renderReport({ date, commits, landings, branches, charter, cycles, scans, bar, directions, questions, later, fixmes: repoFixmes(ctx, day, charter) });
   const file = join(paths(ctx.root).records, `${date}.md`);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, md);
