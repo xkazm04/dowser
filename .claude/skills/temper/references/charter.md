@@ -17,12 +17,19 @@ Ask, one topic at a time, then write the draft JSON to the OS temp folder:
 | `repos[].landing` | How does this repo land? | `{kind: loop-ff \| rebase-push \| commit-only, branch?, push?, deploy?}`. Dowser is `loop-ff` (loop/<date>, ff master, push, Forge development deploy). bp is `rebase-push` (temper/<date>, rebase onto origin/master, push HEAD:master only when its gates and the secret scan are clean). personas is `commit-only` (temper/<date> in a worktree, never pushed). |
 | `repos[].gates` | What must be green before it lands? | Command lines, run in the repo's worktree at land time. `{run, when: "item"}` is a per-item gate the builder runs, for example personas' `npm run verify:affected -- --files {files}`. |
 | `repos[].ledger` | Does the repo keep an active-runs ledger? | personas: `.claude/active-runs.md`. `repo start` checks and registers through its `scripts/active-runs.mjs`; `repo end` completes the entry. |
-| `repos[].caps` | Local triage caps | `{accepts_per_day, rejects_per_day}`, default 10 / 30. They apply when an inbox has no delegation; snoozes and merges count against rejects, as in Forge. |
+| `repos[].caps` | Local triage caps | `{accepts_per_day, rejects_per_day}`, default 10 / 30. They apply when an inbox has no delegation; snoozes and merges count against rejects, as in Forge. They count the **temper day** (the `day start` date, however long it runs); Forge's delegation caps count the **UTC day** (see below). |
 | `until` | When does the day end? | A local time, `YYYY-MM-DDTHH:MM`. Without it, the day is `limits.wall_min` long (default 480). |
 | `limits.usage_window` | Your plan's usage window | Text only: the window itself is detected from rate-limit errors (long-run.md). |
 | `out_of_bounds` | Anything the loop must not touch? | Paths or topics. Production deploys, tags and releases are always off limits; the guard enforces that. |
 | `delegation` | Which inboxes did you delegate in Jira Settings, and until when? | `{<inbox_key>: {until}}`. Remind the operator: Jira, Dowser, Settings, "Delegated triage", once per inbox. Without it, triage is recorded locally only. |
 | `live.profile` | The live sign-in profile | Default `~/.temper/chrome-profile`. Sign in with `node e2e/live/sign-in.mjs`. Until then, the live suite is unverifiable. |
+
+**The caps count two different days.** The charter's caps count the temper day: every verdict of a `day start` date,
+through its morning. Forge's delegation caps count the UTC day (docs/forge-app.md; the Settings copy says "a day (UTC)").
+A night run crosses UTC midnight, so the two disagree in both directions: Forge's count resets mid-run, and it allows
+more than the charter's count does; and the end of one temper day plus the start of the next share one UTC day, so Forge
+can refuse while the charter's count shows room. Nothing reconciles them, by decision: the operator chooses knowing this
+when setting real caps, and the report's accept-cap question says so.
 
 Then run (bash form; PowerShell: `$env:TEMPER_CHARTER_DIALOG='1'; node ...`), with nothing chained:
 

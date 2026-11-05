@@ -1828,6 +1828,9 @@ export function carriedOf(cycles) {
   return [...last.values()].filter(isCarried);
 }
 
+/** What the operator must know to set real caps (references/charter.md): the two counters' days differ. */
+export const CAP_DAY_NOTE = ' Choosing them, note that these caps count the temper day and Forge\'s delegation caps count the UTC day, so a day crossing UTC midnight is counted differently by each.';
+
 /**
  * The accept-cap question: inboxes whose accepts reached the day's cap, with the numbers and a request for real caps in
  * the charter (the charter's caps default to DEFAULT_CAPS when the day-1 dialog set none). Several inboxes make one
@@ -1851,13 +1854,13 @@ export function capQuestions(charter, cycles) {
     const { inbox, accepts, caps, carried, dflt } = hits[0];
     return [`${inbox} reached its accept cap: ${accepts} of ${caps.accepts_per_day} accepts${carried ? `, ${carried} real cards carried to the next day` : ''}. `
       + `${dflt ? `Its caps are the defaults (${caps.accepts_per_day} accepts, ${caps.rejects_per_day} rejects a day), not a choice of yours` : `Its caps are ${caps.accepts_per_day} accepts and ${caps.rejects_per_day} rejects a day`}: `
-      + 'set real caps for it in the charter (repos[].caps, in the start dialog).'];
+      + `set real caps for it in the charter (repos[].caps, in the start dialog).${CAP_DAY_NOTE}`];
   }
   const each = hits.map((h) => `${h.inbox} ${h.accepts} of ${h.caps.accepts_per_day}${h.carried ? ` (${h.carried} real cards carried to the next day)` : ''}${h.dflt ? ' on the default caps' : ` on caps of ${h.caps.accepts_per_day} accepts and ${h.caps.rejects_per_day} rejects a day`}`);
   const allDefault = hits.every((h) => h.dflt);
   return [`${hits.length} inboxes reached their accept cap: ${each.join('; ')}. `
     + `${allDefault ? `The defaults (${DEFAULT_CAPS.accepts_per_day} accepts, ${DEFAULT_CAPS.rejects_per_day} rejects a day) are not a choice of yours: set` : 'Set'}`
-    + ' real caps for each in the charter (repos[].caps, in the start dialog).'];
+    + ` real caps for each in the charter (repos[].caps, in the start dialog).${CAP_DAY_NOTE}`];
 }
 
 /**

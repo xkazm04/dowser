@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, utimesSync, w
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, depDrift, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
+  CAP_DAY_NOTE, DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, depDrift, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
   capQuestions, checkFlakyGates, flakyQuestions, repoFixmes, commitGroups, commitKind, cycleRows, cycleScratch, envCause, environmentalRed, parkedGroups, supersede, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
 } from '../../../.claude/skills/temper/scripts/temper.mjs';
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
@@ -1285,13 +1285,15 @@ test('an inbox at its accept cap: Needs you gives the numbers and asks for real 
   const accepts = (/** @type {string} */ inbox, /** @type {number} */ n) => Array.from({ length: n }, (_, i) => ({ ref: `DW-${i + 1}`, verdict: 'accept', inbox, recorded: 'local' }));
   const charter = { delegation: {}, repos: [{ name: 'dowser', inbox_key: 'dowser-temper', caps: DEFAULT_CAPS }, { name: 'bp', inbox_key: 'bp-temper', caps: { accepts_per_day: 3, rejects_per_day: 9 } }] };
   const cycles = [{ n: 1, self_reported: { verdicts: [...accepts('dowser-temper', 10), { ref: 'DW-40', verdict: 'snooze', deferred: 'cap', inbox: 'dowser-temper', recorded: 'local' }, ...accepts('bp-temper', 2)] } }];
-  assert.deepEqual(capQuestions(charter, cycles), ['dowser-temper reached its accept cap: 10 of 10 accepts, 1 real cards carried to the next day. Its caps are the defaults (10 accepts, 30 rejects a day), not a choice of yours: set real caps for it in the charter (repos[].caps, in the start dialog).']);
+  assert.deepEqual(capQuestions(charter, cycles), ['dowser-temper reached its accept cap: 10 of 10 accepts, 1 real cards carried to the next day. Its caps are the defaults (10 accepts, 30 rejects a day), not a choice of yours: set real caps for it in the charter (repos[].caps, in the start dialog).' + CAP_DAY_NOTE]);
   cycles[0].self_reported.verdicts.push(...accepts('bp-temper', 1).map((v) => ({ ...v, ref: 'DW-9' })));
   // two inboxes at their cap make one question that lists both, so the other questions keep their places
   const both = capQuestions(charter, cycles);
   assert.equal(both.length, 1);
   assert.equal(both[0], '2 inboxes reached their accept cap: dowser-temper 10 of 10 (1 real cards carried to the next day) on the default caps; '
-    + 'bp-temper 3 of 3 on caps of 3 accepts and 9 rejects a day. Set real caps for each in the charter (repos[].caps, in the start dialog).');
+    + 'bp-temper 3 of 3 on caps of 3 accepts and 9 rejects a day. Set real caps for each in the charter (repos[].caps, in the start dialog).' + CAP_DAY_NOTE);
+  assert.match(CAP_DAY_NOTE, /temper day and Forge's delegation caps count the UTC day/);
+  assert.match(readFileSync(join(ROOT, '.claude/skills/temper/references/charter.md'), 'utf8'), /The caps count two different days/);
   const { questions, later } = startQuestions({ date: '2026-11-05', charter, directions: [], cycles, liveState: 'signed-in' });
   assert.match(questions[0], /carried to today/);
   assert.match(questions[1], /^2 inboxes reached their accept cap: dowser-temper 10 of 10 .*; bp-temper 3 of 3/);
