@@ -352,7 +352,9 @@ function ruleOut(r) {
 
 /**
  * Computes rejection clusters over the transition history (local moves and ingested Forge verdicts alike):
- * a (lens, reason, topic token) shared by at least RULE_THRESHOLD distinct rejected items. Each new cluster is
+ * a (lens, reason, topic token) shared by at least RULE_THRESHOLD distinct rejected items. An item counts by its latest
+ * decision only: one rejected, resurfaced and then accepted (or snoozed, merged, rejected again for another reason)
+ * no longer stands for that rejection. Each new cluster is
  * inserted once as an `offered` rule with a draft text; a cluster whose id exists (offered, accepted or
  * declined) is never offered again. Clusters of one (lens, reason) that cover the very same items are one
  * offer, named by its longest token. Returns only the offers inserted now.
@@ -363,7 +365,10 @@ export function offerRules(db) {
   return tx(db, () => {
     const rejected = /** @type {Row[]} */ (db.prepare(
       `SELECT DISTINCT p.fp, p.lens, p.topic, p.title, t.reason FROM transitions t JOIN proposals p ON p.fp = t.fp
-       WHERE t.to_status = 'rejected' AND t.reason IS NOT NULL ORDER BY p.fp`,
+       WHERE t.to_status = 'rejected' AND t.reason IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM transitions t2 WHERE t2.fp = t.fp AND t2.id > t.id
+           AND t2.to_status IN ('accepted', 'rejected', 'snoozed', 'merged'))
+       ORDER BY p.fp`,
     ).all());
     /** @type {Map<string, {lens: string, reason: string, token: string, fps: Set<string>}>} */
     const clusters = new Map();
