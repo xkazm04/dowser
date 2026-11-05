@@ -13,7 +13,8 @@
 //   repo paths --repo <name> --add a,b   widen a ledger repo's registered paths (active-runs check, then the same
 //                                          entry completed and registered again with every path; a conflict refuses)
 //   repo end --repo <name> [--status t]
-//   cycle begin --target <module>|direction:<id> | --repo <name> --target <focus>
+//   cycle begin --target <module>|direction:<id> | --repo <name> --target <focus>   prints, with the rest, the `runner`
+//                                          block: the launch inputs of the cycle runner (references/runner.md)
 //   cycle end --file <cycle.json> [--repo <r>]   npm ci where a lockfile is newer than its node_modules (root, forge,
 //                                          forge/static/app), then the gates, reads the e2e results, appends the row; the open
 //                                          cycle is the --repo's, else the file's repo's, else the only one open
@@ -717,11 +718,49 @@ function cycleBegin(ctx, f) {
     const ref = dayRef(name);
     return `node tools/temper-scan.mjs --repo "${path}" --project-key ${inbox}${typeof ref === 'string' ? ` --ref ${ref}` : ''}${typeof focus === 'string' ? ` --focus "${focus}"` : ''} --budget-usd 8`;
   };
+  const command = scan(repo.name, repo.path, repo.inbox_key, t.focus);
   return {
     ...cycle, ...t, ...(repo.name === 'dowser' ? { branch: day.branch } : {}), clock: c,
-    scan: { [repo.name]: scan(repo.name, repo.path, repo.inbox_key, t.focus),
+    scan: { [repo.name]: command,
       others_due: otherReposDue(ctx, charter, day.date).filter((/** @type {any} */ r) => r.name !== repo.name).map((/** @type {any} */ r) => ({ ...r, command: scan(r.name, r.path, r.inbox_key, undefined) })) },
     triage: { min_reject_share: REJECT_SHARE, caps: repo.caps, check: `temper.mjs triage check --verdicts <file> --inbox ${repo.inbox_key}`, out_of_bounds: charter.out_of_bounds ?? [] },
+    runner: runnerBlock(ctx, { charter, day, repo, cycle, focus: t.focus, command, ...(Array.isArray(t.item_gates) ? { itemGates: t.item_gates } : {}) }),
+  };
+}
+
+/** The repo law files a runner reads, those present. */
+const LAW_FILES = ['CLAUDE.md', 'AGENTS.md', '.claude/CLAUDE.md'];
+
+/**
+ * The cycle runner's launch inputs (references/runner.md): the director's launch message is a copy of this block.
+ * Dowser builds in a worktree of its own off the day branch (temper/c<n>), which the director merges; another repo
+ * builds in its day worktree from repo start, on its temper/<date> branch.
+ * @param {Ctx} ctx
+ * @param {{charter: any, day: any, repo: Repo, cycle: {n: number, date: string, target: string}, focus: unknown, command: string, itemGates?: unknown}} o
+ */
+export function runnerBlock(ctx, { charter, day, repo, cycle, focus, command, itemGates }) {
+  const { n, date, target } = cycle;
+  const isDowser = repo.name === 'dowser';
+  const today = triageLimits([], verdictsToday(ctx.root, date, repo.inbox_key), repo.caps).today;
+  const yesterday = localDate(new Date(Date.parse(`${date}T12:00:00`) - 86400000));
+  const carried = carriedOf(cycleRows(ctx.root, yesterday)).filter((v) => v.inbox === repo.inbox_key)
+    .map((v) => ({ ref: v.ref, ...(typeof v.note === 'string' ? { note: v.note } : {}) }));
+  let work;
+  if (isDowser) {
+    const worktree = join(ctx.home, 'worktrees', `dowser-c${n}`);
+    work = { worktree, branch: `temper/c${n}`, from: day.branch, create: `git worktree add -b temper/c${n} "${worktree}" ${day.branch}`,
+      reaches_day_branch: `the director merges temper/c${n} into ${day.branch}; cycle end verifies the merged tree` };
+  } else {
+    const r = day.repos?.[repo.name] ?? {};
+    work = { worktree: r.worktree, branch: r.branch, from: r.branch, reaches_day_branch: `commits in the worktree are on ${r.branch}; the director lands it under the repo's law` };
+  }
+  return {
+    brief: join(SKILL_DIR, 'references', 'runner.md'), loop_root: ctx.root,
+    repo: repo.name, path: repo.path, inbox: repo.inbox_key, n, target, ...(typeof focus === 'string' ? { focus } : {}), scan: command,
+    caps: { ...repo.caps, used: today, left: { accepts: Math.max(0, repo.caps.accepts_per_day - today.accepts), rejects: Math.max(0, repo.caps.rejects_per_day - today.rejects) } },
+    carried, work, ...(Array.isArray(itemGates) ? { item_gates: itemGates } : {}), out_of_bounds: charter.out_of_bounds ?? [],
+    laws: LAW_FILES.map((f) => join(repo.path, f)).filter((f) => existsSync(f)),
+    cycle_file: join(ctx.home, 'runs', `cycle-${n}-${repo.name}.json`),
   };
 }
 

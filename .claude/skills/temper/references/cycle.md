@@ -1,7 +1,9 @@
 # One cycle
 
-`T cycle begin` prints the target, the focus, the scan commands, the triage caps and the branch. Every step below runs
-in a subagent that writes its result to a file under the OS temp folder. You keep only file paths and exit codes.
+`T cycle begin` prints the target, the focus, the scan commands, the triage caps, the branch and the `runner` block.
+The runner subagent runs the steps below from references/runner.md and that block, and it writes the cycle file to the
+block's `cycle_file`. Every step runs in a subagent that writes its result to a file. You keep only file paths and
+exit codes.
 
 ## 1. Pick
 
@@ -73,8 +75,10 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   "new spec", "encodes the old behaviour, updated here" or "unrelated: stop and report". A red test in the third
   group stops the item.
 - One QA subagent per cycle writes every item's specs, one commit per item: QA agents in one shared worktree fight
-  over the index and one spec file. QA never patches source to prove a spec can pass (and never restores it with
-  `git checkout` in the shared worktree): that the spec turns green is the builder's to show.
+  over the index and one spec file. QA never patches source in the shared worktree (and never restores it with
+  `git checkout` there). When it patches source to show a spec can pass, it does so in its own scratch worktree
+  (`git worktree add <tmp> <branch>`, removed after) and never commits the patch: that the spec turns green on the
+  build is the builder's to show.
 - A pure docs card (doc drift inside the registered paths) has no natural test file. Its spec is a declared
   acceptance command (a quote or grep check that fails on the base and passes after), written by the QA subagent
   before the build and listed in `built[].specs` as the command, with `qa` saying who wrote it.
