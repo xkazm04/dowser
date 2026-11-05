@@ -73,7 +73,7 @@ A failure the caller can act on is a tool result with `isError: true`. Its JSON 
 | `bad-input` | arguments are missing or have the wrong shape |
 | `bad-cursor` | the `cursor` was not issued by this server, or it expired. Pull again without `cursor`; re-ingesting is idempotent |
 | `unknown-project` | Forge has no inbox for `project_key` |
-| `unauthorized` | the token is missing, expired or lacks scope. The harness signs in again |
+| `unauthorized` | the token is missing, expired or lacks scope: the harness signs in again. Or (the scan source tools, which read as the person) the person has not granted Dowser access to read on their behalf; signing in does not create that grant, so the message says to open Dowser in Jira once and allow access |
 | `forbidden` | signed in, but this account may not open the inbox for `project_key` (see "Inbox access"), or may not make that change in Jira, or (`dowser_verdicts_record`) the inbox has no delegated triage that holds today. Not retried; the message says what would allow it. Additive (2026-10-30) |
 | `unavailable` | Jira, Confluence or TWG did not answer. Retry on the next run, not in a loop |
 
@@ -377,7 +377,7 @@ Input: `{project_key, rules_json?, trust_json?, outcomes_since?, deliveries_json
 | field | type | rule |
 |---|---|---|
 | `project_key` | string | required. The inbox must exist (a push creates it), else `unknown-project`; the caller must be able to open it, else `forbidden` |
-| `rules_json` | string | optional. A JSON array of at most 50 offered rules. Send `"[]"` (or omit it) to only read. When a transport gives no tool name, a call with `rules_json` is routed here by its shape, so send `"[]"` rather than omitting it |
+| `rules_json` | string | optional. A JSON array of at most 50 offered rules. Send `"[]"` to only read (the skill's `reflect export` always does). When a transport gives no tool name, a call with `rules_json` is routed here by its shape and one without it is a verdict pull, so send `"[]"` rather than omitting it |
 | `rules_json[].id` | string | required, 1-64 characters of letters, digits and `. _ : -`. Unique per `project_key` |
 | `rules_json[].lens` | string | required: `opportunity`, `ux-friction`, `doc-drift` or `security-cra` |
 | `rules_json[].text` | string | required, 1-2000 characters. The draft wording |
@@ -465,7 +465,8 @@ evidence, `<ref> no longer contains: <quote>` - what the skill's `delivery` re-c
 `dowser_work_report` - input `{ref, status, note?, url?}`: `status` `started`, `pr_open`, `done` or `blocked`;
 `note` at most 2000 characters; `url` an `https` link (a pull request, a build), anything else `bad-input`. The
 caller must be allowed to comment on the item's Jira issue (`forbidden` otherwise). The report is left as a comment
-on the issue, then appended to `work_reports` (v028); when Jira refuses the comment the answer is `unavailable` and
+on the issue (it names the person the agent reports for by display name, else as a Jira mention, never by the raw
+account id), then appended to `work_reports` (v028); when Jira refuses the comment the answer is `unavailable` and
 nothing is recorded. Output `{report: {ref, issue_ref, status, note?, url?, by, at}}`. A report never changes the
 item's status: delivery is what Jira and the code say.
 
@@ -496,7 +497,9 @@ The whole call is `forbidden` when the inbox has no delegation, or its last day 
 the message says a person switches it on (or renews it) in Dowser Settings. Otherwise each verdict, in order, goes
 through the same decision path as a person's in the inbox, with the caller's own checks (Create issues for an
 accept, Add comments for a merge into a Jira issue), and is recorded with `decided_by` `delegate:temper`. An accept
-creates the Jira issue labelled `dowser-delegate`.
+creates the Jira issue labelled `dowser-delegate`, and its description opens with a line naming the delegate
+("Accepted by Temper (delegate) through delegated triage, not by a person."), so the mark holds when a project's create
+screen refuses the label and the issue is created without it.
 
 Output: `{results: [{ref, result, why?, issue_ref?}], more?}`, one result per verdict looked at, in order.
 

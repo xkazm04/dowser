@@ -108,7 +108,8 @@ test('setup: three same-reason rejections offer a rule; `reflect export` is read
 
   // before any offer: nothing to send, but the call is still worth making (decisions and outcomes come back)
   const bare = cli('reflect', 'export').out;
-  assert.deepEqual(Object.keys(bare).sort(), ['project_key', 'trust_json'], 'rules_json omitted when nothing is offered');
+  assert.deepEqual(Object.keys(bare).sort(), ['project_key', 'rules_json', 'trust_json'], 'rules_json sent when nothing is offered');
+  assert.equal(bare.rules_json, '[]', 'an empty list, so a call with no tool name still routes to reflect');
   // three human rejects of predicted cards: the slice has history, so its trust goes to the Learning tab
   const trust = JSON.parse(bare.trust_json);
   assert.deepEqual(trust.slices.map((/** @type {any} */ s) => [s.slice, s.level, s.ceiling, s.n]), [['product|opportunity|-|S', 0, 1, 3]]);
@@ -181,8 +182,8 @@ test('ingest: a decision is a CAS offered -> accepted|declined by the Forge deci
   const flip = save('r2.json', { rules: [{ ...decision, state: 'declined', text: undefined }], outcomes: [] });
   assert.deepEqual(cli('reflect', 'ingest', '--file', flip).out.rules_applied, 0);
   assert.equal(cli('rules', 'list').out.rules[0].state, 'accepted');
-  // and nothing exported once nothing is offered
-  assert.equal(cli('reflect', 'export').out.rules_json, undefined);
+  // and an empty list exported once nothing is offered
+  assert.equal(cli('reflect', 'export').out.rules_json, '[]');
 });
 
 test('ingest: a bare Forge account id becomes forge:<id>; a malformed entry is reported (exit 1), the rest applied', () => {
@@ -283,7 +284,7 @@ test('mock round trip over stdio: offer, person decides in Forge, person rates t
   assert.deepEqual(cli('reflect', 'ingest', '--file', f).out, { rules_applied: 0, rules_skipped: 1, outcomes_added: 0, outcomes_seen: 1 });
   assert.equal(cli('rules', 'list', '--lens', 'ux-friction').out.rules[0].state, 'declined');
   assert.equal(cli('rules', 'offer').out.offers.length, 0, 'a declined cluster is not offered again');
-  assert.equal(cli('reflect', 'export').out.rules_json, undefined);
+  assert.equal(cli('reflect', 'export').out.rules_json, '[]', 'nothing is offered any more');
 
   // 4. context weighs accepted-but-wrong patterns; show lists the rows; status is unchanged
   const ctx = cli('context', '--run', runId, '--lens', 'security-cra');

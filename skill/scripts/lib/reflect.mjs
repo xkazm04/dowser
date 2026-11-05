@@ -1,7 +1,7 @@
 // @ts-check
 // Dowser reflection (WP2 of the learning loop): the skill's side of the `dowser_reflect_sync` Forge tool
 // (docs/contracts/forge-mcp-2.md, additive tool 7; wire types in forge/src/core/types.mjs).
-//   exportOffers   -> the tool's arguments {project_key, rules_json?, trust_json?, more?}: the rules in state
+//   exportOffers   -> the tool's arguments {project_key, rules_json, trust_json?, more?}: the rules in state
 //                     `offered` (oldest first, at most RULES_MAX, titles at most TITLES_MAX) and the per-slice trust
 //                     (trust.mjs trustReport, the newest TRUST_EVENTS_MAX events) for the Learning tab; read-only
 //   ingestReflect  <- the tool's response {rules: RuleDecision[], outcomes: Outcome[]}: each decided rule is a
@@ -76,7 +76,7 @@ export function exportOffers(db, projectKey) {
   ).all()).map((d) => clean({ fp: d.fp, state: d.state, found: Number(d.found), total: Number(d.total),
     commits: d.commits_json ? JSON.parse(String(d.commits_json)).length : undefined, checked_at: d.checked_at }));
   return /** @type {Row} */ (clean({
-    project_key: projectKey, rules_json: offers.length ? JSON.stringify(offers) : undefined,
+    project_key: projectKey, rules_json: JSON.stringify(offers),
     trust_json: trust.slices.length || trust.events.length ? JSON.stringify(trust) : undefined,
     outcomes_since: typeof newest === 'string' && newest ? newest : undefined,
     deliveries_json: deliveries.length ? JSON.stringify(deliveries) : undefined,

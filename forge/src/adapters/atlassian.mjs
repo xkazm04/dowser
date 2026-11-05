@@ -32,7 +32,7 @@
 import * as forgeApi from '@forge/api';
 import { htmlToText, trimText } from '../core/adf.mjs';
 import { BODY_MAX, TICKET_FIELDS, ticketItem } from '../core/sources.mjs';
-import { AppError, ISSUE_KEY_RE, errTag, omitAbsent } from '../core/util.mjs';
+import { AppError, GRANT_MESSAGE, ISSUE_KEY_RE, errTag, omitAbsent } from '../core/util.mjs';
 
 /**
  * @typedef {import('../core/ports.mjs').Jira} Jira
@@ -69,7 +69,8 @@ export function useForgeApi(over) {
 /**
  * The JSON of a product response, or a thrown Error naming the status (the core maps it to `unavailable`);
  * 401 becomes `unauthorized`. The response body stays out of the error: it can quote issue or page content,
- * and errors reach the logs and the person.
+ * and errors reach the logs and the person. Only a 400's field KEYS are kept (`fields`, from Jira's `errors`
+ * object), because they name what Jira refused (a required field, the issue type) and carry no content.
  * @param {APIResponse} res
  * @param {string} what
  * @returns {Promise<any>}
@@ -77,15 +78,33 @@ export function useForgeApi(over) {
 async function json(res, what) {
   if (res.ok) return res.status === 204 ? {} : res.json();
   if (res.status === 401) throw new AppError('unauthorized', `${what} refused the credentials (401); sign in again`);
-  throw httpError(`${what} answered ${res.status}`, res.status);
+  const fields = res.status === 400 ? await refusedFields(res) : undefined;
+  throw httpError(`${what} answered ${res.status}`, res.status, fields);
+}
+
+/** A field key Jira may name in `errors` (`summary`, `customfield_10010`); anything else is left out. */
+const FIELD_KEY_RE = /^[A-Za-z0-9_.-]{1,64}$/;
+
+/**
+ * The keys of a 400 body's `errors` object, in order, or undefined when it has none. The values are never read.
+ * @param {APIResponse} res
+ * @returns {Promise<string[] | undefined>}
+ */
+async function refusedFields(res) {
+  let body;
+  try { body = await res.json(); } catch { return undefined; }
+  const errors = body?.errors;
+  if (typeof errors !== 'object' || errors === null || Array.isArray(errors)) return undefined;
+  const keys = Object.keys(errors).filter((k) => FIELD_KEY_RE.test(k));
+  return keys.length ? keys : undefined;
 }
 
 /**
  * An Error naming a product call and its HTTP status, with `status` set so the core can say which status it was
- * without quoting the message (core/util.mjs errTag).
- * @param {string} message @param {number} status
+ * without quoting the message (core/util.mjs errTag), and `fields` when a 400 named the refused field keys.
+ * @param {string} message @param {number} status @param {string[]} [fields]
  */
-const httpError = (message, status) => Object.assign(new Error(message), { status });
+const httpError = (message, status, fields) => Object.assign(new Error(message), { status }, fields ? { fields } : {});
 
 /**
  * Runs a user-context call; a missing user grant becomes `unauthorized`.
@@ -95,7 +114,7 @@ const httpError = (message, status) => Object.assign(new Error(message), { statu
  */
 async function asPerson(fn) {
   try { return await fn(); } catch (e) {
-    if (e instanceof api.NeedsAuthenticationError) throw new AppError('unauthorized', 'Dowser needs your permission to read on your behalf; allow access and retry');
+    if (e instanceof api.NeedsAuthenticationError) throw new AppError('unauthorized', GRANT_MESSAGE);
     throw e;
   }
 }

@@ -68,7 +68,8 @@ the query policy allows one statement per request. The core is correct without t
 - Inserts check first and are also guarded by a UNIQUE constraint.
 - A decision whose verdict row did not land is rebuilt from the decision stamp before the next pull.
 - An accept creates the Jira issue before it changes any state. If Jira fails, nothing is written and the
-  item stays open.
+  item stays open. When Jira refuses the create (400), the answer names the field keys Jira's `errors` listed
+  (never their values, which can quote issue content) and suggests another project or issue type.
 
 Because each statement is a request (30-60 ms), the store works in sets. A push reads the fps it carries in one
 `IN` query, takes a block of DW numbers with one compare-and-set, and writes proposals and evidence with multi-row
@@ -447,7 +448,8 @@ numbers 0 to 200), **Switch on** / **Save** and **Switch off**. A failed save sh
   day's caps, counted from the verdict log per UTC day (accepts against one cap; rejects, snoozes and merges
   against the other). It is a gate in front of the inbox's own decision path (`core/verdicts.mjs`, the same one
   the Rovo agent uses): the caller is still the signed-in account, and its inbox access and Jira permissions
-  apply as for a person. An accept's Jira issue carries the label `dowser-delegate`.
+  apply as for a person. An accept's Jira issue carries the label `dowser-delegate`, and its description opens with
+  a line saying Temper (delegate) accepted it, not a person, so the mark holds where a project refuses the label.
 - **How it shows.** The triage history in the inbox, the evidence panel and the card dialog shows a delegate's
   decision as the chip **Decided by Temper (delegate)**, never as a name. The Learning digest counts the
   delegate's verdicts apart from people's (`reflect.data` `verdicts_by`). The skill learns from them (precedents,

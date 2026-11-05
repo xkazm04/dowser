@@ -15,7 +15,7 @@ import { candidate, gitRepo, listFiles, removeDir, tempDir } from './_fixture.mj
 import { loadLensPack } from '../lib/memory.mjs';
 import { callTool as mockTool, emptyBackend, TOOLS as MOCK_TOOLS } from '../../../tools/mock-forge-mcp.mjs';
 import { MANIFEST, TOOLS, toolsFromManifest } from '../../../tools/local-forge.mjs';
-import { TOOL_NAMES } from '../../../forge/src/core/app.mjs';
+import { TOOL_NAMES, actionName } from '../../../forge/src/core/app.mjs';
 
 const CLI = fileURLToPath(new URL('../dowser.mjs', import.meta.url));
 const SERVER = fileURLToPath(new URL('../../../tools/local-forge.mjs', import.meta.url));
@@ -310,8 +310,9 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
 
   // --- 6. idempotency: another round trip applies nothing new
   const ex2 = cli('reflect', 'export').out;
-  assert.equal(ex2.rules_json, undefined, 'nothing is offered any more');
-  const sync2 = await tool('dowser_reflect_sync', { ...ex2, rules_json: '[]' });
+  assert.equal(ex2.rules_json, '[]', 'nothing is offered any more: an empty list, still sent');
+  assert.equal(actionName('mcp', [], ex2), 'dowser_reflect_sync', 'with no tool name the export routes to reflect by its shape');
+  const sync2 = await tool('dowser_reflect_sync', ex2);
   assert.deepEqual(cli('reflect', 'ingest', '--file', save('sync2.json', sync2)).out, { rules_applied: 0, rules_skipped: 1, outcomes_added: 0, outcomes_seen: 1 });
   assert.deepEqual((await tool('dowser_verdicts_pull', { project_key: projectKey, cursor: page.cursor })).verdicts, [], 'no new verdicts');
 

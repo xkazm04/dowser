@@ -10,6 +10,7 @@
 import { REASONS, decisionProblem, isOneOf } from '../shared/model.mjs';
 import { issueDescription, mergeComment } from './adf.mjs';
 import { cardOf, toCard, toVerdict } from './cards.mjs';
+import { delegateName } from './names.mjs';
 import { writeIssueProperty } from './issue-property.mjs';
 import { counterValue, evidenceOfMany, findProposal, inboxRowsByKey, insertMany, isSampleKey, needInbox, nextCounter, nextCounterBlock, proposalsMatching, toProposal } from './store.mjs';
 import { DELEGATE_KIND, DELEGATE_LABEL, NOTE_MAX, REF_RE, SAMPLE_LABEL, VERDICT_STATUSES } from './types.mjs';
@@ -35,6 +36,19 @@ export const CLAIM_MS = 120_000;
 
 /** @param {string} accountId @returns {string} */
 export const deciderOf = (accountId) => `forge:${accountId}`;
+
+/**
+ * The answer to a create Jira refused. When the adapter kept the refused field keys (`fields`, a 400's `errors`
+ * keys, never their values), it names them and the next step; otherwise only the status.
+ * @param {unknown} e @param {string} ref
+ */
+function refusedCreate(e, ref) {
+  const fields = /** @type {any} */ (e)?.fields;
+  const named = Array.isArray(fields) ? fields.filter((f) => typeof f === 'string' && /^[A-Za-z0-9_.-]{1,64}$/.test(f)) : [];
+  if (!named.length) return `Jira did not create the issue (${errTag(e)}); ${ref} stays open`;
+  return `Jira did not create the issue (${errTag(e)}; refused fields: ${named.join(', ')}); ${ref} stays open. `
+    + 'Choose another project or issue type, or ask a Jira admin about those fields.';
+}
 
 /**
  * An optional decision note: trimmed, absent when empty, at most NOTE_MAX characters.
@@ -188,18 +202,20 @@ export async function accept(deps, args, who) {
   } else {
     const card = await cardOf(db, p);
     // A sample card's issue is real but marked: the label and an opening line say it came from sample data. A
-    // delegate's accept is labelled too, so Jira shows which issues no person accepted.
+    // delegate's accept is labelled too, so Jira shows which issues no person accepted, and its description opens
+    // with a line naming the delegate: the adapter drops labels when a project's create screen refuses them.
     const sample = isSampleKey(p.project_key);
-    const labels = [...(sample ? [SAMPLE_LABEL] : []), ...(who.by.startsWith(`${DELEGATE_KIND}:`) ? [DELEGATE_LABEL] : [])];
+    const delegate = who.by.startsWith(`${DELEGATE_KIND}:`) ? delegateName(who.by) : undefined;
+    const labels = [...(sample ? [SAMPLE_LABEL] : []), ...(delegate ? [DELEGATE_LABEL] : [])];
     try {
       issue = await deps.jira.createIssue({
         projectKey: /** @type {string} */ (projectKey), issueTypeId: /** @type {string} */ (issueTypeId), summary: card.title,
-        description: issueDescription(card, await links.inboxUrl(p.ref), { sample }),
+        description: issueDescription(card, await links.inboxUrl(p.ref), { sample, delegate }),
         ...(labels.length ? { labels } : {}),
       });
     } catch (e) {
       await db.exec('UPDATE proposals SET accept_claim = NULL WHERE id = ? AND accept_claim = ?', [p.id, claim]);
-      throw new AppError('unavailable', `Jira did not create the issue (${errTag(e)}); ${p.ref} stays open`);
+      throw new AppError('unavailable', refusedCreate(e, p.ref));
     }
     try {
       await db.exec("UPDATE proposals SET issue_ref = ?, issue_url = ? WHERE id = ? AND status = 'open' AND accept_claim = ?", [issue.key, issue.url, p.id, claim]);

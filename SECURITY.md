@@ -96,7 +96,8 @@ them is an unfinished release. `v0.2.0` was published this way.
   while a person has switched it on in Dowser Settings (until a day, within per-day caps). Only the Settings
   page's resolver writes that switch; no MCP tool or Rovo action can, so a delegate cannot extend its own
   mandate. The tool runs with the signed-in account's own permissions, its accepts are labelled
-  `dowser-delegate` in Jira, and the skill never counts its verdicts toward trust.
+  `dowser-delegate` in Jira and open their description with a line naming the delegate (which holds where a
+  project refuses the label), and the skill never counts its verdicts toward trust.
 - The /temper loop's own session is bounded by a PreToolUse hook (`.claude/skills/temper/scripts/guard.mjs`).
   It denies writes to the operator's charter, production Forge deploys (and a deploy that names no environment),
   tags, releases, force pushes, and pushes to any branch that a repo's charter landing does not permit. The charter
