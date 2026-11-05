@@ -159,6 +159,8 @@ test('runScanStream: a heartbeat line every interval on the side channel (elapse
   const a = scanArgs({ prompt: 'p', mcpConfig: 'm', addDir: 'T', stream: true });
   assert.deepEqual(a.slice(a.indexOf('--output-format'), a.indexOf('--output-format') + 3), ['--output-format', 'stream-json', '--verbose']);
   assert.equal(heartbeatLine(125000), 'temper-scan: 2 min elapsed', 'without a step: the elapsed time only');
+  assert.equal(heartbeatLine(125000, 'Grep x', 'bp-temper'), 'temper-scan bp-temper: 2 min elapsed, last step: Grep x', 'the inbox key tells concurrent scans apart');
+  assert.match(readFileSync(join(ROOT, 'tools/temper-scan.mjs'), 'utf8'), /runScanStream\(args, \{ work, w, key: o\.projectKey \}\)/, 'temper-scan passes its key');
   assert.equal(toolStep({ type: 'assistant', message: { content: [{ type: 'text', text: 'x' }, { type: 'tool_use', name: 'Bash', input: { command: 'node dowser.mjs\n  verify' } }] } }), 'Bash node dowser.mjs verify');
   assert.equal(toolStep({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: 'x'.repeat(100) } }] } })?.length, 'Read '.length + 82);
   assert.equal(toolStep({ type: 'user', message: { content: [] } }), undefined);
@@ -175,12 +177,12 @@ test('runScanStream: a heartbeat line every interval on the side channel (elapse
     ].join('\n'));
     /** @type {string[]} */
     const beats = [];
-    const r = await runScanStream(['-p', 'x'], { work, w: { repo: work, home: work }, everyMs: 100, beat: (l) => beats.push(l),
+    const r = await runScanStream(['-p', 'x'], { work, w: { repo: work, home: work }, key: 'bp-temper', everyMs: 100, beat: (l) => beats.push(l),
       claude: { command: process.execPath, args: [fake], shell: false, resolved: fake } });
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.deepEqual([r.result.result, r.result.total_cost_usd, r.result.num_turns], ['summary', 0.25, 3]);
     assert.ok(beats.length >= 2, `beats: ${beats.length}`);
-    assert.ok(beats.every((l) => /^temper-scan: \d+ min elapsed/.test(l)));
+    assert.ok(beats.every((l) => /^temper-scan bp-temper: \d+ min elapsed/.test(l)));
     assert.match(beats.at(-1) ?? '', /, last step: Grep TODO$/);
     assert.match(readFileSync(join(work, 'claude.json'), 'utf8'), /"type":"result"/, 'the whole stream is kept');
     writeFileSync(fake, "process.stdout.write(JSON.stringify({ type: 'result', is_error: true, result: 'x' }) + '\\n'); process.exit(1);");

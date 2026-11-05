@@ -41,7 +41,7 @@ scans that the loop starts keep theirs.
    triage, build, simulated UAT and update. Launch one runner subagent for them with references/runner.md (the
    brief) and the `runner` block that `cycle begin` printed: your launch message is a copy of that block (the brief's
    path, repo, path, inbox, n, target, focus, the scan command with its `--ref`, the caps used and left today, the
-   work tree and branch, the cycle file `~/.temper/runs/cycle-<n>-<repo>.json`). For Dowser, create the work tree
+   work tree and branch, the scratch folder `~/.temper/runs/c<n>/`, the cycle file `~/.temper/runs/cycle-<n>-<repo>.json`). For Dowser, create the work tree
    with its `work.create` first. The runner writes the cycle file; you merge and end the cycle.
    Each repo has its own open cycle (`.temper/cycle-<repo>.json`), so a bp cycle can run beside a Dowser one. Cycle
    numbers stay unique across repos for the day.

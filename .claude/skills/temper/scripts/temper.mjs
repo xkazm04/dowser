@@ -38,10 +38,11 @@
 // claims is `self-reported`; a missing, stale or signed-out instrument is `unverifiable`, never a pass.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { coverage as e2eCoverage } from '../../../../tools/e2e-coverage.mjs';
+import { fixmeSpecs } from '../../../../tools/temper-fixmes.mjs';
 import { UsageError, checkProjectKey, isMain, parseFlags, temperHome } from '../../../../tools/temper-lib.mjs';
 import { parseVerdicts } from '../../../../tools/temper-verdicts.mjs';
 
@@ -71,7 +72,9 @@ export const QUALITY_KEYS = ['long_functions', 'dup_windows', 'lib_cycles', 'tod
 const PARTS = /** @type {const} */ (['uat', 'proposals', 'scan_yield', 'quality', 'coverage']);
 const CHARTER_KEYS = ['repos', 'until', 'out_of_bounds', 'limits', 'delegation', 'live'];
 const REPO_KEYS = ['name', 'path', 'inbox_key', 'build', 'landing', 'gates', 'ledger', 'caps'];
-const CYCLE_KEYS = ['target', 'repo', 'scan', 'other_scans', 'verdicts', 'built', 'uat', 'findings', 'outcomes', 'directions', 'parked', 'notes', 'skill_issues'];
+const CYCLE_KEYS = ['target', 'repo', 'scan', 'other_scans', 'verdicts', 'built', 'uat', 'findings', 'outcomes', 'directions', 'parked', 'notes', 'skill_issues', 'flaky_gates'];
+/** A gate that failed and then passed on rerun: a defect the report lists, never a pass. */
+const FLAKY_GATE_KEYS = ['gate', 'evidence'];
 /** What the cycle runner learned about the loop itself: each issue names where (a file, step or brief), what, the evidence and the fix. */
 const SKILL_ISSUE_KEYS = ['where', 'what', 'evidence', 'fix'];
 const VERDICT_KINDS = ['accept', 'reject', 'snooze', 'merge'];
@@ -732,6 +735,18 @@ function cycleBegin(ctx, f) {
 const LAW_FILES = ['CLAUDE.md', 'AGENTS.md', '.claude/CLAUDE.md'];
 
 /**
+ * One cycle's scratch folder, created empty: concurrent runners overwrote each other's files in a shared one. Cycle
+ * numbers restart each day, so an earlier day's c<n> is moved aside rather than read as this cycle's.
+ * @param {Ctx} ctx @param {number} n @returns {string}
+ */
+export function cycleScratch(ctx, n) {
+  const dir = join(ctx.home, 'runs', `c${n}`);
+  if (existsSync(dir) && readdirSync(dir).length) renameSync(dir, `${dir}-before-${ctx.now().getTime()}`);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/**
  * The cycle runner's launch inputs (references/runner.md): the director's launch message is a copy of this block.
  * Dowser builds in a worktree of its own off the day branch (temper/c<n>), which the director merges; another repo
  * builds in its day worktree from repo start, on its temper/<date> branch.
@@ -758,8 +773,10 @@ export function runnerBlock(ctx, { charter, day, repo, cycle, focus, command, it
     brief: join(SKILL_DIR, 'references', 'runner.md'), loop_root: ctx.root,
     repo: repo.name, path: repo.path, inbox: repo.inbox_key, n, target, ...(typeof focus === 'string' ? { focus } : {}), scan: command,
     caps: { ...repo.caps, used: today, left: { accepts: Math.max(0, repo.caps.accepts_per_day - today.accepts), rejects: Math.max(0, repo.caps.rejects_per_day - today.rejects) } },
-    carried, work, ...(Array.isArray(itemGates) ? { item_gates: itemGates } : {}), out_of_bounds: charter.out_of_bounds ?? [],
+    carried, work, ...(Array.isArray(day.repos?.[repo.name]?.paths) ? { registered_paths: day.repos[repo.name].paths } : {}),
+    ...(Array.isArray(itemGates) ? { item_gates: itemGates } : {}), out_of_bounds: charter.out_of_bounds ?? [],
     laws: LAW_FILES.map((f) => join(repo.path, f)).filter((f) => existsSync(f)),
+    scratch: cycleScratch(ctx, n),
     cycle_file: join(ctx.home, 'runs', `cycle-${n}-${repo.name}.json`),
   };
 }
@@ -1036,6 +1053,21 @@ export function checkSkillIssues(arr) {
 }
 
 /**
+ * The cycle's flaky gates: a list of {gate, evidence}, each a non-empty string, no other key.
+ * @param {unknown} arr
+ */
+export function checkFlakyGates(arr) {
+  const shape = `flaky_gates is a list of {${FLAKY_GATE_KEYS.join(', ')}}, each a non-empty string`;
+  if (!Array.isArray(arr)) throw new UsageError(shape);
+  arr.forEach((x, i) => {
+    if (!x || typeof x !== 'object' || Array.isArray(x)) throw new UsageError(`flaky_gates[${i}] is an object: ${shape}`);
+    for (const k of Object.keys(x)) if (!FLAKY_GATE_KEYS.includes(k)) throw new UsageError(`unknown key flaky_gates[${i}].${k} (${FLAKY_GATE_KEYS.join(', ')})`);
+    for (const k of FLAKY_GATE_KEYS) if (typeof x[k] !== 'string' || !x[k].trim()) throw new UsageError(`flaky_gates[${i}] needs ${k}: ${shape}`);
+  });
+  return arr;
+}
+
+/**
  * Checks the director's cycle file. @param {any} raw @param {{target: string, metModules: string[], proposedPerModule: Record<string, number>}} o
  */
 export function validateCycleFile(raw, o) {
@@ -1050,6 +1082,7 @@ export function validateCycleFile(raw, o) {
   for (const x of raw.outcomes ?? []) if (typeof x?.ref !== 'string' || !['right', 'partly', 'wrong'].includes(x.rating) || typeof x.basis !== 'string') throw new UsageError('each outcome is {ref, rating: right|partly|wrong, basis}');
   for (const x of raw.parked ?? []) if (typeof x?.item !== 'string' || typeof x.why !== 'string') throw new UsageError('each parked entry is {item, why}');
   if (raw.skill_issues !== undefined) checkSkillIssues(raw.skill_issues);
+  if (raw.flaky_gates !== undefined) checkFlakyGates(raw.flaky_gates);
   const per = { ...o.proposedPerModule };
   for (const d of raw.directions ?? []) {
     for (const k of ['id', 'module', 'title', 'evidence', 'value', 'size', 'first_slice']) if (typeof d?.[k] !== 'string' || !d[k].trim()) throw new UsageError(`each direction has ${k}`);
@@ -1642,7 +1675,7 @@ export function refList(refs) {
 /**
  * The morning report's markdown (operator-facing; not a Dowser runner surface, so it has no guided form). Read in two
  * minutes: the summary per repo first, then what needs the operator, the commits by repo, the rest after.
- * @param {{date: string, commits: Record<string, Commit[]>, landings: Record<string, any>, branches?: Record<string, string>, charter?: any, cycles: any[], scans: any[], bar?: any, directions: any[], questions: string[], later: string[]}} d
+ * @param {{date: string, commits: Record<string, Commit[]>, landings: Record<string, any>, branches?: Record<string, string>, charter?: any, cycles: any[], scans: any[], bar?: any, directions: any[], questions: string[], later: string[], fixmes?: Record<string, {at: string, ticket: string | null}[]>}} d
  */
 export function renderReport(d) {
   const L = [`# /temper - ${d.date}`, ''];
@@ -1697,6 +1730,16 @@ export function renderReport(d) {
     const state = r.green ? 'green' : r.superseded_by !== undefined ? `${SUPERSEDED(r.superseded_by)} (${(r.red_because ?? []).join('; ')})` : `red (${(r.red_because ?? []).join('; ')})`;
     L.push(`- ${r.n} ${r.repo ?? 'dowser'} ${r.target}: ${state}${re}${r.quota && !r.quota.ok ? ', the day\'s reject share under 20%' : ''}`);
   }
+  L.push('', '## Known-red specs (test.fixme)', '');
+  const known = Object.entries(d.fixmes ?? {}).filter(([, xs]) => xs.length);
+  if (known.length) {
+    L.push('Specs that assert correct behaviour the code does not have yet. They do not fail the suite, so this list is the only place they show.');
+    for (const [repo, xs] of known) {
+      const bare = xs.filter((x) => !x.ticket).length;
+      L.push('', `### ${repo}: ${xs.length}${bare ? ` (${bare} naming no ticket)` : ''}`, '');
+      for (const x of xs) L.push(`- ${x.at}: ${x.ticket ?? 'no ticket'}`);
+    }
+  } else L.push('None.');
   L.push('', '## Scans and costs', '');
   if (d.scans.length) {
     L.push('| inbox | focus | scanned | cards created | minutes | cost |', '|---|---|---|---|---|---|');
@@ -1785,6 +1828,9 @@ export function carriedOf(cycles) {
   return [...last.values()].filter(isCarried);
 }
 
+/** What the operator must know to set real caps (references/charter.md): the two counters' days differ. */
+export const CAP_DAY_NOTE = ' Choosing them, note that these caps count the temper day and Forge\'s delegation caps count the UTC day, so a day crossing UTC midnight is counted differently by each.';
+
 /**
  * The accept-cap question: inboxes whose accepts reached the day's cap, with the numbers and a request for real caps in
  * the charter (the charter's caps default to DEFAULT_CAPS when the day-1 dialog set none). Several inboxes make one
@@ -1808,18 +1854,30 @@ export function capQuestions(charter, cycles) {
     const { inbox, accepts, caps, carried, dflt } = hits[0];
     return [`${inbox} reached its accept cap: ${accepts} of ${caps.accepts_per_day} accepts${carried ? `, ${carried} real cards carried to the next day` : ''}. `
       + `${dflt ? `Its caps are the defaults (${caps.accepts_per_day} accepts, ${caps.rejects_per_day} rejects a day), not a choice of yours` : `Its caps are ${caps.accepts_per_day} accepts and ${caps.rejects_per_day} rejects a day`}: `
-      + 'set real caps for it in the charter (repos[].caps, in the start dialog).'];
+      + `set real caps for it in the charter (repos[].caps, in the start dialog).${CAP_DAY_NOTE}`];
   }
   const each = hits.map((h) => `${h.inbox} ${h.accepts} of ${h.caps.accepts_per_day}${h.carried ? ` (${h.carried} real cards carried to the next day)` : ''}${h.dflt ? ' on the default caps' : ` on caps of ${h.caps.accepts_per_day} accepts and ${h.caps.rejects_per_day} rejects a day`}`);
   const allDefault = hits.every((h) => h.dflt);
   return [`${hits.length} inboxes reached their accept cap: ${each.join('; ')}. `
     + `${allDefault ? `The defaults (${DEFAULT_CAPS.accepts_per_day} accepts, ${DEFAULT_CAPS.rejects_per_day} rejects a day) are not a choice of yours: set` : 'Set'}`
-    + ' real caps for each in the charter (repos[].caps, in the start dialog).'];
+    + ` real caps for each in the charter (repos[].caps, in the start dialog).${CAP_DAY_NOTE}`];
+}
+
+/**
+ * The flaky-gates question: one for all of the day's, each with its repo, cycle and evidence. A rerun's green settles
+ * nothing, so they stay in front of the operator until a day has none.
+ * @param {any[]} cycles @returns {string[]} none or one question
+ */
+export function flakyQuestions(cycles) {
+  const each = [...cycles].sort((a, b) => a.n - b.n).flatMap((r) => (r.self_reported?.flaky_gates ?? [])
+    .map((/** @type {any} */ x) => `${x.gate} (${r.repo ?? 'dowser'}, c${r.n}): ${x.evidence}`));
+  return each.length ? [`${each.length} flaky gates failed and then passed on rerun, which proves nothing: ${each.join('; ')}. Each is a defect to fix; none counts as a clean pass.`] : [];
 }
 
 /**
  * The start questions, in order: the cards carried to today (first), inboxes at their accept cap (one question for
- * all), delegation, directions, live sign-in, parked. At most three are asked.
+ * all), delegation, directions, live sign-in, flaky gates (one question for all), parked. At most three are asked; the
+ * rest are listed under "Also waiting".
  * @param {{date: string, charter?: any, directions: any[], cycles: any[], liveState?: string}} d
  */
 export function startQuestions(d) {
@@ -1841,6 +1899,7 @@ export function startQuestions(d) {
   else if (d.charter && !Object.keys(d.charter.delegation ?? {}).length) q.push('No inbox is delegated: switch on "Delegate triage" in Jira Settings, or I triage locally only again.');
   if (d.directions.length) q.push(`Approve, reorder or veto the direction proposals: ${d.directions.map((x) => x.id).join(', ')}.`);
   if (d.liveState !== 'signed-in') q.push('The live suite was unverifiable: sign in with node e2e/live/sign-in.mjs.');
+  q.push(...flakyQuestions(d.cycles));
   const parked = parkedGroups(d.cycles).repos;
   const items = parked.flatMap(([, xs]) => xs);
   if (items.length) q.push(`${items.length} items are parked (${parked.map(([r, xs]) => `${r} ${xs.length}`).join(', ')}; see Parked): unpark, drop or decide?`);
@@ -1894,6 +1953,22 @@ export function supersede(ctx, cycles, day, charter) {
   });
 }
 
+/**
+ * The known-red specs of each build repo as its tree stands now: Dowser's checkout, a started repo's day worktree, else
+ * its charter path. @param {Ctx} ctx @param {any} day @param {any} charter
+ * @returns {Record<string, {at: string, ticket: string | null}[]>}
+ */
+export function repoFixmes(ctx, day, charter) {
+  /** @type {Record<string, {at: string, ticket: string | null}[]>} */
+  const out = { dowser: fixmeSpecs(ctx.root) };
+  for (const r of charter?.repos ?? []) {
+    if (r?.name === 'dowser' || !r?.build) continue;
+    const dir = [day?.repos?.[r.name]?.worktree, r.path].find((p) => typeof p === 'string' && existsSync(p));
+    if (dir) out[r.name] = fixmeSpecs(dir);
+  }
+  return out;
+}
+
 /** @param {Ctx} ctx @param {Record<string, string | true>} f */
 function report(ctx, f) {
   const day = readJson(paths(ctx.root).day);
@@ -1911,7 +1986,7 @@ function report(ctx, f) {
   const liveState = live && live.rows.length && !live.rows.some((r) => r.state === 'unverifiable') ? 'signed-in' : 'unverifiable';
   const { questions, later } = startQuestions({ date, charter, directions, cycles, liveState });
   const landings = today ? { ...(day.landing ? { dowser: day.landing } : {}), ...(day.landings ?? {}) } : {};
-  const md = renderReport({ date, commits, landings, branches, charter, cycles, scans, bar, directions, questions, later });
+  const md = renderReport({ date, commits, landings, branches, charter, cycles, scans, bar, directions, questions, later, fixmes: repoFixmes(ctx, day, charter) });
   const file = join(paths(ctx.root).records, `${date}.md`);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, md);

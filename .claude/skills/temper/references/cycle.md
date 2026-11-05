@@ -25,7 +25,7 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   what was scanned. It is one scan per cycle, and its ledger row (`~/.temper/scans.jsonl`) is the scan-yield instrument of the bar.
   The row's `report` names `~/.temper/scans/<stamp>-<inbox>.json`: the row, the scan's summary and every card it
   created or moved (`{fp, ref, status, lens, title, evidence, created}`). The clone is deleted after the scan.
-  While it runs, stderr gets a heartbeat every 60 s (`temper-scan: <n> min elapsed, last step: <tool> ...`): no
+  While it runs, stderr gets a heartbeat every 60 s (`temper-scan <inbox>: <n> min elapsed, last step: <tool> ...`): no
   heartbeat for several minutes means a hung scan, not a slow one. Run it in the background and watch stderr.
 - Other repos: `scan.others_due` lists those with no scan today or yesterday, so each is scanned every second day,
   read-only, into its own inbox.
@@ -93,8 +93,10 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   acceptance command (a quote or grep check that fails on the base and passes after), written by the QA subagent
   before the build and listed in `built[].specs` as the command, with `qa` saying who wrote it.
 - **Builder subagents** work in worktrees off the day branch (`loop/<date>`, or the repo's `temper/<date>`
-  worktree from `repo start`). They never edit their item's specs. They run the repo's item gates (personas:
+  worktree from `repo start`). They never edit their item's specs (a `test.fixme` mark they remove as the red control is the one exception). They run the repo's item gates (personas:
   `npm run verify:affected -- --files <files>`).
+- At the accept cap, a cycle may be spec-only: findings become specs proven red once, then marked `test.fixme(...)`
+  naming their ticket (runner.md, "The spec-only cycle"). `e2e:coverage` and the report count them.
 - Any size. An XL item is staged in slices, each slice gated and committed on its own. Merge each green slice into
   the day branch.
 - **Merge first, then verify.** The runner builds in its worktree, and its gate and e2e results there are
@@ -161,6 +163,18 @@ held a port), is not fixed by reverting the build. Fix the cause, then run `T cy
 - A repo without e2e suites (bp, personas) reports its verified UAT as the land gates `cycle end` ran itself:
   "verified gates n passed of m (c<k> p/q, ...)", never "none".
 
+## A flaky gate is a defect
+
+A gate that fails and then passes on a rerun with no change is a flaky gate (a fixed wait in a test, a port race). It
+is a defect to file, never a pass to wave through: the rerun's green proves nothing about the first failure. Read the
+failure to see whether the item caused it. If it did, or you cannot tell, the item stops. If not, the build goes on,
+and the gate goes in the cycle file's `flaky_gates: [{gate, evidence}]` (`evidence`: the failing test, its counts on
+each run, and the file:line that causes it when found) and is filed as a finding. `cycle end` checks the shape; the
+report lists them under Needs you, or Also waiting past the three questions.
+
+`cycle reverify` is for a cause you fixed. A red it turns green with no cause fixed is a flaky gate: name it in the
+next cycle file's `flaky_gates`.
+
 ## The cycle file
 
 ```json
@@ -169,7 +183,8 @@ held a port), is not fixed by reverting the build. Fix the cause, then run `T cy
  "built": [{"ref": "DW-48", "size": "M", "slice": "1/2", "commits": ["abc1234"], "specs": ["e2e/fixture/x.spec.mjs"]}],
  "uat": {"pass": 40, "fail": 0}, "findings": ["DOW-12"], "outcomes": [{"ref": "DW-40", "rating": "right", "basis": "specs green on local; no finding"}],
  "directions": [], "parked": [{"item": "DW-49", "why": "needs the operator's call on scope"}], "notes": "...",
- "skill_issues": [{"where": "temper.mjs cycleEnd", "what": "...", "evidence": "file:line or a run's output", "fix": "..."}]}
+ "skill_issues": [{"where": "temper.mjs cycleEnd", "what": "...", "evidence": "file:line or a run's output", "fix": "..."}],
+ "flaky_gates": [{"gate": "npm run check:x", "evidence": "151/152 then 152/152, no change; a fixed 2.5 s wait at x.ts:177"}]}
 ```
 
 The top-level keys are closed (an unknown one is a usage error). Inside them a runner may add informational keys,

@@ -20,13 +20,22 @@ measures). Their rules bind you. This brief adds the order of work and the input
 | `caps` | the inbox's caps for the day, with what is `used` and `left` before this cycle |
 | `carried` | cards the previous day carried to today (cap-deferred snoozes): triage them first |
 | `work` | where you build: `worktree`, `branch`, `from`, and `create` when the director has not made it yet |
+| `registered_paths` | the paths the repo's active-runs ledger holds for today (only a repo with a ledger): build inside them, or have the director widen them with `T repo paths --add` first |
 | `item_gates` | the repo's per-item gates from the charter (none: the repo's own law names them) |
 | `out_of_bounds` | the charter's bounds: a card there is out of bounds, whatever its merit |
 | `laws` | the repo's own law files (`CLAUDE.md`, `AGENTS.md`, `.claude/CLAUDE.md`, those present) |
+| `scratch` | this cycle's own folder for every scratch file (`~/.temper/runs/c<n>/`, created by `cycle begin`) |
 | `cycle_file` | where you write the cycle file (`~/.temper/runs/cycle-<n>-<repo>.json`) |
 
 The launch message may add that the scan already ran (with its report path) or name a different work tree. The
 message wins over the block.
+
+## Scratch files
+
+Every scratch file of this cycle goes in `scratch`: the scan's redirected output (`scan.out`, `scan.err`), the
+verdicts file, `findings.json`, notes, logs, and the same for every subagent you launch (tell it the folder). Other
+runners work at the same time: a shared folder or a fixed name in the temp folder gets overwritten by another cycle,
+and you then read its results as yours. Only the cycle file goes elsewhere.
 
 ## The repo's law
 
@@ -61,8 +70,9 @@ the director's landing still checks the diff; you still never commit a secret or
    its `--ref` is the day branch, so the scan reads the day's fixes and does not bring back cards they closed. It
    is read-only on the repo. Record cost, minutes, cards created, `ref` and `head` from the ledger row (cycle.md
    section 2). When the scan fails, record why and go on with the cards the inbox already holds.
-2. **Triage.** List the cards with `node tools/temper-cards.mjs --project-key <inbox> [--status s] [--quotes]` (or
-   the scan's `report`), never `dowser.mjs list --repo`. Decide the `carried` cards first, then every new or still
+2. **Triage.** List the cards with `node tools/temper-cards.mjs --project-key <inbox> [--status s] [--quotes]
+   [--undecided] [--full]` (or the scan's `report`), never `dowser.mjs list --repo`. `--full` adds each card's
+   rationale, sections and acceptance. Decide the `carried` cards first, then every new or still
    undecided card (`--undecided` lists only those: a `pushed` card with `decided_local` or `decided_live` is judged). Read each card's quoted evidence against the code on the day branch. Accept only a card that is
    real, in direction and inside the bounds. Reject with the honest reason code. Snooze what is real but not now.
    Merge duplicates. When the accept cap is reached, a card you would accept is a snooze with `deferred: "cap"`
@@ -72,7 +82,7 @@ the director's landing still checks the diff; you still never commit a secret or
    `{forbidden: true, record_as: "local"}` (exit 1) means no delegation tonight: mark every verdict
    `recorded: "local"`. Do not retry it this cycle.
 3. **Build** the accepted cards, highest value first, as many as fit in about 90 minutes, any size (an XL is staged
-   in slices; build the first). Check every bound first (cycle.md section 4): the registered paths, a baseline the
+   in slices; build the first). Check every bound first (cycle.md section 4): `registered_paths`, a baseline the
    fix moves, a file the repo marks as needing a human. Then, per item:
    - **QA first.** A separate QA subagent writes the failing spec from the card's Flow and acceptance criteria only
      (`node tools/temper-cards.mjs --project-key <inbox> --full` prints them: `sections.Flow`, `acceptance`),
@@ -98,8 +108,32 @@ the director's landing still checks the diff; you still never commit a secret or
    Never run lens-scan cover: the director runs it from the main checkout after the merge.
 6. **Write the cycle file** at `cycle_file`, in the shape cycle.md gives: target, repo (when it is not the loop's
    own), scan, verdicts (the same verdicts, each with `inbox` and `recorded`), built `[{ref, size, slice, commits,
-   specs, qa}]`, uat, findings, outcomes, directions, parked, notes, skill_issues. Then stop every server you
-   started.
+   specs, qa}]`, uat, findings, outcomes, directions, parked, notes, skill_issues, flaky_gates. Then stop every server
+   you started.
+
+## The spec-only cycle
+
+When the accept cap is reached, the cycle builds nothing and still turns what it learns into proof: its UAT findings
+become specs asserting the correct behaviour, so tomorrow's builder starts from a red spec, not a paragraph.
+
+1. File the finding first (step 4): its ticket is the spec's name.
+2. Write the spec from the finding's `expected`, run it once **without** `test.fixme(...)` and see it fail on the
+   defect, not on a typo or a missing fixture. A spec that passes shows no defect: delete it and correct the finding.
+3. Mark it `test.fixme(...)` with the ticket in its title or on the line beside it, and commit the spec alone. No
+   `@covers` tag yet: a known-red spec is not coverage. The suite stays green, and every gate still runs.
+4. In the cycle file, `built` stays empty and `uat.fixmes` lists `[{spec, ticket, red}]`, `red` being the failure you
+   saw. Say "spec-only" in `notes`.
+
+The next day's builder of that ticket removes the `test.fixme` first and sees the spec fail: that is its red control,
+and removing the mark is the one spec edit a builder may make. `npm run e2e:coverage` and the morning report count every
+`test.fixme(` in a `*.spec.*` file, naming the ones with no ticket, so a growing list of known-red specs stays in view.
+
+## A gate that fails, then passes on rerun
+
+A flaky gate is a defect to file, never a pass to wave through (cycle.md, "A flaky gate is a defect"). Read the first
+failure: when the item caused it, or you cannot tell, the item stops. Otherwise put the gate in the cycle file's
+`"flaky_gates": [{gate, evidence}]` (the failing test, the counts on each run, the file:line when found), file it as a
+finding, and never report that gate as a clean pass.
 
 ## Skill issues (required)
 
