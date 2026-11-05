@@ -151,3 +151,19 @@ test('forgeDb: a TiDB duplicate-entry error is DuplicateKey; any other error is 
     sql.prepare = prepare;
   }
 });
+
+test('issueStatuses: a deleted or invisible key is simply absent, and the other statuses survive', async () => {
+  /** @type {Record<string, string>} */
+  const visible = { 'SHOP-1': 'done', 'SHOP-2': 'indeterminate' };
+  const calls = script((c) => ({ status: 200, body: {
+    issues: c.body.issueIdsOrKeys.filter((/** @type {string} */ k) => visible[k])
+      .map((/** @type {string} */ k) => ({ key: k, fields: { status: { name: k, statusCategory: { key: visible[k] } } } })),
+    issueErrors: [],
+  } }));
+  const keys = ['SHOP-1', 'HR-7', 'SHOP-2', 'GONE-3', 'not a key', ...Array.from({ length: 120 }, (_, i) => `BULK-${i + 1}`)];
+  const out = await jira.issueStatuses(keys);
+  assert.deepEqual(out, { 'SHOP-1': { name: 'SHOP-1', category: 'done' }, 'SHOP-2': { name: 'SHOP-2', category: 'indeterminate' } });
+  assert.ok(calls.every((c) => c.who === 'user' && c.path === '/rest/api/3/issue/bulkfetch'));
+  assert.deepEqual(calls.map((c) => c.body.issueIdsOrKeys.length), [100, 24], 'chunks of at most 100, invalid keys never sent');
+  assert.deepEqual(calls[0].body.fields, ['status']);
+});

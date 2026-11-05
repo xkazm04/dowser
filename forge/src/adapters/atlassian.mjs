@@ -204,12 +204,14 @@ export const jira = {
     /** @type {Record<string, {name: string, category: 'new' | 'indeterminate' | 'done'}>} */
     const out = {};
     const valid = [...new Set(keys)].filter((k) => ISSUE_KEY_RE.test(k));
-    for (let i = 0; i < valid.length; i += 50) {
-      const chunk = valid.slice(i, i + 50);
-      const res = await api.asUser().requestJira(api.route`/rest/api/3/search/jql`, {
+    // Bulk fetch, not `key in (...)` JQL: JQL answers 400 for the whole query when one listed key is deleted or not
+    // visible, while bulkfetch simply leaves such an issue out, so one unreadable key costs only its own status.
+    for (let i = 0; i < valid.length; i += 100) {
+      const chunk = valid.slice(i, i + 100);
+      const res = await api.asUser().requestJira(api.route`/rest/api/3/issue/bulkfetch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ jql: `key in (${chunk.join(',')})`, maxResults: chunk.length, fields: ['status'] }),
+        body: JSON.stringify({ issueIdsOrKeys: chunk, fields: ['status'] }),
       });
       const page = await json(res, 'Jira issue statuses');
       for (const issue of /** @type {any[]} */ (page.issues ?? [])) {
