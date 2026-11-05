@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { COMPUTED_KEYS, DECIDER_GUARDS, MACHINE_DECIDER, deciderAllowed, sliceKey, validateCandidate } from '../lib/model.mjs';
+import { COMPUTED_KEYS, DECIDER_GUARDS, MACHINE_DECIDER, STORE_OWNED, deciderAllowed, sliceKey, validateCandidate } from '../lib/model.mjs';
 import { getProposal, move, openStore, propose, runFinish, runStart } from '../lib/store.mjs';
 import { allocateRun } from '../lib/budget.mjs';
 import { contextPack } from '../lib/memory.mjs';
@@ -43,7 +43,7 @@ test('validate: the judge writes impact/why, risk, category, a predicted verdict
   assert.match(ok({ effort: { size: 'S', score: 0 } }), /^effort\.score:/);
   assert.match(ok({ impact: 3, impact_why: 'two\nlines' }), /^impact_why:one line/);
   for (const k of COMPUTED_KEYS) assert.match(ok({ [k]: k === 'mvp' ? true : 'x' }), new RegExp(`^store-computed-field:${k}`), k);
-  const wire = validateCandidate({ ...candidate(), score: 12.5, score_parts: { impact: 3, confidence_w: 0.95, effort_div: 1.111, risk_factor: 0.75, formula: 'scan-score/1' }, band: 'reserve', mvp: true, pretriaged_by: MACHINE_DECIDER }, { wire: true });
+  const wire = validateCandidate({ ...candidate(), score: 19.2, score_parts: { impact: 3, confidence_w: 0.95, effort_div: 1.111, risk_factor: 0.75, formula: 'scan-score/1' }, band: 'reserve', mvp: true, pretriaged_by: MACHINE_DECIDER }, { wire: true });
   assert.equal(wire.ok, true, wire.ok ? '' : wire.why);
 });
 
@@ -186,7 +186,7 @@ test('pretriage: only an L1 slice\'s ranked cards predicted accept are marked; a
     assert.equal(sliceKey(card), 'product|opportunity|-|S');
 
     // acceptance stays human: the invariant at model.mjs DECIDER_GUARDS is untouched
-    assert.deepEqual(DECIDER_GUARDS, { 'verified>accepted': ['human'] });
+    assert.deepEqual(DECIDER_GUARDS['verified>accepted'], ['human']);
     assert.equal(deciderAllowed('verified', 'accepted', MACHINE_DECIDER), false);
     assert.throws(() => move(s.db, yes, 'accepted', { by: MACHINE_DECIDER }), /needs a human decider/);
 
@@ -198,5 +198,119 @@ test('pretriage: only an L1 slice\'s ranked cards predicted accept are marked; a
     const sl = trustReport(s.db, { slice: 'product|opportunity|-|S' }).slices[0];
     assert.deepEqual([sl.level, sl.n], [0, 0], 'the window resets after a demotion');
     assert.equal(trustReport(s.db).events.length, 2);
+  } finally { s.done(); }
+});
+
+test('pretriage: a stale machine mark is re-checked; a card that resurfaces on a demoted slice goes to the person', () => {
+  const s = fresh();
+  try {
+    const SLICE = 'product|opportunity|-|S';
+    decide(s, 20, 'reject', 'rejected', 'a');
+    syncTrust(s.db);
+    assert.equal(trustReport(s.db, { slice: SLICE }).slices[0].level, 1);
+    const a = s.verified({ lens: 'opportunity', kind: 'gap', topic: 'export csv now', anchors: ['src/e.js'], impact: 9, impact_why: 'x', predicted_verdict: 'accept' });
+    const b = s.verified({ lens: 'opportunity', kind: 'gap', topic: 'import csv too', anchors: ['src/i.js'], impact: 9, impact_why: 'x', predicted_verdict: 'accept' });
+    allocateRun(s.db, s.run);
+    assert.deepEqual(pretriageRun(s.db, s.run).pretriaged.map((/** @type {any} */ p) => p.fp).sort(), [a, b].sort());
+    for (const fp of [a, b]) move(s.db, fp, 'pushed', { by: 'skill:dowser-sync' });
+    // B's rejection is a reversal: the slice drops to L0. The person snoozes A, and A resurfaces in run 2.
+    move(s.db, b, 'rejected', { by: 'forge:jane', reason: 'false-positive' });
+    move(s.db, a, 'snoozed', { by: 'forge:jane' });
+    syncTrust(s.db);
+    assert.equal(trustReport(s.db, { slice: SLICE }).slices[0].level, 0);
+    const run2 = String(runStart(s.db, { mode: 'full', model: 'm' }).id);
+    move(s.db, a, 'verified', { by: 'skill:dowser' });
+    s.db.prepare('UPDATE proposals SET last_run_id = ? WHERE fp = ?').run(run2, a);
+    allocateRun(s.db, run2);
+    const out = pretriageRun(s.db, run2);
+    assert.deepEqual(out.pretriaged, [], 'the L1 gate holds on a demoted slice');
+    assert.deepEqual(out.for_person.map((/** @type {any} */ p) => [p.fp, p.level]), [[a, 0]]);
+    assert.equal('pretriaged_by' in /** @type {any} */ (getProposal(s.db, a)), false, 'the stale mark is cleared, not kept');
+  } finally { s.done(); }
+});
+
+test('trust window: an item counts once, by its latest decision (snoozed, resurfaced, accepted = one agreeing item)', () => {
+  const s = fresh();
+  try {
+    const SLICE = 'product|opportunity|-|S';
+    const a = s.verified({ lens: 'opportunity', kind: 'gap', topic: 'export csv now', anchors: ['src/e.js'], predicted_verdict: 'accept' });
+    move(s.db, a, 'pushed', { by: 'skill:dowser-sync' });
+    move(s.db, a, 'snoozed', { by: 'forge:jane' });
+    move(s.db, a, 'verified', { by: 'skill:dowser' });
+    move(s.db, a, 'pushed', { by: 'skill:dowser-sync' });
+    move(s.db, a, 'accepted', { by: 'forge:jane' });
+    const sl = trustReport(s.db, { slice: SLICE }).slices[0];
+    assert.deepEqual([sl.n, sl.agreement], [1, 1]);
+    // 19 more agreeing items reach the minimum of 20 items, not 21 decisions
+    decide(s, 18, 'reject', 'rejected', 'b');
+    assert.deepEqual(syncTrust(s.db), [], '19 items');
+    decide(s, 1, 'reject', 'rejected', 'c');
+    assert.deepEqual(syncTrust(s.db).map((e) => [e.from, e.to, e.n, e.agreement]), [[0, 1, 20, 1]]);
+  } finally { s.done(); }
+});
+
+test('trust lose rule: a snooze of a machine pre-triaged card is a reversal, and a reversal at L0 restarts the window', () => {
+  const s = fresh();
+  try {
+    const SLICE = 'product|opportunity|-|S';
+    decide(s, 20, 'reject', 'rejected', 'a');
+    syncTrust(s.db);
+    const cards = ['one', 'two', 'three'].map((t) => s.verified({ lens: 'opportunity', kind: 'gap', topic: `export ${t} now`, anchors: [`src/${t}.js`], impact: 9, impact_why: 'x', predicted_verdict: 'accept' }));
+    allocateRun(s.db, s.run);
+    assert.equal(pretriageRun(s.db, s.run).pretriaged.length, 3);
+    for (const fp of cards) move(s.db, fp, 'pushed', { by: 'skill:dowser-sync' });
+    move(s.db, cards[0], 'snoozed', { by: 'forge:jane' });
+    const ev = syncTrust(s.db);
+    assert.deepEqual(ev.map((e) => [e.from, e.to, e.item_id]), [[1, 0, cards[0]]], 'the person deferred what the machine passed');
+    assert.match(String(ev[0].reason), /^reversal: forge:jane snoozed [0-9a-f]{16}, which machine:dowser pre-triaged$/);
+    // still marked in the inbox: rejected at L0, then 19 agreeing items do not promote, because the window restarted
+    move(s.db, cards[1], 'rejected', { by: 'forge:jane', reason: 'false-positive' });
+    assert.deepEqual(syncTrust(s.db), [], 'no level below L0, so no event');
+    const st = trustReport(s.db, { slice: SLICE }).slices[0];
+    assert.deepEqual([st.level, st.n], [0, 0], 'the window restarted after the L0 reversal');
+    assert.match(String(st.reason), /^window reset: forge:jane rejected [0-9a-f]{16}, which machine:dowser pre-triaged, at L0$/);
+    move(s.db, cards[2], 'accepted', { by: 'forge:jane' });
+    decide(s, 18, 'reject', 'rejected', 'b');
+    assert.deepEqual(syncTrust(s.db), [], '19 items since the reset');
+    decide(s, 1, 'reject', 'rejected', 'c');
+    assert.deepEqual(syncTrust(s.db).map((e) => [e.from, e.to, e.n]), [[0, 1, 20]]);
+  } finally { s.done(); }
+});
+
+test('wire: a score its own breakdown and impact do not produce is refused; the store\'s own scores pass', () => {
+  const why = (/** @type {Record<string, unknown>} */ o) => { const r = validateCandidate({ ...candidate(), ...o }, { wire: true }); return r.ok ? 'ok' : r.why; };
+  // impact 2, confidence high, size S, blast low: scan-score/1 gives 16.2
+  const honest = { impact: 2, impact_why: 'x', confidence: 'high', score: 16.2, score_parts: { impact: 2, confidence_w: 0.95, effort_div: 1.111, risk_factor: 0.95, formula: 'scan-score/1' } };
+  assert.equal(why(honest), 'ok');
+  assert.match(why({ ...honest, score: 95 }), /^score:does not match score_parts \(scan-score\/1 gives 16\.2\)/);
+  assert.match(why({ ...honest, score_parts: { ...honest.score_parts, formula: 'made-up' } }), /^score_parts\.formula:must be one of scan-score\/1/);
+  assert.match(why({ ...honest, score: 95, score_parts: { impact: 9, confidence_w: 7, effort_div: 0.1, risk_factor: 3, formula: 'made-up' } }), /^score_parts\.formula:/);
+  assert.match(why({ ...honest, score: 61.6, score_parts: { ...honest.score_parts, impact: 8 } }), /^score_parts\.impact:must equal impact/);
+  // every score the store computes passes its own wire check
+  const s = fresh();
+  try {
+    for (const [i, c] of /** @type {const} */ ([[8, 'medium', 'M', 'low'], [7, 'high', 'S', 'low'], [10, 'low', 'XL', 'high'], [1, 'high', 'XS', 'medium']]).entries()) {
+      const fp = s.verified({ topic: `scored ${i}`, anchors: [`src/s${i}.js`], impact: c[0], impact_why: 'x', confidence: c[1], effort: { size: c[2] }, delivery_risk: { blast: c[3] } });
+      // as Forge's push checks it: the store-owned fields (status, ...) are dropped first
+      const rec = Object.fromEntries(Object.entries(proposalRecord(s.db, fp)).filter(([k]) => !STORE_OWNED.includes(k)));
+      const r = validateCandidate(rec, { wire: true });
+      assert.equal(r.ok, true, r.ok ? '' : r.why);
+    }
+  } finally { s.done(); }
+});
+
+test('move: a reject or a snooze needs a human or forge decider; an agent or the store cannot bury a card', () => {
+  const s = fresh();
+  try {
+    const a = s.verified({ topic: 'agent tidy a', anchors: ['src/ta.js'] });
+    const b = s.verified({ topic: 'agent tidy b', anchors: ['src/tb.js'] });
+    assert.throws(() => move(s.db, a, 'rejected', { by: 'agent:claude', reason: 'not-worth-it' }), /needs a human decider/);
+    assert.throws(() => move(s.db, a, 'snoozed', { by: 'skill:dowser' }), /needs a human decider/);
+    move(s.db, b, 'pushed', { by: 'skill:dowser-sync' });
+    assert.throws(() => move(s.db, b, 'rejected', { by: 'machine:dowser', reason: 'not-worth-it' }), /needs a human decider/);
+    move(s.db, a, 'rejected', { by: 'human:runner', reason: 'not-worth-it' });
+    move(s.db, b, 'snoozed', { by: 'forge:jane' });
+    move(s.db, b, 'verified', { by: 'skill:dowser', note: 'snooze until passed' });
+    assert.deepEqual([getProposal(s.db, a)?.status, getProposal(s.db, b)?.status], ['rejected', 'verified'], 'people decide; the store still wakes a snooze');
   } finally { s.done(); }
 });

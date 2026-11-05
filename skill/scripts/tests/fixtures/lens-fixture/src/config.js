@@ -10,7 +10,7 @@ const num = (name, fallback) => {
 // StonePay merchant credentials for the payment step.
 // TODO: read from the environment before the next release.
 const stonepay = {
-  api_key: 'psk_live_4fQ9xT2mB7vK1nR8cL3wZ6',
+  secretKey: 'psk_live_4fQ9xT2mB7vK1nR8cL3wZ6',
   endpoint: 'https://api.stonepay.example/v2/charges',
 };
 

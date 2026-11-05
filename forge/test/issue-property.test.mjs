@@ -15,7 +15,7 @@ const res = (d, key, p) => /** @type {Promise<any>} */ (runResolver(d, key, p, M
 async function seeded() {
   const d = makeDeps();
   const scored = { ...record({ topic: 'alpha' }), category: 'product', impact: 8, impact_why: 'asked in 12 tickets', risk: 2,
-    effort: { size: 'S', basis: ['one module'], score: 2 }, score: 61.5,
+    effort: { size: 'S', basis: ['one module'], score: 2 }, score: 51.3,
     score_parts: { impact: 8, confidence_w: 0.75, effort_div: 1.111, risk_factor: 0.95, formula: 'scan-score/1' }, band: 'ranked', mvp: true };
   await runTool(d, 'dowser_proposals_push', pushArgs([scored, record({ topic: 'beta' }), record({ topic: 'gamma' })], { run_id: 'r-1' }), ME);
   await res(d, 'settings.set', { project_key: PK, jira_project_key: 'SHOP', issue_type_id: '10001' });
@@ -30,7 +30,7 @@ test('accept writes the dowser issue property with the card facts; absent facts 
   assert.equal(prop.ref, 'DW-1');
   assert.equal(prop.lens, 'opportunity');
   assert.equal(prop.kind, 'missing-capability');
-  assert.equal(prop.score, 61.5);
+  assert.equal(prop.score, 51.3);
   assert.equal(prop.impact, 8);
   assert.equal(prop.band, 'ranked');
   assert.equal(prop.mvp, 'yes');

@@ -314,7 +314,7 @@ function appendTransition(db, { fp, from, to, by, at, reason, note, runId }) {
 export function moveProblem(fp, to, { from, by, reason, note, into, until, today, untilMayBePast }) {
   if (!isOneOf(STATUSES, to)) return `--to must be one of ${STATUSES.join('|')}`;
   if (from !== undefined && !isOneOf(STATUSES, from)) return `--from must be one of ${STATUSES.join('|')}`;
-  if (!by || !DECIDER_RE.test(by)) return `--by names the decider as <kind>:<name>, e.g. operator:jane (got ${JSON.stringify(by)})`;
+  if (!by || !DECIDER_RE.test(by)) return `--by names the decider as <kind>:<name>, e.g. human:jane for a person (got ${JSON.stringify(by)})`;
   const problem = decisionProblem({ to, reason, note });
   if (problem) return problem;
   if (to === 'merged' && !into) return 'a merge needs --into <fp>';

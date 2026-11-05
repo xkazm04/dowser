@@ -1,6 +1,6 @@
 {
   "about": "What a correct lens proposes on the Pebble Shop fixture (must: true) and what it must not (decoy: true). Scored by skill/scripts/lib/score.mjs: an emitted card is assigned to the one item its anchors land on most strongly (`anchor` is the primary, `also` the other files a correct card may anchor on; `also` may name a file the finding says is missing). Hypotheses are the H-numbers of each pack as of lens_version 0.1.0 (0.2.0 keeps them). Primary anchor paths are unique within a lens. Each lens seeds more real findings than its budget of 4, so it is judged on choosing: `priority` 1 must be in the top 4, 2 is good, 3 is minor, grounded in what the evidence shows (ticket counts and spread, user-facing or internal, severity). The fixture's direction (_sources.json `directions`) shapes each lens: the item with `focus_by_direction` is the priority-2 one the focus should pull into the top 4; the one with `excluded_by_direction` is a real finding the exclude rules out, so proposing it is a direction violation.",
-  "fixture_version": 3,
+  "fixture_version": 4,
   "items": [
     { "lens": "opportunity", "id": "opp-order-tracking-link", "hypothesis": "H1", "kind": "expose-capability", "priority": 1, "anchor": "src/shipping/tracking.js#trackingUrl", "also": ["src/routes/orders.js#orderDetail", "src/jobs/packing-slips.js"], "must": true,
       "why": "trackingUrl already builds the carrier's tracking link, but only the printed packing slip uses it; getOrder leaves carrier and tracking code out of what customers see. Eight tickets from seven customers (SHOP-181 to SHOP-197; SHOP-194 is SHOP-183 again), all component Shipping and label where-is-my-order, arrived in the last five weeks - the strongest and fastest-growing ask, visible only through the labels, components and created_at (the titles rarely say 'tracking'). Serves goal G-1 (order status without support)." },
@@ -50,8 +50,8 @@
       "why": "The configuration guide documents MAX_CART_ITEMS default 50; src/config.js defaults to 20 since the commit that lowered the cart limit (SHOP-175)." },
     { "lens": "doc-drift", "id": "dd-guest-checkout-undocumented", "hypothesis": "H3", "kind": "undocumented-change", "priority": 2, "anchor": "src/checkout/guest.js", "also": ["src/config.js#PEBBLE_GUEST_CHECKOUT"], "must": true,
       "why": "A commit 25 days ago added guest checkout behind PEBBLE_GUEST_CHECKOUT; no doc mentions the variable (SHOP-170 asks how to turn it on)." },
-    { "lens": "doc-drift", "id": "dd-cart-api-example", "hypothesis": "H4", "kind": "stale-example", "priority": 2, "focus_by_direction": true, "anchor": "docs/api.md", "also": ["src/checkout/cart.js#addToCart"], "must": true,
-      "why": "The POST /cart curl example sends `qty`; addToCart reads `quantity`, so the example silently adds 1 item instead of 2. No ticket yet; the direction's focus on the storefront API reference pulls it into the top 4." },
+    { "lens": "doc-drift", "id": "dd-cart-api-example", "hypothesis": "H4", "kind": "stale-example", "priority": 2, "focus_by_direction": true, "anchor": "openapi.yaml", "also": ["docs/api.md", "src/checkout/cart.js#addToCart"], "must": true,
+      "why": "The POST /cart request schema and example in the root OpenAPI spec send `qty`; addToCart reads `quantity`, so a client built from the spec silently adds 1 item instead of 2. docs/api.md points to the spec for the body, so the spec must be in the doc inventory to show it. No ticket yet; the direction's focus on the storefront API reference pulls it into the top 4." },
     { "lens": "doc-drift", "id": "dd-price-import-example", "hypothesis": "H4", "kind": "stale-example", "priority": 3, "excluded_by_direction": true, "anchor": "docs/prices.md", "also": ["src/admin/prices.js#bulkUpdatePrices"], "must": true,
       "why": "The supplier-sheet guide's JSON uses `amount`; bulkUpdatePrices reads `price`, so the example stops at the first row. Real, but the direction excludes the price import guide." },
     { "lens": "doc-drift", "id": "dd-decoy-readme-port", "anchor": "README.md", "decoy": true,
@@ -66,7 +66,7 @@
     { "lens": "security-cra", "id": "sec-lodash-advisories", "hypothesis": "H1", "kind": "vulnerable-dependency", "priority": 2, "anchor": "package.json#lodash", "also": ["package-lock.json#lodash", "src/receipts/email.js"], "must": true,
       "why": "lodash is pinned at 4.17.15, a runtime dependency; the captured npm audit (via `dowser deps`) lists GHSA-35jh-r3h4-6jhm (high, command injection via template) and GHSA-p6mc-m468-83gw (high); the receipt mailer calls _.template, but on a constant template string (src/receipts/email.js:5), so the headline command injection is unreachable; the prototype-pollution advisory still makes it a real runtime bump. Below the injectable SQL and the live key. Without the audit output there is no H1 card." },
     { "lens": "security-cra", "id": "sec-search-sql-injection", "hypothesis": "H2", "kind": "risky-pattern", "priority": 1, "anchor": "src/routes/search.js#searchProducts", "must": true,
-      "why": "The q query parameter of a public, unauthenticated endpoint is concatenated into a SELECT ... LIKE string; db.query runs it unparameterised." },
+      "why": "The q query parameter of a public, unauthenticated endpoint is interpolated into a SELECT ... LIKE template literal; db.query runs it unparameterised." },
     { "lens": "security-cra", "id": "sec-stonepay-live-key", "hypothesis": "H3", "kind": "secret-exposure", "priority": 1, "anchor": "src/config.js", "also": ["src/checkout/payment.js"], "must": true,
       "why": "A live StonePay merchant key (psk_live_...) is committed in src/config.js and sent as the bearer token on every charge." },
     { "lens": "security-cra", "id": "sec-disclosure-policy", "hypothesis": "H4", "kind": "vulnerability-handling-gap", "priority": 2, "focus_by_direction": true, "anchor": "README.md", "also": ["SECURITY.md", ".well-known/security.txt"], "must": true,
@@ -76,14 +76,14 @@
     { "lens": "security-cra", "id": "sec-report-since-sql", "hypothesis": "H2", "kind": "risky-pattern", "priority": 3, "excluded_by_direction": true, "anchor": "src/jobs/nightly-report.js#runNightlyReport", "must": true,
       "why": "`pebble report nightly --since` concatenates its argument into the SQL; only staff on the shop server run it. Real but minor, and the direction excludes the staff admin CLI and its report jobs." },
     { "lens": "security-cra", "id": "sec-decoy-test-key", "anchor": "test/payment.test.js", "decoy": true,
-      "why": "Matches the secret grep (api_key = '...'), but it is a stand-in for a fake server in a unit test and opens nothing." },
+      "why": "Matches the secret grep (STONEPAY_API_KEY = '...'), but it is a stand-in for a fake server in a unit test and opens nothing." },
     { "lens": "security-cra", "id": "sec-decoy-cli-exec", "anchor": "cli/pebble.js#main", "decoy": true,
       "why": "child_process.execFileSync with constant arguments (git rev-parse --short HEAD): a sink with no user input." },
     { "lens": "security-cra", "id": "sec-decoy-innerhtml-constant", "anchor": "public/app.js#renderProducts", "decoy": true,
       "why": "innerHTML is assigned a constant string; product data goes through createElement and textContent." },
     { "lens": "security-cra", "id": "sec-decoy-sbom-present", "anchor": ".github/workflows/release.yml", "decoy": true,
       "why": "The release workflow already produces a CycloneDX SBOM and publishes it with each release." },
-    { "lens": "security-cra", "id": "sec-decoy-dev-minimist", "anchor": "scripts/seed-demo.js", "also": ["package.json#minimist", "package-lock.json#minimist"], "decoy": true,
-      "why": "The audit lists minimist 1.2.5 as critical (GHSA-xvch-5gv4-984h), but it is a devDependency (lockfile dev: true) used only by the demo seed script, which parses the developer's own arguments; package.json `files` and `npm sbom --omit dev` keep it out of what ships." }
+    { "lens": "security-cra", "id": "sec-decoy-dev-minimist", "anchor": "scripts/seed-demo.js", "also": ["scripts/package.json#minimist", "scripts/package-lock.json#minimist"], "decoy": true,
+      "why": "The audit lists minimist 1.2.5 as critical (GHSA-xvch-5gv4-984h), but it is a devDependency of the nested seed tool (scripts/package-lock.json marks it dev: true; the root lockfile does not list it) used only by the demo seed script, which parses the developer's own arguments; the root package.json `files` and `npm sbom --omit dev` keep it out of what ships. A scope check that reads only the root lockfile cannot see that it is dev-only." }
   ]
 }

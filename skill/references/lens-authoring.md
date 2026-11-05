@@ -150,7 +150,8 @@ number and not an impression.
   The mock answers `dowser_direction_get` with the fixture's direction, re-keyed to the temp
   copy's project key. `--dry-run` builds the workspace and prints the plan, including the
   direction the mock will answer for the lens, without calling Claude. A real run costs
-  tokens.
+  tokens. The scan loads only the project-scope copy it installed (`--setting-sources project,local`: a user-scope
+  dowser skill would otherwise win), and a run whose cards carry another `lens_version` fails without a row.
 - **The numbers.** A card counts for the one expected item its anchors land on most strongly.
   The headline is `recall_at_budget`: seeded items found over the smaller of the seeded count
   and the pack's budget (capped at 1), counted over the cards the store **ranked**
@@ -171,7 +172,9 @@ number and not an impression.
   removed. A value that was not measured is left out, never 0: no `precision` when nothing was
   emitted, no `recall_at_budget` when the pack names no budget. Rows from before
   `fixture_version` 2 lack the budget signals and were measured on an easier fixture; compare
-  a pack only with rows of the same `fixture_version`.
+  a pack only with rows of the same `fixture_version`. Version 4 (2026-11-05) writes the gather commands' blind spots into the fixture: a camelCase live key and an
+  UPPER_SNAKE test key, template-literal SQL, a dev-only advisory in a nested lockfile, and a stale example in a
+  root `openapi.yaml`.
 - **What the fixture does not prove.** The fixture tests the pack's mechanics on findings its
   author planted. Precision that matters is measured on a real repository: hand-verify a
   sample of 10 cards (or all, if fewer) and count the true ones.

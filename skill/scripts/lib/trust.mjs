@@ -7,9 +7,11 @@
 // at the contract's start capped by that ceiling (L1: technical items default to automation - here, skipping the
 // runner's pre-triage while a person still decides every card in the inbox); a `product` slice starts at L0.
 //  - Earn: a slice moves L0 -> L1 when its predicted verdicts agree with the person's verdicts on >= 90 % of its
-//    last 20 decided items (minimum 20) since its window opened.
-//  - Lose: a slice drops one level, and its window resets, when a person rejects a card the machine pre-triaged
-//    (pretriaged_by = machine:dowser): a reversal of a machine decision.
+//    last 20 decided items (minimum 20) since its window opened. An item counts once, by its latest decision in the
+//    window: a card snoozed, resurfaced and accepted is one item, not two decisions.
+//  - Lose: a slice drops one level, and its window resets, on any human reversal of a machine decision: a person
+//    rejects or snoozes a card the machine pre-triaged (pretriaged_by = machine:dowser) as accept. At L0 there is no
+//    level to drop; the window still resets, so the reversal never counts toward the next promotion.
 //  - L1 lets `pretriage` skip the person's pre-triage for the slice's ranked cards predicted `accept`: they are
 //    pushed marked `pretriaged_by: machine:dowser`. Nothing else changes: acceptance in Jira stays a person's
 //    click (model.mjs DECIDER_GUARDS is untouched), and the inbox keeps every machine pre-triage open to reject.
@@ -52,19 +54,28 @@ function decisions(db) {
     id: Number(r.id), fp: String(r.fp), by: String(r.by), to: String(r.to_status),
     slice: sliceKey({ category: r.category ?? undefined, lens: String(r.lens), effort: JSON.parse(String(r.effort_json)) }),
     agree: /** @type {Record<string, string>} */ (DECIDED)[String(r.to_status)] === r.predicted_verdict,
-    reversal: r.pretriaged_by === MACHINE_DECIDER && r.to_status === 'rejected',
+    // the machine's pre-triage says accept; any other human verdict on the card reverses it
+    reversal: r.pretriaged_by === MACHINE_DECIDER && r.to_status !== 'accepted',
   }));
 }
 
 /**
- * Agreement over the last WINDOW decisions of `list` with an id in (after, upTo].
- * @param {{id: number, agree: boolean}[]} list
+ * Agreement over the last WINDOW items of `list` decided with an id in (after, upTo], each item (fp) counted once by
+ * its latest decision there.
+ * @param {{id: number, fp: string, agree: boolean}[]} list
  * @param {number} after
  * @param {number} upTo
  * @returns {{n: number, agreement?: number}}
  */
 function windowStats(list, after, upTo) {
-  const w = list.filter((d) => d.id > after && d.id <= upTo).slice(-WINDOW);
+  /** @type {Map<string, {id: number, fp: string, agree: boolean}>} */
+  const latest = new Map();
+  for (const d of list) {
+    if (d.id <= after || d.id > upTo) continue;
+    latest.delete(d.fp); // re-inserted last: the map keeps items in the order of their latest decision
+    latest.set(d.fp, d);
+  }
+  const w = [...latest.values()].slice(-WINDOW);
   return w.length ? { n: w.length, agreement: Math.round((w.filter((d) => d.agree).length / w.length) * 1000) / 1000 } : { n: 0 };
 }
 
@@ -104,7 +115,10 @@ export function syncTrust(db) {
       };
       const s = windowStats(list, Number(st.window_after), d.id);
       if (d.reversal && level > 0) {
-        change(level - 1, `reversal: ${d.by} rejected ${d.fp}, which ${MACHINE_DECIDER} pre-triaged`, d.id, s);
+        change(level - 1, `reversal: ${d.by} ${d.to} ${d.fp}, which ${MACHINE_DECIDER} pre-triaged`, d.id, s);
+      } else if (d.reversal) {
+        // L0: no level change (so no event), but the window restarts after the reversal
+        putState.run(d.slice, level, d.id, at, `window reset: ${d.by} ${d.to} ${d.fp}, which ${MACHINE_DECIDER} pre-triaged, at L0`);
       } else if (level < CEILING && s.n >= WINDOW && (s.agreement ?? 0) >= AGREEMENT_MIN) {
         change(level + 1, `earned: predicted verdicts agreed on ${Math.round((s.agreement ?? 0) * 100)} % of the last ${s.n} decisions`, Number(st.window_after), s);
       } else if (!getState.get(d.slice)) {
@@ -173,9 +187,10 @@ export function trustReport(db, { slice, sync = true, maxEvents, cards = true } 
 
 /**
  * `pretriage --run <id>`: the store's L1 gate. Syncs trust, then marks `pretriaged_by: machine:dowser` on every
- * verified, ranked card of the run, predicted `accept`, not marked yet, whose slice is at level >= 1. No status
- * moves: the card stays verified and is pushed as usual; a person decides it in the inbox. Returns the cards it
- * marked and the cards left for the person (with their slice and its level).
+ * verified, ranked card of the run, predicted `accept`, whose slice is at level >= 1. The gate is checked again on a
+ * card an earlier run marked: one that no longer passes (its slice was demoted, say) loses the mark and goes to the
+ * person. No status moves: the card stays verified and is pushed as usual; a person decides it in the inbox. Returns
+ * the cards marked and the cards left for the person (with their slice and its level).
  * @param {Db} db
  * @param {string} runId
  * @returns {Row}
@@ -187,6 +202,9 @@ export function pretriageRun(db, runId) {
       "SELECT fp, title, lens, category, effort_json, band, predicted_verdict, pretriaged_by FROM proposals WHERE last_run_id = ? AND status = 'verified' ORDER BY lens, score DESC, fp",
     ).all(runId));
     const mark = db.prepare("UPDATE proposals SET pretriaged_by = ? WHERE fp = ? AND status = 'verified' AND pretriaged_by IS NULL");
+    // a mark from an earlier run (the card resurfaced, or this run is pre-triaged again) holds only while the gate
+    // still passes: a slice demoted since then sends the card back to the person
+    const unmark = db.prepare("UPDATE proposals SET pretriaged_by = NULL WHERE fp = ? AND status = 'verified' AND pretriaged_by = ?");
     /** @type {Row[]} */
     const pretriaged = [];
     /** @type {Row[]} */
@@ -195,11 +213,13 @@ export function pretriageRun(db, runId) {
       const slice = sliceKey({ category: r.category ?? undefined, lens: String(r.lens), effort: JSON.parse(String(r.effort_json)) });
       const level = levelOf(db, slice);
       const item = { fp: r.fp, title: r.title, slice, level };
-      if (r.pretriaged_by === MACHINE_DECIDER) { pretriaged.push(item); continue; }
       if (level >= 1 && r.band === 'ranked' && r.predicted_verdict === 'accept') {
-        mark.run(MACHINE_DECIDER, r.fp);
+        if (r.pretriaged_by !== MACHINE_DECIDER) mark.run(MACHINE_DECIDER, r.fp);
         pretriaged.push(item);
-      } else forPerson.push(item);
+      } else {
+        if (r.pretriaged_by === MACHINE_DECIDER) unmark.run(r.fp, MACHINE_DECIDER);
+        forPerson.push(item);
+      }
     }
     return { run_id: runId, pretriaged, for_person: forPerson };
   });

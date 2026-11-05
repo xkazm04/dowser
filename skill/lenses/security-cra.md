@@ -1,6 +1,6 @@
 ---
 id: security-cra
-version: 0.3.2
+version: 0.3.3
 name: Security and CRA
 kinds: [vulnerable-dependency, risky-pattern, secret-exposure, vulnerability-handling-gap, sbom-gap, update-mechanism-gap]
 sources: [code, docs, git, deps, sarif]
@@ -59,24 +59,24 @@ supplies its SARIF or CycloneDX output, cite it and propose the work it implies.
    ecosystem, a `not_audited` directory (test or fixture paths, past the cap) or a deeper
    manifest leaves H1 unchecked there; the report says which. Never run an auditor yourself,
    never install, never guess CVEs from memory.
-3. **Scope and reach of each dep ref.** Dev-only: in `package-lock.json` the entry
-   `"node_modules/<pkg>"` carries `"dev": true` (`git grep -n -A6 '"node_modules/<pkg>"' -- package-lock.json`),
-   or the package sits under `devDependencies`, `requirements-dev*.txt` or a poetry dev group.
-   Transitive: find the parent with `git grep -n '"<pkg>"' -- package-lock.json`. Import sites:
+3. **Scope and reach of each dep ref.** Dev-only: in the lockfile the ref names (`<lockfile>`, the path before `#`) the entry
+   `"node_modules/<pkg>"` carries `"dev": true` (`git grep -n -A6 '"node_modules/<pkg>"' -- <lockfile>`),
+   or the package sits under `devDependencies` of the manifest beside it, `requirements-dev*.txt` or a poetry dev group.
+   Transitive: find the parent with `git grep -n '"<pkg>"' -- <lockfile>`. Import sites:
    `git grep -n -E "(require\(|from |import )['\"]<pkg or parent>['\"/]" -- . ":!test" ":!tests" ":!**/*.test.*"`.
    Follow each import site to its entry point (route, upload, webhook, CLI argv, job) and give it
    an exposure class (Ranking).
 4. **Runner-supplied reports (optional).** If the runner names a SARIF (`*.sarif`) or CycloneDX
    (`bom.json`, `*.cdx.json`) file, read it and cite entries as `sarif` evidence. `dep` evidence
    is only what `deps` returned this run.
-5. **Secrets.** `git grep -n -I -E "(api[_-]?key|secret|token|passw(or)?d)\s*[:=]\s*['\"][A-Za-z0-9/+_\-]{12,}['\"]|-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}"`.
+5. **Secrets.** `git grep -n -I -i -E "(api[_-]?key|secret|token|passw(or)?d)[a-z0-9_]*['\"]?\s*[:=]\s*['\"][A-Za-z0-9/+_\-]{12,}['\"]|-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}"`.
    Also `git ls-files "*.env" "*.pem" "*.key" "*.p12"`. Never print or store a secret: quote the
    line only up to the value (`const stripeKey = '`); `verify` matches a fragment. A hit in
    `test/`, fixtures, `*.example`, `*.sample` or docs, or a documented placeholder or test-mode
-   key, is class E0: record it, no card.
-6. **Risky patterns.** `git grep -n -E "eval\(|new Function\(|child_process|execSync\(|shell: ?true|shell=True|os\.system|innerHTML|dangerouslySetInnerHTML|v-html|(SELECT|INSERT|UPDATE|DELETE) .*(['\"] *\+|\$\{)|pickle\.loads|yaml\.load\(|verify ?= ?False|rejectUnauthorized: ?false|Math\.random\(\).*(token|secret)" -- ':!*test*' ':!*fixtures/*' ':!*.md'`.
+   key, is class E0: record it, no card. `-i` and the name's suffix are there for `apiKey`, `API_KEY`, `STRIPE_SECRET_KEY`.
+6. **Risky patterns.** `git grep -n -E "eval\(|new Function\(|child_process|execSync\(|shell: ?true|shell=True|os\.system|innerHTML|dangerouslySetInnerHTML|v-html|(SELECT|INSERT|UPDATE|DELETE) .*(['\"] *\+|[$]\{)|pickle\.loads|yaml\.load\(|verify ?= ?False|rejectUnauthorized: ?false|Math\.random\(\).*(token|secret)" -- ':!*test*' ':!*fixtures/*' ':!*.md'`.
    No bare `exec(` (in JS it is mostly `RegExp.exec`): `child_process` finds the imports, then
-   read their calls. For each hit, read where its input comes from and give it an exposure class.
+   read their calls. `[$]\{` is interpolation under any shell (`\$\{` in bash quotes matches nothing). For each hit, read where its input comes from and give it an exposure class.
 7. **CRA surface (docs and repo).** `SECURITY.md`, `.well-known/security.txt`, a
    vulnerability-disclosure section in README or docs, `CHANGELOG*` with security entries, an
    SBOM step in CI (`.github/workflows/*`, `.gitlab-ci.yml`, `bitbucket-pipelines.yml`: grep

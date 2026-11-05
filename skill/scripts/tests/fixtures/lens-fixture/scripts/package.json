@@ -1,0 +1,10 @@
+{
+  "name": "pebble-seed",
+  "version": "1.0.0",
+  "description": "Demo data for a local Pebble Shop database.",
+  "private": true,
+  "license": "MIT",
+  "devDependencies": {
+    "minimist": "1.2.5"
+  }
+}

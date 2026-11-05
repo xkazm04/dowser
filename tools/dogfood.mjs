@@ -37,6 +37,7 @@ import { fileURLToPath } from 'node:url';
 import { LENSES, isOneOf } from '../skill/scripts/lib/model.mjs';
 import { dowserHome } from '../skill/scripts/lib/paths.mjs';
 import { seeded } from './mock-forge-mcp.mjs';
+import { resolveClaude, spawnClaude } from './claude-bin.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const PLACEHOLDER = 'DOWSER_PROJECT';
@@ -44,6 +45,8 @@ const CLI = join(ROOT, 'skill/scripts/dowser.mjs');
 const INSTALL = join(ROOT, 'skill/install.mjs');
 const MOCK = join(ROOT, 'tools/mock-forge-mcp.mjs');
 const CLAUDE = process.env.CLAUDE_BIN ?? 'claude';
+/** How CLAUDE is started here (an npm claude.cmd on Windows runs its target directly: tools/claude-bin.mjs). */
+const CLAUDE_CMD = resolveClaude(CLAUDE);
 const ALLOWED_TOOLS = ['Bash', 'Read', 'Grep', 'Glob', 'Write', 'Edit', 'Skill', 'mcp__dowser__*'];
 
 /** @typedef {{source: string, seed: string, hide: string[], lenses: string[], model?: string, budget?: string, out: string, campaign?: string, keep: boolean, dryRun: boolean}} Opts */
@@ -195,13 +198,13 @@ try {
     seed: { file: o.seed, tickets: seed.tickets?.length ?? 0, pages: seed.pages?.length ?? 0, goals: seed.goals?.length ?? 0, direction: Boolean(seed.directions?.[projectKey]) },
   };
   if (o.dryRun) {
-    console.log(JSON.stringify({ dry_run: true, ...plan, command: `${CLAUDE} ${args.length} args, cwd ${w.repo}, DOWSER_HOME=${w.home}` }, null, 2));
+    console.log(JSON.stringify({ dry_run: true, ...plan, claude: CLAUDE_CMD, command: `${CLAUDE} ${args.length} args, cwd ${w.repo}, DOWSER_HOME=${w.home}` }, null, 2));
   } else {
     console.error(`dogfood: scanning ${o.source}@${cloned.head} with ${o.lenses.join(', ')} in ${w.repo} (this calls Claude and costs tokens)`);
     // what the store held before: the report shows the cards this scan created or moved, not a campaign's history
     const before = new Map(cli(w, 'list').proposals.map((/** @type {{fp: string, status: string}} */ p) => [p.fp, p.status]));
     const started = Date.now();
-    const r = spawnSync(CLAUDE, args, { cwd: w.repo, env: { ...process.env, DOWSER_HOME: w.home }, encoding: 'utf8', timeout: 90 * 60000, maxBuffer: 64 * 1024 * 1024 });
+    const r = spawnClaude(args, { cwd: w.repo, env: { ...process.env, DOWSER_HOME: w.home }, encoding: 'utf8', timeout: 90 * 60000, maxBuffer: 64 * 1024 * 1024 }, CLAUDE_CMD);
     writeFileSync(join(work, 'claude.json'), r.stdout ?? '');
     writeFileSync(join(work, 'claude.stderr.txt'), r.stderr ?? '');
     /** @type {any} */

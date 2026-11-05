@@ -312,15 +312,22 @@ test('fixture: the git history overlays exist and the captured audit matches the
   assert.equal(audit.auditReportVersion, 2);
   assert.equal(lock.packages['node_modules/lodash'].version, pkg.dependencies.lodash);
   assert.ok(audit.vulnerabilities.lodash.via.some((/** @type {{severity: string}} */ v) => v.severity === 'high'));
-  // the dev-only advisory: a devDependency the lockfile marks dev and the published files leave out
-  assert.equal(lock.packages['node_modules/minimist'].version, pkg.devDependencies.minimist);
-  assert.equal(lock.packages['node_modules/minimist'].dev, true);
+  // the dev-only advisory sits in a nested lockfile (scripts/), which the root lockfile does not list, so a
+  // scope check must read the lockfile the dep ref names; the published files leave the seed tool out
+  const seedLock = readJson('scripts/package-lock.json');
+  const seedPkg = readJson('scripts/package.json');
+  const seedAudit = readJson('_auditor/scripts/npm-audit.json');
+  assert.equal(seedLock.packages['node_modules/minimist'].version, seedPkg.devDependencies.minimist);
+  assert.equal(seedLock.packages['node_modules/minimist'].dev, true);
+  assert.equal(lock.packages['node_modules/minimist'], undefined, 'the root lockfile does not list it');
   assert.equal(pkg.dependencies.minimist, undefined);
   assert.ok(!pkg.files.some((/** @type {string} */ f) => f.startsWith('scripts')), 'the seed script is not published');
-  for (const [name, v] of Object.entries(audit.vulnerabilities)) {
-    for (const node of /** @type {{nodes: string[]}} */ (v).nodes) assert.ok(lock.packages[node], `${name}: ${node} is in the lockfile`);
+  for (const [a, l] of [[audit, lock], [seedAudit, seedLock]]) {
+    for (const [name, v] of Object.entries(a.vulnerabilities)) {
+      for (const node of /** @type {{nodes: string[]}} */ (v).nodes) assert.ok(l.packages[node], `${name}: ${node} is in its lockfile`);
+    }
   }
-  // what `dowser deps` caches from this audit: one dep ref per package version
-  const refs = npmFindings(audit, lock).map((f) => `${f.manifest}#${f.package}@${f.version}`);
-  assert.deepEqual([...new Set(refs)].sort(), ['package-lock.json#lodash@4.17.15', 'package-lock.json#minimist@1.2.5']);
+  // what `dowser deps` caches from these audits: one dep ref per package version, named by its lockfile
+  const refs = [...npmFindings(audit, lock), ...npmFindings(seedAudit, seedLock, 'scripts/package-lock.json')].map((f) => `${f.manifest}#${f.package}@${f.version}`);
+  assert.deepEqual([...new Set(refs)].sort(), ['package-lock.json#lodash@4.17.15', 'scripts/package-lock.json#minimist@1.2.5']);
 });

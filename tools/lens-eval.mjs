@@ -19,13 +19,14 @@
 //                  among it, to the agent under evaluation (the copying installer leaves tests/ out)
 //     --budget-usd passed to claude as --max-budget-usd
 //
-// For security-cra, `npm audit` is answered from the fixture's _auditor/npm-audit.json by an `npm` shim put
-// first on the scan's PATH, so `dowser deps` and the pack's own audit step see captured, offline output.
+// For security-cra, `npm audit` is answered from the fixture's captured reports by an `npm` shim put first on the
+// scan's PATH, so `dowser deps` and the pack's own audit step see captured, offline output: in a manifest directory
+// `<dir>` below the root the shim serves _auditor/<dir>/npm-audit.json, at the root _auditor/npm-audit.json.
 // The fixture's direction seed (_sources.json `directions`) is keyed by the placeholder FIXTURE_PROJECT; the temp
 // copy has no origin, so its project key is `local-<hash of its path>`. The mock is seeded from a copy of
 // _sources.json whose `directions` is re-keyed to the key `dowser init` reports, so `dowser_direction_get` answers
 // the scan with the team direction the scorer's `excluded_by_direction` / `focus_by_direction` items assume.
-// Env: CLAUDE_BIN (default `claude`). Exit codes: 0 scored (or dry run), 1 the scan failed, 2 bad arguments.
+// Env: CLAUDE_BIN (default `claude`; an npm-installed claude.cmd works on Windows, see tools/claude-bin.mjs). Exit codes: 0 scored (or dry run), 1 the scan failed, 2 bad arguments.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { appendFileSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -35,6 +36,7 @@ import { LENSES, isOneOf } from '../skill/scripts/lib/model.mjs';
 import { dowserHome } from '../skill/scripts/lib/paths.mjs';
 import { emittedOf, scoreLens } from '../skill/scripts/lib/score.mjs';
 import { callTool, seeded } from './mock-forge-mcp.mjs';
+import { resolveClaude, spawnClaude } from './claude-bin.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 /** The placeholder project key the fixture's direction seed is written under. */
@@ -44,6 +46,8 @@ const CLI = join(ROOT, 'skill/scripts/dowser.mjs');
 const INSTALL = join(ROOT, 'skill/install.mjs');
 const MOCK = join(ROOT, 'tools/mock-forge-mcp.mjs');
 const CLAUDE = process.env.CLAUDE_BIN ?? 'claude';
+/** How CLAUDE is started here (an npm claude.cmd on Windows runs its target directly: tools/claude-bin.mjs). */
+const CLAUDE_CMD = resolveClaude(CLAUDE);
 const ALLOWED_TOOLS = ['Bash', 'Read', 'Grep', 'Glob', 'Write', 'Edit', 'Skill', 'mcp__dowser__*'];
 
 /** @typedef {{lens: string, model?: string, budget?: string, evals: string, keep: boolean, dryRun: boolean, devLink: boolean}} Opts */
@@ -167,12 +171,14 @@ function buildRepo(repo) {
 }
 
 /**
- * The `npm` shim for security-cra: `npm audit ...` prints the captured report and exits 1 (npm audit's code when
- * it finds vulnerabilities); anything else goes to the real npm when one was found.
+ * The `npm` shim for security-cra: `npm audit ...` prints the captured report of the directory it runs in (see the
+ * header) and exits 1 (npm audit's code when it finds vulnerabilities); a directory with no captured report gets an
+ * empty one (exit 0). Anything else goes to the real npm when one was found.
  * @param {string} bin
+ * @param {string} repo the scanned copy; the shim's cwd relative to it picks the report
  * @returns {string | undefined} the real npm it forwards to
  */
-function writeNpmShim(bin) {
+function writeNpmShim(bin, repo) {
   let real;
   try {
     const found = execFileSync(process.platform === 'win32' ? 'where' : 'which', ['npm'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
@@ -180,13 +186,19 @@ function writeNpmShim(bin) {
     real = process.platform === 'win32' ? found.find((s) => s.toLowerCase().endsWith('.cmd')) ?? found[0] : found[0];
   } catch { /* no npm on PATH: only `npm audit` is answered */ }
   mkdirSync(bin, { recursive: true });
-  const audit = join(FIXTURE, '_auditor/npm-audit.json');
+  const auditor = join(FIXTURE, '_auditor');
   writeFileSync(join(bin, 'npm-shim.mjs'), [
-    '// lens-eval npm shim: `npm audit` answers from the fixture\'s captured report; the rest goes to the real npm.',
-    "import { readFileSync } from 'node:fs';",
+    '// lens-eval npm shim: `npm audit` answers from the fixture\'s captured report for its directory; the rest goes to the real npm.',
+    "import { existsSync, readFileSync } from 'node:fs';",
+    "import { join, relative, sep } from 'node:path';",
     "import { spawnSync } from 'node:child_process';",
     'const args = process.argv.slice(2);',
-    "if (args.includes('audit')) { process.stdout.write(readFileSync(" + JSON.stringify(audit) + ", 'utf8')); process.exit(1); }",
+    "if (args.includes('audit')) {",
+    '  const dir = relative(' + JSON.stringify(repo) + ", process.cwd()).split(sep).join('/');",
+    '  const report = join(' + JSON.stringify(auditor) + ", dir && !dir.startsWith('..') ? dir : '', 'npm-audit.json');",
+    "  if (!existsSync(report)) { process.stdout.write(JSON.stringify({ auditReportVersion: 2, vulnerabilities: {}, metadata: {} })); process.exit(0); }",
+    "  process.stdout.write(readFileSync(report, 'utf8')); process.exit(1);",
+    '}',
     'const real = ' + JSON.stringify(real ?? '') + ';',
     "if (!real) { console.error('npm is not available in this evaluation (only npm audit is)'); process.exit(127); }",
     '// A .cmd needs a shell on Windows; quote the command and every argument for it.',
@@ -253,9 +265,11 @@ try {
   const seed = writeSeed(seedFile, projectKey);
   writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { dowser: { type: 'stdio', command: process.execPath,
     args: [MOCK, '--seed', seedFile, '--state', join(work, 'forge-state.json')] } } }, null, 2));
-  const realNpm = o.lens === 'security-cra' ? writeNpmShim(bin) : undefined;
+  const realNpm = o.lens === 'security-cra' ? writeNpmShim(bin, w.repo) : undefined;
   const env = { ...process.env, DOWSER_HOME: w.home, ...(o.lens === 'security-cra' ? { PATH: `${bin}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH ?? ''}` } : {}) };
-  const args = ['-p', prompt(o.lens), '--mcp-config', mcpConfig, '--strict-mcp-config', '--add-dir', tmpdir(),
+  // --setting-sources without `user`: a user-scope dowser skill (~/.claude/skills/dowser, often a link to another
+  // checkout) otherwise wins over the project-scope copy installed above, and the scan measures that skill's packs
+  const args = ['-p', prompt(o.lens), '--setting-sources', 'project,local', '--mcp-config', mcpConfig, '--strict-mcp-config', '--add-dir', tmpdir(),
     '--allowedTools', ...ALLOWED_TOOLS, '--output-format', 'json', ...(o.model ? ['--model', o.model] : []), ...(o.budget ? ['--max-budget-usd', o.budget] : [])];
 
   if (o.dryRun) {
@@ -275,8 +289,9 @@ try {
         const { lenses } = callTool(seeded(seed), 'dowser_direction_get', call);
         return { seed: seedFile, call, answer_for_lens: lenses[o.lens] ?? 'none seeded', lenses_seeded: Object.keys(lenses) };
       })(),
+      claude: CLAUDE_CMD,
       budget: budget ?? 'none in the pack frontmatter',
-      npm_audit_shim: o.lens === 'security-cra' ? { bin, serves: join(FIXTURE, '_auditor/npm-audit.json'), forwards_to: realNpm ?? 'nothing (no npm found)' } : 'not used for this lens',
+      npm_audit_shim: o.lens === 'security-cra' ? { bin, serves: `${join(FIXTURE, '_auditor')} (<dir>/npm-audit.json per manifest directory)`, forwards_to: realNpm ?? 'nothing (no npm found)' } : 'not used for this lens',
       steps: [
         `cd ${q(w.repo)}`,
         `DOWSER_HOME=${q(w.home)}${o.lens === 'security-cra' ? ` PATH=${q(bin)}:$PATH` : ''} ${CLAUDE} ${args.map(q).join(' ')} > ${q(join(work, 'claude.json'))}`,
@@ -284,12 +299,12 @@ try {
         `score the cards that survived verify against ${q(join(FIXTURE, '_expected.json'))} (skill/scripts/lib/score.mjs)`,
         `append {ts, lens, lens_version, recall?, precision?, decoy_hits, artifacts_valid, artifacts_total, verify_dropped, n, budget?, recall_at_budget?, budget_scope?, priority1_found?, priority1_total?, focus_found?, focus_total?, reserve_hits?, direction_violations} to ${q(o.evals)}`,
       ],
-      warnings: existsSync(userSkill) ? [`a user-scope dowser skill exists at ${userSkill}; the scan may load it instead of the project-scope copy`] : [],
+      warnings: existsSync(userSkill) ? [`a user-scope dowser skill exists at ${userSkill}; --setting-sources project,local keeps it out, and a card whose lens_version is not ${version} fails the run`] : [],
       kept: o.keep,
     }, null, 2));
   } else {
     console.error(`lens-eval: scanning ${o.lens} ${version} in ${w.repo} (this calls Claude and costs tokens)`);
-    const r = spawnSync(CLAUDE, args, { cwd: w.repo, env, encoding: 'utf8', timeout: 45 * 60000, maxBuffer: 64 * 1024 * 1024 });
+    const r = spawnClaude(args, { cwd: w.repo, env, encoding: 'utf8', timeout: 45 * 60000, maxBuffer: 64 * 1024 * 1024 }, CLAUDE_CMD);
     writeFileSync(join(work, 'claude.json'), r.stdout ?? '');
     writeFileSync(join(work, 'claude.stderr.txt'), r.stderr ?? '');
     /** @type {any} */
@@ -301,6 +316,11 @@ try {
     } else {
       const { proposals } = cli(w, 'list', '--lens', o.lens);
       const shown = proposals.map((/** @type {{fp: string}} */ p) => cli(w, 'show', p.fp));
+      // the cards must come from the pack under evaluation: another installed copy of the skill is another pack
+      const versions = [...new Set(shown.map((/** @type {any} */ x) => String(x.card.provenance?.lens_version)))];
+      if (versions.some((v) => v !== version)) {
+        throw new Error(`the scan wrote cards with lens_version ${versions.join(', ')}, not ${version}: it loaded another copy of the skill; no row appended (see ${work})`);
+      }
       // survivors carry the store's band, so recall_at_budget measures the ranked cards (budget_scope: ranked)
       const { emitted, dropped } = emittedOf(shown);
       const expected = JSON.parse(readFileSync(join(FIXTURE, '_expected.json'), 'utf8'));

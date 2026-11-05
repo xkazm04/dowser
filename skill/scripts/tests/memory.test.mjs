@@ -216,3 +216,20 @@ test('rules: clusters covering the same items are one offer', () => {
   assert.deepEqual(offers[0].cluster.also_tokens, ['legacy', 'wizard']);
   assert.equal(offerRules(db).offers.length, 0);
 });
+
+test('rules: an item counts by its latest decision; rejected, resurfaced and accepted is not a rejection', () => {
+  const fps = ['webhook retry docs a', 'webhook retry docs b', 'webhook retry docs c'].map((t) => {
+    const fp = verified({ lens: 'ux-friction', kind: 'dead-end', topic: t, anchors: [`src/${t.replace(/ /g, '-')}.js`] });
+    reject(fp, 'not-worth-it');
+    return fp;
+  });
+  // the first resurfaces with stronger evidence and the person accepts it
+  move(db, fps[0], 'candidate', { by: 'skill:dowser' });
+  move(db, fps[0], 'verified', { by: 'skill:dowser-verify' });
+  move(db, fps[0], 'accepted', { by: 'human:ann' });
+  assert.deepEqual(offerRules(db).offers.filter((o) => o.lens === 'ux-friction'), [], 'two still rejected are not a cluster');
+  const fp = verified({ lens: 'ux-friction', kind: 'dead-end', topic: 'webhook retry docs d', anchors: ['src/webhook-retry-docs-d.js'] });
+  reject(fp, 'not-worth-it');
+  const [offer] = offerRules(db).offers.filter((o) => o.lens === 'ux-friction');
+  assert.deepEqual(offer.cluster.fps, [...fps.slice(1), fp].sort(), 'three items still rejected make the offer, the accepted one is not among them');
+});

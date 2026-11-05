@@ -91,10 +91,14 @@ async function fiveCards(pretriaged = 1, verifyFlags = /** @type {string[]} */ (
   const fps = await p.propose(run, ['alpha', 'beta', 'gamma', 'delta', 'epsilon'].map((t, i) => opp(t, { impact: 9 - i, impact_why: 'x' })));
   const v = await p.cli('verify', '--run', run, ...verifyFlags);
   assert.equal(v.code, 0, v.stdout);
-  for (const fp of fps.slice(0, pretriaged)) await p.exec("UPDATE proposals SET pretriaged_by = 'machine:dowser' WHERE fp = ?", fp);
   const pre = await p.cli('pretriage', '--run', run);
   assert.equal(pre.code, 0, pre.stdout);
-  return { p, run, fps, pre: pre.out };
+  // the machine mark as an L1 slice leaves it, set after pretriage (which re-checks a mark against the slice's
+  // level: these product slices are at L0 and would clear it)
+  const marked = fps.slice(0, pretriaged);
+  for (const fp of marked) await p.exec("UPDATE proposals SET pretriaged_by = 'machine:dowser' WHERE fp = ?", fp);
+  const forPerson = pre.out.for_person.filter((/** @type {any} */ r) => !marked.includes(r.fp));
+  return { p, run, fps, pre: { ...pre.out, for_person: forPerson } };
 }
 
 test('case 1: the sheet numbers the for_person rows 1..4 in for_person order, each row a decision row; stable across calls', async () => {
@@ -258,7 +262,7 @@ test('guard: move keeps its input refusals and messages (the validator it now sh
     const throws = (to, o, why) => assert.throws(() => move(db, 'f'.repeat(16), to, o), (e) => /** @type {any} */ (e).code === 2 && why.test(/** @type {any} */ (e).message));
     throws('nope', { by: 'human:a' }, /^--to must be one of/);
     throws('rejected', { by: 'human:a', from: 'x' }, /^--from must be one of/);
-    throws('rejected', { by: 'bad' }, /^--by names the decider/);
+    throws('rejected', { by: 'bad' }, /^--by names the decider as <kind>:<name>, e.g. human:jane for a person/);
     throws('rejected', { by: 'human:a' }, /^a reject needs --reason$/);
     throws('rejected', { by: 'human:a', reason: 'other' }, /^reason other needs --note$/);
     throws('merged', { by: 'human:a' }, /^a merge needs --into <fp>$/);

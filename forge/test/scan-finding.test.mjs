@@ -53,24 +53,25 @@ test('factsOf: impact, score with its breakdown, confidence, effort, risk, lens/
 test('push: /2 fields reach the columns and the card; the group orders MVP, ranked by score, unscored, reserve', async () => {
   const d = makeDeps();
   const recs = [
-    scored('low ranked', { score: 12.3 }),
-    scored('reserve high', { score: 90, band: 'reserve' }),
+    // a score without its breakdown is not checked against one (the breakdown must produce the score it rides with)
+    scored('low ranked', { score: 12.3, score_parts: undefined }),
+    scored('reserve high', { score: 90, score_parts: undefined, band: 'reserve' }),
     { ...record({ topic: 'no score', anchors: ['src/n.js'] }), band: 'ranked' },
-    scored('mvp opp', { score: 20, mvp: true, mvp_rule: 'top-score' }),
-    scored('high ranked', { score: 55.1, pretriaged_by: 'machine:dowser' }),
+    scored('mvp opp', { mvp: true, mvp_rule: 'top-score' }),
+    scored('high ranked', { score: 55.1, score_parts: undefined, pretriaged_by: 'machine:dowser' }),
   ];
   const pushed = await tool(d, 'dowser_proposals_push', pushArgs(recs));
   assert.deepEqual(pushed.results.map((/** @type {any} */ r) => r.result), ['created', 'created', 'created', 'created', 'created'], JSON.stringify(pushed));
   const cols = d.db.raw.prepare('SELECT title, score, band, mvp, pretriaged_by FROM proposals ORDER BY id').all().map((r) => ({ ...r }));
   assert.deepEqual(cols.map((r) => [r.score, r.band, r.mvp, r.pretriaged_by]), [
-    [12.3, 'ranked', null, null], [90, 'reserve', null, null], [null, 'ranked', null, null], [20, 'ranked', 1, null], [55.1, 'ranked', null, 'machine:dowser'],
+    [12.3, 'ranked', null, null], [90, 'reserve', null, null], [null, 'ranked', null, null], [38.5, 'ranked', 1, null], [55.1, 'ranked', null, 'machine:dowser'],
   ], 'absent is NULL, never 0');
   const inbox = await res(d, 'inbox.list', { project_key: PK });
   const items = inbox.groups[0].items;
   assert.deepEqual(items.map((/** @type {any} */ c) => c.title), ['Add mvp opp', 'Add high ranked', 'Add low ranked', 'Add no score', 'Add reserve high'],
     'MVP pinned, then ranked by the stored score, unscored after every scored card, reserve last whatever its score');
   const top = items[0];
-  assert.deepEqual([top.mvp, top.score, top.score_parts.formula, top.impact_why, top.predicted_verdict, top.category], [true, 20, 'scan-score/1', 'Asked for in 12 tickets', 'accept', 'product']);
+  assert.deepEqual([top.mvp, top.score, top.score_parts.formula, top.impact_why, top.predicted_verdict, top.category], [true, 38.5, 'scan-score/1', 'Asked for in 12 tickets', 'accept', 'product']);
   assert.equal(items[3].score, undefined, 'an unscored card carries no score key');
   const pre = await res(d, 'inbox.list', { project_key: PK, pretriaged: true });
   assert.deepEqual(pre.groups.flatMap((/** @type {any} */ g) => g.items).map((/** @type {any} */ c) => [c.title, c.pretriaged_by]), [['Add high ranked', 'machine:dowser']]);
@@ -87,11 +88,12 @@ test('push: a malformed store-computed field is refused with the field named; a 
     scored('zero score', { score: 0 }), scored('mvp false', { mvp: false }), scored('band x', { band: 'top' }),
     scored('parts alone', { score: undefined }), scored('override', { mvp: true, mvp_rule: 'override' }),
     scored('impact no why', { impact_why: undefined }), scored('verdict', { predicted_verdict: 'maybe' }),
+    scored('made-up score', { score: 95 }), scored('made-up formula', { score_parts: { ...PARTS(6), formula: 'made-up' } }),
   ];
   const out = await tool(d, 'dowser_proposals_push', pushArgs([...bad, record({ topic: 'old record', anchors: ['src/o.js'] })]));
   assert.deepEqual(out.results.map((/** @type {any} */ r) => r.result), [...bad.map(() => 'refused'), 'created']);
   assert.deepEqual(out.results.slice(0, bad.length).map((/** @type {any} */ r) => /invalid record: ([a-z_]+)/.exec(r.why)?.[1]),
-    ['score', 'mvp', 'band', 'score_parts', 'mvp_why', 'impact_why', 'predicted_verdict']);
+    ['score', 'mvp', 'band', 'score_parts', 'mvp_why', 'impact_why', 'predicted_verdict', 'score', 'score_parts']);
 });
 
 test('accept: the created issue opens with the facts table, then the rationale', async () => {
