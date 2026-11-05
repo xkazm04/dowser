@@ -39,6 +39,30 @@ test('the byline reads the page index, not a scan; the index is filled at push a
   assert.deepEqual(await backfillPageLinks(d), { linked: 0 }, 'runs once');
 });
 
+test('the page-link backfill resumes where a run stopped instead of restarting from id 0', async () => {
+  const d = await seeded();
+  d.db.raw.exec('DELETE FROM page_links');
+  const ids = /** @type {any[]} */ (d.db.raw.prepare('SELECT id FROM proposals ORDER BY id').all()).map((r) => Number(r.id));
+  assert.equal(ids.length, 2);
+  /** @type {unknown[][]} */
+  const reads = [];
+  const query = d.db.query;
+  d.db.query = async (sql, params = []) => {
+    if (/FROM proposals WHERE id > \?/.test(sql)) reads.push(params);
+    return query(sql, params);
+  };
+  // budget spent after the first page of one item: the run stops and stores where it was
+  const first = await backfillPageLinks(d, { budgetMs: 0, page: 1 });
+  assert.equal(first.more, true);
+  assert.deepEqual(reads, [[0]]);
+  // the next run starts after that item, not at 0, and finishes
+  const second = await backfillPageLinks(d, { budgetMs: 60_000, page: 1 });
+  assert.equal(second.more, undefined);
+  assert.deepEqual(reads.slice(1), [[ids[0]], [ids[1]]]);
+  assert.equal(first.linked + second.linked, 1);
+  assert.deepEqual(await backfillPageLinks(d), { linked: 0 }, 'done once finished');
+});
+
 test('a page edit after the decision is recorded and flagged; an unlinked page costs one lookup and stores nothing', async () => {
   const d = await seeded();
   await res(d, 'settings.set', { project_key: PK, jira_project_key: 'SHOP', issue_type_id: '10001' });

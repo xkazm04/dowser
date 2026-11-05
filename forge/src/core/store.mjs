@@ -186,6 +186,23 @@ export async function counterValue(db, name) {
   return rows.length ? Number(rows[0].value) : 0;
 }
 
+/**
+ * Sets counter `name` to `value` (a progress cursor with one writer: the daily trigger; not a CAS).
+ * @param {Db} db
+ * @param {string} name
+ * @param {number} value
+ */
+export async function setCounter(db, name, value) {
+  const r = await db.exec('UPDATE counters SET value = ? WHERE name = ?', [value, name]);
+  if (r.affectedRows > 0) return;
+  try {
+    await db.exec('INSERT INTO counters (name, value) VALUES (?, ?)', [name, value]);
+  } catch (e) {
+    if (!(e instanceof DuplicateKey)) throw e;
+    await db.exec('UPDATE counters SET value = ? WHERE name = ?', [value, name]);
+  }
+}
+
 // ------------------------------------------------------------------------------------------------ inboxes
 
 /** True for the sample inbox's reserved key (types.mjs SAMPLE_KEY). @param {unknown} projectKey */

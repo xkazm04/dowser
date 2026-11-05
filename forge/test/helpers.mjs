@@ -21,6 +21,8 @@ export const MCP_URL = 'https://mcp.atlassian.com/forge/test-app-id';
 const bind = (v) => (typeof v === 'boolean' ? Number(v) : /** @type {any} */ (v));
 
 /**
+ * `tx` runs `fn` as is, like the Forge SQL port (adapters/forge-sql.mjs): the core must stay correct without
+ * rollback (core/ports.mjs), so the tests run under the production guarantee, not a stronger one.
  * @returns {Db & {raw: DatabaseSync, failNext?: RegExp}}
  */
 export function sqliteDb() {
@@ -43,10 +45,7 @@ export function sqliteDb() {
         throw e;
       }
     },
-    async tx(fn) {
-      raw.exec('BEGIN');
-      try { const out = await fn(); raw.exec('COMMIT'); return out; } catch (e) { raw.exec('ROLLBACK'); throw e; }
-    },
+    async tx(fn) { return fn(); },
   };
   return db;
 }
@@ -132,9 +131,13 @@ export function fakeJira() {
     failProp: false,
     /** issue key -> property key -> value, as setIssueProperty wrote it. @type {Record<string, Record<string, unknown>>} */
     properties: {},
+    /** issue key -> the HTTP status setIssueProperty fails with for that issue (as the adapter throws it). @type {Record<string, number>} */
+    failPropFor: {},
     /** @param {string} issueKey @param {string} key @param {unknown} value */
     async setIssueProperty(issueKey, key, value) {
       if (j.failProp) throw new Error('Jira answered 503');
+      const status = j.failPropFor[issueKey];
+      if (status) throw Object.assign(new Error(`Jira set issue property on ${issueKey} answered ${status}`), { status });
       (j.properties[issueKey] ??= {})[key] = value;
     },
   };

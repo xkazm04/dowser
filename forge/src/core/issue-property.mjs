@@ -7,7 +7,7 @@
 // by a later merge into it.
 import { cardOf } from './cards.mjs';
 import { logLine } from './observe.mjs';
-import { toProposal } from './store.mjs';
+import { counterValue, setCounter, toProposal } from './store.mjs';
 import { FP_RE, ISSUE_KEY_RE, omitAbsent } from './util.mjs';
 
 /** @typedef {import('./ports.mjs').Deps} Deps */
@@ -18,6 +18,8 @@ import { FP_RE, ISSUE_KEY_RE, omitAbsent } from './util.mjs';
 export const ISSUE_PROPERTY_KEY = 'dowser';
 /** Items the daily backfill writes per run. */
 export const BACKFILL_MAX = 50;
+/** The last proposal id the backfill tried: the next run starts after it, so failing rows cannot block newer ones. */
+const BACKFILL_CURSOR = 'issue_prop_backfill_after';
 
 /**
  * The property value for a card. A fact the card does not carry is omitted, never 0. `mvp` is a string
@@ -56,12 +58,13 @@ async function ownedElsewhere(deps, issueKey, id) {
 
 /**
  * Writes the property for one decided item. Returns `written`, `owned` (a merge into an issue another item owns:
- * nothing written, stamped done) or `failed` (logged; the backfill retries). Without the port: `failed`.
+ * nothing written, stamped done), `gone` (Jira answered 404: the issue was deleted or moved away; stamped done, a
+ * retry cannot land) or `failed` (logged; the backfill retries). Without the port: `failed`.
  * @param {Deps} deps
  * @param {ProposalRow} p  the item after its decision
  * @param {string} issueKey
  * @param {'accepted' | 'merged'} via
- * @returns {Promise<'written' | 'owned' | 'failed'>}
+ * @returns {Promise<'written' | 'owned' | 'gone' | 'failed'>}
  */
 export async function writeIssueProperty(deps, p, issueKey, via) {
   const set = deps.jira?.setIssueProperty;
@@ -71,7 +74,9 @@ export async function writeIssueProperty(deps, p, issueKey, via) {
   try {
     await set(issueKey, ISSUE_PROPERTY_KEY, issuePropertyOf(await cardOf(deps.db, p), via));
   } catch (e) {
-    logLine(deps, { dowser: 'warn', what: 'issue property', issue: issueKey, message: String(/** @type {Error} */ (e)?.message ?? e).slice(0, 200) });
+    const gone = /** @type {any} */ (e)?.status === 404;
+    logLine(deps, { dowser: 'warn', what: 'issue property', issue: issueKey, gone: gone || undefined, message: String(/** @type {Error} */ (e)?.message ?? e).slice(0, 200) });
+    if (gone) { await stamp(); return 'gone'; }
     return 'failed';
   }
   await stamp();
@@ -80,18 +85,27 @@ export async function writeIssueProperty(deps, p, issueKey, via) {
 
 /**
  * The daily backfill: accepted items, and items merged into a Jira key, whose property never landed (decided
- * before this existed, or the write failed). At most BACKFILL_MAX per run, oldest decision first; idempotent.
+ * before this existed, or the write failed). At most `max` per run, by id after a stored cursor that wraps to the
+ * start once a run reaches the end: a row whose write keeps failing is retried once per pass, and never holds back
+ * the rows after it. Idempotent.
  * @param {Deps} deps
- * @returns {Promise<{written: number, failed: number}>}
+ * @param {{max?: number}} [o]  default BACKFILL_MAX
+ * @returns {Promise<{written: number, failed: number, gone?: number}>}
  */
-export async function backfillIssueProperties(deps) {
-  const rows = (await deps.db.query(
-    `SELECT * FROM proposals WHERE issue_prop_at IS NULL AND (
+export async function backfillIssueProperties(deps, { max = BACKFILL_MAX } = {}) {
+  const limit = Number.isInteger(max) && max > 0 ? max : BACKFILL_MAX;
+  const after = await counterValue(deps.db, BACKFILL_CURSOR);
+  const pending = (/** @type {number} */ from) => deps.db.query(
+    `SELECT * FROM proposals WHERE issue_prop_at IS NULL AND id > ? AND (
        (status = 'accepted' AND issue_ref IS NOT NULL) OR (status = 'merged' AND merged_into LIKE '%-%'))
-     ORDER BY decided_at, id LIMIT ${BACKFILL_MAX}`,
-  )).map(toProposal);
+     ORDER BY id LIMIT ${limit}`, [from]);
+  let raw = await pending(after);
+  // past the end: wrap, so the rows before the cursor get their next try now
+  if (!raw.length && after > 0) raw = await pending(0);
+  const rows = raw.map(toProposal);
   let written = 0;
   let failed = 0;
+  let gone = 0;
   for (const p of rows) {
     const accepted = p.status === 'accepted';
     const key = accepted ? p.issue_ref : p.merged_into;
@@ -100,6 +114,10 @@ export async function backfillIssueProperties(deps) {
     const r = await writeIssueProperty(deps, p, key, accepted ? 'accepted' : 'merged');
     if (r === 'written') written++;
     else if (r === 'failed') failed++;
+    else if (r === 'gone') gone++;
   }
-  return { written, failed };
+  // a short page reached the end: the next run starts over from the first row still missing
+  const next = rows.length === limit ? rows[rows.length - 1].id : 0;
+  if (next !== after) await setCounter(deps.db, BACKFILL_CURSOR, next);
+  return gone ? { written, failed, gone } : { written, failed };
 }

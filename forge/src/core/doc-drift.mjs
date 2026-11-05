@@ -11,7 +11,7 @@
 //    page body.
 import { cardOf } from './cards.mjs';
 import { logLine } from './observe.mjs';
-import { counterValue, evidenceRefsOfMany, findProposal, nextCounter, toProposal } from './store.mjs';
+import { counterValue, evidenceRefsOfMany, findProposal, nextCounter, setCounter, toProposal } from './store.mjs';
 import { AppError, DuplicateKey, needStr } from './util.mjs';
 
 /** @typedef {import('./ports.mjs').Deps} Deps */
@@ -21,6 +21,10 @@ import { AppError, DuplicateKey, needStr } from './util.mjs';
 export const PAGE_ID_RE = /^[0-9]{1,32}$/;
 const BACKFILL_COUNTER = 'page_links_backfill_v1';
 const BACKFILL_PAGE = 200;
+/** The last proposal id the page-link backfill has linked (its resume point). */
+const BACKFILL_CURSOR = 'page_links_backfill_after';
+/** The page-link backfill's own time budget per run (ms); it shares the daily trigger with migrations and the property backfill. */
+export const BACKFILL_BUDGET_MS = 8_000;
 
 /**
  * The page ids an item names: its `page` evidence refs and the numeric entries of its `doc_impact`.
@@ -68,18 +72,26 @@ export async function linkPushed(deps, projectKey, fps) {
 
 /**
  * Once per installation: links the items filed before the index existed. Idempotent (a counter marks it done).
+ * Resumable: the last item linked is stored after each page of BACKFILL_PAGE, and no new page starts past
+ * `budgetMs` of its own time, so a large site finishes over a few daily runs instead of restarting from id 0.
  * @param {Deps} deps
- * @returns {Promise<{linked: number}>}
+ * @param {{budgetMs?: number, page?: number}} [o]  default BACKFILL_BUDGET_MS, BACKFILL_PAGE items a page
+ * @returns {Promise<{linked: number, more?: true}>}
  */
-export async function backfillPageLinks(deps) {
+export async function backfillPageLinks(deps, { budgetMs = BACKFILL_BUDGET_MS, page = BACKFILL_PAGE } = {}) {
   if (await counterValue(deps.db, BACKFILL_COUNTER) > 0) return { linked: 0 };
+  const start = deps.now().getTime();
   let linked = 0;
-  for (let after = 0; ;) {
-    const rows = (await deps.db.query(`SELECT * FROM proposals WHERE id > ? ORDER BY id LIMIT ${BACKFILL_PAGE}`, [after])).map(toProposal);
+  for (let after = await counterValue(deps.db, BACKFILL_CURSOR), first = true; ; first = false) {
+    if (!first && deps.now().getTime() - start >= budgetMs) return { linked, more: true };
+    const limit = Number.isInteger(page) && page > 0 ? page : BACKFILL_PAGE;
+    const rows = (await deps.db.query(`SELECT * FROM proposals WHERE id > ? ORDER BY id LIMIT ${limit}`, [after])).map(toProposal);
     if (!rows.length) break;
     const refs = await evidenceRefsOfMany(deps.db, rows);
     for (const p of rows) linked += await linkPages(deps.db, p, pageIdsOf(p.record, refs.get(p.id) ?? []));
     after = rows[rows.length - 1].id;
+    if (rows.length < limit) break; // the last page: nothing to resume
+    await setCounter(deps.db, BACKFILL_CURSOR, after);
   }
   await nextCounter(deps.db, BACKFILL_COUNTER);
   return { linked };

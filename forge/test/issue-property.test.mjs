@@ -61,3 +61,23 @@ test('a property failure never costs the accept; the daily backfill writes it on
   assert.equal(/** @type {any} */ (d.jira.properties[out.card.issue_ref]?.dowser)?.ref, 'DW-1');
   assert.deepEqual(await backfillIssueProperties(d), { written: 0, failed: 0 }, 'idempotent: nothing left to write');
 });
+
+test('rows whose property write keeps failing do not hold back newer ones; a 404 is final', async () => {
+  const d = await seeded();
+  d.jira.failProp = true;
+  const keys = [];
+  for (const ref of ['DW-1', 'DW-2', 'DW-3']) keys.push((await res(d, 'verdict.accept', { ref })).card.issue_ref);
+  d.jira.failProp = false;
+  d.jira.failPropFor = { [keys[0]]: 503, [keys[1]]: 404 };
+  // one row a run: the always-failing oldest row no longer comes back first every day
+  assert.deepEqual(await backfillIssueProperties(d, { max: 1 }), { written: 0, failed: 1 });
+  assert.deepEqual(await backfillIssueProperties(d, { max: 1 }), { written: 0, failed: 0, gone: 1 });
+  assert.deepEqual(await backfillIssueProperties(d, { max: 1 }), { written: 1, failed: 0 });
+  assert.equal(/** @type {any} */ (d.jira.properties[keys[2]]?.dowser)?.ref, 'DW-3');
+  // past the end it wraps: the failing row gets its next try; the 404 row is done and never retried
+  assert.deepEqual(await backfillIssueProperties(d, { max: 1 }), { written: 0, failed: 1 });
+  d.jira.failPropFor = {};
+  assert.deepEqual(await backfillIssueProperties(d, { max: 50 }), { written: 1, failed: 0 });
+  assert.equal(d.jira.properties[keys[1]], undefined);
+  assert.deepEqual(await backfillIssueProperties(d), { written: 0, failed: 0 });
+});

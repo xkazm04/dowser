@@ -408,3 +408,14 @@ test('a missing column also migrates: a minor deploy fires no upgrade event, so 
   for (const m of MIGRATIONS) if (!/snooze_until/.test(m.name)) db.exec(m.statement);
   assert.throws(() => db.prepare('SELECT snooze_until FROM proposals').all(), (e) => isSchemaBehind(e));
 });
+
+test('the test Db port gives no rollback, like Forge SQL: a write before a throw inside tx stays', async () => {
+  const d = makeDeps();
+  await assert.rejects(d.db.tx(async () => {
+    await d.db.exec('INSERT INTO counters (name, value) VALUES (?, ?)', ['tx-probe', 1]);
+    throw new Error('after the write');
+  }), /after the write/);
+  assert.equal((await d.db.query('SELECT value FROM counters WHERE name = ?', ['tx-probe'])).length, 1);
+  // and two tx calls may interleave, as on Forge (SQLite would refuse a nested BEGIN)
+  await Promise.all([d.db.tx(async () => d.db.query('SELECT 1')), d.db.tx(async () => d.db.query('SELECT 1'))]);
+});

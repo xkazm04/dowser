@@ -442,7 +442,9 @@ dowserVia = "merged"
 ```
 
 The write is best effort: the decision is the record, a failed write is logged (`what: issue property`), and the
-daily trigger writes what is missing (`issue_prop_at`, migration v026). A merge into an issue that an accepted card
+daily trigger writes what is missing (`issue_prop_at`, migration v026), 50 a day by id after a stored cursor that
+wraps at the end, so a row that keeps failing never holds back newer ones; a 404 (issue deleted or moved) is final
+and marks the row done. A merge into an issue that an accepted card
 created does not overwrite that card's property. Jira re-indexes a new module's fields only for properties written
 after the deploy; the backfill covers the items decided before it.
 

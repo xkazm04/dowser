@@ -166,7 +166,8 @@ export const jira = {
     const res = await asApp().requestJira(route`/rest/api/3/issue/${issueKey}/properties/${key}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(value),
     });
-    if (!res.ok) throw new Error(`Jira set issue property on ${issueKey} answered ${res.status}`);
+    // the status rides on the error: a 404 (issue deleted or moved) is final for core/issue-property.mjs
+    if (!res.ok) throw Object.assign(new Error(`Jira set issue property on ${issueKey} answered ${res.status}`), { status: res.status });
   },
   // Read AS THE USER: the Learning tab must not show the status of an issue in a project the viewer cannot browse
   // (an accept may target any project the accepter could create in). A key the user cannot see is simply absent.
