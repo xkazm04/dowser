@@ -11,13 +11,14 @@ These are operator records, not Dowser runner surfaces, so they have no guided-m
 
 | file | written by | what |
 |---|---|---|
-| `<date>.jsonl` | `temper.mjs cycle end` | one row per cycle (below) |
+| `<date>.jsonl` | `temper.mjs cycle end`, `cycle reverify` | one row per cycle, and a reverify row per re-check (below) |
 | `<date>.md` | `temper.mjs report` | the morning report: Needs you (at most 3 questions), commits and landings, UAT verified vs self-reported, scans and costs, verdicts (live and local-only apart), the bar per module, direction proposals, parked items |
 | `modules.json` | `temper.mjs modules bar` | the stability bar per module, `next` (the least-stable), and the pending direction proposals |
 | `quality.jsonl` | `tools/quality-snapshot.mjs --append` | one structural snapshot per cycle; the bar's quality part compares the last two |
+| `resolved.json` | `temper.mjs proposals resolve` | lens-scan proposals whose fix landed, `{commit, subject, resolved_at, by, status_then, tier, note?}` per id |
 
 The working state is not committed. It lives in `<dowser>/.temper/` (gitignored): `charter.json`, `day.json`,
-`cycle.json` and `directions.json`. The scan ledger, the ticket memory, the Dowser homes, the chrome profile and the
+`cycle-<repo>.json` (one open cycle per repo) and `directions.json`. The scan ledger, the ticket memory, the Dowser homes, the chrome profile and the
 other repos' worktrees are in the Temper home `~/.temper/` (`TEMPER_HOME`).
 
 ### A cycle row
@@ -25,12 +26,39 @@ other repos' worktrees are in the Temper home `~/.temper/` (`TEMPER_HOME`).
 ```json
 {"kind": "cycle", "n": 2, "date": "2026-11-05", "repo": "dowser", "target": "inbox-ui", "begun_at": "...", "ended_at": "...",
  "head": "<sha>", "green": false, "red_because": ["test failed", "e2e local: stale"],
- "verified": {"gates": {"typecheck": "pass", "test": "fail"},
-              "uat": {"fixture": {"state": "fresh", "pass": 40, "fail": 0, "unverifiable": 0, "flaky": 0}, "local": {"state": "stale"}, "live": {"state": "missing"}}},
+ "verified": {"deps": {".": {"state": "installed", "why": "..."}, "forge": {"state": "in sync"}},
+              "gates": {"typecheck": "pass", "test": "fail", "e2e:fixture": "pass", "e2e:local": "pass"},
+              "uat": {"fixture": {"state": "fresh", "pass": 40, "fail": 0, "unverifiable": 0, "flaky": 0}, "local": {"state": "stale"}, "live": {"state": "missing"}},
+              "quality": {"state": "appended", "head": "<sha>"}},
  "quota": {"decided": 5, "share": 0.4, "ok": true},
  "self_reported": {"scan": {...}, "verdicts": [{"ref": "DW-50", "verdict": "reject", "reason": "duplicate", "inbox": "dowser-temper",
-                   "recorded": "local", "decided_by": "delegate:temper"}], "built": [...], "outcomes": [...], "directions": [...], "parked": [...]}}
+                   "recorded": "local", "decided_by": "delegate:temper"}], "built": [...], "outcomes": [...], "directions": [...], "parked": [...],
+                   "skill_issues": [{"where": "temper.mjs cycleEnd", "what": "...", "evidence": "...", "fix": "..."}]}}
 ```
+
+- **verified.deps** (Dowser only): per folder of root (`.`), `forge` and `forge/static/app`, `in sync`, `installed`
+  (the lockfile drifted from `node_modules/.package-lock.json`, so `npm ci` ran first, with the drift as `why`) or
+  `failed` (with `exit`; it makes the row red). A folder without a lockfile is left out.
+- **verified.gates**: Dowser's `typecheck` and `test`, `e2e:fixture` and `e2e:local` (unless a charter land gate
+  already runs them) and the charter's land gates; another repo's row holds only its charter land gates.
+- **verified.quality** (Dowser only): the quality-snapshot row for this cycle, `present`, `appended` (cycle end ran
+  it), `no row written` or `failed`. It never makes a row red.
+- **self_reported.skill_issues**: what the runner learned about the loop itself, each exactly `{where, what,
+  evidence, fix}`. `report` lists them under "Skill issues", grouped by `where`, newest first.
+
+### A reverify row
+
+`temper.mjs cycle reverify --n <n>` re-runs the same checks on cycle n's unchanged tree (after an environmental red)
+and appends a row of its own. The cycle row is never rewritten.
+
+```json
+{"kind": "reverify", "n": 2, "date": "2026-11-05", "repo": "dowser", "target": "inbox-ui", "at": "...", "head": "<sha>", "of_head": "<cycle's sha>",
+ "before": {"green": false, "red_because": ["npm ci in . failed (exit 1; ...)"]}, "green": true, "verified": {"deps": {...}, "gates": {...}, "uat": {...}}}
+```
+
+- `head` may be past `of_head` only by record-only commits (under `docs/evals/temper/`). `before` is the cycle's
+  newest verdict before this one. The newest row per cycle (cycle or reverify) is what the bar, `report` and `land`
+  read; a green Dowser reverify moves the day's last green to `head`.
 
 - **Verified vs self-reported.** `verified` is what temper.mjs read itself: the gates' exit codes, and the e2e
   result files newer than the cycle's start. `self_reported` is the director's cycle file, as written. A row is
@@ -64,8 +92,8 @@ Production deploys, tags and releases stay the operator's in every repo. The Pre
 
 ## Tools
 
-Three tools connect the /temper loop to the live Dowser inbox and to Jira. They are operator and loop tools, not
-Dowser runner surfaces, so they have no guided-mode form. All three print JSON and exit 0 (done), 1 (a call failed,
+Three tools connect the /temper loop to the live Dowser inbox and to Jira, and `temper-cards` reads a scan home. They
+are operator and loop tools, not Dowser runner surfaces, so they have no guided-mode form. All of them print JSON and exit 0 (done), 1 (a call failed,
 or a verdict was refused) or 2 (bad arguments).
 
 ### Credentials and the live server
@@ -105,7 +133,12 @@ node tools/temper-scan.mjs --repo <path> --project-key <k> [--focus "goal: .."|"
 - The scan keeps every card (the delegate triages later, through `temper-verdicts`), pushes it to the inbox and
   sends the areas.
 - Each scan appends one row to `~/.temper/scans.jsonl`: `{ts, repo, head, project_key, focus?, ok, minutes,
-  cost_usd?, turns?, cards: {created, moved, pushed, by_status}}`.
+  cost_usd?, turns?, cards: {created, moved, pushed, by_status}, report}`. `report` is
+  `~/.temper/scans/<stamp>-<project-key>.json`: the row, the scan's summary and each card the scan created or moved,
+  `{fp, ref?, url?, status, lens, title, evidence: [{type, ref, path?, line?}], created}`.
+- To list a scan home's cards later, run `node tools/temper-cards.mjs --project-key <k> [--status s] [--lens l]
+  [--quotes]`. `dowser.mjs list --repo <path>` on the real checkout reads another project (its origin) and lists
+  nothing.
 - `--dry-run` clones, installs and prints the plan (inbox key, Dowser home, ledger, MCP server). It does not call
   Claude and writes nothing under the Temper home.
 - The scan denies `ScheduleWakeup`. A scan that set a 30-minute fallback heartbeat while its lens agents ran held
@@ -145,9 +178,11 @@ node tools/temper-tickets.mjs close <KEY>... [--project DOW]
 node tools/temper-verdicts.mjs --project-key <k> --verdicts <json> [--dry-run]
 ```
 
-- A verdicts file is an array of `{ref, verdict: accept|reject|snooze|merge, reason?, note?, into?, until?}`
-  (docs/contracts/forge-mcp-2.md). `ref` is `DW-n`. A reject needs a reason, and `other` needs a note. A merge
-  needs `into`. `until` (YYYY-MM-DD) goes only with a snooze. One verdict per ref.
+- A verdicts file is an array of `{ref, verdict: accept|reject|snooze|merge, reason?, note?, into?, until?, inbox?,
+  recorded?}` (docs/contracts/forge-mcp-2.md). `ref` is `DW-n`. A reject needs a reason, and `other` needs a note.
+  `reason` goes only with a reject: a snooze says why in `note`. A merge needs `into`. `until` (YYYY-MM-DD) goes only
+  with a snooze. One verdict per ref. `inbox` (it must equal `--project-key`) and `recorded` (`live` or `local`) are
+  the cycle file's keys: they are checked and never sent, so the same file passes `temper.mjs triage check`.
 - It calls `dowser_verdicts_record` with `{project_key, verdicts_json}` through headless `claude -p` on the live
   server. When the answer has `more`, it sends the verdicts that have no result yet again, until every verdict has
   one.

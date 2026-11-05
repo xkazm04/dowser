@@ -468,6 +468,7 @@ test('cycle reverify: the same gates and e2e on the cycle\'s unchanged tree; its
   const r1 = main(['cycle', 'reverify', '--n', '1'], ctx);
   assert.equal(r1.code, 1);
   assert.equal(r1.out.kind, 'reverify');
+  for (const k of Object.keys(r1.out)) assert.match(readmeBlock('### A reverify row'), new RegExp(`"${k}"`), `README's reverify row lacks ${k}`);
   assert.equal(day().last_green, base, 'a red reverify moves nothing');
   exits.typecheck = 0; exits.test = 0; npm.length = 0;
   w.at(Date.now());
@@ -928,7 +929,19 @@ test('dry-run day: charter -> day start -> cycle begin -> bar -> cycle end -> re
   const r = dryRun();
   assert.equal(r.ok, true, JSON.stringify(r.steps.filter((s) => !s.ok), null, 2));
   assert.deepEqual(r.steps.map((s) => s.step), ['charter init', 'day start', 'cycle begin', 'modules bar', 'cycle end', 'report', 'land --dry-run (green)', 'land --dry-run (red)']);
+  // docs/evals/temper/README.md documents every key a real cycle row has (top level and verified)
+  const row = r.steps.find((s) => s.step === 'cycle end')?.out;
+  const block = readmeBlock('### A cycle row');
+  for (const k of [...Object.keys(row), ...Object.keys(row.verified).map((x) => `verified.${x}`)]) assert.match(block, new RegExp(`"${k.split('.').at(-1)}"`), `README's cycle row lacks ${k}`);
 });
+
+/** The JSON example under one heading of docs/evals/temper/README.md. @param {string} heading */
+function readmeBlock(heading) {
+  const md = readFileSync(join(ROOT, 'docs', 'evals', 'temper', 'README.md'), 'utf8');
+  const at = md.indexOf(`${heading}\n`);
+  assert.ok(at >= 0, `README has ${heading}`);
+  return md.slice(at, md.indexOf('```\n', md.indexOf('```json', at) + 7));
+}
 
 // ------------------------------------------------------------------------------------------------ guard
 
