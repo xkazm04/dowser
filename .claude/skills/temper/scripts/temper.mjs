@@ -418,6 +418,52 @@ function dayEnd(ctx) {
 /** Where a build repo's day branch is checked out: outside every repo, under the Temper home. @param {Ctx} ctx @param {string} name @param {string} date */
 export const repoWorktree = (ctx, name, date) => join(ctx.home, 'worktrees', `${name}-${date}`);
 
+/**
+ * Files a registered path drags in: a fix there moves them too, so a run that cannot write them cannot land green.
+ * Each applies only when the repo has the file. personas: a UI fix lowers a census baseline (the ratchet), c6.
+ */
+export const PATH_COMPANIONS = [{ when: /^src\//, path: 'scripts/census/rules.json', why: 'a fix under src/ lowers the census baseline (the ratchet)' }];
+
+/** A registered path (a file, a dir, or a glob with * and **) as a test on repo-relative file paths. @param {string} p */
+export function pathMatcher(p) {
+  const s = p.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
+  if (!/[*?]/.test(s)) return (/** @type {string} */ f) => f === s || f.startsWith(`${s}/`);
+  const re = new RegExp(`^${s.split(/(\*\*\/?|\*|\?)/).map((t) => (t === '**' || t === '**/' ? '.*' : t === '*' ? '[^/]*' : t === '?' ? '[^/]' : t.replace(/[.+^${}()|[\]\\]/g, '\\$&'))).join('')}$`);
+  return (/** @type {string} */ f) => re.test(f);
+}
+
+/**
+ * Files the repo itself marks as read-only to agents: a quoted file path on a source line that says READ_ONLY or
+ * "needs a human" (personas: scripts/docs/check-doc-counts.mjs `READ_ONLY = new Set(['.claude/CLAUDE.md'])`).
+ * @param {Ctx} ctx @param {string} repoPath @returns {{path: string, at: string}[]}
+ */
+export function readOnlyMarks(ctx, repoPath) {
+  const r = ctx.run('git', ['-C', repoPath, 'grep', '-n', '-I', '-E', 'READ_ONLY|needs a human', '--', '*.mjs', '*.js', '*.cjs', '*.ts']);
+  if (r.status !== 0) return [];
+  /** @type {{path: string, at: string}[]} */
+  const out = [];
+  for (const line of r.stdout.split(/\r?\n/)) {
+    const m = line.match(/^([^:]+):(\d+):(.*)$/);
+    if (!m) continue;
+    for (const q of m[3].matchAll(/['"`]([\w.-][\w./-]*\.[A-Za-z0-9]+)['"`]/g)) if (q[1].includes('/') || q[1].startsWith('.')) out.push({ path: q[1], at: `${m[1]}:${m[2]}` });
+  }
+  return out;
+}
+
+/**
+ * The paths to register, with their companions added, and a warning for each one the repo marks as needing a human.
+ * @param {Ctx} ctx @param {string} repoPath @param {string[]} asked
+ * @returns {{paths: string[], companions: {path: string, why: string}[], warnings: string[]}}
+ */
+export function pathAdvice(ctx, repoPath, asked) {
+  const companions = PATH_COMPANIONS.filter((c) => asked.some((p) => c.when.test(p)) && !asked.some((p) => pathMatcher(p)(c.path)) && existsSync(join(repoPath, c.path)))
+    .map(({ path, why }) => ({ path, why }));
+  const all = [...asked, ...companions.map((c) => c.path)];
+  const warnings = readOnlyMarks(ctx, repoPath).filter((m) => asked.some((p) => pathMatcher(p)(m.path)))
+    .map((m) => `${m.path} is marked read-only for agents by the repo (${m.at}): a change there needs a human, unless the operator lifted it`);
+  return { paths: all, companions, warnings };
+}
+
 /** @param {Ctx} ctx @param {Record<string, string | true>} f */
 function repoStart(ctx, f) {
   const charter = needCharter(ctx);
@@ -427,8 +473,10 @@ function repoStart(ctx, f) {
   if (r.name === 'dowser') throw new UsageError('Dowser\'s branch is made by day start');
   if (!r.build) throw new Refusal(`${r.name} is scanned only (build: false in the charter)`);
   if (day.repos?.[r.name]) throw new Refusal(`${r.name} is already started today: ${day.repos[r.name].worktree}`);
-  const pathsArg = list(f.paths);
-  if (r.ledger && !pathsArg.length) throw new UsageError(`${r.name} keeps an active-runs ledger: name the paths you will touch (--paths a,b)`);
+  const asked = list(f.paths);
+  if (r.ledger && !asked.length) throw new UsageError(`${r.name} keeps an active-runs ledger: name the paths you will touch (--paths a,b)`);
+  const advice = asked.length ? pathAdvice(ctx, r.path, asked) : { paths: asked, companions: [], warnings: [] };
+  const pathsArg = advice.paths;
   const branch = r.landing.branch.replace('<date>', day.date);
   const wt = repoWorktree(ctx, r.name, day.date);
   let base;
@@ -453,7 +501,8 @@ function repoStart(ctx, f) {
   }
   day.repos = { ...(day.repos ?? {}), [r.name]: { branch, worktree: wt, base, ...(registered ? { registered: slug, paths: pathsArg, title: typeof f.title === 'string' ? f.title : undefined } : {}), started_at: ctx.now().toISOString() } };
   writeJson(paths(ctx.root).day, day);
-  return { repo: r.name, ...day.repos[r.name], landing: r.landing.kind, item_gates: r.gates.filter((g) => g.when === 'item').map((g) => g.run) };
+  return { repo: r.name, ...day.repos[r.name], landing: r.landing.kind, item_gates: r.gates.filter((g) => g.when === 'item').map((g) => g.run),
+    ...(advice.companions.length ? { companions: advice.companions } : {}), ...(advice.warnings.length ? { warnings: advice.warnings } : {}) };
 }
 
 /**
@@ -489,8 +538,10 @@ function repoPaths(ctx, f) {
   /** @type {string[] | undefined} */
   const had = Array.isArray(s.paths) ? s.paths : (f.paths !== undefined ? list(f.paths) : undefined);
   if (!had?.length) throw new UsageError(`${r.name}'s day entry predates recorded paths: also pass --paths <the paths given at repo start>`);
-  const fresh = add.filter((p) => !had.includes(p));
-  if (!fresh.length) return { repo: r.name, slug: s.registered, paths: had, added: [] };
+  const advice = pathAdvice(ctx, r.path, add);
+  const fresh = advice.paths.filter((p) => !had.includes(p));
+  const extra = { ...(advice.companions.length ? { companions: advice.companions } : {}), ...(advice.warnings.length ? { warnings: advice.warnings } : {}) };
+  if (!fresh.length) return { repo: r.name, slug: s.registered, paths: had, added: [], ...extra };
   const conflicts = ledgerConflicts(ctx, r, fresh, s.registered);
   if (conflicts.length) throw new Refusal(`${r.name}: a live session holds ${conflicts.map((c) => `${(c.overlap ?? []).join(', ')} (${c.slug})`).join('; ')}; pick other paths`);
   const script = join(r.path, 'scripts', 'active-runs.mjs');
@@ -507,7 +558,7 @@ function repoPaths(ctx, f) {
   s.paths = all;
   s.title = title;
   writeJson(paths(ctx.root).day, day);
-  return { repo: r.name, slug: s.registered, paths: all, added: fresh };
+  return { repo: r.name, slug: s.registered, paths: all, added: fresh, ...extra };
 }
 
 /** @param {Ctx} ctx @param {Record<string, string | true>} f */

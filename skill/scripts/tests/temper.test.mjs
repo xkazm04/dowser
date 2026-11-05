@@ -766,8 +766,16 @@ test('repo start/land: bp rebases onto origin/master and pushes HEAD:master only
   assert.doesNotMatch(JSON.stringify(red.out), /sk-ant-abc/, 'the secret itself is never printed');
   // personas
   assert.equal(main(['repo', 'start', '--repo', 'personas'], w.ctx).code, 2, 'a ledger repo needs --paths');
-  const p = main(['repo', 'start', '--repo', 'personas', '--paths', 'src/features/x/**'], w.ctx);
+  // the repo marks .claude/CLAUDE.md read-only to agents, and a src/ fix moves its census baseline
+  put(join(personas, 'scripts/docs/check-doc-counts.mjs'), "export const READ_ONLY = new Set(['.claude/CLAUDE.md']);\n");
+  put(join(personas, 'scripts/census/rules.json'), '{}\n');
+  g(personas, 'add', '-A'); g(personas, 'commit', '-q', '-m', 'marks');
+  const p = main(['repo', 'start', '--repo', 'personas', '--paths', 'src/features/x/**,.claude/**'], w.ctx);
   assert.equal(p.code, 0, JSON.stringify(p.out));
+  assert.deepEqual(p.out.paths, ['src/features/x/**', '.claude/**', 'scripts/census/rules.json'], 'the census baseline rides with a src/ path');
+  assert.deepEqual(p.out.companions.map((/** @type {any} */ c) => c.path), ['scripts/census/rules.json']);
+  assert.equal(p.out.warnings.length, 1);
+  assert.match(p.out.warnings[0], /\.claude\/CLAUDE\.md is marked read-only for agents by the repo \(scripts\/docs\/check-doc-counts\.mjs:1\)/);
   assert.deepEqual(p.out.item_gates, ['npm run verify:affected -- --files {files}']);
   const ledger = w.calls.filter((c) => c.cmd === 'node').map((c) => c.args[1]);
   assert.deepEqual(ledger, ['check', 'register']);
@@ -826,6 +834,15 @@ test('repo paths --add: widens the personas entry through active-runs.mjs (check
   ledger.length = 0;
   assert.deepEqual(main(['repo', 'paths', '--repo', 'personas', '--add', 'src/b/**'], w.ctx).out.added, []);
   assert.deepEqual(ledger, [], 'nothing new: the ledger is not touched');
+  // widening onto a file the repo marks read-only warns; a src/ path brings the census baseline when the repo has one
+  put(join(personas, 'scripts/docs/check-doc-counts.mjs'), "export const READ_ONLY = new Set(['.claude/CLAUDE.md']);\n");
+  put(join(personas, 'scripts/census/rules.json'), '{}\n');
+  g(personas, 'add', '-A'); g(personas, 'commit', '-q', '-m', 'marks');
+  const wide = main(['repo', 'paths', '--repo', 'personas', '--add', '.claude/CLAUDE.md,src/c/**'], w.ctx);
+  assert.equal(wide.code, 0, JSON.stringify(wide.out));
+  assert.deepEqual(wide.out.added, ['.claude/CLAUDE.md', 'src/c/**', 'scripts/census/rules.json']);
+  assert.match(wide.out.warnings.join(), /\.claude\/CLAUDE\.md is marked read-only for agents/);
+  ledger.length = 0;
   assert.equal(main(['repo', 'end', '--repo', 'personas'], w.ctx).code, 0);
   assert.equal(main(['repo', 'paths', '--repo', 'personas', '--add', 'src/c/**'], w.ctx).code, 1, 'an ended run is not widened');
 });

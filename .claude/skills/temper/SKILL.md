@@ -27,6 +27,9 @@ scans that the loop starts keep theirs.
 4. For each other repo with `build: true`, run `T repo start --repo <name> [--paths a,b]`. A repo with a ledger
    (personas) needs `--paths`, and its `check` must pass. Sibling sessions are active there. A later cycle that needs
    another area widens the entry with `T repo paths --repo <name> --add a,b` (refused when a live session holds one).
+   Both add a path's companions (a `src/` path brings `scripts/census/rules.json` when the repo has it: a fix lowers
+   the census baseline) and answer `warnings` for a path the repo itself marks read-only for agents (a `READ_ONLY` or
+   "needs a human" source line). Such a path needs the operator: do not build cards there unless they lifted it.
 
 ## 1. Cycle (repeat)
 
