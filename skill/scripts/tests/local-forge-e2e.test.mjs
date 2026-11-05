@@ -183,6 +183,10 @@ test('local Forge, real core: push, triage over HTTP, pull, rescan, rules and ou
   assert.equal(inbox.groups[0].run_id, run1);
   assert.equal(inbox.groups[0].items.length, 5);
   assert.deepEqual((await invoke('jira.projects')).projects.map((/** @type {any} */ p) => p.key), ['DOW']);
+  // module gating, as in Forge: the panel may not list the inbox; the global page may
+  const gated = await http('/invoke', { key: 'inbox.list', payload: { project_key: projectKey }, module: 'dowser-evidence' });
+  assert.deepEqual([gated.body.error, gated.body.message], ['bad-input', 'inbox.list is not available from this Dowser view']);
+  assert.equal((await http('/invoke', { key: 'jira.projects', payload: {}, module: 'dowser-inbox' })).body.error, undefined);
   // the map -> inbox link: over the areas the skill pushed, each map cell's open count is what inbox.list?area lists
   const map = await invoke('map.data', { project_key: projectKey });
   assert.ok(map.areas.length > 0, 'the skill pushed areas');

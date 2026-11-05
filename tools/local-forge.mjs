@@ -10,7 +10,8 @@
 //     --db       SQLite file (default <os tmp>/dowser-local-forge/forge.db). Two processes may share one file.
 //     --http     serve the resolvers on 127.0.0.1:<port> (0 picks a free port; the port is logged to stderr):
 //                  POST /invoke {key, payload, module?}  -> the resolver's JSON (`via` is panel for module
-//                                                          dowser-evidence, else inbox)
+//                                                          dowser-evidence, else inbox; with a module, a key
+//                                                          MODULE_KEYS does not give it is refused, as in Forge)
 //                  POST /dev/jira-status {key, category: new|indeterminate|done, name?}  moves a local issue
 //                  GET  /dev/state                       row counts per table
 //                  GET  /browse/<key>                    a local Jira issue with its comments
@@ -30,7 +31,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TOOL_NAMES, runResolver, runTool } from '../forge/src/core/app.mjs';
+import { TOOL_NAMES, resolverAllowed, runResolver, runTool } from '../forge/src/core/app.mjs';
 import {
   DEFAULT_ACCOUNT, applySeed, issueOf, localJira, localPerms, localSources, localUsers, openLocalDb, rowCounts, setIssueStatus,
 } from './local-forge/ports.mjs';
@@ -247,6 +248,8 @@ export function serveHttp({ forge, port }) {
         const b = /** @type {Obj} */ (await readBody(req));
         if (!b || typeof b !== 'object' || typeof b.key !== 'string') return json(400, { error: 'bad-input', message: 'POST /invoke takes {key, payload, module?}' });
         const via = b.module === 'dowser-evidence' ? 'panel' : 'inbox';
+        // as forge/src/index.js: a module may call only the keys its own screen uses (core/app.mjs MODULE_KEYS)
+        if (b.module !== undefined && !resolverAllowed(String(b.module), b.key)) return json(200, { error: 'bad-input', message: `${b.key} is not available from this Dowser view` });
         return json(200, await forge.resolver(b.key, b.payload ?? {}, via));
       }
       if (req.method === 'POST' && url.pathname === '/dev/jira-status') {
