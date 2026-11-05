@@ -21,3 +21,15 @@ test('issue statuses are read as the user, never as the app (no status leak acro
   assert.match(body, /api\.asUser\(\)\.requestJira/);
   assert.doesNotMatch(body, /asApp\(\)/);
 });
+
+test('the header lists every REST path the adapter calls, and says statuses are read as the user', () => {
+  const raw = readFileSync(new URL('../src/adapters/atlassian.mjs', import.meta.url), 'utf8');
+  const header = raw.slice(0, raw.indexOf('import '));
+  const paths = [...src.matchAll(/api\.route`([^`?$]+)/g)].map((m) => m[1].replace(/\/$/, ''));
+  assert.ok(paths.length >= 10, `${paths.length} routes found`);
+  for (const p of new Set(paths)) assert.ok(header.includes(p.split('/').slice(0, 5).join('/')), `${p} is missing from the header`);
+  assert.doesNotMatch(header, /statuses[^\n]*AS APP/i);
+  assert.match(header, /issue statuses[^\n]*\n?[^\n]*AS USER|AS USER[^.]*issue statuses/i);
+  assert.match(header, /footer-comments/);
+  assert.match(header, /Teamwork Graph/);
+});

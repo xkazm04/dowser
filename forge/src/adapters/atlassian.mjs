@@ -5,23 +5,30 @@
 //  - `getAppContext()` (out/api/runtime.d.ts) gives `appAri.appId`, `environmentAri.environmentId`, `moduleKey`.
 //
 // Who calls as whom:
-//  - Accept / merge comment: AS APP (design F5: the issue is created by the app), but only after the dispatch
-//    door has checked the person's own CREATE_ISSUES / ADD_COMMENTS through `perms` (core/app.mjs).
-//  - Permissions (`perms`), the project list, tickets / pages / goals: AS USER, so a person only ever sees what
-//    they may see in Jira and Confluence (the Teamwork Graph API is user-only anyway). A missing user grant is
-//    rethrown as is from `perms` and the project list (a Custom UI surface lets Forge show its consent screen) and
-//    surfaces as `unauthorized` from the scan sources (an MCP caller has no consent screen).
-//  - Issue statuses and display names: AS APP (read-only, for items the person already opened).
+//  - Accept / merge comment and the `dowser` issue property: AS APP (design F5: the issue is created by the app),
+//    but only after the dispatch door has checked the person's own CREATE_ISSUES / ADD_COMMENTS through `perms`
+//    (core/app.mjs).
+//  - Permissions (`perms`), the project list, issue statuses, tickets / pages / goals and the Draft-the-fix footer
+//    comment: AS USER, so a person only ever sees (and writes) what they may in Jira and Confluence: an issue in a
+//    project the viewer cannot browse shows no status (the Teamwork Graph API is user-only anyway). A missing user
+//    grant is rethrown as is from `perms` and the project list (a Custom UI surface lets Forge show its consent
+//    screen) and surfaces as `unauthorized` from the scan sources (an MCP caller has no consent screen).
+//  - Display names: AS APP (read-only, for deciders of items the person already opened).
 //
-// REST endpoints used (developer.atlassian.com/cloud/jira/platform/rest/v3, /cloud/confluence/rest/v1):
-//   GET  /rest/api/3/serverInfo                         -> baseUrl (site URL for browse and inbox links)
-//   POST /rest/api/3/issue                              -> {key}
-//   POST /rest/api/3/issue/{key}/comment
-//   GET  /rest/api/3/project/search?expand=issueTypes
-//   POST /rest/api/3/search/jql                         (the enhanced JQL search; /search is retired)
+// REST endpoints used (developer.atlassian.com/cloud/jira/platform/rest/v3, /cloud/confluence/rest/v1 and v2,
+// /platform/forge/call-the-teamwork-graph-api):
+//   GET  /rest/api/3/serverInfo                         -> baseUrl (site URL for browse and inbox links; asApp)
+//   POST /rest/api/3/issue                              -> {key} (asApp)
+//   POST /rest/api/3/issue/{key}/comment                (asApp)
+//   PUT  /rest/api/3/issue/{key}/properties/{property}  -> the `dowser` issue property (asApp)
+//   GET  /rest/api/3/project/search?expand=issueTypes   (asUser)
+//   POST /rest/api/3/issue/bulkfetch                    -> issue statuses (asUser; a hidden or deleted key is absent)
+//   POST /rest/api/3/search/jql                         -> scan tickets (asUser; the enhanced JQL search, /search is retired)
 //   GET  /rest/api/3/user/bulk?accountId=&accountId=    -> display names (asApp, read:jira-user)
-//   GET  /rest/api/3/mypermissions?permissions=&projectKey=|issueKey=  -> {permissions: {KEY: {havePermission}}}
-//   GET  /wiki/rest/api/content/search?cql=&expand=body.storage,version
+//   GET  /rest/api/3/mypermissions?permissions=&projectKey=|issueKey=  -> {permissions: {KEY: {havePermission}}} (asUser)
+//   GET  /wiki/rest/api/content/search?cql=&expand=body.storage,version  (asUser)
+//   POST /wiki/api/v2/footer-comments                   -> Draft the fix (asUser, write:comment:confluence)
+//   Teamwork Graph cypherQuery (requestTeamworkGraph)   -> goals (asUser)
 import * as forgeApi from '@forge/api';
 import { htmlToText, trimText } from '../core/adf.mjs';
 import { BODY_MAX, TICKET_FIELDS, ticketItem } from '../core/sources.mjs';
