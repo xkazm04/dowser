@@ -129,8 +129,8 @@ export function toolStep(ev) {
   return one ? `${u.name} ${one.length > 80 ? `${one.slice(0, 79)}...` : one}` : u.name;
 }
 
-/** The heartbeat line: elapsed minutes, and the last tool step when the stream gave one. @param {number} ms @param {string} [step] */
-export const heartbeatLine = (ms, step) => `temper-scan: ${Math.floor(ms / 60000)} min elapsed${step ? `, last step: ${step}` : ''}`;
+/** The heartbeat line: the inbox key (concurrent scans share a stderr reader), elapsed minutes, and the last tool step when the stream gave one. @param {number} ms @param {string} [step] @param {string} [key] */
+export const heartbeatLine = (ms, step, key) => `temper-scan${key ? ` ${key}` : ''}: ${Math.floor(ms / 60000)} min elapsed${step ? `, last step: ${step}` : ''}`;
 
 /**
  * The result object of a stream-json answer: its last `type: "result"` line (the object `--output-format json` prints).
@@ -147,9 +147,9 @@ export function streamResult(text) {
 
 /**
  * runScan with a heartbeat: the scan runs with `scanArgs({stream: true})` arguments, and every `everyMs` (60 s)
- * `beat` gets heartbeatLine (elapsed, the last tool step). The answer is the same as runScan's, read from the
+ * `beat` gets heartbeatLine (the inbox `key`, elapsed, the last tool step). The answer is the same as runScan's, read from the
  * stream's result line; the whole stream is kept as claude.json.
- * @param {string[]} args @param {{work: string, w: Workspace, timeoutMs?: number, everyMs?: number, beat?: (line: string) => void, claude?: import('./claude-bin.mjs').ClaudeCommand}} o
+ * @param {string[]} args @param {{work: string, w: Workspace, key?: string, timeoutMs?: number, everyMs?: number, beat?: (line: string) => void, claude?: import('./claude-bin.mjs').ClaudeCommand}} o
  * @returns {Promise<{ok: boolean, status: number | null, error?: string, result: any, minutes: number}>}
  */
 export function runScanStream(args, o) {
@@ -177,7 +177,7 @@ export function runScanStream(args, o) {
     for (const l of lines) { try { step = toolStep(JSON.parse(l)) ?? step; } catch { /* not an event */ } }
   });
   child.stderr.on('data', (/** @type {string} */ d) => err.push(d));
-  const timer = setInterval(() => beat(heartbeatLine(Date.now() - started, step)), o.everyMs ?? 60000);
+  const timer = setInterval(() => beat(heartbeatLine(Date.now() - started, step, o.key)), o.everyMs ?? 60000);
   /** @type {string | undefined} */
   let error;
   const kill = setTimeout(() => { error = 'timed out'; child.kill(); }, o.timeoutMs ?? 90 * 60000);

@@ -28,8 +28,8 @@
 // ref is the scanned branch (or commit), ref_from says how it was chosen (flag, day, head), head the short sha, sha the full one;
 // report is <temper home>/scans/<stamp>-<project-key>.json: the row, the scan's summary and every card the scan created
 // or moved as {fp, ref?, status, lens, title, evidence, created} (tools/temper-cards.mjs lists the whole scan home).
-// While the scan runs (10-15 minutes), a heartbeat line goes to stderr every 60 s: `temper-scan: <n> min elapsed, last
-// step: <tool> <command or path>` (the step read from the scan's stream-json events; without one, the elapsed time
+// While the scan runs (10-15 minutes), a heartbeat line goes to stderr every 60 s: `temper-scan <project-key>: <n> min elapsed, last
+// step: <tool> <command or path>`, so concurrent scans can be told apart (the step read from the scan's stream-json events; without one, the elapsed time
 // only). stdout stays the one JSON object, printed at the end.
 // Exit codes: 0 done (or dry run), 1 the scan failed, 2 bad arguments.
 import { existsSync, appendFileSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -180,7 +180,7 @@ async function main(o) {
     }
     console.error(`temper-scan: scanning ${o.repo} ${ref}@${cloned.head} into the live inbox ${o.projectKey} (this calls Claude and costs tokens)`);
     const before = statusMap(w);
-    const scan = await runScanStream(args, { work, w });
+    const scan = await runScanStream(args, { work, w, key: o.projectKey });
     const r = scan.result ?? {};
     let cards = { created: 0, moved: 0, pushed: 0, by_status: {} };
     /** @type {any[]} */
