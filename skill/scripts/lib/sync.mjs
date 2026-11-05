@@ -109,6 +109,11 @@ export function proposalRecord(db, fp) {
   /** @type {Row} */
   const out = {};
   for (const k of RECORD_KEYS) if (p[k] !== undefined) out[k] = p[k];
+  // a card hydrated before 2026-11-05 holds provenance.hydrated_from, which no record may carry
+  if (out.provenance && typeof out.provenance === 'object' && 'hydrated_from' in out.provenance) {
+    const { hydrated_from: _, ...rest } = /** @type {Row} */ (out.provenance);
+    out.provenance = rest;
+  }
   return out;
 }
 

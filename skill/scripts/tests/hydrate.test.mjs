@@ -10,6 +10,7 @@ import { ingestPush, ingestVerdicts, outbox } from '../lib/sync.mjs';
 import { hydrate } from '../lib/hydrate.mjs';
 import { closestPrecedent } from '../lib/predict.mjs';
 import { callTool, emptyBackend } from '../../../tools/mock-forge-mcp.mjs';
+import { STORE_OWNED, validateCandidate } from '../lib/model.mjs';
 import { KINDS, candidate, removeDir, tempDir } from './_fixture.mjs';
 
 const PK = 'github-com-acme-shop';
@@ -64,6 +65,27 @@ test('a fresh store hydrated from the inbox suppresses what the team rejected an
     assert.equal(v.code, 0);
     assert.deepEqual([...new Set(v.out.verdicts.map((/** @type {any} */ x) => x.outcome))], ['in-sync'], 'every pulled verdict matches the hydrated state');
     assert.equal(hydrate(db, page).out.present, 3, 'a second hydrate adds nothing: local memory wins');
+  } finally { db.close(); removeDir(dir); a.done(); }
+});
+
+test('a hydrated snoozed card that wakes pushes as a valid record: no marker in its provenance', () => {
+  const a = machineA();
+  const dir = tempDir('hydrate-wake');
+  const db = openStore(join(dir, 'dowser.db'));
+  try {
+    assert.equal(hydrate(db, callTool(a.b, 'dowser_memory_pull', { project_key: PK, after: '0' })).code, 0);
+    assert.equal('hydrated_from' in (getProposal(db, a.fp.snz)?.provenance ?? {}), false);
+    const run = String(runStart(db, { mode: 'full' }).id);
+    move(db, a.fp.snz, 'verified', { from: 'snoozed', by: 'skill:dowser', runId: run });
+    // a card hydrated before the fix carries the marker; the record leaves it out
+    db.prepare("UPDATE proposals SET provenance_json = json_set(provenance_json, '$.hydrated_from', 'dowser_memory_pull') WHERE fp = ?").run(a.fp.snz);
+    const sent = JSON.parse(String(outbox(db, { projectKey: PK, runId: run }).proposals_json));
+    const rec = sent.find((/** @type {any} */ r) => r.fp === a.fp.snz);
+    assert.ok(rec, 'the woken card is in the outbox');
+    // as Forge checks a pushed record (forge/src/core/push.mjs checkRecord): store-owned and issue fields dropped
+    const cand = Object.fromEntries(Object.entries(rec).filter(([k]) => ![...STORE_OWNED, 'issue_ref', 'issue_url'].includes(k)));
+    const v = validateCandidate(cand, { wire: true });
+    assert.equal(v.ok, true, JSON.stringify(v));
   } finally { db.close(); removeDir(dir); a.done(); }
 });
 

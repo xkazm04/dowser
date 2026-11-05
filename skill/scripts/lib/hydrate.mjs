@@ -91,7 +91,9 @@ export function hydrate(db, doc) {
         rationale: it.rationale, body: it.body, effort_json: JSON.stringify(it.effort), confidence: it.confidence,
         confidence_why: it.confidence_why, doc_impact_json: it.doc_impact ? JSON.stringify(it.doc_impact) : null,
         delivery_risk_json: it.delivery_risk ? JSON.stringify(it.delivery_risk) : null,
-        provenance_json: JSON.stringify({ ...it.provenance, hydrated_from: 'dowser_memory_pull' }),
+        // the record's provenance as pulled: a marker in it would make the card unpushable (provenance has no
+        // unknown keys); the hydrate run (first_run_id, harness HYDRATE_HARNESS) already says where it came from
+        provenance_json: JSON.stringify(it.provenance),
         artifacts_json: it.artifacts ? JSON.stringify(it.artifacts) : null,
         status: it.status, reason: sql(it.reason), note: sql(str(it.note) ? it.note : undefined),
         external_ref: ext, external_url: ext && str(it.external_url) ? it.external_url : null,
