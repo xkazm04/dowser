@@ -1082,6 +1082,24 @@ test('cycle.md: QA updates the tests that encode the old behaviour in the spec c
   assert.match(build, /in its own scratch worktree/);
 });
 
+test('cycle.md: snoozes and merges spend the rejects cap as Forge counts them; a cap-deferred snooze does not', () => {
+  const md = readFileSync(join(ROOT, '.claude/skills/temper/references/cycle.md'), 'utf8');
+  const triage = md.slice(md.indexOf('## 3. Triage'), md.indexOf('## 4.'));
+  assert.match(triage, /\*\*The rejects cap counts snoozes and merges\.\*\* Forge counts/);
+  assert.match(triage, /A `deferred: "cap"` snooze does\s+not/);
+  // the doc and the code agree: 1 reject + 1 snooze + 1 merge spend 3 of a cap of 3; a carried snooze spends none
+  const v = (/** @type {string} */ ref, /** @type {string} */ verdict, o = {}) => ({ ref, verdict, inbox: 'x', recorded: 'local', ...o });
+  const caps = { accepts_per_day: 1, rejects_per_day: 3 };
+  const at = triageLimits([v('A', 'reject', { reason: 'false-positive' }), v('B', 'snooze', { note: 'n' }), v('C', 'merge', { into: 'A' })], [v('D', 'accept')], caps);
+  assert.equal(at.today.rejects, 3);
+  assert.equal(at.ok, true);
+  const over = triageLimits([v('A', 'reject', { reason: 'false-positive' }), v('B', 'snooze', { note: 'n' }), v('C', 'merge', { into: 'A' }), v('E', 'snooze', { note: 'n' })], [v('D', 'accept')], caps);
+  assert.match(over.why.join(), /4 rejects, snoozes and merges today, over the cap of 3/);
+  const carried = triageLimits([v('A', 'reject', { reason: 'false-positive' }), v('B', 'snooze', { note: 'n' }), v('C', 'merge', { into: 'A' }), v('E', 'snooze', { note: 'n', deferred: 'cap' })], [v('D', 'accept')], caps);
+  assert.equal(carried.today.rejects, 3, 'the cap-deferred snooze is carried, not a reject');
+  assert.equal(carried.today.carried, 1);
+});
+
 test('runner.md: the brief is repo-agnostic, on tonight\'s tools, and SKILL.md section 1 launches runners with it', () => {
   const md = readFileSync(join(ROOT, '.claude/skills/temper/references/runner.md'), 'utf8');
   for (const name of ['bp', 'personas', 'Lynx', 'Wolf', 'kiro']) assert.equal(new RegExp(`\\b${name}\\b`).test(md), false, `the brief names ${name}: repo specifics come from the block and the repo's law`);
