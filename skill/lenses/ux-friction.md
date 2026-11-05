@@ -1,6 +1,6 @@
 ---
 id: ux-friction
-version: 0.3.2
+version: 0.3.3
 name: UX friction and wellbeing
 kinds: [dead-end, unrecoverable-error, dark-pattern, accessibility-gap, missing-feedback, confusing-copy]
 sources: [code, docs, git, tickets]
@@ -60,8 +60,8 @@ step below as written.
    cancel and delete flows (`git grep -n -i -E "cancel(Subscription|Account)|deleteAccount|unsubscribe"`)
    compared with their signup counterparts. Count the steps on each side from the step list or
    the routes, and keep both numbers.
-5. **Accessibility.** `git grep -n -E "<img(?![^>]*alt=)|onClick=\{[^}]*\}[^>]*>(?![^<]*<button)|tabIndex=\{?-1|outline: ?none|aria-hidden=\"true\""`
-   (use `-P` for lookaheads, or grep plainly and read). Look for inputs without a label,
+5. **Accessibility.** `git grep -n -i -E "<img |onClick=|tabIndex=\{?-1|outline: ?none|aria-hidden=\"true\""`
+   (plain ERE: `-E` has no lookaheads), then read each `<img` for an `alt` and each `onClick` for a non-button element. Look for inputs without a label,
    icon-only buttons without `aria-label`, color-only status, and fixed font sizes in px on body
    text. Group sites by screen and by WCAG 2.2 criterion as you go.
 6. **Missing feedback.** Mutating handlers (`onSubmit`, `POST`, `PUT`, `DELETE` calls) with no
