@@ -182,3 +182,20 @@ test('index.js wires the shipped guard, not its own copy of the rule', () => {
   assert.match(src, /schemaGuard\(\{ runMigrations, installationId, isSchemaBehind \}\)/);
   assert.doesNotMatch(src, /migrated\.add|new Set\(\)/);
 });
+
+test('a failed in-request migration is retried on the next call, not remembered as done', async () => {
+  const { s, ports, call } = guardPorts({ fail: 1 });
+  const g = schemaGuard(ports);
+  await assert.rejects(g.withSchema(call), /Forge SQL 503/);
+  assert.deepEqual(await g.withSchema(call), { ok: true });
+  assert.equal(s.runs, 2);
+  await assert.rejects(schemaGuard(guardPorts({ fail: 1 }).ports).ensureSchema(new Error('no such table: x')), /503/);
+});
+
+test('concurrent calls on a missing table share one migration and all succeed', async () => {
+  const { s, ports, call } = guardPorts();
+  const g = schemaGuard(ports);
+  const out = await Promise.all([g.withSchema(call), g.withSchema(call), g.withSchema(call)]);
+  assert.deepEqual(out, [{ ok: true }, { ok: true }, { ok: true }]);
+  assert.equal(s.runs, 1);
+});

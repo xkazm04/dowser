@@ -71,17 +71,26 @@ export async function runMigrationsWith(runner, record, migrations) {
 export function schemaGuard({ runMigrations, installationId, isSchemaBehind }) {
   /** Installations this runtime has migrated. */
   const migrated = new Set();
+  /** @type {Map<string, Promise<void>>} the migration in flight per installation */
+  const running = new Map();
 
   /**
-   * The Deps `ensureSchema` port: migrate once per installation when `e` says the schema is behind.
+   * Migrates the current installation once. A concurrent caller awaits the same run; a failed run is forgotten,
+   * so the next call migrates again instead of answering "not ready" for the rest of the runtime.
    * @param {unknown} e
-   * @returns {Promise<boolean>} true when it migrated now
+   * @returns {Promise<boolean>} true when a migration ran (or was awaited) now
    */
-  async function ensureSchema(e) {
+  async function migrateFor(e) {
     const inst = installationId();
     if (migrated.has(inst) || !isSchemaBehind(e)) return false;
-    migrated.add(inst);
-    await runMigrations();
+    let run = running.get(inst);
+    if (!run) {
+      run = (async () => {
+        try { await runMigrations(); migrated.add(inst); } finally { running.delete(inst); }
+      })();
+      running.set(inst, run);
+    }
+    await run;
     return true;
   }
 
@@ -95,10 +104,7 @@ export function schemaGuard({ runMigrations, installationId, isSchemaBehind }) {
     try {
       return await fn();
     } catch (e) {
-      const inst = installationId();
-      if (migrated.has(inst) || !isSchemaBehind(e)) throw e;
-      migrated.add(inst);
-      await runMigrations();
+      if (!(await migrateFor(e))) throw e;
       return fn();
     }
   }
@@ -106,5 +112,6 @@ export function schemaGuard({ runMigrations, installationId, isSchemaBehind }) {
   /** The migrate trigger ran the migrations for the current installation. */
   const markMigrated = () => { migrated.add(installationId()); };
 
-  return { ensureSchema, withSchema, markMigrated };
+  // the Deps `ensureSchema` port is the same rule: true when it migrated now
+  return { ensureSchema: migrateFor, withSchema, markMigrated };
 }
