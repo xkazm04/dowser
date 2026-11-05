@@ -33,7 +33,8 @@
 //                                            Forge development when green; red: reset loop/<date> to the last green commit
 //                                          rebase-push (bp): rebase onto origin/master, gates + secret scan, push
 //                                            HEAD:master; red: nothing pushed
-//                                          commit-only (personas): gates + secret scan; never pushes
+//                                          commit-only (personas): gates + secret scan; never pushes. --dry-run warns about
+//                                            commits that lack a trailer the repo's law asks for (never a refusal)
 //
 // Verified vs self-reported: what this script reads from a tool's own output (the runner's exit code, e2e result
 // files, the scan ledger, quality-snapshot rows, e2e-coverage) is `verified`; what only the director's cycle file
@@ -775,6 +776,66 @@ export function spentWork(charter, repo, atCap, rows, yesterdayRows, anyway) {
 /** The repo law files a runner reads, those present. */
 const LAW_FILES = ['CLAUDE.md', 'AGENTS.md', '.claude/CLAUDE.md'];
 
+const TRAILER_NAME = '[A-Z][A-Za-z]*(?:-[A-Za-z]+)+';
+/** A trailer a law line asks for: `--trailer "Name: v"`, or an imperative naming `Name: v` beside the word trailer. */
+const LAW_TRAILER_RES = [new RegExp(`--trailer[ =]["'\`]?(${TRAILER_NAME}):`, 'g'),
+  new RegExp(`\\b(?:[Mm]ust|[Rr]equires?|[Nn]eeds?|[Aa]sks? for|[Aa]dd|[Cc]arry|[Ii]nclude)\\b[^.\`]*\`(${TRAILER_NAME}):[^\`]*\`[^.]{0,20}\\btrailer`, 'g'),
+  new RegExp(`\\b(?:[Mm]ust|[Rr]equires?|[Nn]eeds?|[Aa]sks? for|[Aa]dd|[Cc]arry|[Ii]nclude)\\b[^.\`]*\\btrailer\\s+\`(${TRAILER_NAME}):`, 'g')];
+/** The sentence around a match says the trailer is conditional: "when the work has one", "if any", "optional". */
+const CONDITIONAL_RE = /\b(?:[Ww]hen|[Ii]f|[Oo]ptional(?:ly)?)\b/;
+
+/**
+ * The commit trailers a law file asks for. A small line pattern, never a parser: it reads the imperative forms only, so
+ * prose that merely mentions a trailer ("lists history by the `Claude-Session:` trailer") and a conditional one ("add
+ * --trailer ... when the work has one") are not requirements. What it finds is advice (a warning, a block key).
+ * @param {string} text @returns {string[]} the names, each once
+ */
+export function lawTrailers(text) {
+  const names = new Set();
+  for (const line of text.split(/\r?\n/)) {
+    for (const re of LAW_TRAILER_RES) {
+      for (const m of line.matchAll(re)) {
+        const end = (m.index ?? 0) + m[0].length;
+        const before = line.slice(0, m.index).split(/[.(:;] /).at(-1) ?? '';
+        const after = line.slice(end).split(/\)|\. /)[0];
+        if (![before, m[0], after].some((x) => CONDITIONAL_RE.test(x))) names.add(m[1]);
+      }
+    }
+  }
+  return [...names];
+}
+
+/** The trailers a checkout's law files ask for, each with the file that asks. @param {string} dir @returns {{name: string, law: string}[]} */
+export function repoTrailers(dir) {
+  /** @type {Map<string, string>} */
+  const found = new Map();
+  for (const law of LAW_FILES) {
+    const file = join(dir, law);
+    if (!existsSync(file)) continue;
+    for (const name of lawTrailers(readFileSync(file, 'utf8'))) if (!found.has(name)) found.set(name, law);
+  }
+  return [...found].map(([name, law]) => ({ name, law }));
+}
+
+/**
+ * land --dry-run's warnings about a commit-only branch: a trailer the repo's law asks for that commits lack. Advice only:
+ * it never adds a reason, and a git failure here answers no warning. Merges and reverts are exempt: git wrote those messages.
+ * @param {Ctx} ctx @param {string} wt @param {string} base @param {string} branch @returns {string[]}
+ */
+export function trailerWarnings(ctx, wt, base, branch) {
+  const trailers = repoTrailers(wt);
+  if (!trailers.length) return [];
+  const log = ctx.run('git', ['-C', wt, 'log', '--no-merges', '--format=%h%x1f%B%x1e', `${base}..HEAD`]);
+  if (log.status !== 0) return [];
+  const commits = log.stdout.split('\x1e').map((c) => c.trim()).filter(Boolean).map((c) => { const [sha, msg] = c.split('\x1f'); return { sha, msg: msg ?? '' }; })
+    .filter((c) => !/^Revert "/.test(c.msg));
+  return trailers.flatMap(({ name, law }) => {
+    const re = new RegExp(`^${name}:[ \\t]*\\S`, 'im');
+    const lack = commits.filter((c) => !re.test(c.msg)).map((c) => c.sha);
+    return lack.length ? [`${law} asks for the ${name} trailer: ${lack.length} of ${commits.length} commits on ${branch} lack it (${lack.slice(0, 5).join(', ')}${lack.length > 5 ? ', ...' : ''})`] : [];
+  });
+}
+
 /**
  * One cycle's scratch folder, created empty: concurrent runners overwrote each other's files in a shared one. Cycle
  * numbers restart each day, so an earlier day's c<n> is moved aside rather than read as this cycle's.
@@ -816,6 +877,7 @@ export function runnerBlock(ctx, { charter, day, repo, cycle, focus, command, sp
     carried, work, ...(Array.isArray(day.repos?.[repo.name]?.paths) ? { registered_paths: day.repos[repo.name].paths } : {}),
     ...(Array.isArray(itemGates) ? { item_gates: itemGates } : {}), out_of_bounds: charter.out_of_bounds ?? [],
     laws: LAW_FILES.map((f) => join(repo.path, f)).filter((f) => existsSync(f)),
+    commit_trailers: repoTrailers(repo.path),
     scratch: cycleScratch(ctx, n),
     cycle_file: join(ctx.home, 'runs', `cycle-${n}-${repo.name}.json`),
   };
@@ -2204,7 +2266,10 @@ export function repoLand(ctx, day, repo, dry) {
     checks.secret_scan = scan;
     if (!scan.clean) reasons.push(`the secret scan found ${scan.hits.map((h) => `${h.pattern} in ${h.file}`).join(', ')}`);
   }
-  if (repo.landing.kind === 'commit-only') return { ...out, decision: reasons.length ? 'red' : 'commit-only', head, checks, reasons, steps: [] };
+  if (repo.landing.kind === 'commit-only') {
+    const warnings = dry ? trailerWarnings(ctx, wt, base, s.branch) : [];
+    return { ...out, decision: reasons.length ? 'red' : 'commit-only', head, checks, reasons, ...(warnings.length ? { warnings } : {}), steps: [] };
+  }
   if (reasons.length) return { ...out, decision: 'red', head, checks, reasons, steps: [] };
   return { ...out, decision: 'land', head, checks, reasons, steps: [['git', 'push', 'origin', 'HEAD:master']] };
 }

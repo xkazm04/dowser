@@ -11,7 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   CAP_DAY_NOTE, DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, depDrift, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
-  capQuestions, everyBuildInboxSpent, checkFlakyGates, flakyQuestions, repoFixmes, commitGroups, commitKind, cycleRows, cycleScratch, envCause, environmentalRed, parkedGroups, supersede, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
+  capQuestions, everyBuildInboxSpent, lawTrailers, repoTrailers, checkFlakyGates, flakyQuestions, repoFixmes, commitGroups, commitKind, cycleRows, cycleScratch, envCause, environmentalRed, parkedGroups, supersede, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
 } from '../../../.claude/skills/temper/scripts/temper.mjs';
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
 import { derivedIds } from '../../../tools/e2e-coverage.mjs';
@@ -866,6 +866,61 @@ test('repo start/land: bp rebases onto origin/master and pushes HEAD:master only
   assert.equal(main(['repo', 'end', '--repo', 'personas'], w.ctx).code, 0);
   assert.equal(w.calls.filter((c) => c.cmd === 'node').at(-1)?.args[1], 'complete');
   assert.equal(main(['day', 'end'], w.ctx).code, 0);
+});
+
+test('lawTrailers: an imperative names a trailer; prose about one and a conditional one do not', () => {
+  // the law that found this (a repo's AGENTS.md, 2026-11-05), as written
+  const law = [
+    'Because several sessions commit here at once, name yours in a trailer so a regression can be traced',
+    'to the session that made it: `git commit --trailer "Agent-Session: <your active-runs slug>@<date>"`',
+    '(add `--trailer "Work-Package: <item id>"` when the work has one). `node scripts/git/by-session.mjs`',
+    'lists history by these and by the harness\'s `Claude-Session:` trailer.',
+  ].join('\n');
+  assert.deepEqual(lawTrailers(law), ['Agent-Session']);
+  assert.deepEqual(lawTrailers('Every commit must carry a `Signed-Off-By: name` trailer.'), ['Signed-Off-By']);
+  assert.deepEqual(lawTrailers('Commits need the trailer `Change-Id: x`.'), ['Change-Id']);
+  assert.deepEqual(lawTrailers('If the work has a ticket, add a `Work-Item: id` trailer.\nAdd an optional `Ticket-Ref: id` trailer.'), [], 'conditional, both ways');
+  assert.deepEqual(lawTrailers('Add tests. Keep the `Co-Authored-By: x` lines git adds.\n# Commit style\nUse conventional commits.'), [], 'no trailer asked for');
+  assert.deepEqual(lawTrailers(''), []);
+});
+
+test('land --dry-run, commit-only: warns when commits lack a trailer the repo law names, never refuses; the runner block names the trailers', () => {
+  const w = world();
+  const { personas } = otherRepos(w);
+  const LAW = 'Name your session: `git commit --trailer "Agent-Session: <slug>@<date>"`\n';
+  put(join(personas, 'AGENTS.md'), LAW);
+  g(personas, 'add', 'AGENTS.md');
+  g(personas, 'commit', '-qm', 'law');
+  const draft = join(w.work, 'draft-trailer.json');
+  put(draft, { repos: [{ name: 'dowser', path: w.root, inbox_key: 'dowser-temper', build: true },
+    { name: 'personas', path: personas, inbox_key: 'personas-temper', build: true, landing: { kind: 'commit-only' }, gates: ['npm run gate'] }] });
+  assert.equal(main(['charter', 'init', '--from', draft, '--operator', 'Op'], w.ctx).code, 0);
+  assert.equal(main(['day', 'start', '--date', '2026-11-05'], w.ctx).code, 0);
+  const started = main(['repo', 'start', '--repo', 'personas'], w.ctx).out;
+  const wt = started.worktree;
+  assert.deepEqual(repoTrailers(wt), [{ name: 'Agent-Session', law: 'AGENTS.md' }]);
+  const commit = (/** @type {string} */ name, /** @type {string} */ msg) => { put(join(wt, name), 'x\n'); g(wt, 'add', name); g(wt, 'commit', '-qm', msg); return g(wt, 'rev-parse', '--short', 'HEAD'); };
+  const kept = commit('a.txt', 'fix: a\n\nAgent-Session: temper-c1@2026-11-05\nCo-Authored-By: C <c@x>');
+  const lacks = commit('b.txt', 'fix: b\n\nCo-Authored-By: C <c@x>');
+  commit('c.txt', 'fix: c\n\nAgent-Session:\n');
+  const dry = main(['land', '--dry-run', '--repo', 'personas'], w.ctx);
+  assert.equal(dry.code, 0, JSON.stringify(dry.out));
+  assert.equal(dry.out.decision, 'commit-only', 'a warning, never a refusal');
+  assert.deepEqual(dry.out.reasons, []);
+  assert.equal(dry.out.warnings.length, 1);
+  assert.match(dry.out.warnings[0], /^AGENTS\.md asks for the Agent-Session trailer: 2 of 3 commits on temper\/2026-11-05 lack it \(/);
+  assert.ok(dry.out.warnings[0].includes(lacks), 'names the commit');
+  assert.ok(!dry.out.warnings[0].includes(kept), 'not the one that has it');
+  // the runner block carries them, so the runner applies them before it commits
+  const r = main(['cycle', 'begin', '--repo', 'personas', '--target', 'goal:x'], w.ctx).out.runner;
+  assert.deepEqual(r.commit_trailers, [{ name: 'Agent-Session', law: 'AGENTS.md' }]);
+  rmSync(join(w.root, '.temper', 'cycle-personas.json'));
+  const clean = join(w.work, 'clean');
+  mkdirSync(clean);
+  assert.deepEqual(repoTrailers(clean), [], 'no law, no trailer');
+  const real = main(['land', '--repo', 'personas'], w.ctx);
+  assert.equal(real.out.warnings, undefined, 'the warning is the dry run\'s');
+  assert.equal(real.out.ok, true);
 });
 
 test('repo paths --add: widens the personas entry through active-runs.mjs (check, then complete and register the same slug); a live conflict refuses', () => {

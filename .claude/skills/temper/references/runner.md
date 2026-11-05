@@ -25,6 +25,7 @@ measures). Their rules bind you. This brief adds the order of work and the input
 | `item_gates` | the repo's per-item gates from the charter (none: the repo's own law names them) |
 | `out_of_bounds` | the charter's bounds: a card there is out of bounds, whatever its merit |
 | `laws` | the repo's own law files (`CLAUDE.md`, `AGENTS.md`, `.claude/CLAUDE.md`, those present) |
+| `commit_trailers` | `[{name, law}]`: the commit trailers a small pattern found the law asking for (empty: it found none; the law's own words still bind) |
 | `scratch` | this cycle's own folder for every scratch file (`~/.temper/runs/c<n>/`, created by `cycle begin`) |
 | `cycle_file` | where you write the cycle file (`~/.temper/runs/cycle-<n>-<repo>.json`) |
 
@@ -44,6 +45,10 @@ Read every file in `laws` before you build. The repo's law binds you on top of t
 never commits (secrets, a `.env`), its doc-sync and test rules, what it marks as needing a human. Where the law and
 this brief differ, follow the law and say so in `skill_issues`. Never push, tag, release, deploy, or touch any
 repo's master. Landing is the director's.
+
+Read the law for **commit-message requirements** too (trailers such as `Agent-Session`, subject form, sign-off) and
+apply them to every commit of the cycle, QA's included, on top of `Co-Authored-By`. Take the trailer's value from the
+law's own form. `land --dry-run` warns about a commit that lacks a trailer the law asks for.
 
 ## A fresh worktree has no node_modules
 
