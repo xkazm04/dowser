@@ -84,7 +84,25 @@ export function triageSheet(db, runId) {
 const unquote = (s) => s.replace(/^(["'])(.*)\1$/s, '$2');
 
 /**
- * Parses a decision line: `;`- or newline-separated entries `<n>[,<n>...] keep | reject <code> [note] | snooze
+ * The entries of a decision line: split on `;` and newlines outside double quotes, so a quoted note keeps its `;`.
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function splitEntries(text) {
+  /** @type {string[]} */
+  const out = [];
+  let cur = '';
+  let quoted = false;
+  for (const ch of String(text)) {
+    if (ch === '"') quoted = !quoted;
+    if (!quoted && (ch === ';' || ch === '\n')) { out.push(cur); cur = ''; } else cur += ch;
+  }
+  out.push(cur);
+  return out.map((e) => e.trim()).filter(Boolean);
+}
+
+/**
+ * Parses a decision line: `;`- or newline-separated entries (a `;` inside a double-quoted note stays in it) `<n>[,<n>...] keep | reject <code> [note] | snooze
  * [YYYY-MM-DD] | merge <n | fp>`, and `rest keep`. Returns the entries and the problems (line, text, problem).
  * @param {string} text
  */
@@ -93,7 +111,7 @@ export function parseDecisions(text) {
   const out = [];
   /** @type {{line: number, text: string, problem: string}[]} */
   const problems = [];
-  text.split(/[;\n]/).map((s) => s.trim()).filter(Boolean).forEach((entry, i) => {
+  splitEntries(text).forEach((entry, i) => {
     const line = i + 1;
     const bad = (/** @type {string} */ problem) => problems.push({ line, text: entry, problem });
     const m = /^(\S+)\s*(\S*)\s*(.*)$/s.exec(entry);
