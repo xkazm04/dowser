@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-05T19:26:03.534Z",
+  "at": "2026-11-05T20:06:17.791Z",
   "modules": {
     "skill-store": {
       "met": false,
@@ -7,7 +7,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (309) at 4bf7ae3"
+          "detail": "typecheck pass, tests pass (318) at e26f158"
         },
         "proposals": {
           "state": "verified",
@@ -20,9 +20,9 @@
           "detail": "0 scan(s) with focus area:skill/scripts/lib in the ledger; the bar needs two"
         },
         "quality": {
-          "state": "unverifiable",
-          "ok": false,
-          "detail": "1 quality-snapshot row(s); the bar compares two"
+          "state": "verified",
+          "ok": true,
+          "detail": "not growing (4bf7ae3 -> e26f158)"
         },
         "coverage": {
           "state": "verified",
@@ -37,7 +37,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (309) at 4bf7ae3"
+          "detail": "typecheck pass, tests pass (318) at e26f158"
         },
         "proposals": {
           "state": "verified",
@@ -50,9 +50,9 @@
           "detail": "1 scan(s) with focus area:skill/lenses in the ledger; the bar needs two"
         },
         "quality": {
-          "state": "unverifiable",
-          "ok": false,
-          "detail": "1 quality-snapshot row(s); the bar compares two"
+          "state": "verified",
+          "ok": true,
+          "detail": "not growing (4bf7ae3 -> e26f158)"
         },
         "coverage": {
           "state": "verified",
@@ -67,7 +67,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (309) at 4bf7ae3"
+          "detail": "typecheck pass, tests pass (318) at e26f158"
         },
         "proposals": {
           "state": "verified",
@@ -80,9 +80,9 @@
           "detail": "0 scan(s) with focus area:skill/scripts/lib/memory.mjs in the ledger; the bar needs two"
         },
         "quality": {
-          "state": "unverifiable",
-          "ok": false,
-          "detail": "1 quality-snapshot row(s); the bar compares two"
+          "state": "verified",
+          "ok": true,
+          "detail": "not growing (4bf7ae3 -> e26f158)"
         },
         "coverage": {
           "state": "verified",
@@ -107,12 +107,12 @@
         "scan_yield": {
           "state": "unverifiable",
           "ok": false,
-          "detail": "0 scan(s) with focus area:forge/src in the ledger; the bar needs two"
+          "detail": "1 scan(s) with focus area:forge/src in the ledger; the bar needs two"
         },
         "quality": {
-          "state": "unverifiable",
-          "ok": false,
-          "detail": "1 quality-snapshot row(s); the bar compares two"
+          "state": "verified",
+          "ok": true,
+          "detail": "not growing (4bf7ae3 -> e26f158)"
         },
         "coverage": {
           "state": "verified",
@@ -140,9 +140,9 @@
           "detail": "0 scan(s) with focus area:forge/static/app/src/routes/inbox in the ledger; the bar needs two"
         },
         "quality": {
-          "state": "unverifiable",
-          "ok": false,
-          "detail": "1 quality-snapshot row(s); the bar compares two"
+          "state": "verified",
+          "ok": true,
+          "detail": "not growing (4bf7ae3 -> e26f158)"
         },
         "coverage": {
           "state": "verified",
@@ -170,9 +170,9 @@
           "detail": "0 scan(s) with focus area:forge/static/app/src/routes/reflect in the ledger; the bar needs two"
         },
         "quality": {
-          "state": "unverifiable",
-          "ok": false,
-          "detail": "1 quality-snapshot row(s); the bar compares two"
+          "state": "verified",
+          "ok": true,
+          "detail": "not growing (4bf7ae3 -> e26f158)"
         },
         "coverage": {
           "state": "verified",
@@ -200,9 +200,9 @@
           "detail": "0 scan(s) with focus area:skill/scripts/lib/sync.mjs in the ledger; the bar needs two"
         },
         "quality": {
-          "state": "unverifiable",
-          "ok": false,
-          "detail": "1 quality-snapshot row(s); the bar compares two"
+          "state": "verified",
+          "ok": true,
+          "detail": "not growing (4bf7ae3 -> e26f158)"
         },
         "coverage": {
           "state": "verified",
@@ -217,7 +217,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (309) at 4bf7ae3"
+          "detail": "typecheck pass, tests pass (318) at e26f158"
         },
         "proposals": {
           "state": "verified",
@@ -230,9 +230,9 @@
           "detail": "0 scan(s) with focus area:tools in the ledger; the bar needs two"
         },
         "quality": {
-          "state": "unverifiable",
-          "ok": false,
-          "detail": "1 quality-snapshot row(s); the bar compares two"
+          "state": "verified",
+          "ok": true,
+          "detail": "not growing (4bf7ae3 -> e26f158)"
         },
         "coverage": {
           "state": "verified",
