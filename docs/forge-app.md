@@ -68,7 +68,8 @@ the query policy allows one statement per request. The core is correct without t
 - Inserts check first and are also guarded by a UNIQUE constraint.
 - A decision whose verdict row did not land is rebuilt from the decision stamp before the next pull.
 - An accept creates the Jira issue before it changes any state. If Jira fails, nothing is written and the
-  item stays open.
+  item stays open. When Jira refuses the create (400), the answer names the field keys Jira's `errors` listed
+  (never their values, which can quote issue content) and suggests another project or issue type.
 
 Because each statement is a request (30-60 ms), the store works in sets. A push reads the fps it carries in one
 `IN` query, takes a block of DW numbers with one compare-and-set, and writes proposals and evidence with multi-row

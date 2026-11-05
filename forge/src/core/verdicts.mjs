@@ -37,6 +37,19 @@ export const CLAIM_MS = 120_000;
 export const deciderOf = (accountId) => `forge:${accountId}`;
 
 /**
+ * The answer to a create Jira refused. When the adapter kept the refused field keys (`fields`, a 400's `errors`
+ * keys, never their values), it names them and the next step; otherwise only the status.
+ * @param {unknown} e @param {string} ref
+ */
+function refusedCreate(e, ref) {
+  const fields = /** @type {any} */ (e)?.fields;
+  const named = Array.isArray(fields) ? fields.filter((f) => typeof f === 'string' && /^[A-Za-z0-9_.-]{1,64}$/.test(f)) : [];
+  if (!named.length) return `Jira did not create the issue (${errTag(e)}); ${ref} stays open`;
+  return `Jira did not create the issue (${errTag(e)}; refused fields: ${named.join(', ')}); ${ref} stays open. `
+    + 'Choose another project or issue type, or ask a Jira admin about those fields.';
+}
+
+/**
  * An optional decision note: trimmed, absent when empty, at most NOTE_MAX characters.
  * @param {unknown} v
  * @returns {string | undefined}
@@ -199,7 +212,7 @@ export async function accept(deps, args, who) {
       });
     } catch (e) {
       await db.exec('UPDATE proposals SET accept_claim = NULL WHERE id = ? AND accept_claim = ?', [p.id, claim]);
-      throw new AppError('unavailable', `Jira did not create the issue (${errTag(e)}); ${p.ref} stays open`);
+      throw new AppError('unavailable', refusedCreate(e, p.ref));
     }
     try {
       await db.exec("UPDATE proposals SET issue_ref = ?, issue_url = ? WHERE id = ? AND status = 'open' AND accept_claim = ?", [issue.key, issue.url, p.id, claim]);
