@@ -122,7 +122,12 @@ Memory must reflect Jira before the scan, so a rejection made in Jira suppresses
    On a fresh store (no proposal yet: a new machine or CI runner) unknown verdicts are expected:
    the output carries `fresh_store: true` and a `note`, exits 0, and needs no listing.
    An accepted verdict carries the Jira issue the person created (`issue_ref`, `issue_url`). Show
-   that issue key and link next to the card in the summary.
+   that issue key and link next to the card in the summary. A verdict whose `decided_by` is
+   `delegate:temper` was recorded by a delegate a person switched on for this inbox in Dowser
+   Settings, not by a person (references/triage.md "delegate verdict"): it is applied like any
+   verdict and never counts toward trust. Name it so in the summary: dev "by delegate:temper
+   (delegate)"; guided "Temper, the helper your team allowed to decide here, accepted 2 and turned
+   down 3", never as a person's decision.
 
 4. **Reflect** (skip when `dowser_reflect_sync` is missing). This brings back what people
    decided about the rules offered on an earlier run, and how accepted items turned out once
@@ -547,7 +552,11 @@ and suggest the runner rejects or rates it in Jira.
   item. The agent records a merge only for a same-work duplicate (section 6). The one machine
   act is the store's pre-triage at trust level 1 (section 7 step 0): it skips the runner's
   pre-triage for a slice whose predictions earned it, moves no status, and the person still
-  decides every such card in Jira. Acceptance is a person's click, always.
+  decides every such card in Jira. Acceptance is a person's click, always, with one exception
+  the skill never takes: delegated triage, which a person switches on for one inbox in Dowser
+  Settings, lets the Temper loop decide there through `dowser_verdicts_record`. This skill never
+  calls that tool; it only ingests the `delegate:temper` verdicts it returns, and they never count
+  toward trust.
 - **Unmeasured is not zero.** A lens that did not run is `skipped` with a reason. A source that
   was missing makes the lens `partial`. A value you did not compute is omitted, never `0` and
   never `null`.
