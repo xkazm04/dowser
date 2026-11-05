@@ -13,6 +13,7 @@ import { cardOf } from './cards.mjs';
 import { deliveriesOf } from './delivery.mjs';
 import { findProposal, needInbox, nextCounter, toProposal } from './store.mjs';
 import { AppError, errTag, needStr, omitAbsent, optStr } from './util.mjs';
+import { namesOf } from './names.mjs';
 
 /** @typedef {import('./ports.mjs').Deps} Deps */
 /** @typedef {import('./ports.mjs').AdfDoc} AdfDoc */
@@ -87,15 +88,20 @@ export async function workGet(deps, args) {
 }
 
 /**
- * The comment a report leaves on the Jira issue.
+ * The comment a report leaves on the Jira issue. It names the person the agent works for, never their raw account
+ * id: their display name when the Users port knows it, else an ADF mention, which Jira renders as the name.
  * @param {string} ref @param {string} by @param {string} status @param {string | undefined} note @param {string | undefined} url
+ * @param {string | undefined} name  the display name of `by`, when known
  * @returns {AdfDoc}
  */
-function reportComment(ref, by, status, note, url) {
+function reportComment(ref, by, status, note, url, name) {
   /** @type {any[]} */
   const content = [{ type: 'text', text: `Dowser ${ref}: ${status.replace('_', ' ')}${note ? ` - ${note}` : ''}` }];
   if (url) content.push({ type: 'text', text: ' ' }, { type: 'text', text: url, marks: [{ type: 'link', attrs: { href: url } }] });
-  content.push({ type: 'text', text: ` (reported by ${by.replace(/^forge:/, 'a coding agent for ')})` });
+  const account = by.startsWith('forge:') ? by.slice('forge:'.length) : undefined;
+  if (name) content.push({ type: 'text', text: ` (reported by a coding agent for ${name})` });
+  else if (account) content.push({ type: 'text', text: ' (reported by a coding agent for ' }, { type: 'mention', attrs: { id: account } }, { type: 'text', text: ')' });
+  else content.push({ type: 'text', text: ` (reported by ${by})` });
   return /** @type {AdfDoc} */ ({ type: 'doc', version: 1, content: [{ type: 'paragraph', content }] });
 }
 
@@ -115,7 +121,8 @@ export async function workReport(deps, args, by) {
   if (!deps.jira) throw new AppError('unavailable', 'Jira is not reachable from this module');
   const at = deps.now().toISOString();
   try {
-    await deps.jira.addComment(/** @type {string} */ (p.issue_ref), reportComment(p.ref, by, String(status), note, url));
+    const name = (await namesOf(deps, [by]))[by];
+    await deps.jira.addComment(/** @type {string} */ (p.issue_ref), reportComment(p.ref, by, String(status), note, url, name));
   } catch (e) {
     throw new AppError('unavailable', `Jira did not take the comment on ${p.issue_ref} (${errTag(e)}); nothing was recorded`);
   }

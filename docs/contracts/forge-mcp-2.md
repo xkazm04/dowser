@@ -465,7 +465,8 @@ evidence, `<ref> no longer contains: <quote>` - what the skill's `delivery` re-c
 `dowser_work_report` - input `{ref, status, note?, url?}`: `status` `started`, `pr_open`, `done` or `blocked`;
 `note` at most 2000 characters; `url` an `https` link (a pull request, a build), anything else `bad-input`. The
 caller must be allowed to comment on the item's Jira issue (`forbidden` otherwise). The report is left as a comment
-on the issue, then appended to `work_reports` (v028); when Jira refuses the comment the answer is `unavailable` and
+on the issue (it names the person the agent reports for by display name, else as a Jira mention, never by the raw
+account id), then appended to `work_reports` (v028); when Jira refuses the comment the answer is `unavailable` and
 nothing is recorded. Output `{report: {ref, issue_ref, status, note?, url?, by, at}}`. A report never changes the
 item's status: delivery is what Jira and the code say.
 
