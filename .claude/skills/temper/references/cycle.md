@@ -43,13 +43,20 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   `npm run verify:affected -- --files <files>`).
 - Any size. An XL item is staged in slices, each slice gated and committed on its own. Merge each green slice into
   the day branch.
+- **Merge first, then verify.** The runner builds in its worktree, and its gate and e2e results there are
+  self-reported. The director merges the runner's branch into the day branch in the main checkout first. Only then
+  does `cycle end` run the gates and e2e itself on the merged tree. That run is the independent check, and it is the
+  only one that can make the row green. Results left in the worktree's `e2e/results/` (gitignored) or its
+  `docs/evals/temper/quality.jsonl` are never read.
 
 ## 5. Simulated UAT
 
-- Every cycle: `npm run e2e:fixture` and `npm run e2e:local`. After a deploy, also `npm run e2e:live`. Until the
-  operator signs in, live reports unverifiable. That never blocks a cycle and never counts as a pass.
-- The verdict is the runner's exit code and `e2e/results/<project>.json`. `cycle end` reads those files itself and
-  counts only files newer than the cycle's start.
+- Every cycle: `npm run e2e:fixture` and `npm run e2e:local`. Dowser's `cycle end` runs both itself in the main
+  checkout after the merge (once: not again when a charter land gate already runs them). After a deploy, also
+  `npm run e2e:live`. Until the operator signs in, live reports unverifiable. That never blocks a cycle and never
+  counts as a pass.
+- The verdict is the runner's exit code and `e2e/results/<project>.json`. `cycle end` reads those files itself, in the
+  main checkout, and counts only files newer than the cycle's start.
 - An exploratory persona pass (a subagent playing a product person on the fixture and local UI) writes findings as
   `{title, surface, steps, expected, actual, screenshot?, spec?}`. They are filed with
   `node tools/temper-tickets.mjs file --findings <json>` (deduped by fingerprint, labelled `temper-uat`).
@@ -60,7 +67,11 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   When no row was written since the cycle began, `cycle end` runs this itself (Dowser cycles only), so the bar's
   quality part fills on a fresh day without relying on this step. The row's `verified.quality` says `present`,
   `appended`, `no row written` or `failed`; a failed snapshot never makes the cycle red.
-- lens-scan cover on the changed features: `node C:/Users/kazda/kiro/bp/.claude/skills/lens-scan/scripts/drive.mjs cover --lens all --root . --features <a,b>`
+- lens-scan cover on the changed features, run by the director **from the main checkout, after the merge**:
+  `node C:/Users/kazda/kiro/bp/.claude/skills/lens-scan/scripts/drive.mjs cover --lens all --root . --features <a,b>`.
+  It writes the lens-scan store in `.ai/lens-scan/`, which is gitignored and exists only in the main checkout (a
+  worktree has none), so a runner in a worktree never runs it. It calls Claude, so its cost comes out of the day's
+  budget.
 - Outcome ratings for items built two or more cycles ago go in the cycle file as `{ref, rating, basis}`. The basis is
   the evidence (their specs green on local and live, no finding filed). They are self-reported. The Learning tab's
   rating stays the operator's, so nothing is written to Forge.

@@ -37,7 +37,9 @@ scans that the loop starts keep theirs.
    triage, build, simulated UAT and update.
    Each repo has its own open cycle (`.temper/cycle-<repo>.json`), so a bp cycle can run beside a Dowser one. Cycle
    numbers stay unique across repos for the day.
-4. Write the cycle file (with its `repo` when it is not Dowser), run `T cycle end --file <cycle.json> [--repo <r>]`,
+4. Merge the runner's branch into the day branch first: `cycle end` then runs the gates and e2e itself on the merged
+   tree (the runner's own results are self-reported). Write the cycle file (with its `repo` when it is not Dowser),
+   run `T cycle end --file <cycle.json> [--repo <r>]`,
    and commit `docs/evals/temper/`
    (`chore(temper): cycle <n> record`). On exit 1 (red), revert this cycle's build commits (`git revert`) so the
    branch is back at the last green tree, and park the item with its reason.

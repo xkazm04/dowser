@@ -821,6 +821,31 @@ function qualityRowOf(ctx, open) {
   return now ? { state: 'appended', ...(typeof now.head === 'string' ? { head: now.head } : {}) } : { state: 'no row written' };
 }
 
+/** The e2e projects every Dowser cycle runs. */
+const E2E_SCRIPTS = REQUIRED_E2E.map((p) => `e2e:${p}`);
+
+/**
+ * The independent check of one repo's tree, the same for cycle end and cycle reverify. Dowser: npm ci where a lockfile
+ * is newer than its node_modules, typecheck and test, the e2e projects (unless a charter gate already runs them), the
+ * charter's land gates, then the e2e result files newer than `sinceMs`. Another repo: its charter land gates.
+ * @param {Ctx} ctx @param {Repo} repo @param {string} dir @param {number} sinceMs
+ */
+function verifyTree(ctx, repo, dir, sinceMs) {
+  if (repo.name !== 'dowser') {
+    const gates = runRepoGates(ctx, repo, dir);
+    const why = Object.entries(gates).filter(([, s]) => s !== 'pass').map(([k]) => `${k} failed`);
+    return { green: !why.length, why, verified: { gates } };
+  }
+  // a lockfile newer than its installed tree (a merge added a dependency) is installed first: npm ci, or red
+  const deps = syncDeps(ctx);
+  const charterRuns = repo.gates.filter((g) => g.when === 'land').map((g) => g.run);
+  const e2e = E2E_SCRIPTS.filter((s) => !charterRuns.some((r) => new RegExp(`\\bnpm run ${s}(\\s|$)`).test(r)));
+  const gates = { ...runGates(ctx, ['typecheck', 'test', ...e2e]), ...runRepoGates(ctx, repo, dir) };
+  const u = uatSince(ctx.root, sinceMs);
+  const why = [...deps.why, ...Object.entries(gates).filter(([, s]) => s !== 'pass').map(([k]) => `${k} failed`), ...u.why];
+  return { green: !why.length, why, verified: { deps: deps.deps, gates, uat: u.uat } };
+}
+
 /** @param {Ctx} ctx @param {Record<string, string | true>} f */
 function cycleEnd(ctx, f) {
   const charter = needCharter(ctx);
@@ -858,20 +883,15 @@ function cycleEnd(ctx, f) {
   const isDowser = repo.name === 'dowser';
   const dir = isDowser ? ctx.root : day.repos?.[repo.name]?.worktree;
   const head = gitIn(ctx, dir, 'rev-parse', 'HEAD');
-  // a lockfile newer than its installed tree (a merge added a dependency) is installed first: npm ci, or red
-  const deps = isDowser ? syncDeps(ctx) : undefined;
-  const gates = isDowser ? { ...runGates(ctx, ['typecheck', 'test']), ...runRepoGates(ctx, repo, dir) } : runRepoGates(ctx, repo, dir);
-  const u = isDowser ? uatSince(ctx.root, Date.parse(open.begun_at)) : { uat: {}, green: true, why: [] };
+  const v = verifyTree(ctx, repo, dir, Date.parse(open.begun_at));
   const quality = isDowser ? qualityRowOf(ctx, open) : undefined;
-  const gatesGreen = Object.values(gates).every((s) => s === 'pass');
   const quota = rejectShare(countKinds(verdicts));
   const { target: _t, repo: _r, ...claims } = raw;
-  const depsWhy = deps?.why ?? [];
-  const green = gatesGreen && u.green && !depsWhy.length;
+  const green = v.green;
   const row = {
     kind: 'cycle', n: open.n, date: open.date, repo: repo.name, target: open.target, begun_at: open.begun_at, ended_at: ctx.now().toISOString(), head,
-    green, ...(green ? {} : { red_because: [...depsWhy, ...Object.entries(gates).filter(([, s]) => s !== 'pass').map(([k]) => `${k} failed`), ...u.why] }),
-    verified: { ...(deps ? { deps: deps.deps } : {}), gates, ...(isDowser ? { uat: u.uat } : {}), ...(quality ? { quality } : {}) },
+    green, ...(green ? {} : { red_because: v.why }),
+    verified: { ...v.verified, ...(quality ? { quality } : {}) },
     quota,
     self_reported: { ...claims, ...(raw.verdicts ? { verdicts } : {}) },
   };

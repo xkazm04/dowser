@@ -375,6 +375,39 @@ test('dependency drift: cycle end and land run npm ci where a lockfile is newer 
   assert.equal(main(['land', '--dry-run'], ctx).out.decision, 'land');
 });
 
+test('cycle end: runs fixture and local e2e itself on the merged tree (once, when a charter gate already names them)', () => {
+  const w = world();
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  /** @type {string[]} */
+  const npm = [];
+  const ctx = { ...w.ctx, run: /** @type {import('../../../.claude/skills/temper/scripts/temper.mjs').Runner} */ ((c, a, o) => {
+    if (c === 'npm' && /^e2e:(fixture|local)$/.test(a[1])) {
+      npm.push(a[1]);
+      put(join(w.root, 'e2e', 'results', `${a[1].slice(4)}.json`), [row(`e2e/${a[1].slice(4)}/x.spec.mjs > x`)]);
+      return { status: 0, stdout: '' };
+    }
+    if (c === 'npm') npm.push(a[1]);
+    if (o?.shell) npm.push(c);
+    return w.ctx.run(c, a, o);
+  }) };
+  const file = join(w.work, 'c.json');
+  put(file, { target: 'tooling' });
+  main(['cycle', 'begin', '--target', 'tooling'], ctx);
+  const a = main(['cycle', 'end', '--file', file], ctx);
+  assert.equal(a.out.green, true, JSON.stringify(a.out.red_because));
+  assert.deepEqual(npm, ['typecheck', 'test', 'e2e:fixture', 'e2e:local']);
+  assert.equal(a.out.verified.uat.fixture.state, 'fresh', 'the results it wrote count');
+  // a charter that already runs them as land gates: no second run
+  const c = JSON.parse(readFileSync(join(w.root, '.temper', 'charter.json'), 'utf8'));
+  c.repos[0].gates = [{ run: 'npm run e2e:fixture -- --repeat-each 3', when: 'land' }];
+  put(join(w.root, '.temper', 'charter.json'), c);
+  npm.length = 0;
+  main(['cycle', 'begin', '--target', 'tooling'], ctx);
+  main(['cycle', 'end', '--file', file], ctx);
+  assert.deepEqual(npm, ['typecheck', 'test', 'e2e:local', 'npm run e2e:fixture -- --repeat-each 3']);
+});
+
 test('cycle end: appends the quality-snapshot row itself when none was written since the cycle began, so the instrument fills', () => {
   const w = world();
   charter(w);
