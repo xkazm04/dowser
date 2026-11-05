@@ -1,6 +1,6 @@
 ---
 id: doc-drift
-version: 0.3.3
+version: 0.3.4
 name: Doc drift
 kinds: [contradicted-by-code, removed-still-documented, undocumented-change, stale-example, missing-doc]
 sources: [code, docs, git, pages]
@@ -71,8 +71,8 @@ Confluence pages were reachable.
    symbol outside docs (`-- ':!*.md' ':!docs/**'`). Zero hits for a named thing is a lead. A hit
    with a different default or signature is a lead.
 4. **Recent changes nobody documented (git).**
-   `git log --since=120.days --format="%h %ad %s" --date=short -- ':!*.md' ':!docs/**' | head -60`
-   and `git log --since=120.days --diff-filter=D --name-only --format="%h %s"` (deleted files).
+   `git log --since=120.days --name-only --format= -- ':!*.md' ':!docs/**' | sort | uniq -c | sort -rn` lists every file changed in the whole window with its commit count (no cut: a commit cap kept one busy day of a 120-day window); for a lead file, `git log --since=120.days --format="%h %ad %s" --date=short -- <file>` gives its commits.
+   Also `git log --since=120.days --diff-filter=D --name-only --format="%h %s"` (deleted files).
    For removed or renamed symbols, grep the docs for the old name. For a new flag, route, env var
    or config key, grep the docs for it (H3). On an incremental run, start from the changed files.
 5. **Examples.** Code blocks in docs that call the product's API or CLI: compare the arguments,
