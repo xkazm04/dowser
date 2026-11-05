@@ -11,7 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, depDrift, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
-  renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
+  capQuestions, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
 } from '../../../.claude/skills/temper/scripts/temper.mjs';
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
 import { derivedIds } from '../../../tools/e2e-coverage.mjs';
@@ -1132,4 +1132,20 @@ test('cap-deferred snoozes: counted apart (no floor, no rejects cap), only at th
   const { questions } = startQuestions({ date: '2026-11-06', charter: { delegation: { 'dowser-temper': { until: '2026-11-06' } } }, directions: [], cycles, liveState: 'signed-in' });
   assert.match(questions[0], /^1 cards were carried to today because the accept cap was reached \(dowser-temper: DW-30\)/, 'a card re-decided later that day is not carried');
   assert.match(questions[1], /delegation for dowser-temper/);
+});
+
+test('an inbox at its accept cap: Needs you gives the numbers and asks for real caps in the charter', () => {
+  const accepts = (/** @type {string} */ inbox, /** @type {number} */ n) => Array.from({ length: n }, (_, i) => ({ ref: `DW-${i + 1}`, verdict: 'accept', inbox, recorded: 'local' }));
+  const charter = { delegation: {}, repos: [{ name: 'dowser', inbox_key: 'dowser-temper', caps: DEFAULT_CAPS }, { name: 'bp', inbox_key: 'bp-temper', caps: { accepts_per_day: 3, rejects_per_day: 9 } }] };
+  const cycles = [{ n: 1, self_reported: { verdicts: [...accepts('dowser-temper', 10), { ref: 'DW-40', verdict: 'snooze', deferred: 'cap', inbox: 'dowser-temper', recorded: 'local' }, ...accepts('bp-temper', 2)] } }];
+  assert.deepEqual(capQuestions(charter, cycles), ['dowser-temper reached its accept cap: 10 of 10 accepts, 1 real cards carried to the next day. Its caps are the defaults (10 accepts, 30 rejects a day), not a choice of yours: set real caps for it in the charter (repos[].caps, in the start dialog).']);
+  cycles[0].self_reported.verdicts.push(...accepts('bp-temper', 1).map((v) => ({ ...v, ref: 'DW-9' })));
+  assert.match(capQuestions(charter, cycles)[1], /^bp-temper reached its accept cap: 3 of 3 accepts\. Its caps are 3 accepts and 9 rejects a day: set real caps/);
+  const { questions, later } = startQuestions({ date: '2026-11-05', charter, directions: [], cycles, liveState: 'signed-in' });
+  assert.match(questions[0], /carried to today/);
+  assert.match(questions[1], /dowser-temper reached its accept cap/);
+  assert.match(questions[2], /bp-temper reached its accept cap/);
+  const md = renderReport({ date: '2026-11-05', commits: [], landings: {}, cycles: [], scans: [], directions: [], questions, later });
+  assert.match(md, /## Needs you\n\n1\. .*\n2\. dowser-temper reached its accept cap: 10 of 10 accepts/);
+  assert.deepEqual(capQuestions(charter, [{ n: 1, self_reported: { verdicts: accepts('dowser-temper', 9) } }]), [], 'under the cap: nothing to ask');
 });

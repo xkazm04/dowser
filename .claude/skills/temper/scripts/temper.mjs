@@ -1485,7 +1485,27 @@ export function carriedOf(cycles) {
 }
 
 /**
- * The start questions, in order: the cards carried to today (first), delegation, directions, live sign-in, parked.
+ * One question per inbox whose accepts reached the day's cap: the numbers, and a request for real caps in the charter
+ * (the charter's caps default to DEFAULT_CAPS when the day-1 dialog set none). Accepts count every decision, as the
+ * caps do. @param {any} charter @param {any[]} cycles @returns {string[]}
+ */
+export function capQuestions(charter, cycles) {
+  const vs = cycles.flatMap((r) => r.self_reported?.verdicts ?? []);
+  return (charter?.repos ?? []).flatMap((/** @type {Repo} */ r) => {
+    const caps = r.caps ?? DEFAULT_CAPS;
+    const mine = vs.filter((v) => v.inbox === r.inbox_key);
+    const accepts = mine.filter((v) => v.verdict === 'accept').length;
+    if (accepts < caps.accepts_per_day) return [];
+    const carried = mine.filter(isCarried).length;
+    const dflt = caps.accepts_per_day === DEFAULT_CAPS.accepts_per_day && caps.rejects_per_day === DEFAULT_CAPS.rejects_per_day;
+    return [`${r.inbox_key} reached its accept cap: ${accepts} of ${caps.accepts_per_day} accepts${carried ? `, ${carried} real cards carried to the next day` : ''}. `
+      + `${dflt ? `Its caps are the defaults (${caps.accepts_per_day} accepts, ${caps.rejects_per_day} rejects a day), not a choice of yours` : `Its caps are ${caps.accepts_per_day} accepts and ${caps.rejects_per_day} rejects a day`}: `
+      + 'set real caps for it in the charter (repos[].caps, in the start dialog).'];
+  });
+}
+
+/**
+ * The start questions, in order: the cards carried to today (first), inboxes at their accept cap, delegation, directions, live sign-in, parked.
  * At most three are asked.
  * @param {{date: string, charter?: any, directions: any[], cycles: any[], liveState?: string}} d
  */
@@ -1496,6 +1516,7 @@ export function startQuestions(d) {
     const by = [...new Set(carried.map((v) => v.inbox))].map((k) => `${k}: ${carried.filter((v) => v.inbox === k).map((v) => v.ref).join(', ')}`);
     q.push(`${carried.length} cards were carried to today because the accept cap was reached (${by.join('; ')}). They are triaged first today, before new cards: keep that order?`);
   }
+  q.push(...capQuestions(d.charter, d.cycles));
   const soon = localDate(new Date(Date.parse(`${d.date}T12:00:00`) + 2 * 86400000));
   for (const [k, v] of Object.entries(d.charter?.delegation ?? {})) {
     const until = /** @type {any} */ (v).until;
