@@ -19,8 +19,9 @@
 //                  among it, to the agent under evaluation (the copying installer leaves tests/ out)
 //     --budget-usd passed to claude as --max-budget-usd
 //
-// For security-cra, `npm audit` is answered from the fixture's _auditor/npm-audit.json by an `npm` shim put
-// first on the scan's PATH, so `dowser deps` and the pack's own audit step see captured, offline output.
+// For security-cra, `npm audit` is answered from the fixture's captured reports by an `npm` shim put first on the
+// scan's PATH, so `dowser deps` and the pack's own audit step see captured, offline output: in a manifest directory
+// `<dir>` below the root the shim serves _auditor/<dir>/npm-audit.json, at the root _auditor/npm-audit.json.
 // The fixture's direction seed (_sources.json `directions`) is keyed by the placeholder FIXTURE_PROJECT; the temp
 // copy has no origin, so its project key is `local-<hash of its path>`. The mock is seeded from a copy of
 // _sources.json whose `directions` is re-keyed to the key `dowser init` reports, so `dowser_direction_get` answers
@@ -167,12 +168,14 @@ function buildRepo(repo) {
 }
 
 /**
- * The `npm` shim for security-cra: `npm audit ...` prints the captured report and exits 1 (npm audit's code when
- * it finds vulnerabilities); anything else goes to the real npm when one was found.
+ * The `npm` shim for security-cra: `npm audit ...` prints the captured report of the directory it runs in (see the
+ * header) and exits 1 (npm audit's code when it finds vulnerabilities); a directory with no captured report gets an
+ * empty one (exit 0). Anything else goes to the real npm when one was found.
  * @param {string} bin
+ * @param {string} repo the scanned copy; the shim's cwd relative to it picks the report
  * @returns {string | undefined} the real npm it forwards to
  */
-function writeNpmShim(bin) {
+function writeNpmShim(bin, repo) {
   let real;
   try {
     const found = execFileSync(process.platform === 'win32' ? 'where' : 'which', ['npm'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
@@ -180,13 +183,19 @@ function writeNpmShim(bin) {
     real = process.platform === 'win32' ? found.find((s) => s.toLowerCase().endsWith('.cmd')) ?? found[0] : found[0];
   } catch { /* no npm on PATH: only `npm audit` is answered */ }
   mkdirSync(bin, { recursive: true });
-  const audit = join(FIXTURE, '_auditor/npm-audit.json');
+  const auditor = join(FIXTURE, '_auditor');
   writeFileSync(join(bin, 'npm-shim.mjs'), [
-    '// lens-eval npm shim: `npm audit` answers from the fixture\'s captured report; the rest goes to the real npm.',
-    "import { readFileSync } from 'node:fs';",
+    '// lens-eval npm shim: `npm audit` answers from the fixture\'s captured report for its directory; the rest goes to the real npm.',
+    "import { existsSync, readFileSync } from 'node:fs';",
+    "import { join, relative, sep } from 'node:path';",
     "import { spawnSync } from 'node:child_process';",
     'const args = process.argv.slice(2);',
-    "if (args.includes('audit')) { process.stdout.write(readFileSync(" + JSON.stringify(audit) + ", 'utf8')); process.exit(1); }",
+    "if (args.includes('audit')) {",
+    '  const dir = relative(' + JSON.stringify(repo) + ", process.cwd()).split(sep).join('/');",
+    '  const report = join(' + JSON.stringify(auditor) + ", dir && !dir.startsWith('..') ? dir : '', 'npm-audit.json');",
+    "  if (!existsSync(report)) { process.stdout.write(JSON.stringify({ auditReportVersion: 2, vulnerabilities: {}, metadata: {} })); process.exit(0); }",
+    "  process.stdout.write(readFileSync(report, 'utf8')); process.exit(1);",
+    '}',
     'const real = ' + JSON.stringify(real ?? '') + ';',
     "if (!real) { console.error('npm is not available in this evaluation (only npm audit is)'); process.exit(127); }",
     '// A .cmd needs a shell on Windows; quote the command and every argument for it.',
@@ -253,7 +262,7 @@ try {
   const seed = writeSeed(seedFile, projectKey);
   writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { dowser: { type: 'stdio', command: process.execPath,
     args: [MOCK, '--seed', seedFile, '--state', join(work, 'forge-state.json')] } } }, null, 2));
-  const realNpm = o.lens === 'security-cra' ? writeNpmShim(bin) : undefined;
+  const realNpm = o.lens === 'security-cra' ? writeNpmShim(bin, w.repo) : undefined;
   const env = { ...process.env, DOWSER_HOME: w.home, ...(o.lens === 'security-cra' ? { PATH: `${bin}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH ?? ''}` } : {}) };
   const args = ['-p', prompt(o.lens), '--mcp-config', mcpConfig, '--strict-mcp-config', '--add-dir', tmpdir(),
     '--allowedTools', ...ALLOWED_TOOLS, '--output-format', 'json', ...(o.model ? ['--model', o.model] : []), ...(o.budget ? ['--max-budget-usd', o.budget] : [])];
@@ -276,7 +285,7 @@ try {
         return { seed: seedFile, call, answer_for_lens: lenses[o.lens] ?? 'none seeded', lenses_seeded: Object.keys(lenses) };
       })(),
       budget: budget ?? 'none in the pack frontmatter',
-      npm_audit_shim: o.lens === 'security-cra' ? { bin, serves: join(FIXTURE, '_auditor/npm-audit.json'), forwards_to: realNpm ?? 'nothing (no npm found)' } : 'not used for this lens',
+      npm_audit_shim: o.lens === 'security-cra' ? { bin, serves: `${join(FIXTURE, '_auditor')} (<dir>/npm-audit.json per manifest directory)`, forwards_to: realNpm ?? 'nothing (no npm found)' } : 'not used for this lens',
       steps: [
         `cd ${q(w.repo)}`,
         `DOWSER_HOME=${q(w.home)}${o.lens === 'security-cra' ? ` PATH=${q(bin)}:$PATH` : ''} ${CLAUDE} ${args.map(q).join(' ')} > ${q(join(work, 'claude.json'))}`,

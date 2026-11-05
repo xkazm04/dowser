@@ -83,7 +83,7 @@
       "why": "innerHTML is assigned a constant string; product data goes through createElement and textContent." },
     { "lens": "security-cra", "id": "sec-decoy-sbom-present", "anchor": ".github/workflows/release.yml", "decoy": true,
       "why": "The release workflow already produces a CycloneDX SBOM and publishes it with each release." },
-    { "lens": "security-cra", "id": "sec-decoy-dev-minimist", "anchor": "scripts/seed-demo.js", "also": ["package.json#minimist", "package-lock.json#minimist"], "decoy": true,
-      "why": "The audit lists minimist 1.2.5 as critical (GHSA-xvch-5gv4-984h), but it is a devDependency (lockfile dev: true) used only by the demo seed script, which parses the developer's own arguments; package.json `files` and `npm sbom --omit dev` keep it out of what ships." }
+    { "lens": "security-cra", "id": "sec-decoy-dev-minimist", "anchor": "scripts/seed-demo.js", "also": ["scripts/package.json#minimist", "scripts/package-lock.json#minimist"], "decoy": true,
+      "why": "The audit lists minimist 1.2.5 as critical (GHSA-xvch-5gv4-984h), but it is a devDependency of the nested seed tool (scripts/package-lock.json marks it dev: true; the root lockfile does not list it) used only by the demo seed script, which parses the developer's own arguments; the root package.json `files` and `npm sbom --omit dev` keep it out of what ships. A scope check that reads only the root lockfile cannot see that it is dev-only." }
   ]
 }

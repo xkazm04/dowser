@@ -59,10 +59,10 @@ supplies its SARIF or CycloneDX output, cite it and propose the work it implies.
    ecosystem, a `not_audited` directory (test or fixture paths, past the cap) or a deeper
    manifest leaves H1 unchecked there; the report says which. Never run an auditor yourself,
    never install, never guess CVEs from memory.
-3. **Scope and reach of each dep ref.** Dev-only: in `package-lock.json` the entry
-   `"node_modules/<pkg>"` carries `"dev": true` (`git grep -n -A6 '"node_modules/<pkg>"' -- package-lock.json`),
-   or the package sits under `devDependencies`, `requirements-dev*.txt` or a poetry dev group.
-   Transitive: find the parent with `git grep -n '"<pkg>"' -- package-lock.json`. Import sites:
+3. **Scope and reach of each dep ref.** Dev-only: in the lockfile the ref names (`<lockfile>`, the path before `#`) the entry
+   `"node_modules/<pkg>"` carries `"dev": true` (`git grep -n -A6 '"node_modules/<pkg>"' -- <lockfile>`),
+   or the package sits under `devDependencies` of the manifest beside it, `requirements-dev*.txt` or a poetry dev group.
+   Transitive: find the parent with `git grep -n '"<pkg>"' -- <lockfile>`. Import sites:
    `git grep -n -E "(require\(|from |import )['\"]<pkg or parent>['\"/]" -- . ":!test" ":!tests" ":!**/*.test.*"`.
    Follow each import site to its entry point (route, upload, webhook, CLI argv, job) and give it
    an exposure class (Ranking).
