@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { getProposal, openStore, propose, runStart } from '../lib/store.mjs';
 import { findQuote, parseRef, verifyRun } from '../lib/verify.mjs';
+import { normalizeAnchor } from '../lib/fingerprint.mjs';
 import { ingestSources } from '../lib/sync.mjs';
 import { execFileSync } from 'node:child_process';
 import { KINDS, candidate, gitRepo, removeDir, tempDir, writeFiles } from './_fixture.mjs';
@@ -25,6 +26,14 @@ test('parseRef reads path and line hints', () => {
   assert.deepEqual(parseRef('src/a.js#L7-L9'), { path: 'src/a.js', line: 7 });
   assert.deepEqual(parseRef('src/a.js#login'), { path: 'src/a.js' });
   assert.deepEqual(parseRef('src\\a.js'), { path: 'src/a.js' });
+  assert.deepEqual(parseRef('src/a.js#L12C3'), { path: 'src/a.js', line: 12 });
+  assert.deepEqual(parseRef('src/a.js#login:5'), { path: 'src/a.js', line: 5 });
+});
+
+test('parseRef and normalizeAnchor agree: #L10nProvider is a symbol, not line 10', () => {
+  assert.deepEqual(parseRef('src/i18n.js#L10nProvider'), { path: 'src/i18n.js' });
+  assert.equal(normalizeAnchor('src/i18n.js#L10nProvider'), 'src/i18n.js#L10nProvider');
+  assert.deepEqual(parseRef('src/cache.js#L2Cache'), { path: 'src/cache.js' });
 });
 
 test('findQuote: whitespace-normalized, near the line or anywhere in the file', () => {
