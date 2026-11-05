@@ -1468,8 +1468,9 @@ export function landPlan(ctx, day, repo) {
 export function repoLand(ctx, day, repo, dry) {
   const s = day.repos?.[repo.name];
   if (!s) throw new Refusal(`${repo.name} was not started today (repo start)`);
-  const openNow = openCycles(ctx.root);
-  if (Object.keys(openNow).length) throw new Refusal(`${describeOpen(openNow)} still open: end each first`);
+  // only this repo's cycle blocks its landing: its worktree is its own, and a shared master rewards landing early
+  const own = openCycles(ctx.root)[repo.name];
+  if (own) throw new Refusal(`${describeOpen({ [repo.name]: own })} still open: end it first`);
   const wt = s.worktree;
   if (!cleanTree(ctx, wt)) throw new Refusal(`${repo.name}: ${wt} has uncommitted changes`);
   const head0 = gitIn(ctx, wt, 'rev-parse', 'HEAD');

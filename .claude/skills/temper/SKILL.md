@@ -48,8 +48,9 @@ scans that the loop starts keep theirs.
 
 ## 2. Day end
 
-1. Finish or abandon every open cycle (`T cycle end --repo <r>` for each). Never leave one open: `day end` and `land`
-   refuse while any repo has one.
+1. Finish or abandon every open cycle (`T cycle end --repo <r>` for each). Never leave one open: `day end` and
+   Dowser's `land` refuse while any repo has one. `land --repo <r>` waits only for that repo's own cycle, so bp can
+   land mid-day (its law is "push verified work" on a shared master) while a Dowser cycle runs.
 2. `T modules bar`, then `T report`, then commit the records.
 3. `T land --dry-run --repo <name>` for each repo, then `T land --repo <name>` (Dowser last). See
    references/landing.md. Then `T repo end --repo <name>` for each started repo.

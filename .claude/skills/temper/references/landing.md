@@ -39,6 +39,9 @@ Production, tags and releases are never part of a landing. The guard denies them
 ## bp: `rebase-push`
 
 - `T repo start --repo bp` makes `temper/<date>` from origin/master, in a worktree under `~/.temper/worktrees/`.
+- `T land --repo bp` refuses only while bp's own cycle is open (another repo's open cycle does not block it, so it
+  can land as soon as a bp cycle is green). Dowser's `land` still waits for every repo, because it switches the
+  checkout that holds all the day records.
 - `T land --repo bp`: fetch, rebase onto origin/master (a conflict aborts the rebase and is red: resolve it in the
   worktree, keeping both sides' intent), then the charter's gates (`npm run check`) and the built-in secret scan of
   `origin/master...HEAD`. The scan flags an env file in the diff (never `.env.example`) and known token shapes in

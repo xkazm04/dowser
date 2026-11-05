@@ -793,6 +793,21 @@ test('cycles per repo: bp begins while Dowser\'s cycle is open (the first versio
   assert.equal(main(['cycle', 'begin', '--target', 'tooling'], w.ctx).out.n, 3);
 });
 
+test('land --repo: only that repo\'s open cycle blocks it; another repo\'s open cycle does not, and Dowser still waits for all', () => {
+  const w = world();
+  twoRepoDay(w);
+  assert.equal(main(['cycle', 'begin', '--target', 'tooling'], w.ctx).code, 0, 'Dowser\'s cycle is open');
+  const wt = JSON.parse(readFileSync(join(w.root, '.temper', 'day.json'), 'utf8')).repos.bp.worktree;
+  put(join(wt, 'a.txt'), 'a\n');
+  g(wt, 'add', 'a.txt'); g(wt, 'commit', '-q', '-m', 'feat: a');
+  const l = main(['land', '--repo', 'bp', '--dry-run'], w.ctx);
+  assert.equal(l.out.decision, 'land', JSON.stringify(l.out));
+  // Dowser's landing switches the checkout that holds every repo's records, so it still waits for all of them
+  assert.match(main(['land', '--dry-run'], w.ctx).out.error, /cycle 1 \(tooling\) in dowser still open/);
+  assert.equal(main(['cycle', 'begin', '--repo', 'bp', '--target', 'area:README.md'], w.ctx).code, 0);
+  assert.match(main(['land', '--repo', 'bp', '--dry-run'], w.ctx).out.error, /in bp still open: end it first/);
+});
+
 test('cycle begin --repo: the target is a focus in the store\'s form (area:<path> in the worktree, goal:<text>), refused clearly otherwise', () => {
   const w = world();
   twoRepoDay(w);
