@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  ARTIFACT_KINDS, ARTIFACT_LIMITS, BANDS, BLASTS, CATEGORIES, COMPUTED_KEYS, CONFIDENCES, FIELD_LIMITS, FLOW_MARKS, EVIDENCE_TYPES, LENSES,
+  ARTIFACT_KINDS, ARTIFACT_LIMITS, BANDS, BLASTS, CATEGORIES, COMPUTED_KEYS, CONFIDENCES, FIELD_LIMITS, FOCUS_RE, FLOW_MARKS, EVIDENCE_TYPES, LENSES,
   MVP_RULES, REASONS, SCHEMA_ID, SCORE_PART_KEYS, SIZES, STATUSES, TRANSITIONS, VERDICTS,
   canMove, decisionProblem, isHttpsUrl, validateCandidate,
 } from '../lib/model.mjs';
@@ -139,6 +139,31 @@ test('the JSON Schema twin carries the same enums and caps as model.mjs', () => 
     assert.equal(at.rationale.$ref, '#/$defs/rationale');
     assert.equal(at.confidence_why.$ref, '#/$defs/confidenceWhy');
   }
+});
+
+test('the schema twin and validateCandidate agree on patterns, minLength and field dependencies', () => {
+  const schema = JSON.parse(readFileSync(new URL('../../schema/dowser-proposal-2.schema.json', import.meta.url), 'utf8'));
+  const d = schema.$defs;
+  // patterns and minLength the validator must apply too
+  assert.equal(d.provenance.properties.focus.pattern, FOCUS_RE.source);
+  for (const k of ['lens_version', 'model', 'harness', 'run_id']) assert.equal(d.provenance.properties[k].minLength, 1, k);
+  assert.equal(d.evidence.properties.quote.minLength, 1);
+  assert.equal(d.evidence.properties.ref.minLength, 1);
+  const refused = (/** @type {Record<string, unknown>} */ over) => {
+    const v = validateCandidate(candidate(over));
+    assert.equal(v.ok, false, JSON.stringify(over));
+    return /** @type {{why: string}} */ (v).why;
+  };
+  assert.match(refused({ provenance: { lens_version: '1', focus: 'anything' } }), /^provenance\.focus:/);
+  assert.equal(validateCandidate(candidate({ provenance: { lens_version: '1', focus: 'area:src/auth' } })).ok, true);
+  assert.match(refused({ evidence: [{ type: 'code', ref: 'src/auth.js:2', quote: 'x' }, { type: 'ticket', ref: 'SHOP-1', quote: '' }] }), /^evidence\[1\]\.quote:/);
+  // field dependencies: in the schema's allOf (record and candidate) and in the validator
+  /** @param {any[]} allOf */
+  const deps = (allOf) => allOf.filter((x) => x.if.properties === undefined).map((x) => `${x.if.required[0]}->${x.then.required[0]}`);
+  assert.ok(deps(schema.allOf).includes('predicted_why->predicted_verdict'));
+  assert.deepEqual(deps(d.candidate.allOf), ['impact->impact_why', 'predicted_why->predicted_verdict']);
+  assert.match(refused({ predicted_why: 'because' }), /^predicted_why:/);
+  assert.match(refused({ impact: 5 }), /^impact_why:/);
 });
 
 test('field caps: a value at the cap passes, one char or item over is refused with the field named', () => {
