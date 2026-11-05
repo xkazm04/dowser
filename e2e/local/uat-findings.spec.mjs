@@ -11,7 +11,6 @@ const at = (/** @type {string} */ hash) => `${needEnv('E2E_LOCAL_URL')}#${hash}`
 
 // The fixture has its own form (uat-states.spec.mjs). The real core answers `forbidden` with its own text, not the
 // fixture's `bad-input`, so a fix keyed on the fixture's error alone would still fail here.
-// @covers route:inbox resolver:inbox.list
 test.fixme('DOW-11: a deep link to a ref that does not exist says so, with Close and no Retry', async ({ page }) => {
   await page.goto(at('inbox&ref=DW-999'));
   const dialog = page.getByRole('dialog');
@@ -24,7 +23,6 @@ test.fixme('DOW-11: a deep link to a ref that does not exist says so, with Close
   await expect.soft(dialog, 'Close closes it').toBeHidden();
 });
 
-// @covers route:reflect resolver:reflect.data
 test.fixme('DOW-14: the Scan retro of a push with no repeats says every proposal was new', async ({ page }) => {
   await page.goto(at('reflect'));
   await page.getByRole('combobox', { name: 'Inbox' }).selectOption(E2E_INBOX);
@@ -39,7 +37,6 @@ test.fixme('DOW-14: the Scan retro of a push with no repeats says every proposal
 test.describe('a map cell deep link at 1280 x 900', () => {
   test.use({ viewport: { width: 1280, height: 900 } });
 
-  // @covers route:map resolver:map.data route:inbox
   test.fixme('DOW-15: the filtered inbox fits the window, with the help button on screen', async ({ page }) => {
     await page.goto(at('map'));
     await page.getByRole('combobox', { name: 'Inbox' }).selectOption(E2E_INBOX);
