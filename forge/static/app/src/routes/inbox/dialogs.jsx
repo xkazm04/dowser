@@ -5,6 +5,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { call } from '../../api.js';
 import { allPages } from './triage.js';
+import { COMMIT_MS } from '../../components/useCommitWindow.js';
 import { Button, Dialog, SectionMessage, Spinner } from '../../components/ui.jsx';
 import { DW_REF_RE, JIRA_KEY_RE, REASONS, issuePreview, plural } from '../../components/labels.js';
 import { Markdown } from '../../components/Markdown.jsx';
@@ -277,7 +278,7 @@ export function RejectDialog({ cards, onClose, onSubmit }) {
         <textarea id="dw-reject-note" className="dw-textarea" value={note} onChange={(e) => setNote(e.target.value)} aria-invalid={noteMissing || undefined} required={reason === 'other'} />
         {noteMissing && <span className="dw-subtlest">A note is required for Other.</span>}
       </div>
-      <p className="dw-subtlest">The reason teaches the next scan what to leave out. You get 6 seconds to undo.</p>
+      <p className="dw-subtlest">The reason teaches the next scan what to leave out. You get {COMMIT_MS / 1000} seconds to undo, more while the notice is hovered or focused.</p>
     </Dialog>
   );
 }
@@ -315,7 +316,11 @@ export function SnoozeStep({ cardRef, label = cardRef, withNote = true, onSubmit
     <form
       className="dw-step" aria-label={`Snooze ${label}`}
       onSubmit={(e) => { e.preventDefault(); submit(); }}
-      onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onCancel(); } }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') { e.stopPropagation(); onCancel(); return; }
+        // Ctrl/Cmd+Enter confirms here too, from any control of the step, as it does in every dialog
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); e.stopPropagation(); e.currentTarget.requestSubmit(); }
+      }}
     >
       {withNote && <label htmlFor={id}>Revisit when / why not now? (optional)</label>}
       {withNote && <input id={id} className="dw-input" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} autoComplete="off" autoFocus placeholder="e.g. after the checkout rewrite" />}

@@ -51,7 +51,7 @@ const KEYS = [
   ['x', 'Check or uncheck the proposal for a bulk action'],
   ['a', 'Accept; then Ctrl+Enter creates the issue'],
   ['r', 'Reject (all checked, when some are checked); 1 to 6 picks the reason, Ctrl+Enter confirms'],
-  ['s', 'Snooze, with an optional note and Until date, Enter to confirm (all checked, when some are checked: one date, no note)'],
+  ['s', 'Snooze, with an optional note and Until date; Enter or Ctrl+Enter confirms (all checked, when some are checked: one date, no note)'],
   ['m', 'Merge'],
   ['u', 'Undo the last snooze or reject while its notice is showing'],
   ['?', 'Show this help'],
