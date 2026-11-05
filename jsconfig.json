@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["skill/**/*.mjs", "tools/**/*.mjs", "e2e/**/*.mjs", "playwright.config.mjs"]
+  "include": ["skill/**/*.mjs", "tools/**/*.mjs", "e2e/**/*.mjs", "playwright.config.mjs", ".claude/skills/temper/scripts/*.mjs"]
 }
