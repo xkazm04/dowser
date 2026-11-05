@@ -73,8 +73,13 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
  "verdicts": [{"ref": "DW-50", "verdict": "reject", "reason": "duplicate", "inbox": "dowser-temper", "recorded": "local"}],
  "built": [{"ref": "DW-48", "size": "M", "slice": "1/2", "commits": ["abc1234"], "specs": ["e2e/fixture/x.spec.mjs"]}],
  "uat": {"pass": 40, "fail": 0}, "findings": ["DOW-12"], "outcomes": [{"ref": "DW-40", "rating": "right", "basis": "specs green on local; no finding"}],
- "directions": [], "parked": [{"item": "DW-49", "why": "needs the operator's call on scope"}], "notes": "..."}
+ "directions": [], "parked": [{"item": "DW-49", "why": "needs the operator's call on scope"}], "notes": "...",
+ "skill_issues": [{"where": "temper.mjs cycleEnd", "what": "...", "evidence": "file:line or a run's output", "fix": "..."}]}
 ```
+
+`skill_issues` is what the runner learned about the loop itself (this skill, its scripts, the brief). Each entry
+has exactly `where`, `what`, `evidence` and `fix`, each a non-empty string. `cycle end` stores them in the row's
+`self_reported`, and `report` lists them in its "Skill issues" section, grouped by `where`, newest first.
 
 Everything in it is self-reported. `cycle end` adds what it verifies: the gates (it runs typecheck and test in
 Dowser, or the repo's land gates elsewhere) and the e2e results. The row is green only when both are green.

@@ -6,7 +6,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -282,6 +282,38 @@ test('cycle end: local-only verdicts are recorded as delegate:temper with the ca
   // directions only for a module at the bar
   put(file, { target: 'tooling', directions: [{ id: 'x', module: 'tooling', title: 't', evidence: 'e', value: 'v', size: 'S', first_slice: 'f' }] });
   assert.match(main(['cycle', 'end', '--file', file], w.ctx).out.error, /does not meet the bar/);
+});
+
+test('cycle end: the runner\'s skill_issues are checked, stored in the row, and the report groups them by where, newest first', () => {
+  const w = world();
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  const file = join(w.work, 'c.json');
+  const issue = (/** @type {string} */ where, /** @type {string} */ what) => ({ where, what, evidence: `ev ${what}`, fix: `fix ${what}` });
+  main(['cycle', 'begin', '--target', 'tooling'], w.ctx);
+  put(file, { target: 'tooling', skill_issues: [issue('temper.mjs CYCLE_KEYS', 'old one'), issue('cycle.md section 6', 'cover runs where')] });
+  const a = main(['cycle', 'end', '--file', file], w.ctx);
+  assert.notEqual(a.code, 2, JSON.stringify(a.out));
+  assert.deepEqual(a.out.self_reported.skill_issues.map((/** @type {any} */ x) => x.where), ['temper.mjs CYCLE_KEYS', 'cycle.md section 6']);
+  w.at(Date.now() + 5000);
+  main(['cycle', 'begin', '--target', 'tooling'], w.ctx);
+  put(file, { target: 'tooling', skill_issues: [issue('temper.mjs CYCLE_KEYS', 'new one')] });
+  main(['cycle', 'end', '--file', file], w.ctx);
+  const md = readFileSync(main(['report'], w.ctx).out.written, 'utf8');
+  const sec = md.slice(md.indexOf('## Skill issues'));
+  assert.ok(sec.indexOf('### temper.mjs CYCLE_KEYS') < sec.indexOf('### cycle.md section 6'), 'the group with the newest issue first');
+  assert.ok(sec.indexOf('c2 (dowser): new one.') < sec.indexOf('c1 (dowser): old one.'), 'newest first within a group');
+  assert.match(sec, /- c1 \(dowser\): cover runs where\. Evidence: ev cover runs where\. Fix: fix cover runs where\./);
+  // the shape is checked: a missing field or an unknown key is a usage error, and nothing is recorded
+  for (const bad of [[{ where: 'x', what: 'y', evidence: 'z' }], [{ ...issue('x', 'y'), severity: 'high' }], [{ ...issue('x', 'y'), fix: ' ' }], 'none']) {
+    main(['cycle', 'begin', '--target', 'tooling'], w.ctx);
+    put(file, { target: 'tooling', skill_issues: bad });
+    const r = main(['cycle', 'end', '--file', file], w.ctx);
+    assert.equal(r.code, 2, JSON.stringify(bad));
+    assert.match(r.out.error, /skill_issues/);
+    rmSync(join(w.root, '.temper', 'cycle-dowser.json'));
+  }
+  assert.match(renderReport({ date: 'd', commits: [], landings: {}, cycles: [], scans: [], directions: [], questions: [], later: [] }), /## Skill issues\n\nNone\./);
 });
 
 test('cycle end: appends the quality-snapshot row itself when none was written since the cycle began, so the instrument fills', () => {

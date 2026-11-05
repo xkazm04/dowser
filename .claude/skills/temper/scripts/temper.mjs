@@ -19,7 +19,7 @@
 //   proposals resolve --id <p> --commit <sha> [--note t]   a landed fix of a lens-scan proposal, for the bar
 //                                          (docs/evals/temper/resolved.json; the lens-scan store is never written)
 //   clock [--rate-limited --until <iso>]   {elapsed_min, remaining_min, ends_at, drain, stop}
-//   report [--date YYYY-MM-DD]             writes docs/evals/temper/<date>.md
+//   report [--date YYYY-MM-DD]             writes docs/evals/temper/<date>.md (with the runners' skill issues, by where)
 //   land [--repo <name>] [--dry-run]       the repo's own landing law (charter repos[].landing):
 //                                          loop-ff (Dowser): ff master, push origin master, deploy Forge development
 //                                            when green; red: reset loop/<date> to the last green commit
@@ -63,7 +63,9 @@ export const QUALITY_KEYS = ['long_functions', 'dup_windows', 'lib_cycles', 'tod
 const PARTS = /** @type {const} */ (['uat', 'proposals', 'scan_yield', 'quality', 'coverage']);
 const CHARTER_KEYS = ['repos', 'until', 'out_of_bounds', 'limits', 'delegation', 'live'];
 const REPO_KEYS = ['name', 'path', 'inbox_key', 'build', 'landing', 'gates', 'ledger', 'caps'];
-const CYCLE_KEYS = ['target', 'repo', 'scan', 'other_scans', 'verdicts', 'built', 'uat', 'findings', 'outcomes', 'directions', 'parked', 'notes'];
+const CYCLE_KEYS = ['target', 'repo', 'scan', 'other_scans', 'verdicts', 'built', 'uat', 'findings', 'outcomes', 'directions', 'parked', 'notes', 'skill_issues'];
+/** What the cycle runner learned about the loop itself: each issue names where (a file, step or brief), what, the evidence and the fix. */
+const SKILL_ISSUE_KEYS = ['where', 'what', 'evidence', 'fix'];
 const VERDICT_KINDS = ['accept', 'reject', 'snooze', 'merge'];
 const VERDICT_KEYS = ['ref', 'verdict', 'reason', 'note', 'into', 'until', 'inbox', 'recorded'];
 /** Each landing kind's defaults: the branch, and the refspecs a push may target (guard.mjs reads the same). */
@@ -689,6 +691,21 @@ export function triageLimits(verdicts, earlier, caps) {
 const verdictsToday = (root, date, inbox) => cycleRows(root, date).flatMap((r) => r.self_reported?.verdicts ?? []).filter((v) => v.inbox === inbox);
 
 /**
+ * The runner's skill issues: a list of {where, what, evidence, fix}, each a non-empty string, no other key.
+ * @param {unknown} arr
+ */
+export function checkSkillIssues(arr) {
+  const shape = `skill_issues is a list of {${SKILL_ISSUE_KEYS.join(', ')}}, each a non-empty string`;
+  if (!Array.isArray(arr)) throw new UsageError(shape);
+  arr.forEach((x, i) => {
+    if (!x || typeof x !== 'object' || Array.isArray(x)) throw new UsageError(`skill_issues[${i}] is an object: ${shape}`);
+    for (const k of Object.keys(x)) if (!SKILL_ISSUE_KEYS.includes(k)) throw new UsageError(`unknown key skill_issues[${i}].${k} (${SKILL_ISSUE_KEYS.join(', ')})`);
+    for (const k of SKILL_ISSUE_KEYS) if (typeof x[k] !== 'string' || !x[k].trim()) throw new UsageError(`skill_issues[${i}] needs ${k}: ${shape}`);
+  });
+  return arr;
+}
+
+/**
  * Checks the director's cycle file. @param {any} raw @param {{target: string, metModules: string[], proposedPerModule: Record<string, number>}} o
  */
 export function validateCycleFile(raw, o) {
@@ -699,6 +716,7 @@ export function validateCycleFile(raw, o) {
   for (const b of raw.built ?? []) if (typeof b?.ref !== 'string' || !['XS', 'S', 'M', 'L', 'XL'].includes(b.size)) throw new UsageError('each built item is {ref, size: XS..XL, slice?, commits?, specs?}');
   for (const x of raw.outcomes ?? []) if (typeof x?.ref !== 'string' || !['right', 'partly', 'wrong'].includes(x.rating) || typeof x.basis !== 'string') throw new UsageError('each outcome is {ref, rating: right|partly|wrong, basis}');
   for (const x of raw.parked ?? []) if (typeof x?.item !== 'string' || typeof x.why !== 'string') throw new UsageError('each parked entry is {item, why}');
+  if (raw.skill_issues !== undefined) checkSkillIssues(raw.skill_issues);
   const per = { ...o.proposedPerModule };
   for (const d of raw.directions ?? []) {
     for (const k of ['id', 'module', 'title', 'evidence', 'value', 'size', 'first_slice']) if (typeof d?.[k] !== 'string' || !d[k].trim()) throw new UsageError(`each direction has ${k}`);
@@ -1077,7 +1095,36 @@ export function renderReport(d) {
   const parked = d.cycles.flatMap((r) => r.self_reported?.parked ?? []);
   L.push('', '## Parked', '');
   if (parked.length) for (const p of parked) L.push(`- ${p.item}: ${p.why}`); else L.push('None.');
+  L.push('', '## Skill issues', '');
+  const groups = skillIssueGroups(d.cycles);
+  if (groups.length) {
+    L.push('What the cycle runners found wrong with the loop itself (self-reported), by where, newest first.');
+    for (const [where, items] of groups) {
+      L.push('', `### ${where}`, '');
+      const end = (/** @type {string} */ s) => s.trim().replace(/([^.!?])$/, '$1.');
+      for (const x of items) L.push(`- c${x.n} (${x.repo}): ${end(x.what)} Evidence: ${end(x.evidence)} Fix: ${end(x.fix)}`);
+    }
+  } else L.push('None.');
   return `${L.join('\n')}\n`;
+}
+
+/**
+ * The cycles' skill issues grouped by `where`: the newest cycle's first, both across and within the groups.
+ * @param {any[]} cycles @returns {[string, {n: number, repo: string, what: string, evidence: string, fix: string}[]][]}
+ */
+export function skillIssueGroups(cycles) {
+  const newest = [...cycles].sort((a, b) => String(b.ended_at ?? '').localeCompare(String(a.ended_at ?? '')) || (b.n ?? 0) - (a.n ?? 0));
+  /** @type {Map<string, {n: number, repo: string, what: string, evidence: string, fix: string}[]>} */
+  const by = new Map();
+  for (const r of newest) {
+    for (const x of r.self_reported?.skill_issues ?? []) {
+      if (!x || typeof x.where !== 'string') continue;
+      const key = x.where.trim();
+      if (!by.has(key)) by.set(key, []);
+      by.get(key)?.push({ n: r.n, repo: r.repo ?? 'dowser', what: x.what, evidence: x.evidence, fix: x.fix });
+    }
+  }
+  return [...by.entries()];
 }
 
 /**
