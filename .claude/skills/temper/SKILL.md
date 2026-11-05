@@ -38,7 +38,11 @@ scans that the loop starts keep theirs.
 2. `T modules bar`. Pick the target: an approved `direction:<id>`, else the bar's `next` module. A build in another
    repo is `--repo <name> --target area:<path>` (or `goal:<text>`; no space after the colon).
 3. `T cycle begin --target <t> [--repo <r>]`, then run the cycle as references/cycle.md says. Its steps are scan,
-   triage, build, simulated UAT and update.
+   triage, build, simulated UAT and update. Launch one runner subagent for them with references/runner.md (the
+   brief) and the `runner` block that `cycle begin` printed: your launch message is a copy of that block (the brief's
+   path, repo, path, inbox, n, target, focus, the scan command with its `--ref`, the caps used and left today, the
+   work tree and branch, the cycle file `~/.temper/runs/cycle-<n>-<repo>.json`). For Dowser, create the work tree
+   with its `work.create` first. The runner writes the cycle file; you merge and end the cycle.
    Each repo has its own open cycle (`.temper/cycle-<repo>.json`), so a bp cycle can run beside a Dowser one. Cycle
    numbers stay unique across repos for the day.
 4. Merge the runner's branch into the day branch first: `cycle end` then runs the gates and e2e itself on the merged
@@ -72,5 +76,5 @@ scans that the loop starts keep theirs.
   and accepts only for cards you checked against the code and that are in direction.
 - Scans are read-only. Only the charter's `build: true` repos get builds, and each lands under its own law.
 
-References: charter.md (the dialogs), cycle.md (one cycle), bar.md (the stability bar), landing.md (land and
+References: charter.md (the dialogs), cycle.md (one cycle), runner.md (the cycle runner's brief), bar.md (the stability bar), landing.md (land and
 rollback), expansion.md (directions and new lenses), long-run.md (context, rate limits, the clock, resume).

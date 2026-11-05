@@ -12,9 +12,9 @@ These are operator records, not Dowser runner surfaces, so they have no guided-m
 | file | written by | what |
 |---|---|---|
 | `<date>.jsonl` | `temper.mjs cycle end`, `cycle reverify` | one row per cycle, and a reverify row per re-check (below) |
-| `<date>.md` | `temper.mjs report` | the morning report: Needs you (at most 3 questions), commits and landings, UAT verified vs self-reported, scans and costs, verdicts (live and local-only apart), the bar per module, direction proposals, parked items |
+| `<date>.md` | `temper.mjs report` | the morning report: Needs you (at most 3 questions), commits and landings, UAT verified vs self-reported, scans and costs, verdicts (live and local-only apart, and the cards carried to tomorrow), the bar per module, direction proposals, parked items |
 | `modules.json` | `temper.mjs modules bar` | the stability bar per module, `next` (the least-stable), and the pending direction proposals |
-| `quality.jsonl` | `tools/quality-snapshot.mjs --append` | one structural snapshot per cycle; the bar's quality part compares the last two |
+| `quality.jsonl` | `tools/quality-snapshot.mjs --append` | one structural snapshot per cycle; the bar's quality part compares the last two. `tests`, `tests_fail` and `tests_status` are the skill suite, `forge_tests`, `forge_tests_fail` and `forge_tests_status` the Forge suite; a row without the `forge_` fields predates them (not measured) |
 | `resolved.json` | `temper.mjs proposals resolve` | lens-scan proposals whose fix landed, `{commit, subject, resolved_at, by, status_then, tier, note?}` per id |
 
 The working state is not committed. It lives in `<dowser>/.temper/` (gitignored): `charter.json`, `day.json`,
@@ -69,7 +69,10 @@ and appends a row of its own. The cycle row is never rewritten.
   verdict is kept here only, and the live inbox keeps its cards undecided. Both obey a floor of 20% reject or snooze
   per inbox per day (today's earlier verdicts plus this cycle's; a card decided again counts once, at its newest
   verdict; a merge is neither accept nor reject and stays out of the share) and the charter's daily caps per inbox (`repos[].caps`, default 10 accepts and 30 rejects; snoozes and
-  merges count against rejects). Delegate verdicts teach Dowser's memory but never count toward trust.
+  merges count against rejects). A snooze with `deferred: "cap"` (real, but the day's accept cap is reached) counts
+  apart as `carried` (`quota.carried`): out of the floor and the rejects cap, valid only at the accept cap, listed in
+  the report as "carried to tomorrow" and asked about first the next morning. Delegate verdicts teach Dowser's memory
+  but never count toward trust.
 - **The bar** is in `.claude/skills/temper/references/bar.md`. A part counts only when it is verified.
 
 ### Landing authority

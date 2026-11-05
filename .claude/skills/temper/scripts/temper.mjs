@@ -13,7 +13,8 @@
 //   repo paths --repo <name> --add a,b   widen a ledger repo's registered paths (active-runs check, then the same
 //                                          entry completed and registered again with every path; a conflict refuses)
 //   repo end --repo <name> [--status t]
-//   cycle begin --target <module>|direction:<id> | --repo <name> --target <focus>
+//   cycle begin --target <module>|direction:<id> | --repo <name> --target <focus>   prints, with the rest, the `runner`
+//                                          block: the launch inputs of the cycle runner (references/runner.md)
 //   cycle end --file <cycle.json> [--repo <r>]   npm ci where a lockfile is newer than its node_modules (root, forge,
 //                                          forge/static/app), then the gates, reads the e2e results, appends the row; the open
 //                                          cycle is the --repo's, else the file's repo's, else the only one open
@@ -74,7 +75,7 @@ const CYCLE_KEYS = ['target', 'repo', 'scan', 'other_scans', 'verdicts', 'built'
 /** What the cycle runner learned about the loop itself: each issue names where (a file, step or brief), what, the evidence and the fix. */
 const SKILL_ISSUE_KEYS = ['where', 'what', 'evidence', 'fix'];
 const VERDICT_KINDS = ['accept', 'reject', 'snooze', 'merge'];
-const VERDICT_KEYS = ['ref', 'verdict', 'reason', 'note', 'into', 'until', 'inbox', 'recorded'];
+const VERDICT_KEYS = ['ref', 'verdict', 'reason', 'note', 'into', 'until', 'inbox', 'recorded', 'deferred'];
 /** Each landing kind's defaults: the branch, and the refspecs a push may target (guard.mjs reads the same). */
 export const LANDINGS = {
   'loop-ff': { branch: 'loop/<date>', push: ['master', 'loop/*'] },
@@ -717,11 +718,49 @@ function cycleBegin(ctx, f) {
     const ref = dayRef(name);
     return `node tools/temper-scan.mjs --repo "${path}" --project-key ${inbox}${typeof ref === 'string' ? ` --ref ${ref}` : ''}${typeof focus === 'string' ? ` --focus "${focus}"` : ''} --budget-usd 8`;
   };
+  const command = scan(repo.name, repo.path, repo.inbox_key, t.focus);
   return {
     ...cycle, ...t, ...(repo.name === 'dowser' ? { branch: day.branch } : {}), clock: c,
-    scan: { [repo.name]: scan(repo.name, repo.path, repo.inbox_key, t.focus),
+    scan: { [repo.name]: command,
       others_due: otherReposDue(ctx, charter, day.date).filter((/** @type {any} */ r) => r.name !== repo.name).map((/** @type {any} */ r) => ({ ...r, command: scan(r.name, r.path, r.inbox_key, undefined) })) },
     triage: { min_reject_share: REJECT_SHARE, caps: repo.caps, check: `temper.mjs triage check --verdicts <file> --inbox ${repo.inbox_key}`, out_of_bounds: charter.out_of_bounds ?? [] },
+    runner: runnerBlock(ctx, { charter, day, repo, cycle, focus: t.focus, command, ...(Array.isArray(t.item_gates) ? { itemGates: t.item_gates } : {}) }),
+  };
+}
+
+/** The repo law files a runner reads, those present. */
+const LAW_FILES = ['CLAUDE.md', 'AGENTS.md', '.claude/CLAUDE.md'];
+
+/**
+ * The cycle runner's launch inputs (references/runner.md): the director's launch message is a copy of this block.
+ * Dowser builds in a worktree of its own off the day branch (temper/c<n>), which the director merges; another repo
+ * builds in its day worktree from repo start, on its temper/<date> branch.
+ * @param {Ctx} ctx
+ * @param {{charter: any, day: any, repo: Repo, cycle: {n: number, date: string, target: string}, focus: unknown, command: string, itemGates?: unknown}} o
+ */
+export function runnerBlock(ctx, { charter, day, repo, cycle, focus, command, itemGates }) {
+  const { n, date, target } = cycle;
+  const isDowser = repo.name === 'dowser';
+  const today = triageLimits([], verdictsToday(ctx.root, date, repo.inbox_key), repo.caps).today;
+  const yesterday = localDate(new Date(Date.parse(`${date}T12:00:00`) - 86400000));
+  const carried = carriedOf(cycleRows(ctx.root, yesterday)).filter((v) => v.inbox === repo.inbox_key)
+    .map((v) => ({ ref: v.ref, ...(typeof v.note === 'string' ? { note: v.note } : {}) }));
+  let work;
+  if (isDowser) {
+    const worktree = join(ctx.home, 'worktrees', `dowser-c${n}`);
+    work = { worktree, branch: `temper/c${n}`, from: day.branch, create: `git worktree add -b temper/c${n} "${worktree}" ${day.branch}`,
+      reaches_day_branch: `the director merges temper/c${n} into ${day.branch}; cycle end verifies the merged tree` };
+  } else {
+    const r = day.repos?.[repo.name] ?? {};
+    work = { worktree: r.worktree, branch: r.branch, from: r.branch, reaches_day_branch: `commits in the worktree are on ${r.branch}; the director lands it under the repo's law` };
+  }
+  return {
+    brief: join(SKILL_DIR, 'references', 'runner.md'), loop_root: ctx.root,
+    repo: repo.name, path: repo.path, inbox: repo.inbox_key, n, target, ...(typeof focus === 'string' ? { focus } : {}), scan: command,
+    caps: { ...repo.caps, used: today, left: { accepts: Math.max(0, repo.caps.accepts_per_day - today.accepts), rejects: Math.max(0, repo.caps.rejects_per_day - today.rejects) } },
+    carried, work, ...(Array.isArray(itemGates) ? { item_gates: itemGates } : {}), out_of_bounds: charter.out_of_bounds ?? [],
+    laws: LAW_FILES.map((f) => join(repo.path, f)).filter((f) => existsSync(f)),
+    cycle_file: join(ctx.home, 'runs', `cycle-${n}-${repo.name}.json`),
   };
 }
 
@@ -863,7 +902,7 @@ export function rejectShare(c) {
  * @param {unknown} arr @returns {any[]}
  */
 export function checkVerdicts(arr) {
-  if (!Array.isArray(arr)) throw new UsageError('verdicts is a list of {ref, verdict, reason?, note?, into?, until?, inbox, recorded: live|local}');
+  if (!Array.isArray(arr)) throw new UsageError('verdicts is a list of {ref, verdict, reason?, note?, into?, until?, inbox, recorded: live|local, deferred?: "cap"}');
   return arr.map((v, i) => {
     if (!v || typeof v !== 'object') throw new UsageError(`verdicts[${i}] is an object`);
     for (const k of Object.keys(v)) if (!VERDICT_KEYS.includes(k)) throw new UsageError(`unknown key verdicts[${i}].${k}`);
@@ -872,15 +911,22 @@ export function checkVerdicts(arr) {
     if (v.verdict === 'merge' && typeof v.into !== 'string') throw new UsageError(`${v.ref}: a merge needs into`);
     if (!['live', 'local'].includes(v.recorded)) throw new UsageError(`${v.ref}: recorded is live (temper-verdicts recorded it) or local (no valid delegation)`);
     if (typeof v.inbox !== 'string') throw new UsageError(`${v.ref}: inbox is the inbox key`);
+    if (v.deferred !== undefined && (v.deferred !== 'cap' || v.verdict !== 'snooze')) throw new UsageError(`${v.ref}: deferred is "cap", and only on a snooze (snoozed only because the day's accept cap is reached)`);
     return { ...v, decided_by: DECIDER };
   });
 }
 
-/** @param {any[]} vs */
+/** A snooze made only because the day's accept cap is reached: carried to tomorrow, not a triage judgement. @param {any} v */
+export const isCarried = (v) => v?.verdict === 'snooze' && v.deferred === 'cap';
+
+/**
+ * Verdicts per kind. A cap-deferred snooze counts as `carried`, not `snooze`: it lifts no reject-or-snooze share and
+ * uses none of the rejects cap (rejectShare and triageLimits never read `carried`). @param {any[]} vs
+ */
 const countKinds = (vs) => {
   /** @type {Record<string, number>} */
   const c = {};
-  for (const v of vs) c[v.verdict] = (c[v.verdict] ?? 0) + 1;
+  for (const v of vs) { const k = isCarried(v) ? 'carried' : v.verdict; c[k] = (c[k] ?? 0) + 1; }
   return c;
 };
 
@@ -902,7 +948,11 @@ export function triageLimits(verdicts, earlier, caps) {
   if (!q.ok) why.push(`only ${Math.round((q.share ?? 0) * 100)}% of the ${q.decided} cards decided today in this inbox are rejected or snoozed; the floor is ${REJECT_SHARE * 100}% per day`);
   if (accepts > caps.accepts_per_day) why.push(`${accepts} accepts today, over the cap of ${caps.accepts_per_day}`);
   if (rejects > caps.rejects_per_day) why.push(`${rejects} rejects, snoozes and merges today, over the cap of ${caps.rejects_per_day}`);
-  return { counts: c, ...q, floor_ok: q.ok, cycle: rejectShare(c), today: { accepts, rejects }, caps, ok: !why.length, why };
+  // a snooze is carried to tomorrow only when the cap is what stops the accept: at the cap, never under it
+  const carried = c.carried ?? 0;
+  const deferral_ok = !carried || accepts >= caps.accepts_per_day;
+  if (!deferral_ok) why.push(`${carried} snoozes say deferred: "cap", but only ${accepts} of ${caps.accepts_per_day} accepts are used today: accept them, or snooze them for a real reason`);
+  return { counts: c, ...q, floor_ok: q.ok, cycle: rejectShare(c), today: { accepts, rejects, carried: all.carried ?? 0 }, caps, deferral_ok, ok: !why.length, why };
 }
 
 /** Today's earlier verdicts of an inbox, from the cycle rows. @param {string} root @param {string} date @param {string} inbox */
@@ -1058,7 +1108,7 @@ function cycleEnd(ctx, f) {
     const r = (charter.repos ?? []).find((/** @type {Repo} */ x) => x.inbox_key === inbox);
     if (!r) throw new UsageError(`verdict inbox ${inbox} is not in the charter`);
     limits[inbox] = triageLimits(verdicts.filter((v) => v.inbox === inbox), verdictsToday(ctx.root, open.date, inbox), r.caps);
-    if (limits[inbox].today.accepts > r.caps.accepts_per_day || limits[inbox].today.rejects > r.caps.rejects_per_day) throw new Refusal(`${inbox}: ${limits[inbox].why.join('; ')}`);
+    if (limits[inbox].today.accepts > r.caps.accepts_per_day || limits[inbox].today.rejects > r.caps.rejects_per_day || !limits[inbox].deferral_ok) throw new Refusal(`${inbox}: ${limits[inbox].why.join('; ')}`);
   }
   const repo = repoOf(charter, open.repo ?? 'dowser');
   const isDowser = repo.name === 'dowser';
@@ -1067,7 +1117,8 @@ function cycleEnd(ctx, f) {
   const v = verifyTree(ctx, repo, dir, Date.parse(open.begun_at));
   const quality = isDowser ? qualityRowOf(ctx, open) : undefined;
   // the cycle's own share for the record; ok is the day's floor in every inbox it decided in
-  const quota = { ...rejectShare(countKinds(verdicts)), ok: Object.values(limits).every((l) => l.floor_ok),
+  const carried = verdicts.filter(isCarried).length;
+  const quota = { ...rejectShare(countKinds(verdicts)), ...(carried ? { carried } : {}), ok: Object.values(limits).every((l) => l.floor_ok),
     ...(Object.keys(limits).length ? { day: Object.fromEntries(Object.entries(limits).map(([k, l]) => [k, { decided: l.decided, ...(l.share !== undefined ? { share: l.share } : {}), ok: l.floor_ok }])) } : {}) };
   const { target: _t, repo: _r, ...claims } = raw;
   const green = v.green;
@@ -1401,12 +1452,17 @@ export function renderReport(d) {
   const vs = d.cycles.flatMap((r) => r.self_reported?.verdicts ?? []);
   L.push('', '## Verdicts (decided by delegate:temper)', '');
   if (vs.length) {
-    L.push('| inbox | recorded | accept | reject | snooze | merge |', '|---|---|---|---|---|---|');
+    L.push('| inbox | recorded | accept | reject | snooze | merge | carried |', '|---|---|---|---|---|---|---|');
     const keys = [...new Set(vs.map((v) => `${v.inbox}|${v.recorded}`))].sort();
     for (const k of keys) {
       const [inbox, rec] = k.split('|');
       const c = countKinds(vs.filter((v) => v.inbox === inbox && v.recorded === rec));
-      L.push(`| ${inbox} | ${rec === 'local' ? 'local only (no delegation; the live inbox keeps them undecided)' : 'live (Forge recorded)'} | ${VERDICT_KINDS.map((x) => c[x] ?? 0).join(' | ')} |`);
+      L.push(`| ${inbox} | ${rec === 'local' ? 'local only (no delegation; the live inbox keeps them undecided)' : 'live (Forge recorded)'} | ${[...VERDICT_KINDS, 'carried'].map((x) => c[x] ?? 0).join(' | ')} |`);
+    }
+    const carried = carriedOf(d.cycles);
+    if (carried.length) {
+      L.push('', `Carried to tomorrow (snoozed only because the day's accept cap was reached; outside the reject-or-snooze floor and the rejects cap): ${carried.length}.`);
+      for (const v of carried) L.push(`- ${v.ref} (${v.inbox})${typeof v.note === 'string' && v.note.trim() ? `: ${v.note.trim()}` : ''}`);
     }
     const local = vs.filter((v) => v.recorded === 'local').length;
     L.push('', `Live ${vs.length - local}, local only ${local}. Live counts are what temper-verdicts answered; local ones are the cycle files' (self-reported).`);
@@ -1457,11 +1513,49 @@ export function skillIssueGroups(cycles) {
 }
 
 /**
- * The start questions, in order: delegation, directions, live sign-in, parked. At most three are asked.
+ * The cards carried to tomorrow: those whose newest verdict of the day (per inbox) is a cap-deferred snooze.
+ * @param {any[]} cycles @returns {any[]}
+ */
+export function carriedOf(cycles) {
+  /** @type {Map<string, any>} */
+  const last = new Map();
+  for (const v of cycles.flatMap((r) => r.self_reported?.verdicts ?? [])) last.set(`${v.inbox}|${v.ref}`, v);
+  return [...last.values()].filter(isCarried);
+}
+
+/**
+ * One question per inbox whose accepts reached the day's cap: the numbers, and a request for real caps in the charter
+ * (the charter's caps default to DEFAULT_CAPS when the day-1 dialog set none). Accepts count every decision, as the
+ * caps do. @param {any} charter @param {any[]} cycles @returns {string[]}
+ */
+export function capQuestions(charter, cycles) {
+  const vs = cycles.flatMap((r) => r.self_reported?.verdicts ?? []);
+  return (charter?.repos ?? []).flatMap((/** @type {Repo} */ r) => {
+    const caps = r.caps ?? DEFAULT_CAPS;
+    const mine = vs.filter((v) => v.inbox === r.inbox_key);
+    const accepts = mine.filter((v) => v.verdict === 'accept').length;
+    if (accepts < caps.accepts_per_day) return [];
+    const carried = mine.filter(isCarried).length;
+    const dflt = caps.accepts_per_day === DEFAULT_CAPS.accepts_per_day && caps.rejects_per_day === DEFAULT_CAPS.rejects_per_day;
+    return [`${r.inbox_key} reached its accept cap: ${accepts} of ${caps.accepts_per_day} accepts${carried ? `, ${carried} real cards carried to the next day` : ''}. `
+      + `${dflt ? `Its caps are the defaults (${caps.accepts_per_day} accepts, ${caps.rejects_per_day} rejects a day), not a choice of yours` : `Its caps are ${caps.accepts_per_day} accepts and ${caps.rejects_per_day} rejects a day`}: `
+      + 'set real caps for it in the charter (repos[].caps, in the start dialog).'];
+  });
+}
+
+/**
+ * The start questions, in order: the cards carried to today (first), inboxes at their accept cap, delegation, directions, live sign-in, parked.
+ * At most three are asked.
  * @param {{date: string, charter?: any, directions: any[], cycles: any[], liveState?: string}} d
  */
 export function startQuestions(d) {
   const q = [];
+  const carried = carriedOf(d.cycles);
+  if (carried.length) {
+    const by = [...new Set(carried.map((v) => v.inbox))].map((k) => `${k}: ${carried.filter((v) => v.inbox === k).map((v) => v.ref).join(', ')}`);
+    q.push(`${carried.length} cards were carried to today because the accept cap was reached (${by.join('; ')}). They are triaged first today, before new cards: keep that order?`);
+  }
+  q.push(...capQuestions(d.charter, d.cycles));
   const soon = localDate(new Date(Date.parse(`${d.date}T12:00:00`) + 2 * 86400000));
   for (const [k, v] of Object.entries(d.charter?.delegation ?? {})) {
     const until = /** @type {any} */ (v).until;

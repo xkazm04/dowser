@@ -11,7 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, depDrift, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
-  renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
+  capQuestions, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
 } from '../../../.claude/skills/temper/scripts/temper.mjs';
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
 import { derivedIds } from '../../../tools/e2e-coverage.mjs';
@@ -1077,5 +1077,130 @@ test('cycle.md: QA updates the tests that encode the old behaviour in the spec c
   assert.match(build, /updates\s+each one in the same spec commit/);
   assert.match(build, /encodes the old behaviour, updated here/);
   assert.ok(build.indexOf('Check every bound before QA starts') < build.indexOf('A **QA subagent**'), 'the bounds come before QA');
-  assert.match(build, /QA never patches source to prove a spec can pass/);
+  assert.match(build, /QA never patches source in the shared worktree/);
+  assert.match(build, /in its own scratch worktree/);
+});
+
+test('runner.md: the brief is repo-agnostic, on tonight\'s tools, and SKILL.md section 1 launches runners with it', () => {
+  const md = readFileSync(join(ROOT, '.claude/skills/temper/references/runner.md'), 'utf8');
+  for (const name of ['bp', 'personas', 'Lynx', 'Wolf', 'kiro']) assert.equal(new RegExp(`\\b${name}\\b`).test(md), false, `the brief names ${name}: repo specifics come from the block and the repo's law`);
+  assert.doesNotMatch(md, /[A-Z]:\\/, 'no machine path');
+  assert.match(md, /CLAUDE\.md/);
+  assert.match(md, /AGENTS\.md/);
+  assert.match(md, /tools\/temper-cards\.mjs/);
+  assert.doesNotMatch(md, /forge-live-e2e/);
+  assert.match(md, /\*\*one verdicts file\*\*/);
+  assert.match(md, /skill_issues": \[\{where, what, evidence, fix\}\]/);
+  assert.match(md, /"not-reachable: <why>"/);
+  assert.match(md, /own scratch worktree/);
+  assert.match(md, /greps the repo's test folders for the old behaviour/);
+  assert.match(md, /--ref/);
+  assert.match(md, /recorded: "local"/);
+  const skill = readFileSync(join(ROOT, '.claude/skills/temper/SKILL.md'), 'utf8');
+  const s1 = skill.slice(skill.indexOf('## 1. Cycle'), skill.indexOf('## 2.'));
+  assert.match(s1, /references\/runner\.md/);
+  assert.match(s1, /`runner` block/);
+});
+
+test('cap-deferred snoozes: counted apart (no floor, no rejects cap), only at the cap, carried to tomorrow in the report and asked first', () => {
+  const v = (/** @type {string} */ verdict, n = 1, extra = {}) => Array.from({ length: n }, (_, i) => ({ ref: `DW-${verdict}-${i}`, verdict, ...extra }));
+  const caps = { accepts_per_day: 2, rejects_per_day: 1 };
+  const carried = v('snooze', 3, { deferred: 'cap' });
+  // at the cap: the three carried snoozes lift no share (2 accepts, 0 rejects is 0%) and use none of the rejects cap
+  const at = triageLimits([...v('accept', 2), ...carried], [], caps);
+  assert.deepEqual([at.counts.carried, at.counts.snooze, at.decided, at.today.rejects, at.today.carried, at.deferral_ok], [3, undefined, 2, 0, 3, true]);
+  assert.equal(at.floor_ok, false, 'a carried snooze is no reject-or-snooze');
+  assert.equal(triageLimits([...v('accept', 2), ...v('reject'), ...carried], [], caps).ok, true, 'over the rejects cap of 1 only if they counted');
+  // under the cap a deferral is no honest reason
+  const under = triageLimits([...v('accept'), ...v('reject'), ...carried], [], caps);
+  assert.equal(under.ok, false);
+  assert.match(under.why.join(), /3 snoozes say deferred: "cap", but only 1 of 2 accepts are used today/);
+  // the shape: deferred is "cap", on a snooze only, in both tools; stripped before the call
+  assert.deepEqual(parseVerdicts([{ ref: 'DW-1', verdict: 'snooze', note: 'cap', deferred: 'cap' }], 'dowser-temper'), [{ ref: 'DW-1', verdict: 'snooze', note: 'cap' }]);
+  assert.throws(() => parseVerdicts([{ ref: 'DW-1', verdict: 'accept', deferred: 'cap' }]), /only on a snooze/);
+  assert.throws(() => parseVerdicts([{ ref: 'DW-1', verdict: 'snooze', deferred: 'later' }]), /deferred is "cap"/);
+
+  const w = world();
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  const file = join(w.work, 'v.json');
+  const accepts = Array.from({ length: DEFAULT_CAPS.accepts_per_day }, (_, i) => ({ ref: `DW-${i + 1}`, verdict: 'accept' }));
+  const rejects = [{ ref: 'DW-20', verdict: 'reject', reason: 'false-positive' }, { ref: 'DW-21', verdict: 'reject', reason: 'false-positive' }, { ref: 'DW-22', verdict: 'reject', reason: 'false-positive' }];
+  const defer = [{ ref: 'DW-30', verdict: 'snooze', note: 'real XS doc fix', deferred: 'cap' }, { ref: 'DW-31', verdict: 'snooze', deferred: 'cap' }];
+  put(file, [...accepts.slice(0, 5), ...rejects, ...defer]);
+  const early = main(['triage', 'check', '--verdicts', file, '--inbox', 'dowser-temper'], w.ctx);
+  assert.equal(early.code, 1, 'five of ten accepts used: no deferral yet');
+  assert.match(early.out.error, /deferred: "cap"/);
+  put(file, [...accepts, ...rejects, ...defer]);
+  const ok = main(['triage', 'check', '--verdicts', file, '--inbox', 'dowser-temper'], w.ctx);
+  assert.equal(ok.code, 0, JSON.stringify(ok.out));
+  assert.deepEqual([ok.out.decided, ok.out.today.carried, ok.out.today.rejects], [13, 2, 3]);
+  // cycle end records them apart, refuses a deferral under the cap, and the report carries them to tomorrow
+  main(['cycle', 'begin', '--target', 'tooling'], w.ctx);
+  const cf = join(w.work, 'c.json');
+  const mark = (/** @type {any[]} */ vs) => vs.map((x) => ({ ...x, inbox: 'dowser-temper', recorded: 'local' }));
+  put(cf, { target: 'tooling', verdicts: mark([accepts[0], ...defer]) });
+  const refused = main(['cycle', 'end', '--file', cf], w.ctx);
+  assert.equal(refused.code, 1);
+  assert.match(refused.out.error, /deferred: "cap"/);
+  put(cf, { target: 'tooling', verdicts: mark([...accepts, ...rejects, ...defer]) });
+  const end = main(['cycle', 'end', '--file', cf], w.ctx);
+  assert.notEqual(end.code, 2, JSON.stringify(end.out));
+  assert.deepEqual([end.out.quota.carried, end.out.quota.decided, end.out.quota.ok], [2, 13, true]);
+  const md = readFileSync(main(['report'], w.ctx).out.written, 'utf8');
+  assert.match(md, /\| dowser-temper \| local only .* \| 10 \| 3 \| 0 \| 0 \| 2 \|/);
+  assert.match(md, /Carried to tomorrow \(snoozed only because the day's accept cap was reached.*\): 2\.\n- DW-30 \(dowser-temper\): real XS doc fix\n- DW-31 \(dowser-temper\)/);
+  const cycles = [{ n: 1, self_reported: { verdicts: mark([...defer, { ref: 'DW-31', verdict: 'accept' }]) } }];
+  const { questions } = startQuestions({ date: '2026-11-06', charter: { delegation: { 'dowser-temper': { until: '2026-11-06' } } }, directions: [], cycles, liveState: 'signed-in' });
+  assert.match(questions[0], /^1 cards were carried to today because the accept cap was reached \(dowser-temper: DW-30\)/, 'a card re-decided later that day is not carried');
+  assert.match(questions[1], /delegation for dowser-temper/);
+});
+
+test('an inbox at its accept cap: Needs you gives the numbers and asks for real caps in the charter', () => {
+  const accepts = (/** @type {string} */ inbox, /** @type {number} */ n) => Array.from({ length: n }, (_, i) => ({ ref: `DW-${i + 1}`, verdict: 'accept', inbox, recorded: 'local' }));
+  const charter = { delegation: {}, repos: [{ name: 'dowser', inbox_key: 'dowser-temper', caps: DEFAULT_CAPS }, { name: 'bp', inbox_key: 'bp-temper', caps: { accepts_per_day: 3, rejects_per_day: 9 } }] };
+  const cycles = [{ n: 1, self_reported: { verdicts: [...accepts('dowser-temper', 10), { ref: 'DW-40', verdict: 'snooze', deferred: 'cap', inbox: 'dowser-temper', recorded: 'local' }, ...accepts('bp-temper', 2)] } }];
+  assert.deepEqual(capQuestions(charter, cycles), ['dowser-temper reached its accept cap: 10 of 10 accepts, 1 real cards carried to the next day. Its caps are the defaults (10 accepts, 30 rejects a day), not a choice of yours: set real caps for it in the charter (repos[].caps, in the start dialog).']);
+  cycles[0].self_reported.verdicts.push(...accepts('bp-temper', 1).map((v) => ({ ...v, ref: 'DW-9' })));
+  assert.match(capQuestions(charter, cycles)[1], /^bp-temper reached its accept cap: 3 of 3 accepts\. Its caps are 3 accepts and 9 rejects a day: set real caps/);
+  const { questions, later } = startQuestions({ date: '2026-11-05', charter, directions: [], cycles, liveState: 'signed-in' });
+  assert.match(questions[0], /carried to today/);
+  assert.match(questions[1], /dowser-temper reached its accept cap/);
+  assert.match(questions[2], /bp-temper reached its accept cap/);
+  const md = renderReport({ date: '2026-11-05', commits: [], landings: {}, cycles: [], scans: [], directions: [], questions, later });
+  assert.match(md, /## Needs you\n\n1\. .*\n2\. dowser-temper reached its accept cap: 10 of 10 accepts/);
+  assert.deepEqual(capQuestions(charter, [{ n: 1, self_reported: { verdicts: accepts('dowser-temper', 9) } }]), [], 'under the cap: nothing to ask');
+});
+
+test('cycle begin prints the runner block: the brief, the launch inputs, the caps used and left, the work tree and the cycle file', () => {
+  const w = world();
+  const { bp } = twoRepoDay(w);
+  put(join(bp, 'AGENTS.md'), '# law\n');
+  // yesterday carried DW-7 in bp-temper; today bp-temper already used 2 accepts and 1 reject
+  put(join(w.root, 'docs', 'evals', 'temper', '2026-11-04.jsonl'), `${JSON.stringify({ kind: 'cycle', n: 3, date: '2026-11-04', repo: 'bp', target: 'area:x', self_reported: { verdicts: [
+    { ref: 'DW-7', verdict: 'snooze', note: 'XS doc fix', deferred: 'cap', inbox: 'bp-temper', recorded: 'local' }, { ref: 'DW-8', verdict: 'snooze', deferred: 'cap', inbox: 'dowser-temper', recorded: 'local' }] } })}\n`);
+  put(join(w.root, 'docs', 'evals', 'temper', '2026-11-05.jsonl'), `${JSON.stringify({ kind: 'cycle', n: 1, date: '2026-11-05', repo: 'bp', target: 'area:x', self_reported: { verdicts: [
+    { ref: 'DW-1', verdict: 'accept', inbox: 'bp-temper', recorded: 'local' }, { ref: 'DW-2', verdict: 'accept', inbox: 'bp-temper', recorded: 'local' }, { ref: 'DW-3', verdict: 'reject', reason: 'false-positive', inbox: 'bp-temper', recorded: 'local' }] } })}\n`);
+  const b = main(['cycle', 'begin', '--repo', 'bp', '--target', 'goal:faster triage'], w.ctx);
+  assert.equal(b.code, 0, JSON.stringify(b.out));
+  const r = b.out.runner;
+  const day = JSON.parse(readFileSync(join(w.root, '.temper', 'day.json'), 'utf8'));
+  assert.equal(r.brief, join(ROOT, '.claude', 'skills', 'temper', 'references', 'runner.md'));
+  assert.ok(existsSync(r.brief), 'the brief is in the skill');
+  assert.deepEqual([r.repo, r.path, r.inbox, r.n, r.target, r.focus, r.loop_root], ['bp', bp, 'bp-temper', 2, 'goal:faster triage', 'goal:faster triage', w.root]);
+  assert.equal(r.scan, b.out.scan.bp, 'the scan command, the same one');
+  assert.match(r.scan, / --ref temper\/2026-11-05 /);
+  assert.deepEqual(r.caps, { ...DEFAULT_CAPS, used: { accepts: 2, rejects: 1, carried: 0 }, left: { accepts: 8, rejects: 29 } });
+  assert.deepEqual(r.carried, [{ ref: 'DW-7', note: 'XS doc fix' }], 'yesterday\'s carried cards of this inbox only');
+  assert.deepEqual([r.work.worktree, r.work.branch], [day.repos.bp.worktree, day.repos.bp.branch]);
+  assert.deepEqual(r.laws, [join(bp, 'AGENTS.md')]);
+  assert.equal(r.cycle_file, join(w.home, 'runs', 'cycle-2-bp.json'));
+  // Dowser: its own worktree temper/c<n> off loop/<date>, which the director merges
+  const d = main(['cycle', 'begin', '--target', 'tooling'], w.ctx).out.runner;
+  assert.deepEqual([d.repo, d.inbox, d.n, d.work.branch, d.work.from, d.work.worktree, d.cycle_file],
+    ['dowser', 'dowser-temper', 3, 'temper/c3', 'loop/2026-11-05', join(w.home, 'worktrees', 'dowser-c3'), join(w.home, 'runs', 'cycle-3-dowser.json')]);
+  assert.match(d.work.create, /^git worktree add -b temper\/c3 ".*dowser-c3" loop\/2026-11-05$/);
+  assert.deepEqual(d.carried, [{ ref: 'DW-8' }]);
+  assert.equal(d.focus, loadModules().modules.tooling.focus, 'the module focus');
+  assert.match(d.scan, / --ref loop\/2026-11-05 /);
 });

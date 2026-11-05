@@ -1,7 +1,9 @@
 # One cycle
 
-`T cycle begin` prints the target, the focus, the scan commands, the triage caps and the branch. Every step below runs
-in a subagent that writes its result to a file under the OS temp folder. You keep only file paths and exit codes.
+`T cycle begin` prints the target, the focus, the scan commands, the triage caps, the branch and the `runner` block.
+The runner subagent runs the steps below from references/runner.md and that block, and it writes the cycle file to the
+block's `cycle_file`. Every step runs in a subagent that writes its result to a file. You keep only file paths and
+exit codes.
 
 ## 1. Pick
 
@@ -42,9 +44,17 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   reject cap), so a cycle
   that decides one or two good cards is not pushed into a dishonest reject. Within the day's caps, check the verdicts file first with
   `T triage check --verdicts <file> --inbox <key>`. Exit 1 means look again for the weak cards.
-- One verdicts file serves both tools: `[{ref, verdict, reason?, note?, into?, until?, inbox?, recorded?}]`. `reason` is a
-  reject's code only (model.mjs REASONS); a snooze or an accept says why in `note`. `inbox` (when given) must be the
-  inbox checked, and `recorded` is `live` or `local`; temper-verdicts checks both and never sends them.
+- One verdicts file serves both tools: `[{ref, verdict, reason?, note?, into?, until?, inbox?, recorded?, deferred?}]`.
+  `reason` is a reject's code only (model.mjs REASONS); a snooze or an accept says why in `note`. `inbox` (when given)
+  must be the inbox checked, and `recorded` is `live` or `local`; temper-verdicts checks both and never sends them.
+- **Carried to tomorrow.** A real card that you would accept, but the day's accept cap is reached, is a snooze with
+  `deferred: "cap"` (and a `note`). It is counted apart, as `carried`: it does not count toward the reject-or-snooze
+  floor or the rejects cap, because the cap made the call, not the triage. It is valid only once the inbox's accepts
+  today reach the cap (`triage check` and `cycle end` refuse it under the cap). The report lists these cards under
+  "Carried to tomorrow", and the next day's start dialog asks about them first. Forge still records a live one as a
+  snooze. `deferred` is a ledger key too: checked, never sent. When an inbox's accepts reach the cap, the report's
+  Needs you says so with the numbers and asks the operator for real caps in the charter (`repos[].caps`; a charter
+  that set none runs on the defaults, 10 accepts and 30 rejects a day).
 - Record them live with `node tools/temper-verdicts.mjs --project-key <k> --verdicts <file>`. When it answers
   `{forbidden: true, record_as: "local"}` and exit 1 (no valid delegation in Jira Settings), the verdicts are **local
   only**. It remembers the answer for the inbox for the day, so later cycles get it without a `claude -p` call; pass
@@ -65,8 +75,10 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   "new spec", "encodes the old behaviour, updated here" or "unrelated: stop and report". A red test in the third
   group stops the item.
 - One QA subagent per cycle writes every item's specs, one commit per item: QA agents in one shared worktree fight
-  over the index and one spec file. QA never patches source to prove a spec can pass (and never restores it with
-  `git checkout` in the shared worktree): that the spec turns green is the builder's to show.
+  over the index and one spec file. QA never patches source in the shared worktree (and never restores it with
+  `git checkout` there). When it patches source to show a spec can pass, it does so in its own scratch worktree
+  (`git worktree add <tmp> <branch>`, removed after) and never commits the patch: that the spec turns green on the
+  build is the builder's to show.
 - A pure docs card (doc drift inside the registered paths) has no natural test file. Its spec is a declared
   acceptance command (a quote or grep check that fails on the base and passes after), written by the QA subagent
   before the build and listed in `built[].specs` as the command, with `qa` saying who wrote it.

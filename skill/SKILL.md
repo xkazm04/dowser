@@ -44,9 +44,12 @@ a failed step.
 
 - none: sweep every lens over the repo.
 - `goal: <text>`: a focused scan. Every lens judges against this goal. Pass it as
-  `--focus "goal: <text>"`.
+  `--focus "goal:<text>"`.
 - `area: <path or feature>`: a focused scan limited to that part of the code. Pass it as
-  `--focus "area: <path>"`.
+  `--focus "area:<path>"`.
+
+The runner may type a space after the colon; the flag takes none. `run start` accepts only `goal:<text>` and
+`area:<path>` and refuses `goal: <text>` (exit 2), so drop the space, and pass `context` the same form.
 
 A focused scan is **partial** by definition. Its summary says so and never says "all clear".
 
