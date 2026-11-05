@@ -186,7 +186,7 @@ test('pretriage: only an L1 slice\'s ranked cards predicted accept are marked; a
     assert.equal(sliceKey(card), 'product|opportunity|-|S');
 
     // acceptance stays human: the invariant at model.mjs DECIDER_GUARDS is untouched
-    assert.deepEqual(DECIDER_GUARDS, { 'verified>accepted': ['human'] });
+    assert.deepEqual(DECIDER_GUARDS['verified>accepted'], ['human']);
     assert.equal(deciderAllowed('verified', 'accepted', MACHINE_DECIDER), false);
     assert.throws(() => move(s.db, yes, 'accepted', { by: MACHINE_DECIDER }), /needs a human decider/);
 
@@ -296,5 +296,21 @@ test('wire: a score its own breakdown and impact do not produce is refused; the 
       const r = validateCandidate(rec, { wire: true });
       assert.equal(r.ok, true, r.ok ? '' : r.why);
     }
+  } finally { s.done(); }
+});
+
+test('move: a reject or a snooze needs a human or forge decider; an agent or the store cannot bury a card', () => {
+  const s = fresh();
+  try {
+    const a = s.verified({ topic: 'agent tidy a', anchors: ['src/ta.js'] });
+    const b = s.verified({ topic: 'agent tidy b', anchors: ['src/tb.js'] });
+    assert.throws(() => move(s.db, a, 'rejected', { by: 'agent:claude', reason: 'not-worth-it' }), /needs a human decider/);
+    assert.throws(() => move(s.db, a, 'snoozed', { by: 'skill:dowser' }), /needs a human decider/);
+    move(s.db, b, 'pushed', { by: 'skill:dowser-sync' });
+    assert.throws(() => move(s.db, b, 'rejected', { by: 'machine:dowser', reason: 'not-worth-it' }), /needs a human decider/);
+    move(s.db, a, 'rejected', { by: 'human:runner', reason: 'not-worth-it' });
+    move(s.db, b, 'snoozed', { by: 'forge:jane' });
+    move(s.db, b, 'verified', { by: 'skill:dowser', note: 'snooze until passed' });
+    assert.deepEqual([getProposal(s.db, a)?.status, getProposal(s.db, b)?.status], ['rejected', 'verified'], 'people decide; the store still wakes a snooze');
   } finally { s.done(); }
 });

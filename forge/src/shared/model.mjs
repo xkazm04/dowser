@@ -99,11 +99,18 @@ export const TRANSITIONS = Object.freeze({
 
 /**
  * Moves only some decider kinds may make: `<from>><to>` -> the allowed kinds. A move not listed is open to
- * every kind. `verified -> accepted` is a person's offline call; `pushed -> accepted` arrives as `forge:`.
+ * every kind. `verified -> accepted` is a person's offline call; `pushed -> accepted` arrives as `forge:`. A
+ * rejection or a snooze is a person's too (SKILL.md "Never self-approve", references/triage.md): pre-triage records
+ * it as `human:`, a pulled verdict as `forge:`, never an agent or the store. Waking a snooze (snoozed -> verified)
+ * and the store's own moves stay open.
  * @type {Readonly<Record<string, readonly string[]>>}
  */
 export const DECIDER_GUARDS = Object.freeze({
   'verified>accepted': Object.freeze(['human']),
+  'verified>rejected': Object.freeze(['human', 'forge']),
+  'verified>snoozed': Object.freeze(['human', 'forge']),
+  'pushed>rejected': Object.freeze(['human', 'forge']),
+  'pushed>snoozed': Object.freeze(['human', 'forge']),
 });
 
 /**
