@@ -12,7 +12,8 @@
 //   repo start --repo <name> [--paths a,b] [--title t]   another build repo's branch in a worktree (+ its ledger)
 //   repo end --repo <name> [--status t]
 //   cycle begin --target <module>|direction:<id> | --repo <name> --target <focus>
-//   cycle end --file <cycle.json> [--repo <r>]   runs the gates, reads the e2e results, appends the row; the open
+//   cycle end --file <cycle.json> [--repo <r>]   npm ci where a lockfile is newer than its node_modules (root, forge,
+//                                          forge/static/app), then the gates, reads the e2e results, appends the row; the open
 //                                          cycle is the --repo's, else the file's repo's, else the only one open
 //   triage check --verdicts <json> --inbox <key>   reject/snooze share and the day's caps, before verdicts are recorded
 //   modules bar [--instruments <dir>]      the five-part bar per Dowser module; writes docs/evals/temper/modules.json
@@ -31,6 +32,7 @@
 // files, the scan ledger, quality-snapshot rows, e2e-coverage) is `verified`; what only the director's cycle file
 // claims is `self-reported`; a missing, stale or signed-out instrument is `unverifiable`, never a pass.
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -626,6 +628,77 @@ export function uatSince(root, sinceMs) {
   return { uat, green: !why.length, why };
 }
 
+/** Dowser's package folders: each installed tree must match its lockfile before a gate runs there. */
+export const DEP_DIRS = ['.', 'forge', 'forge/static/app'];
+
+/**
+ * The comparable content of a lockfile's `packages`: one line per installed package (`node_modules/...`, never the root
+ * entry, never an optional one, which a platform may skip), sorted. npm's hidden lockfile
+ * (node_modules/.package-lock.json) has the same entries for what is installed, so the two projections hash alike
+ * exactly when the tree is the lockfile's.
+ * @param {any} lock @returns {{required: string[], optional: Map<string, string>}}
+ */
+function lockProjection(lock) {
+  const required = [];
+  /** @type {Map<string, string>} */
+  const optional = new Map();
+  for (const [k, v] of Object.entries(lock?.packages ?? {})) {
+    if (!k.startsWith('node_modules/') && !k.includes('/node_modules/')) continue;
+    const line = `${k} ${/** @type {any} */ (v)?.version ?? ''} ${/** @type {any} */ (v)?.integrity ?? /** @type {any} */ (v)?.resolved ?? ''}`;
+    if (/** @type {any} */ (v)?.optional) optional.set(k, line); else required.push(line);
+  }
+  return { required: required.sort(), optional };
+}
+
+/** @param {string[]} lines */
+const hashLines = (lines) => createHash('sha256').update(lines.join('\n')).digest('hex').slice(0, 16);
+
+/**
+ * Whether one folder's node_modules is its package-lock.json: `no lockfile`, `in sync`, or `drift` with why. A missing
+ * or unreadable hidden lockfile is drift (the tree was never installed by npm 7+, or predates the lockfile).
+ * @param {string} dir @returns {{state: 'no lockfile' | 'in sync' | 'drift', lock?: string, installed?: string, why?: string}}
+ */
+export function depDrift(dir) {
+  const lockFile = join(dir, 'package-lock.json');
+  if (!existsSync(lockFile)) return { state: 'no lockfile' };
+  /** @param {string} f */
+  const parse = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')); } catch { return undefined; } };
+  const lock = lockProjection(parse(lockFile));
+  const lockHash = hashLines(lock.required);
+  const hidden = join(dir, 'node_modules', '.package-lock.json');
+  if (!existsSync(hidden)) return { state: 'drift', lock: lockHash, why: 'node_modules has no .package-lock.json' };
+  const raw = parse(hidden);
+  if (!raw) return { state: 'drift', lock: lockHash, why: 'node_modules/.package-lock.json is unreadable' };
+  const inst = lockProjection(raw);
+  const instHash = hashLines(inst.required);
+  if (instHash !== lockHash) return { state: 'drift', lock: lockHash, installed: instHash, why: 'the installed tree is not the lockfile\'s' };
+  for (const [k, line] of inst.optional) if (lock.optional.get(k) !== line) return { state: 'drift', lock: lockHash, installed: instHash, why: `optional ${k} differs from the lockfile` };
+  return { state: 'in sync', lock: lockHash, installed: instHash };
+}
+
+/**
+ * Before the gates: every Dowser package folder whose node_modules is not its lockfile gets `npm ci` first. A failed
+ * install is a red with its reason (a gate run on a stale tree fails for a reason that is not the build's).
+ * @param {Ctx} ctx @returns {{deps: Record<string, {state: string, why?: string, exit?: number | null}>, why: string[]}}
+ */
+export function syncDeps(ctx) {
+  /** @type {Record<string, {state: string, why?: string, exit?: number | null}>} */
+  const deps = {};
+  const why = [];
+  for (const d of DEP_DIRS) {
+    const dir = d === '.' ? ctx.root : join(ctx.root, d);
+    const s = depDrift(dir);
+    if (s.state !== 'drift') { if (s.state === 'in sync') deps[d] = { state: s.state }; continue; }
+    const r = ctx.run('npm', ['ci'], { cwd: dir });
+    if (r.status === 0) deps[d] = { state: 'installed', why: /** @type {string} */ (s.why) };
+    else {
+      deps[d] = { state: 'failed', why: /** @type {string} */ (s.why), exit: r.status };
+      why.push(`npm ci in ${d} failed (exit ${r.status}; ${s.why})`);
+    }
+  }
+  return { deps, why };
+}
+
 /** npm scripts in a checkout. @param {Ctx} ctx @param {string[]} scripts @param {string} [cwd] @returns {Record<string, 'pass' | 'fail'>} */
 function runGates(ctx, scripts, cwd = ctx.root) {
   return Object.fromEntries(scripts.map((s) => [s, ctx.run('npm', ['run', s], { cwd }).status === 0 ? 'pass' : 'fail']));
@@ -785,17 +858,20 @@ function cycleEnd(ctx, f) {
   const isDowser = repo.name === 'dowser';
   const dir = isDowser ? ctx.root : day.repos?.[repo.name]?.worktree;
   const head = gitIn(ctx, dir, 'rev-parse', 'HEAD');
+  // a lockfile newer than its installed tree (a merge added a dependency) is installed first: npm ci, or red
+  const deps = isDowser ? syncDeps(ctx) : undefined;
   const gates = isDowser ? { ...runGates(ctx, ['typecheck', 'test']), ...runRepoGates(ctx, repo, dir) } : runRepoGates(ctx, repo, dir);
   const u = isDowser ? uatSince(ctx.root, Date.parse(open.begun_at)) : { uat: {}, green: true, why: [] };
   const quality = isDowser ? qualityRowOf(ctx, open) : undefined;
   const gatesGreen = Object.values(gates).every((s) => s === 'pass');
   const quota = rejectShare(countKinds(verdicts));
   const { target: _t, repo: _r, ...claims } = raw;
-  const green = gatesGreen && u.green;
+  const depsWhy = deps?.why ?? [];
+  const green = gatesGreen && u.green && !depsWhy.length;
   const row = {
     kind: 'cycle', n: open.n, date: open.date, repo: repo.name, target: open.target, begun_at: open.begun_at, ended_at: ctx.now().toISOString(), head,
-    green, ...(green ? {} : { red_because: [...Object.entries(gates).filter(([, s]) => s !== 'pass').map(([k]) => `${k} failed`), ...u.why] }),
-    verified: { gates, ...(isDowser ? { uat: u.uat } : {}), ...(quality ? { quality } : {}) },
+    green, ...(green ? {} : { red_because: [...depsWhy, ...Object.entries(gates).filter(([, s]) => s !== 'pass').map(([k]) => `${k} failed`), ...u.why] }),
+    verified: { ...(deps ? { deps: deps.deps } : {}), gates, ...(isDowser ? { uat: u.uat } : {}), ...(quality ? { quality } : {}) },
     quota,
     self_reported: { ...claims, ...(raw.verdicts ? { verdicts } : {}) },
   };
@@ -1239,12 +1315,15 @@ export function landPlan(ctx, day, repo) {
   if (!ahead) return { repo: 'dowser', landing: 'loop-ff', decision: 'none', branch, head, reasons: ['nothing on the branch beyond master'], steps: [] };
   if (!gitOk(ctx, 'merge-base', '--is-ancestor', 'master', branch)) reasons.push('master moved since the day started: a fast-forward is impossible');
   const forgeChanged = git(ctx, 'diff', '--name-only', `master...${branch}`, '--', 'forge/') !== '';
+  // the gates run on the tree the lockfiles name: a folder whose node_modules predates its lockfile gets npm ci first
+  const deps = syncDeps(ctx);
+  reasons.push(...deps.why);
   const gates = { ...runGates(ctx, ['typecheck', 'test', 'e2e:coverage', ...(forgeChanged ? ['forge:typecheck', 'forge:test', 'forge:check-shared'] : [])]),
     ...(repo ? runRepoGates(ctx, repo, ctx.root) : {}) };
   for (const [k, s] of Object.entries(gates)) if (s !== 'pass') reasons.push(`${k} failed`);
   const u = uatSince(ctx.root, Number(git(ctx, 'log', '-1', '--format=%ct')) * 1000);
   reasons.push(...u.why);
-  const checks = { gates, uat: u.uat, forge_changed: forgeChanged, ahead };
+  const checks = { deps: deps.deps, gates, uat: u.uat, forge_changed: forgeChanged, ahead };
   const deploy = forgeChanged && repo?.landing.deploy !== undefined ? repo.landing.deploy : forgeChanged && !repo ? 'forge-development' : undefined;
   if (!reasons.length) {
     const forgeDir = join(ctx.root, 'forge');

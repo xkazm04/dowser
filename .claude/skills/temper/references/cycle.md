@@ -83,3 +83,8 @@ has exactly `where`, `what`, `evidence` and `fix`, each a non-empty string. `cyc
 
 Everything in it is self-reported. `cycle end` adds what it verifies: the gates (it runs typecheck and test in
 Dowser, or the repo's land gates elsewhere) and the e2e results. The row is green only when both are green.
+
+Before the gates, Dowser's `cycle end` checks root, `forge` and `forge/static/app` for dependency drift: a
+`package-lock.json` whose packages are not those in `node_modules/.package-lock.json` (a merge added or bumped a
+dependency) gets `npm ci` there first. The row's `verified.deps` says `in sync`, `installed` or `failed` per folder.
+A failed `npm ci` makes the cycle red with that reason.

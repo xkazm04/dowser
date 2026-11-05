@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync 
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
+  DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, depDrift, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
   renderReport, secretScan, startQuestions, triageLimits, uatPart, viteServersIn,
 } from '../../../.claude/skills/temper/scripts/temper.mjs';
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
@@ -314,6 +314,65 @@ test('cycle end: the runner\'s skill_issues are checked, stored in the row, and 
     rmSync(join(w.root, '.temper', 'cycle-dowser.json'));
   }
   assert.match(renderReport({ date: 'd', commits: [], landings: {}, cycles: [], scans: [], directions: [], questions: [], later: [] }), /## Skill issues\n\nNone\./);
+});
+
+test('dependency drift: cycle end and land run npm ci where a lockfile is newer than its node_modules, and a failed install is red', () => {
+  const w = world();
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  const pkg = (/** @type {string} */ name, /** @type {string} */ v) => ({ [`node_modules/${name}`]: { version: v, resolved: `https://r/${name}-${v}.tgz`, integrity: `sha512-${name}${v}`, dev: true } });
+  const lock = (/** @type {any} */ packages) => ({ name: 'x', version: '1.0.0', lockfileVersion: 3, requires: true, packages });
+  // root: a merge added @playwright/test to the lockfile, the installed tree predates it (cycle 1's red)
+  put(join(w.root, 'package-lock.json'), lock({ '': { name: 'x' }, ...pkg('typescript', '7.0.2'), ...pkg('@playwright/test', '1.64.1'),
+    'node_modules/@esbuild/aix-ppc64': { version: '0.1.0', optional: true } }));
+  put(join(w.root, 'node_modules', '.package-lock.json'), lock(pkg('typescript', '7.0.2')));
+  // forge: in sync (an optional package for another platform is absent, which is no drift)
+  put(join(w.root, 'forge', 'package-lock.json'), lock({ '': { name: 'f' }, ...pkg('react', '19.0.0'), 'node_modules/@esbuild/aix-ppc64': { version: '0.1.0', optional: true } }));
+  put(join(w.root, 'forge', 'node_modules', '.package-lock.json'), lock(pkg('react', '19.0.0')));
+  // forge/static/app: never installed
+  put(join(w.root, 'forge', 'static', 'app', 'package-lock.json'), lock({ '': { name: 'a' }, ...pkg('vite', '7.0.0') }));
+  assert.equal(depDrift(w.root).state, 'drift');
+  assert.equal(depDrift(join(w.root, 'forge')).state, 'in sync');
+  assert.equal(depDrift(join(w.root, 'forge', 'static', 'app')).why, 'node_modules has no .package-lock.json');
+  assert.equal(depDrift(join(w.root, 'skill')).state, 'no lockfile');
+  /** @type {{cwd?: string, before: string[]}[]} */
+  const ci = [];
+  /** @type {string[]} */
+  const order = [];
+  let ciExit = 0;
+  const ctx = { ...w.ctx, run: /** @type {import('../../../.claude/skills/temper/scripts/temper.mjs').Runner} */ ((c, a, o) => {
+    if (c === 'npm' && a[0] === 'ci') { ci.push({ cwd: o?.cwd, before: [...order] }); return { status: ciExit, stdout: '' }; }
+    if (c === 'npm') order.push(a[1]);
+    return w.ctx.run(c, a, o);
+  }) };
+  const file = join(w.work, 'c.json');
+  put(file, { target: 'tooling' });
+  main(['cycle', 'begin', '--target', 'tooling'], ctx);
+  const a = main(['cycle', 'end', '--file', file], ctx);
+  assert.deepEqual(ci.map((x) => x.cwd), [w.root, join(w.root, 'forge', 'static', 'app')], 'npm ci where drifted, never where in sync');
+  assert.ok(ci.every((x) => x.before.length === 0), 'before any gate');
+  assert.deepEqual(a.out.verified.deps, { '.': { state: 'installed', why: "the installed tree is not the lockfile's" }, forge: { state: 'in sync' },
+    'forge/static/app': { state: 'installed', why: 'node_modules has no .package-lock.json' } });
+  assert.ok(!(a.out.red_because ?? []).some((/** @type {string} */ x) => /npm ci/.test(x)));
+  // a failed npm ci is a red with its reason
+  ciExit = 1; ci.length = 0;
+  main(['cycle', 'begin', '--target', 'tooling'], ctx);
+  const b = main(['cycle', 'end', '--file', file], ctx);
+  assert.equal(b.code, 1);
+  assert.equal(b.out.green, false);
+  assert.match(b.out.red_because[0], /^npm ci in \. failed \(exit 1; the installed tree is not the lockfile's\)$/);
+  assert.equal(b.out.verified.deps['.'].state, 'failed');
+  // land checks the same before its gates, and a failed install is a reason not to land
+  put(join(w.root, 'feature.txt'), 'x\n');
+  g(w.root, 'add', 'feature.txt'); g(w.root, 'commit', '-q', '-m', 'feat: x');
+  put(join(w.root, 'e2e', 'results', 'fixture.json'), [row('a')]);
+  put(join(w.root, 'e2e', 'results', 'local.json'), [row('b')]);
+  const l = main(['land', '--dry-run'], ctx);
+  assert.equal(l.out.decision, 'rollback');
+  assert.ok(l.out.reasons.some((/** @type {string} */ x) => /^npm ci in \. failed/.test(x)), JSON.stringify(l.out.reasons));
+  assert.equal(l.out.checks.deps['forge/static/app'].state, 'failed');
+  ciExit = 0;
+  assert.equal(main(['land', '--dry-run'], ctx).out.decision, 'land');
 });
 
 test('cycle end: appends the quality-snapshot row itself when none was written since the cycle began, so the instrument fills', () => {
