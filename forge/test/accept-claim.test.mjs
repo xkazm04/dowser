@@ -1,5 +1,6 @@
 // @ts-check
-// One accepted card is one Jira issue (verdicts.mjs accept): the issue key is stamped on the item before the
+// One accepted card is one Jira issue (verdicts.mjs accept): the claim refuses a second accept while one is in
+// flight and lets a new one take over a claim older than CLAIM_MS; the issue key is stamped on the item before the
 // decision is recorded, so a record step that fails, or an invocation cut short, never leads to a second issue.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,6 +22,36 @@ async function seeded() {
   await res(d, 'settings.set', { project_key: PK, jira_project_key: 'SHOP', issue_type_id: '10001' });
   return d;
 }
+
+test('a second accept while the first holds the claim is refused, and only one issue is created', async () => {
+  const d = await seeded();
+  const create = d.jira.createIssue;
+  /** @type {any} */
+  let second;
+  d.jira.createIssue = async (f) => {
+    second ??= await res(d, 'verdict.accept', { ref: 'DW-1' }); // a double click, or a second agent, mid-call
+    return create(f);
+  };
+  const first = await res(d, 'verdict.accept', { ref: 'DW-1' });
+  assert.equal(second.error, 'bad-input');
+  assert.match(second.message, /an accept of DW-1 is already in progress/);
+  assert.equal(first.card.status, 'accepted');
+  assert.equal(d.jira.created.length, 1);
+  assert.deepEqual(verdicts(d), [['accepted', first.card.issue_ref]]);
+});
+
+test('a claim older than CLAIM_MS is abandoned: a new accept takes it over', async () => {
+  const d = await seeded();
+  // an accept that claimed and died before Jira answered
+  d.db.raw.prepare("UPDATE proposals SET accept_claim = ? WHERE ref = 'DW-1'").run(d.now().toISOString());
+  d.clock.tick(CLAIM_MS - 1000);
+  const early = await res(d, 'verdict.accept', { ref: 'DW-1' });
+  assert.match(early.message, /already in progress/, 'a young claim still holds');
+  d.clock.tick(1001);
+  const late = await res(d, 'verdict.accept', { ref: 'DW-1' });
+  assert.equal(late.card.status, 'accepted', 'a claim older than CLAIM_MS is taken over');
+  assert.equal(d.jira.created.length, 1);
+});
 
 test('the record step fails after Jira created the issue: the answer names it, and accepting again finishes with it', async () => {
   const d = await seeded();
