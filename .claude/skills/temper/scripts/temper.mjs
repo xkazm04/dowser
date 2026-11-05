@@ -880,6 +880,7 @@ export function runnerBlock(ctx, { charter, day, repo, cycle, focus, command, sp
     ...(Array.isArray(itemGates) ? { item_gates: itemGates } : {}), out_of_bounds: charter.out_of_bounds ?? [],
     laws: LAW_FILES.map((f) => join(repo.path, f)).filter((f) => existsSync(f)),
     commit_trailers: repoTrailers(repo.path),
+    other_repos: (charter.repos ?? []).filter((/** @type {Repo} */ r) => r.name !== repo.name).map((/** @type {Repo} */ r) => ({ name: r.name, path: r.path })),
     scratch: cycleScratch(ctx, n),
     cycle_file: join(ctx.home, 'runs', `cycle-${n}-${repo.name}.json`),
   };

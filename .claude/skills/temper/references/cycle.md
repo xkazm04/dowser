@@ -46,6 +46,10 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   A card the store keeps `pushed` may already be judged: each row carries `decided_local` or `decided_live`
   (`{verdict, cycle}`, from the day ledger), and `--undecided` lists only the cards with no verdict yet. Not `dowser.mjs list --repo <path>`: the scan keys the store by the inbox key (the clone's origin is set to
   it), so the real checkout maps to another project and lists nothing.
+- **The falsifier first.** Each card's own `Falsified if` check (the Evaluation section, `acceptance` in `--full`) runs
+  before anything else, and a true falsifier is a reject as `false-positive`. Scans push such cards (DW-176, 2026-11-05).
+  The charter's other repo paths (the block's `other_repos`) may be read to check one, and a card that says "outside
+  this repo" is checked there before it is carried (DW-151 and DW-156, closed by one grep of a sibling checkout).
 - A subagent reads every new card against the code it quotes. Accept only a card that is real (the evidence holds
   at HEAD), in direction, and inside the charter's bounds. Reject with the honest reason code. Snooze what is real but
   not now. Merge duplicates into the accepted item.

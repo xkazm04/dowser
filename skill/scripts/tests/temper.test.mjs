@@ -1269,6 +1269,12 @@ test('runner.md: the brief is repo-agnostic, on tonight\'s tools, and SKILL.md s
   assert.match(secrets, /gitleaks/);
   assert.match(secrets, /\*\*unverifiable\*\*: never report it as clean/);
   assert.match(secrets, /built-in secret scan on every landing kind/);
+  // a card's own falsifier runs first, and may read the charter's other repos
+  const triage = md.slice(md.indexOf('2. **Triage.**'), md.indexOf('3. **Build**'));
+  assert.match(triage, /`Falsified if` check first/);
+  assert.match(triage, /`false-positive`/);
+  assert.match(triage, /`other_repos`/);
+  assert.match(md, /\| `other_repos` \|/);
   const skill = readFileSync(join(ROOT, '.claude/skills/temper/SKILL.md'), 'utf8');
   const s1 = skill.slice(skill.indexOf('## 1. Cycle'), skill.indexOf('## 2.'));
   assert.match(s1, /references\/runner\.md/);
@@ -1616,6 +1622,7 @@ test('cycle begin prints the runner block: the brief, the launch inputs, the cap
   assert.deepEqual(r.carried, [{ ref: 'DW-7', note: 'XS doc fix' }], 'yesterday\'s carried cards of this inbox only');
   assert.deepEqual([r.work.worktree, r.work.branch], [day.repos.bp.worktree, day.repos.bp.branch]);
   assert.deepEqual(r.laws, [join(bp, 'AGENTS.md')]);
+  assert.deepEqual(r.other_repos, [{ name: 'dowser', path: w.root }], 'the charter\'s other repos, to check a card\'s falsifier in');
   assert.equal(r.cycle_file, join(w.home, 'runs', 'cycle-2-bp.json'));
   assert.equal(r.scratch, join(w.home, 'runs', 'c2'), 'a scratch folder per cycle');
   assert.ok(existsSync(r.scratch), 'cycle begin creates it');

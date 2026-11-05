@@ -26,6 +26,7 @@ measures). Their rules bind you. This brief adds the order of work and the input
 | `out_of_bounds` | the charter's bounds: a card there is out of bounds, whatever its merit |
 | `laws` | the repo's own law files (`CLAUDE.md`, `AGENTS.md`, `.claude/CLAUDE.md`, those present) |
 | `commit_trailers` | `[{name, law}]`: the commit trailers a small pattern found the law asking for (empty: it found none; the law's own words still bind) |
+| `other_repos` | `[{name, path}]`: the charter's other repos, read-only, to check a card's falsifier in |
 | `scratch` | this cycle's own folder for every scratch file (`~/.temper/runs/c<n>/`, created by `cycle begin`) |
 | `cycle_file` | where you write the cycle file (`~/.temper/runs/cycle-<n>-<repo>.json`) |
 
@@ -81,7 +82,12 @@ the director's landing still checks the diff; you still never commit a secret or
 2. **Triage.** List the cards with `node tools/temper-cards.mjs --project-key <inbox> [--status s] [--quotes]
    [--undecided] [--full]` (or the scan's `report`), never `dowser.mjs list --repo`. `--full` adds each card's
    rationale, sections and acceptance. Decide the `carried` cards first, then every new or still
-   undecided card (`--undecided` lists only those: a `pushed` card with `decided_local` or `decided_live` is judged). Read each card's quoted evidence against the code on the day branch. Accept only a card that is
+   undecided card (`--undecided` lists only those: a `pushed` card with `decided_local` or `decided_live` is judged).
+   Run each card's `Falsified if` check first (its `acceptance`, from `--full`): scans do push cards whose own falsifier
+   is already true, and a true falsifier is a reject with the reason `false-positive`, whatever else the card says. A
+   card that says its answer is "outside this repo" is not open on that account: the paths in `other_repos`, and the
+   `registry.local` of a repo's `.ai/manifest.yaml` (the lens-scan store lives there), may be read to check it, never
+   written. Then read each card's quoted evidence against the code on the day branch. Accept only a card that is
    real, in direction and inside the bounds. Reject with the honest reason code. Snooze what is real but not now.
    Merge duplicates. When the accept cap is reached, a card you would accept is a snooze with `deferred: "cap"`
    (cycle.md section 3): it is carried, not judged. Write **one verdicts file** and run
