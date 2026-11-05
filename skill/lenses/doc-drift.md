@@ -1,6 +1,6 @@
 ---
 id: doc-drift
-version: 0.3.2
+version: 0.3.3
 name: Doc drift
 kinds: [contradicted-by-code, removed-still-documented, undocumented-change, stale-example, missing-doc]
 sources: [code, docs, git, pages]
@@ -60,8 +60,8 @@ Confluence pages were reachable.
 
 ## Gather
 
-1. **In-repo docs.** `git ls-files "*.md" "*.mdx" "*.rst" "*.adoc" "docs/**" "README*" "CHANGELOG*" "openapi*.{yaml,yml,json}" ':!*fixtures/*' ':!*tests/*' ':!*test/*'`.
-   Test and fixture folders are sample input, not docs (a fixture's README describes a fake
+1. **In-repo docs.** `git ls-files "*.md" "*.mdx" "*.rst" "*.adoc" "docs/**" "README*" "CHANGELOG*" "*openapi*.yaml" "*openapi*.yml" "*openapi*.json" ':!*fixtures/*' ':!*tests/*' ':!*test/*'`.
+   One pathspec per extension: git pathspecs do not expand `{a,b}`, and `*` crosses folders. Test and fixture folders are sample input, not docs (a fixture's README describes a fake
    product). Tag each doc with a reader-harm tier now (see "Choosing under the budget").
 2. **Claims that can be checked.** In each doc, collect statements that name a concrete thing:
    commands and flags (lines in code fences starting with `$`, `npm`, `npx`, `curl`, the

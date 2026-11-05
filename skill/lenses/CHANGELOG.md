@@ -34,6 +34,7 @@ only what a scan needs. Rules for recording a version (fixture score, hand-verif
 - 0.3.0 - scan-finding/1: `impact` from reader harm (tier 1 8/6, tier 2 6/4, tier 3 3/2 for fails/misleads; certainty goes to confidence), `risk` and the predicted verdict quoting the closest precedent; past 4 goes to the store's reserve. Not measured yet.
 - 0.3.1 - self-scan fixes: gather step 1 excludes test and fixture folders (the self-scan read a fixture's README as a product doc); worked examples moved to `references/examples/doc-drift.md` with `impact`, `risk` and the judge's predicted verdict; the predicted verdict is always the judge's; the store's free-slot pass named (a lens can rank past 4); pack under 200 lines (205). Not measured yet.
 - 0.3.2 - category rule (self-scan cycle 2): a card may move `technical` -> `product` when users feel it, never the reverse (the store clamps product-lens cards). Wording only, fingerprints unchanged. Not measured yet.
+- 0.3.3 - gather fixes (scan-sweep 2026-11-05): step 1 lists OpenAPI specs with one pathspec per extension (`"openapi*.{yaml,yml,json}"` matched nothing: git pathspecs have no braces, and it was root-only); the fixture's POST /cart stale example now lives in a root `openapi.yaml` that docs/api.md points to. Wording only, fingerprints unchanged. Not measured yet.
 
 ## security-cra (Security and CRA)
 

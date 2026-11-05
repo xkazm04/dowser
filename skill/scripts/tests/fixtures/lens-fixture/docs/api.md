@@ -13,15 +13,9 @@ Products whose name contains the text. Add `&suggest=1` for up to 5 name suggest
 
 ## `POST /cart`
 
-Adds a product to the cart.
-
-```sh
-curl -X POST http://localhost:8080/cart \
-  -H 'content-type: application/json' \
-  -d '{"sku": "MUG-01", "qty": 2}'
-```
-
-Answers `201 {"ok": true, "count": <items in cart>}`, or `409` when the cart is full.
+Adds a product to the cart. The request body and an example are in the OpenAPI spec
+([openapi.yaml](../openapi.yaml)). Answers `201 {"ok": true, "count": <items in cart>}`, or `409`
+when the cart is full.
 
 ## `POST /checkout/payment`
 

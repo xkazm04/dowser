@@ -1,0 +1,65 @@
+openapi: 3.0.3
+info:
+  title: Pebble Shop storefront API
+  version: 1.4.0
+  description: JSON endpoints behind the storefront. A session cookie (`sid`) is set on the first request.
+servers:
+  - url: http://localhost:8080
+paths:
+  /products:
+    get:
+      summary: The catalogue, sorted by name
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Products, or `results: []` and an `empty` object for an empty category
+  /search:
+    get:
+      summary: Products whose name contains the text
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+        - name: suggest
+          in: query
+          required: false
+          schema: { type: string, enum: ['1'] }
+      responses:
+        '200':
+          description: Matching products, or up to 5 name suggestions with `suggest=1`
+  /cart:
+    post:
+      summary: Adds a product to the cart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sku]
+              properties:
+                sku: { type: string }
+                qty: { type: integer, minimum: 1, default: 1 }
+            example: { sku: MUG-01, qty: 2 }
+      responses:
+        '201':
+          description: Added
+          content:
+            application/json:
+              example: { ok: true, count: 2 }
+        '409':
+          description: The cart is full
+  /checkout/payment:
+    post:
+      summary: Charges the card and places the order
+      responses:
+        '200':
+          description: Placed
+          content:
+            application/json:
+              example: { ok: true, orderId: 1042 }
