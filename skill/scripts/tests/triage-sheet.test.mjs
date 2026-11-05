@@ -262,7 +262,7 @@ test('guard: move keeps its input refusals and messages (the validator it now sh
     const throws = (to, o, why) => assert.throws(() => move(db, 'f'.repeat(16), to, o), (e) => /** @type {any} */ (e).code === 2 && why.test(/** @type {any} */ (e).message));
     throws('nope', { by: 'human:a' }, /^--to must be one of/);
     throws('rejected', { by: 'human:a', from: 'x' }, /^--from must be one of/);
-    throws('rejected', { by: 'bad' }, /^--by names the decider/);
+    throws('rejected', { by: 'bad' }, /^--by names the decider as <kind>:<name>, e.g. human:jane for a person/);
     throws('rejected', { by: 'human:a' }, /^a reject needs --reason$/);
     throws('rejected', { by: 'human:a', reason: 'other' }, /^reason other needs --note$/);
     throws('merged', { by: 'human:a' }, /^a merge needs --into <fp>$/);
