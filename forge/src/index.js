@@ -141,7 +141,8 @@ export async function issueEvent(event) {
 
 /**
  * Forge SQL migrations, run on install and upgrade (trigger dowser-migrate) and daily (dowser-migrate-daily),
- * then the Jira issue-property backfill (core/issue-property.mjs): best effort, logged, never fails the trigger.
+ * then the Jira issue-property backfill (core/issue-property.mjs) and the page-link backfill (core/doc-drift.mjs):
+ * each best effort and logged on its own, never failing the trigger.
  * @param {unknown} _event
  * @returns {Promise<void>}
  */
@@ -149,12 +150,17 @@ export async function migrate(_event) {
   const ran = await runMigrations();
   markMigrated();
   console.log(`dowser: migrations ran: ${ran.length ? ran.join(', ') : 'none (up to date)'}`);
+  // independent jobs: each runs and reports on its own, whatever the other did
   try {
     const b = await backfillIssueProperties(deps());
     if (b.written || b.failed) console.log(JSON.stringify({ dowser: 'issue-property-backfill', ...b }));
+  } catch (e) {
+    console.error(`dowser: issue-property backfill failed (${String(/** @type {any} */ (e)?.message ?? e).slice(0, 200)})`);
+  }
+  try {
     const l = await backfillPageLinks(deps());
     if (l.linked) console.log(JSON.stringify({ dowser: 'page-links-backfill', ...l }));
   } catch (e) {
-    console.error(`dowser: issue-property backfill failed (${String(/** @type {any} */ (e)?.message ?? e).slice(0, 200)})`);
+    console.error(`dowser: page-links backfill failed (${String(/** @type {any} */ (e)?.message ?? e).slice(0, 200)})`);
   }
 }
