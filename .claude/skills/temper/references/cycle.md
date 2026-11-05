@@ -19,12 +19,17 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
 
 - Dowser: the `scan.dowser` command, `node tools/temper-scan.mjs --repo <dowser> --project-key <inbox> --focus "<focus>"`.
   It is one scan per cycle, and its ledger row (`~/.temper/scans.jsonl`) is the scan-yield instrument of the bar.
+  The row's `report` names `~/.temper/scans/<stamp>-<inbox>.json`: the row, the scan's summary and every card it
+  created or moved (`{fp, ref, status, lens, title, evidence, created}`). The clone is deleted after the scan.
 - Other repos: `scan.others_due` lists those with no scan today or yesterday, so each is scanned every second day,
   read-only, into its own inbox.
 - A full four-lens scan costs about $8 (n=1, bp, 2026-11-05). Never call ScheduleWakeup inside a scan.
 
 ## 3. Triage (delegate:temper)
 
+- List the cards with `node tools/temper-cards.mjs --project-key <inbox> [--status s] [--quotes]` (or the scan's
+  `report`). Not `dowser.mjs list --repo <path>`: the scan keys the store by the inbox key (the clone's origin is set to
+  it), so the real checkout maps to another project and lists nothing.
 - A subagent reads every new card against the code it quotes. Accept only a card that is real (the evidence holds
   at HEAD), in direction, and inside the charter's bounds. Reject with the honest reason code. Snooze what is real but
   not now. Merge duplicates into the accepted item.
