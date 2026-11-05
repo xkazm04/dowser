@@ -6,7 +6,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -306,6 +306,9 @@ test('land --dry-run (Dowser): green is the ff merge + push + Forge development 
   put(join(w.root, 'docs', 'evals', 'temper', '2026-11-05.jsonl'), `${JSON.stringify({ kind: 'cycle', n: 1, date: '2026-11-05', repo: 'dowser', target: 'tooling', green: true, head })}\n`);
   put(join(w.root, 'forge', 'x.mjs'), 'export const broken = 1;\n');
   g(w.root, 'commit', '-q', '-am', 'feat: broken');
+  // the results predate the red commit: backdated, since a commit time has whole seconds and the write may share one
+  const before = Number(g(w.root, 'log', '-1', '--format=%ct')) - 5;
+  for (const p of ['fixture', 'local']) utimesSync(join(w.root, 'e2e', 'results', `${p}.json`), before, before);
   const red = main(['land', '--dry-run'], { ...w.ctx, run: (c, a, o) => (c === 'npm' && a[1] === 'forge:test' ? { status: 1, stdout: '' } : w.ctx.run(c, a, o)) });
   assert.equal(red.out.decision, 'rollback');
   assert.equal(red.out.target, head);
