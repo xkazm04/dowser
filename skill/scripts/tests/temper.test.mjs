@@ -16,6 +16,7 @@ import {
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
 import { derivedIds } from '../../../tools/e2e-coverage.mjs';
 import { dryRun } from '../../../tools/temper-dryrun.mjs';
+import { parseVerdicts } from '../../../tools/temper-verdicts.mjs';
 import { gitRepo, removeDir, tempDir } from './_fixture.mjs';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -262,6 +263,25 @@ test('triage limits: the 20% reject/snooze floor and the day\'s caps, where snoo
   assert.match(triageLimits([...v('snooze'), ...v('merge')], v('reject'), caps).why.join(), /3 rejects, snoozes and merges today/);
 });
 
+test('one verdicts file passes both triage check and temper-verdicts: inbox and recorded are optional, checked, never sent', () => {
+  const w = world();
+  charter(w);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  const file = join(w.work, 'v.json');
+  const vs = [{ ref: 'DW-1', verdict: 'accept', inbox: 'dowser-temper', recorded: 'local' }, { ref: 'DW-2', verdict: 'reject', reason: 'false-positive', inbox: 'dowser-temper', recorded: 'local' },
+    { ref: 'DW-3', verdict: 'snooze', note: 'after the store split', recorded: 'live' }];
+  put(file, vs);
+  const c = main(['triage', 'check', '--verdicts', file, '--inbox', 'dowser-temper'], w.ctx);
+  assert.equal(c.code, 0, JSON.stringify(c.out));
+  assert.deepEqual(parseVerdicts(vs, 'dowser-temper').map((v) => Object.keys(v).sort().join()), ['ref,verdict', 'reason,ref,verdict', 'note,ref,verdict'], 'the ledger keys are stripped before the call');
+  // the same refusals in both: a snooze's why is a note, and the inbox must be the one named
+  for (const bad of [[{ ...vs[2], reason: 'after the store split' }], [{ ...vs[0], inbox: 'bp-temper' }], [{ ...vs[0], recorded: 'maybe' }]]) {
+    put(file, bad);
+    assert.equal(main(['triage', 'check', '--verdicts', file, '--inbox', 'dowser-temper'], w.ctx).code, 2, JSON.stringify(bad));
+    assert.throws(() => parseVerdicts(bad, 'dowser-temper'), JSON.stringify(bad));
+  }
+});
+
 test('cycle end: local-only verdicts are recorded as delegate:temper with the caps, and a red gate makes the cycle red', () => {
   const w = world({ npm: { test: 1 } });
   charter(w);
@@ -448,6 +468,7 @@ test('cycle reverify: the same gates and e2e on the cycle\'s unchanged tree; its
   const r1 = main(['cycle', 'reverify', '--n', '1'], ctx);
   assert.equal(r1.code, 1);
   assert.equal(r1.out.kind, 'reverify');
+  for (const k of Object.keys(r1.out)) assert.match(readmeBlock('### A reverify row'), new RegExp(`"${k}"`), `README's reverify row lacks ${k}`);
   assert.equal(day().last_green, base, 'a red reverify moves nothing');
   exits.typecheck = 0; exits.test = 0; npm.length = 0;
   w.at(Date.now());
@@ -746,6 +767,52 @@ test('repo start/land: bp rebases onto origin/master and pushes HEAD:master only
   assert.equal(main(['day', 'end'], w.ctx).code, 0);
 });
 
+test('repo paths --add: widens the personas entry through active-runs.mjs (check, then complete and register the same slug); a live conflict refuses', () => {
+  const w = world();
+  const { personas } = otherRepos(w);
+  const draft = join(w.work, 'draft.json');
+  put(draft, { repos: [{ name: 'dowser', path: w.root, inbox_key: 'dowser-temper', build: true },
+    { name: 'personas', path: personas, inbox_key: 'personas-temper', build: true, landing: { kind: 'commit-only' }, ledger: '.claude/active-runs.md', gates: ['npm run gate -- --cold'] }] });
+  assert.equal(main(['charter', 'init', '--from', draft, '--operator', 'Op'], w.ctx).code, 0);
+  main(['day', 'start', '--date', '2026-11-05'], w.ctx);
+  // the ledger script stand-in: check answers a live conflict for anything under src/hot/, and our own entry
+  /** @type {string[][]} */
+  const ledger = [];
+  const run = w.ctx.run;
+  w.ctx.run = (cmd, args, ro) => {
+    if (cmd !== 'node' || !args[0].endsWith('active-runs.mjs')) return run(cmd, args, ro);
+    ledger.push(args.slice(1));
+    assert.equal(ro?.cwd, personas, 'run in the personas checkout, so its own ledger is the one written');
+    if (args[1] !== 'check') return { status: 0, stdout: '' };
+    const asked = args.slice(args.indexOf('--paths') + 1);
+    const conflicts = [{ slug: 'temper-2026-11-05', ageHours: 0.1, overlap: ['src/a/**'] }, ...(asked.some((p) => p.startsWith('src/hot')) ? [{ slug: 'other-session', ageHours: 0.5, overlap: ['src/hot/**'] }] : [])];
+    return { status: args.includes('--json') ? 2 : 0, stdout: JSON.stringify({ conflicts }) };
+  };
+  assert.equal(main(['repo', 'start', '--repo', 'personas', '--paths', 'src/a/**'], w.ctx).code, 0);
+  ledger.length = 0;
+  assert.equal(main(['repo', 'paths', '--repo', 'personas'], w.ctx).code, 2, '--add is required');
+  const hot = main(['repo', 'paths', '--repo', 'personas', '--add', 'src/b/**,src/hot/**'], w.ctx);
+  assert.equal(hot.code, 1);
+  assert.match(hot.out.error, /a live session holds src\/hot\/\*\* \(other-session\)/);
+  assert.deepEqual(ledger.map((a) => a[0]), ['check'], 'a conflict refuses before anything is written');
+  ledger.length = 0;
+  const ok = main(['repo', 'paths', '--repo', 'personas', '--add', 'src/b/**,src/a/**'], w.ctx);
+  assert.equal(ok.code, 0, JSON.stringify(ok.out));
+  assert.deepEqual(ok.out.paths, ['src/a/**', 'src/b/**']);
+  assert.deepEqual(ok.out.added, ['src/b/**']);
+  assert.deepEqual(ledger.map((a) => a[0]), ['check', 'complete', 'register'], 'the ledger script is the only writer');
+  assert.deepEqual(ledger[0].slice(ledger[0].indexOf('--paths') + 1), ['src/b/**'], 'only the new paths are checked; our own entry is no conflict');
+  assert.equal(ledger[1][ledger[1].indexOf('--slug') + 1], 'temper-2026-11-05');
+  assert.deepEqual([ledger[2][ledger[2].indexOf('--slug') + 1], ...ledger[2].slice(ledger[2].indexOf('--paths') + 1)], ['temper-2026-11-05', 'src/a/**', 'src/b/**'], 'the same slug, not a second entry');
+  const day = JSON.parse(readFileSync(join(w.root, '.temper', 'day.json'), 'utf8'));
+  assert.deepEqual(day.repos.personas.paths, ['src/a/**', 'src/b/**']);
+  ledger.length = 0;
+  assert.deepEqual(main(['repo', 'paths', '--repo', 'personas', '--add', 'src/b/**'], w.ctx).out.added, []);
+  assert.deepEqual(ledger, [], 'nothing new: the ledger is not touched');
+  assert.equal(main(['repo', 'end', '--repo', 'personas'], w.ctx).code, 0);
+  assert.equal(main(['repo', 'paths', '--repo', 'personas', '--add', 'src/c/**'], w.ctx).code, 1, 'an ended run is not widened');
+});
+
 /** Dowser plus a bp build repo under one charter, the day started. @param {ReturnType<typeof world>} w */
 function twoRepoDay(w) {
   const { bp } = otherRepos(w);
@@ -791,6 +858,21 @@ test('cycles per repo: bp begins while Dowser\'s cycle is open (the first versio
   assert.deepEqual([d.out.repo, d.out.n, d.out.target], ['dowser', 1, 'lenses']);
   assert.equal(existsSync(legacy), false);
   assert.equal(main(['cycle', 'begin', '--target', 'tooling'], w.ctx).out.n, 3);
+});
+
+test('land --repo: only that repo\'s open cycle blocks it; another repo\'s open cycle does not, and Dowser still waits for all', () => {
+  const w = world();
+  twoRepoDay(w);
+  assert.equal(main(['cycle', 'begin', '--target', 'tooling'], w.ctx).code, 0, 'Dowser\'s cycle is open');
+  const wt = JSON.parse(readFileSync(join(w.root, '.temper', 'day.json'), 'utf8')).repos.bp.worktree;
+  put(join(wt, 'a.txt'), 'a\n');
+  g(wt, 'add', 'a.txt'); g(wt, 'commit', '-q', '-m', 'feat: a');
+  const l = main(['land', '--repo', 'bp', '--dry-run'], w.ctx);
+  assert.equal(l.out.decision, 'land', JSON.stringify(l.out));
+  // Dowser's landing switches the checkout that holds every repo's records, so it still waits for all of them
+  assert.match(main(['land', '--dry-run'], w.ctx).out.error, /cycle 1 \(tooling\) in dowser still open/);
+  assert.equal(main(['cycle', 'begin', '--repo', 'bp', '--target', 'area:README.md'], w.ctx).code, 0);
+  assert.match(main(['land', '--repo', 'bp', '--dry-run'], w.ctx).out.error, /in bp still open: end it first/);
 });
 
 test('cycle begin --repo: the target is a focus in the store\'s form (area:<path> in the worktree, goal:<text>), refused clearly otherwise', () => {
@@ -847,7 +929,19 @@ test('dry-run day: charter -> day start -> cycle begin -> bar -> cycle end -> re
   const r = dryRun();
   assert.equal(r.ok, true, JSON.stringify(r.steps.filter((s) => !s.ok), null, 2));
   assert.deepEqual(r.steps.map((s) => s.step), ['charter init', 'day start', 'cycle begin', 'modules bar', 'cycle end', 'report', 'land --dry-run (green)', 'land --dry-run (red)']);
+  // docs/evals/temper/README.md documents every key a real cycle row has (top level and verified)
+  const row = r.steps.find((s) => s.step === 'cycle end')?.out;
+  const block = readmeBlock('### A cycle row');
+  for (const k of [...Object.keys(row), ...Object.keys(row.verified).map((x) => `verified.${x}`)]) assert.match(block, new RegExp(`"${k.split('.').at(-1)}"`), `README's cycle row lacks ${k}`);
 });
+
+/** The JSON example under one heading of docs/evals/temper/README.md. @param {string} heading */
+function readmeBlock(heading) {
+  const md = readFileSync(join(ROOT, 'docs', 'evals', 'temper', 'README.md'), 'utf8');
+  const at = md.indexOf(`${heading}\n`);
+  assert.ok(at >= 0, `README has ${heading}`);
+  return md.slice(at, md.indexOf('```\n', md.indexOf('```json', at) + 7));
+}
 
 // ------------------------------------------------------------------------------------------------ guard
 

@@ -1,21 +1,22 @@
 // @ts-check
-// The /temper tools (tools/temper-scan.mjs, temper-tickets.mjs, temper-verdicts.mjs, live-mcp.mjs): argument
+// The /temper tools (tools/temper-scan.mjs, temper-cards.mjs, temper-tickets.mjs, temper-verdicts.mjs, live-mcp.mjs): argument
 // validation, the ticket dedupe key, ADF building, and the verdicts tool's paging against a stub. No network.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PROJECT_KEY_RE } from '../../../forge/src/core/push.mjs';
 import { SAMPLE_KEY } from '../../../forge/src/core/types.mjs';
 import { findDowserServer, toolPrompt, writeMcpConfig } from '../../../tools/live-mcp.mjs';
 import { UsageError, checkProjectKey, parseFlags } from '../../../tools/temper-lib.mjs';
-import { cardCounts, parseScanArgs, scanPrompt } from '../../../tools/temper-scan.mjs';
+import { listCards, scanStore } from '../../../tools/temper-cards.mjs';
+import { cardCounts, parseScanArgs, reportFile, scanPrompt, writeReport } from '../../../tools/temper-scan.mjs';
 import { adfOf, closeTickets, dedupeJql, fileFindings, planFindings, findingFp, fpLabel, jiraClient, parseFindings, parseTicketArgs, summaryOf } from '../../../tools/temper-tickets.mjs';
 import { checkVerdict, parseVerdictArgs, parseVerdicts, recordVerdicts } from '../../../tools/temper-verdicts.mjs';
 import { scanArgs } from '../../../tools/scan-workspace.mjs';
-import { gitRepo, removeDir, tempDir } from './_fixture.mjs';
+import { candidate, gitRepo, removeDir, tempDir } from './_fixture.mjs';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -316,4 +317,45 @@ test('recordVerdicts: one scalar call, paging on more until every verdict has a 
   await assert.rejects(recordVerdicts('bp-temper', verdicts, () => ({ error: { code: 'forbidden' } })), /answered forbidden/);
   await assert.rejects(recordVerdicts('bp-temper', verdicts, () => ({ results: [] })), /and no more/);
   await assert.rejects(recordVerdicts('bp-temper', verdicts, () => ({ results: [], more: true })), /recorded nothing new/);
+});
+
+test('temper-cards: lists a scan home\'s cards (status, lens, title, evidence refs) by inbox key, read through the store library', () => {
+  const work = tempDir('temper-cards');
+  try {
+    const temperHome = join(work, 'temper'), key = 'bp-temper';
+    const repo = join(work, 'clone');
+    mkdirSync(repo);
+    gitRepo(repo, { 'src/auth.js': 'export function login(user) {\n  return check(user.password);\n}\n' });
+    spawnSync('git', ['-C', repo, 'remote', 'add', 'origin', key]);
+    const CLI = join(ROOT, 'skill', 'scripts', 'dowser.mjs');
+    const env = { ...process.env, DOWSER_HOME: join(temperHome, 'homes', key) };
+    const cli = (/** @type {string[]} */ ...a) => { const r = spawnSync(process.execPath, [CLI, ...a, '--repo', repo], { encoding: 'utf8', env, cwd: work }); assert.equal(r.status, 0, r.stderr + r.stdout); return r.stdout; };
+    const run = JSON.parse(cli('run', 'start', '--mode', 'full')).run_id;
+    const file = join(work, 'c.jsonl');
+    writeFileSync(file, `${JSON.stringify(candidate({ kind: 'secret-exposure', topic: 'plaintext password' }))}\n`);
+    const fp = JSON.parse(cli('propose', '--run', run, '--file', file, '--kinds', 'security-cra=secret-exposure').split('\n')[0]).fp;
+    // the real checkout's origin differs, which is why `dowser.mjs list --repo <real path>` answers nothing
+    const out = listCards({ home: temperHome, key });
+    assert.equal(out.db, scanStore(temperHome, key));
+    assert.deepEqual(out.cards.map((/** @type {any} */ c) => [c.fp, c.lens, c.title]), [[fp, 'security-cra', 'Password compared in plaintext']]);
+    assert.deepEqual(out.cards[0].evidence, [{ type: 'code', ref: 'src/auth.js:2', path: 'src/auth.js', line: 2 }], 'quotes only with --quotes');
+    assert.equal(listCards({ home: temperHome, key, quotes: true }).cards[0].evidence[0].quote, 'return check(user.password);');
+    assert.deepEqual(listCards({ home: temperHome, key, status: 'rejected' }).cards, []);
+    const tool = (/** @type {string[]} */ ...a) => spawnSync(process.execPath, [join(ROOT, 'tools', 'temper-cards.mjs'), ...a], { encoding: 'utf8', env: { ...process.env, TEMPER_HOME: temperHome } });
+    const ok = tool('--project-key', key);
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.equal(JSON.parse(ok.stdout).cards[0].fp, fp);
+    assert.equal(tool('--project-key', 'personas-temper').status, 1, 'no scan wrote that home');
+    assert.equal(tool('--project-key', key, '--lens', 'nope').status, 2);
+    assert.equal(tool().status, 2);
+    // temper-scan's report names the cards it created, so triage needs neither the clone nor a store query
+    const report = reportFile(temperHome, key);
+    assert.ok(report.startsWith(join(temperHome, 'scans')) && report.endsWith(`-${key}.json`));
+    const shown = JSON.parse(cli('show', fp));
+    writeReport(report, { ts: 't', project_key: key, report }, 'done', [shown], new Map());
+    const r = JSON.parse(readFileSync(report, 'utf8'));
+    assert.equal(r.report, report);
+    assert.equal(r.summary, 'done');
+    assert.deepEqual([r.cards[0].fp, r.cards[0].created, r.cards[0].lens], [fp, true, 'security-cra']);
+  } finally { removeDir(work); }
 });

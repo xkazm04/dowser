@@ -19,14 +19,17 @@
 //
 // The Dowser memory lives in DOWSER_HOME = <temper home>/homes/<project-key> (TEMPER_HOME, default ~/.temper), so the
 // next scan of the same key pulls the verdicts and follows the rules. Each scan appends one row to
-// <temper home>/scans.jsonl: {ts, repo, head, project_key, focus?, ok, minutes, cost_usd?, turns?, cards}.
+// <temper home>/scans.jsonl: {ts, repo, head, project_key, focus?, ok, minutes, cost_usd?, turns?, cards, report}, where
+// report is <temper home>/scans/<stamp>-<project-key>.json: the row, the scan's summary and every card the scan created
+// or moved as {fp, ref?, status, lens, title, evidence, created} (tools/temper-cards.mjs lists the whole scan home).
 // Exit codes: 0 done (or dry run), 1 the scan failed, 2 bad arguments.
-import { existsSync, appendFileSync, mkdirSync, mkdtempSync, statSync } from 'node:fs';
+import { existsSync, appendFileSync, mkdirSync, mkdtempSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { FOCUS_RE, LENSES, isOneOf } from '../skill/scripts/lib/model.mjs';
 import { liveDowserServer, writeMcpConfig } from './live-mcp.mjs';
-import { changedCards, cloneRepo, dowserCli, git, installSkill, removeWork, runScan, scanArgs, statusMap } from './scan-workspace.mjs';
+import { changedCards, cloneRepo, dowserCli, git, installSkill, removeWork, runScan, scanArgs, stamp, statusMap } from './scan-workspace.mjs';
+import { cardRow } from './temper-cards.mjs';
 import { UsageError, checkProjectKey, isMain, parseFlags, temperHome } from './temper-lib.mjs';
 
 const USAGE = 'usage: node tools/temper-scan.mjs --repo <path> --project-key <k> [--focus "goal: .."|"area: .."] [--budget-usd n] [--model m] [--lenses a,b] [--hide path]... [--keep] [--dry-run]';
@@ -88,6 +91,21 @@ export function cardCounts(cards, before) {
   return { created, moved: cards.length - created, pushed, by_status: byStatus };
 }
 
+/** Where one scan's report goes. @param {string} home the Temper home @param {string} key */
+export const reportFile = (home, key) => join(home, 'scans', `${stamp()}-${key}.json`);
+
+/**
+ * Writes one scan's report: its ledger row, its summary and the cards it created or moved, so triage needs neither the
+ * deleted clone nor a store query.
+ * @param {string} file @param {Record<string, unknown>} row @param {string | undefined} summary
+ * @param {any[]} changed `show` outputs @param {Map<string, string>} before
+ */
+export function writeReport(file, row, summary, changed, before) {
+  mkdirSync(dirname(file), { recursive: true });
+  const cards = changed.map((s) => ({ ...cardRow(s), created: !before.has(s.fp) }));
+  writeFileSync(file, `${JSON.stringify({ ...row, ...(summary ? { summary } : {}), cards }, null, 2)}\n`);
+}
+
 /** @param {ScanOpts} o */
 function main(o) {
   const home = temperHome();
@@ -117,10 +135,14 @@ function main(o) {
     const scan = runScan(args, { work, w });
     const r = scan.result ?? {};
     let cards = { created: 0, moved: 0, pushed: 0, by_status: {} };
-    try { cards = cardCounts(changedCards(w, before), before); } catch { /* the store is unreadable: counts stay empty */ }
+    /** @type {any[]} */
+    let changed = [];
+    try { changed = changedCards(w, before); cards = cardCounts(changed, before); } catch { /* the store is unreadable: counts stay empty */ }
+    const report = reportFile(home, o.projectKey);
     const row = { ts: new Date().toISOString(), repo: o.repo, head: cloned.head, project_key: o.projectKey, ...(o.focus ? { focus: o.focus } : {}),
       ok: scan.ok, minutes: scan.minutes, ...(typeof r.total_cost_usd === 'number' ? { cost_usd: Number(r.total_cost_usd.toFixed(4)) } : {}),
-      ...(typeof r.num_turns === 'number' ? { turns: r.num_turns } : {}), cards };
+      ...(typeof r.num_turns === 'number' ? { turns: r.num_turns } : {}), cards, report };
+    writeReport(report, row, typeof r.result === 'string' ? r.result : undefined, changed, before);
     mkdirSync(home, { recursive: true });
     appendFileSync(join(home, 'scans.jsonl'), JSON.stringify(row) + '\n');
     if (!scan.ok) {

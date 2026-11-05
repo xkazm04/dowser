@@ -19,17 +19,27 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
 
 - Dowser: the `scan.dowser` command, `node tools/temper-scan.mjs --repo <dowser> --project-key <inbox> --focus "<focus>"`.
   It is one scan per cycle, and its ledger row (`~/.temper/scans.jsonl`) is the scan-yield instrument of the bar.
+  The row's `report` names `~/.temper/scans/<stamp>-<inbox>.json`: the row, the scan's summary and every card it
+  created or moved (`{fp, ref, status, lens, title, evidence, created}`). The clone is deleted after the scan.
 - Other repos: `scan.others_due` lists those with no scan today or yesterday, so each is scanned every second day,
   read-only, into its own inbox.
-- A full four-lens scan costs about $8 (n=1, bp, 2026-11-05). Never call ScheduleWakeup inside a scan.
+- A full four-lens scan costs about $8 (n=1, bp, 2026-11-05). A focused one-area scan costs far less: $2.91 and
+  9 minutes (n=1, dowser, `area:skill/lenses`, 2026-11-05). Budget a focused cycle from the focused figure. Never call
+  ScheduleWakeup inside a scan.
 
 ## 3. Triage (delegate:temper)
 
+- List the cards with `node tools/temper-cards.mjs --project-key <inbox> [--status s] [--quotes]` (or the scan's
+  `report`). Not `dowser.mjs list --repo <path>`: the scan keys the store by the inbox key (the clone's origin is set to
+  it), so the real checkout maps to another project and lists nothing.
 - A subagent reads every new card against the code it quotes. Accept only a card that is real (the evidence holds
   at HEAD), in direction, and inside the charter's bounds. Reject with the honest reason code. Snooze what is real but
   not now. Merge duplicates into the accepted item.
 - At least 20% of decided cards are rejected or snoozed. Within the day's caps, check the verdicts file first with
   `T triage check --verdicts <file> --inbox <key>`. Exit 1 means look again for the weak cards.
+- One verdicts file serves both tools: `[{ref, verdict, reason?, note?, into?, until?, inbox?, recorded?}]`. `reason` is a
+  reject's code only (model.mjs REASONS); a snooze or an accept says why in `note`. `inbox` (when given) must be the
+  inbox checked, and `recorded` is `live` or `local`; temper-verdicts checks both and never sends them.
 - Record them live with `node tools/temper-verdicts.mjs --project-key <k> --verdicts <file>`. When it refuses with
   `forbidden` (no valid delegation in Jira Settings), the verdicts are **local only**. Put them in the cycle file with
   `recorded: "local"`. The live inbox keeps its cards undecided, and the report counts them apart.
@@ -38,6 +48,9 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
 
 - A **QA subagent** writes the item's specs or tests first, from the card's Flow and acceptance criteria. A defect
   spec must fail on the base (the red control). It commits them alone.
+- A pure docs card (doc drift inside the registered paths) has no natural test file. Its spec is a declared
+  acceptance command (a quote or grep check that fails on the base and passes after), written by the QA subagent
+  before the build and listed in `built[].specs` as the command, with `qa` saying who wrote it.
 - **Builder subagents** work in worktrees off the day branch (`loop/<date>`, or the repo's `temper/<date>`
   worktree from `repo start`). They never edit their item's specs. They run the repo's item gates (personas:
   `npm run verify:affected -- --files <files>`).
@@ -57,7 +70,10 @@ form to write. Any other prefix, an empty goal or an area path the worktree lack
   counts as a pass.
 - The verdict is the runner's exit code and `e2e/results/<project>.json`. `cycle end` reads those files itself, in the
   main checkout, and counts only files newer than the cycle's start.
-- An exploratory persona pass (a subagent playing a product person on the fixture and local UI) writes findings as
+- An exploratory persona pass (a subagent playing a product person on the fixture and local UI) runs when the cycle
+  touched a UI surface (`forge/static/app/`, or a route or resolver a spec covers). A cycle that changed none (a
+  CLI-only module, `"uat": "tests"` in modules.json) skips it and says so in `uat.persona_pass`
+  (`"skipped: no UI surface touched"`). The pass writes findings as
   `{title, surface, steps, expected, actual, screenshot?, spec?}`. They are filed with
   `node tools/temper-tickets.mjs file --findings <json>` (deduped by fingerprint, labelled `temper-uat`).
 

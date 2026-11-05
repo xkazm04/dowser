@@ -39,6 +39,9 @@ Production, tags and releases are never part of a landing. The guard denies them
 ## bp: `rebase-push`
 
 - `T repo start --repo bp` makes `temper/<date>` from origin/master, in a worktree under `~/.temper/worktrees/`.
+- `T land --repo bp` refuses only while bp's own cycle is open (another repo's open cycle does not block it, so it
+  can land as soon as a bp cycle is green). Dowser's `land` still waits for every repo, because it switches the
+  checkout that holds all the day records.
 - `T land --repo bp`: fetch, rebase onto origin/master (a conflict aborts the rebase and is red: resolve it in the
   worktree, keeping both sides' intent), then the charter's gates (`npm run check`) and the built-in secret scan of
   `origin/master...HEAD`. The scan flags an env file in the diff (never `.env.example`) and known token shapes in
@@ -51,8 +54,16 @@ Production, tags and releases are never part of a landing. The guard denies them
 - `T repo start --repo personas --paths <globs>` runs `scripts/active-runs.mjs check` (a live conflict refuses), makes
   `temper/<date>` in a worktree, and registers the run. `T repo end` completes it. `day end` refuses while it is
   registered.
+- `T repo paths --repo personas --add a,b` widens the registered paths for a later cycle. It runs
+  `active-runs.mjs check --json` on the new paths (a live entry of another session refuses, before anything is
+  written), then, because the ledger script has no update command and is its only writer, completes the day's entry
+  and registers it again under the same slug with every path. The day keeps one active entry. `day.json` records the
+  paths; a day started before it did needs `--paths <the paths given at repo start>` as well.
 - Builders run `npm run verify:affected -- --files <files>` per item. `T land --repo personas` runs
   `npm run gate -- --cold` and records the result. It **never pushes**. The operator merges the branch.
+- personas' gates lint `src/` only: for a change to `scripts/*.mjs` the cold gate reports eslint `ok` with "no lintable
+  files". Those files are linted only by the pre-commit eslint-staged hook, so never read the cold gate as covering
+  them; say so in the cycle's `uat`.
 
 ## After a landing
 
