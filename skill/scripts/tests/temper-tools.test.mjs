@@ -14,7 +14,7 @@ import { UsageError, checkProjectKey, parseFlags } from '../../../tools/temper-l
 import { listCards, scanStore } from '../../../tools/temper-cards.mjs';
 import { cardCounts, parseScanArgs, reportFile, resolveScanRef, scanPrompt, writeReport } from '../../../tools/temper-scan.mjs';
 import { adfOf, closeTickets, dedupeJql, fileFindings, planFindings, findingFp, fpLabel, jiraClient, parseFindings, parseTicketArgs, summaryOf } from '../../../tools/temper-tickets.mjs';
-import { checkVerdict, parseVerdictArgs, parseVerdicts, recordVerdicts } from '../../../tools/temper-verdicts.mjs';
+import { ForbiddenError, checkVerdict, forbiddenToday, parseVerdictArgs, parseVerdicts, recordVerdicts, rememberForbidden } from '../../../tools/temper-verdicts.mjs';
 import { cloneRepo, scanArgs } from '../../../tools/scan-workspace.mjs';
 import { candidate, gitRepo, removeDir, tempDir } from './_fixture.mjs';
 
@@ -341,9 +341,35 @@ test('temper-verdicts: each verdict checked against the dowser_verdicts_record c
   ])) assert.throws(() => checkVerdict(bad, 0), re, JSON.stringify(bad));
   assert.throws(() => parseVerdicts([{ ref: 'DW-1', verdict: 'accept' }, { ref: 'DW-1', verdict: 'snooze' }]), /two verdicts/);
   assert.throws(() => parseVerdicts([]), /non-empty/);
-  assert.deepEqual(parseVerdictArgs(['--project-key', 'bp-temper', '--verdicts', 'v.json']), { projectKey: 'bp-temper', verdicts: 'v.json', dryRun: false });
+  assert.deepEqual(parseVerdictArgs(['--project-key', 'bp-temper', '--verdicts', 'v.json']), { projectKey: 'bp-temper', verdicts: 'v.json', dryRun: false, retry: false });
   assert.throws(() => parseVerdictArgs(['--project-key', SAMPLE_KEY, '--verdicts', 'v.json']), /reserved/);
   assert.throws(() => parseVerdictArgs(['--project-key', 'bp-temper']), /--verdicts/);
+});
+
+test('temper-verdicts forbidden: a typed error, remembered per inbox per day, answered as JSON with exit 1 and no call; --retry asks again', async () => {
+  await assert.rejects(recordVerdicts('dowser-temper', [{ ref: 'DW-1', verdict: 'accept' }], async () => ({ error: { code: 'forbidden' } })), ForbiddenError);
+  await assert.rejects(recordVerdicts('dowser-temper', [{ ref: 'DW-1', verdict: 'accept' }], async () => ({ error: 'forbidden' })), ForbiddenError);
+  await assert.rejects(recordVerdicts('dowser-temper', [{ ref: 'DW-1', verdict: 'accept' }], async () => ({ error: 'caps' })), (e) => !(e instanceof ForbiddenError) && /answered caps/.test(String(e)));
+  const dir = tempDir('temper-forbidden');
+  try {
+    const home = join(dir, 'home');
+    const today = new Date();
+    assert.equal(forbiddenToday(home, 'dowser-temper', today), false);
+    rememberForbidden(home, 'dowser-temper', today);
+    assert.equal(forbiddenToday(home, 'dowser-temper', today), true);
+    assert.equal(forbiddenToday(home, 'bp-temper', today), false, 'per inbox');
+    assert.equal(forbiddenToday(home, 'dowser-temper', new Date(today.getTime() + 86400000)), false, 'per day');
+    const file = join(dir, 'v.json');
+    writeFileSync(file, JSON.stringify([{ ref: 'DW-1', verdict: 'accept', inbox: 'dowser-temper', recorded: 'local' }]));
+    // the memo answers before any MCP lookup or claude call: an unreachable server URL proves no call is made
+    const r = spawnSync(process.execPath, [join(ROOT, 'tools/temper-verdicts.mjs'), '--project-key', 'dowser-temper', '--verdicts', file],
+      { encoding: 'utf8', env: { ...process.env, TEMPER_HOME: home, DOWSER_MCP_URL: 'https://example.invalid/mcp' } });
+    assert.equal(r.status, 1, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assert.deepEqual([out.forbidden, out.record_as, out.recorded], [true, 'local', 0]);
+    assert.match(out.why, /earlier today .*--retry/);
+    assert.equal(parseVerdictArgs(['--project-key', 'dowser-temper', '--verdicts', file, '--retry']).retry, true);
+  } finally { removeDir(dir); }
 });
 
 test('recordVerdicts: one scalar call, paging on more until every verdict has a result; refusals reported', async () => {

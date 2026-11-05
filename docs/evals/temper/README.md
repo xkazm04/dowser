@@ -184,7 +184,7 @@ node tools/temper-tickets.mjs close <KEY>... [--project DOW]
 ### temper-verdicts - delegated triage through `dowser_verdicts_record`
 
 ```
-node tools/temper-verdicts.mjs --project-key <k> --verdicts <json> [--dry-run]
+node tools/temper-verdicts.mjs --project-key <k> --verdicts <json> [--retry] [--dry-run]
 ```
 
 - A verdicts file is an array of `{ref, verdict: accept|reject|snooze|merge, reason?, note?, into?, until?, inbox?,
@@ -198,4 +198,7 @@ node tools/temper-verdicts.mjs --project-key <k> --verdicts <json> [--dry-run]
 - Forge records each verdict as `delegate:temper`. It refuses a verdict when the inbox's delegation (Jira Settings)
   is absent or expired, when the day's caps are reached, or in the sample inbox. A refusal is reported with its
   `why` and the tool exits 1.
+- A `forbidden` answer (no valid delegation) prints `{project_key, recorded: 0, forbidden: true, record_as:
+  "local", why}` and exits 1. It is remembered per inbox per day in `~/.temper/verdicts-forbidden.json`, so a later
+  call that day answers the same without a `claude -p` run. `--retry` asks Forge again.
 - `--dry-run` prints the tool arguments without a call.
