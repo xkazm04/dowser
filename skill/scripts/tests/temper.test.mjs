@@ -6,12 +6,12 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_CAPS, LANDINGS, REJECT_SHARE, WALL_MIN, clockOf, depDrift, evaluateBar, installRows, loadModules, main, qualityPart, readInstruments, realRun,
-  capQuestions, commitGroups, commitKind, cycleRows, envCause, environmentalRed, parkedGroups, supersede, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
+  capQuestions, commitGroups, commitKind, cycleRows, cycleScratch, envCause, environmentalRed, parkedGroups, supersede, parseCommitLog, refList, renderReport, secretScan, startQuestions, triageLimits, uatPart, validateCycleFile, viteServersIn,
 } from '../../../.claude/skills/temper/scripts/temper.mjs';
 import { PUSH_DEFAULTS, decide, segments } from '../../../.claude/skills/temper/scripts/guard.mjs';
 import { derivedIds } from '../../../tools/e2e-coverage.mjs';
@@ -1196,6 +1196,21 @@ test('runner.md: the brief is repo-agnostic, on tonight\'s tools, and SKILL.md s
   assert.match(s1, /`runner` block/);
 });
 
+test('cycleScratch: a folder per cycle, created; files of an earlier day under the same number are moved aside, not read as this cycle', () => {
+  const home = temp('scratch');
+  const ctx = /** @type {any} */ ({ home, now: () => new Date(1000) });
+  const dir = cycleScratch(ctx, 4);
+  assert.equal(dir, join(home, 'runs', 'c4'));
+  assert.deepEqual(readdirSync(dir), []);
+  assert.equal(cycleScratch(ctx, 4), dir, 'an empty one stays');
+  put(join(dir, 'findings.json'), '[]');
+  assert.deepEqual(readdirSync(cycleScratch(ctx, 4)), [], 'the new cycle starts empty');
+  assert.deepEqual(readdirSync(join(home, 'runs', 'c4-before-1000')), ['findings.json']);
+  const md = readFileSync(join(ROOT, '.claude/skills/temper/references/runner.md'), 'utf8');
+  assert.match(md, /\| `scratch` \|/);
+  assert.match(md, /Every scratch file of this cycle goes in `scratch`/);
+});
+
 test('cap-deferred snoozes: counted apart (no floor, no rejects cap), only at the cap, carried to tomorrow in the report and asked first', () => {
   const v = (/** @type {string} */ verdict, n = 1, extra = {}) => Array.from({ length: n }, (_, i) => ({ ref: `DW-${verdict}-${i}`, verdict, ...extra }));
   const caps = { accepts_per_day: 2, rejects_per_day: 1 };
@@ -1439,12 +1454,15 @@ test('cycle begin prints the runner block: the brief, the launch inputs, the cap
   assert.deepEqual([r.work.worktree, r.work.branch], [day.repos.bp.worktree, day.repos.bp.branch]);
   assert.deepEqual(r.laws, [join(bp, 'AGENTS.md')]);
   assert.equal(r.cycle_file, join(w.home, 'runs', 'cycle-2-bp.json'));
+  assert.equal(r.scratch, join(w.home, 'runs', 'c2'), 'a scratch folder per cycle');
+  assert.ok(existsSync(r.scratch), 'cycle begin creates it');
   // Dowser: its own worktree temper/c<n> off loop/<date>, which the director merges
   const d = main(['cycle', 'begin', '--target', 'tooling'], w.ctx).out.runner;
   assert.deepEqual([d.repo, d.inbox, d.n, d.work.branch, d.work.from, d.work.worktree, d.cycle_file],
     ['dowser', 'dowser-temper', 3, 'temper/c3', 'loop/2026-11-05', join(w.home, 'worktrees', 'dowser-c3'), join(w.home, 'runs', 'cycle-3-dowser.json')]);
   assert.match(d.work.create, /^git worktree add -b temper\/c3 ".*dowser-c3" loop\/2026-11-05$/);
   assert.deepEqual(d.carried, [{ ref: 'DW-8' }]);
+  assert.equal(d.scratch, join(w.home, 'runs', 'c3'), 'concurrent cycles never share one');
   assert.equal(d.focus, loadModules().modules.tooling.focus, 'the module focus');
   assert.match(d.scan, / --ref loop\/2026-11-05 /);
 });

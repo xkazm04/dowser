@@ -38,7 +38,7 @@
 // claims is `self-reported`; a missing, stale or signed-out instrument is `unverifiable`, never a pass.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { coverage as e2eCoverage } from '../../../../tools/e2e-coverage.mjs';
@@ -732,6 +732,18 @@ function cycleBegin(ctx, f) {
 const LAW_FILES = ['CLAUDE.md', 'AGENTS.md', '.claude/CLAUDE.md'];
 
 /**
+ * One cycle's scratch folder, created empty: concurrent runners overwrote each other's files in a shared one. Cycle
+ * numbers restart each day, so an earlier day's c<n> is moved aside rather than read as this cycle's.
+ * @param {Ctx} ctx @param {number} n @returns {string}
+ */
+export function cycleScratch(ctx, n) {
+  const dir = join(ctx.home, 'runs', `c${n}`);
+  if (existsSync(dir) && readdirSync(dir).length) renameSync(dir, `${dir}-before-${ctx.now().getTime()}`);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/**
  * The cycle runner's launch inputs (references/runner.md): the director's launch message is a copy of this block.
  * Dowser builds in a worktree of its own off the day branch (temper/c<n>), which the director merges; another repo
  * builds in its day worktree from repo start, on its temper/<date> branch.
@@ -760,6 +772,7 @@ export function runnerBlock(ctx, { charter, day, repo, cycle, focus, command, it
     caps: { ...repo.caps, used: today, left: { accepts: Math.max(0, repo.caps.accepts_per_day - today.accepts), rejects: Math.max(0, repo.caps.rejects_per_day - today.rejects) } },
     carried, work, ...(Array.isArray(itemGates) ? { item_gates: itemGates } : {}), out_of_bounds: charter.out_of_bounds ?? [],
     laws: LAW_FILES.map((f) => join(repo.path, f)).filter((f) => existsSync(f)),
+    scratch: cycleScratch(ctx, n),
     cycle_file: join(ctx.home, 'runs', `cycle-${n}-${repo.name}.json`),
   };
 }

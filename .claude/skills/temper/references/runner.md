@@ -23,10 +23,18 @@ measures). Their rules bind you. This brief adds the order of work and the input
 | `item_gates` | the repo's per-item gates from the charter (none: the repo's own law names them) |
 | `out_of_bounds` | the charter's bounds: a card there is out of bounds, whatever its merit |
 | `laws` | the repo's own law files (`CLAUDE.md`, `AGENTS.md`, `.claude/CLAUDE.md`, those present) |
+| `scratch` | this cycle's own folder for every scratch file (`~/.temper/runs/c<n>/`, created by `cycle begin`) |
 | `cycle_file` | where you write the cycle file (`~/.temper/runs/cycle-<n>-<repo>.json`) |
 
 The launch message may add that the scan already ran (with its report path) or name a different work tree. The
 message wins over the block.
+
+## Scratch files
+
+Every scratch file of this cycle goes in `scratch`: the scan's redirected output (`scan.out`, `scan.err`), the
+verdicts file, `findings.json`, notes, logs, and the same for every subagent you launch (tell it the folder). Other
+runners work at the same time: a shared folder or a fixed name in the temp folder gets overwritten by another cycle,
+and you then read its results as yours. Only the cycle file goes elsewhere.
 
 ## The repo's law
 
