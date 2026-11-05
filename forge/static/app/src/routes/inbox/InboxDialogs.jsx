@@ -5,6 +5,7 @@ import { Button, Dialog } from '../../components/ui.jsx';
 import { CardDialog } from '../../components/CardDialog.jsx';
 import { AcceptDialog, MergeDialog, RejectDialog } from './dialogs.jsx';
 import { safeHref } from '../../safeHref.js';
+import { REASONS } from '../../components/labels.js';
 
 /**
  * @param {{dialog: {kind: string, refs: string[]} | null, dialogCards: any[], flat: any[], closeDialog: () => void,
@@ -50,7 +51,7 @@ const KEYS = [
   ['j / k', 'Move to the next / previous proposal; the pane follows'],
   ['x', 'Check or uncheck the proposal for a bulk action'],
   ['a', 'Accept; then Ctrl+Enter creates the issue'],
-  ['r', 'Reject (all checked, when some are checked); 1 to 6 picks the reason, Ctrl+Enter confirms'],
+  ['r', `Reject (all checked, when some are checked); 1 to ${REASONS.length} picks the reason, Ctrl+Enter confirms`],
   ['s', 'Snooze, with an optional note and Until date; Enter or Ctrl+Enter confirms (all checked, when some are checked: one date, no note)'],
   ['m', 'Merge'],
   ['u', 'Undo the last snooze or reject while its notice is showing'],
