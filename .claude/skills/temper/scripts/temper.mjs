@@ -500,6 +500,22 @@ function resolveTarget(ctx, target) {
   return { kind: 'direction', direction: m[1], ...(d.module ? { module: d.module } : {}), focus: d.title ? `goal:${d.title}` : modules[d.module]?.focus };
 }
 
+const FOCUS_FORMS = 'area:<path> (a path in the repo) or goal:<text>, with no space after the colon (the lens-scan store refuses "goal: text")';
+
+/**
+ * Another repo's target is a focus in the store's exact form. A space after the colon, an unknown prefix, an empty
+ * goal or an area path the worktree does not hold is a usage error that names the accepted forms.
+ * @param {string} target @param {string} worktree @returns {string}
+ */
+export function checkFocus(target, worktree) {
+  const m = target.match(/^(area|goal):(.*)$/s);
+  if (!m) throw new UsageError(`--target ${JSON.stringify(target)} is not a focus: ${FOCUS_FORMS}`);
+  if (/^\s/.test(m[2])) throw new UsageError(`--target ${JSON.stringify(target)}: write ${m[1]}:${m[2].trim()} (${FOCUS_FORMS})`);
+  if (!m[2].trim()) throw new UsageError(`--target ${m[1]}: is empty: ${FOCUS_FORMS}`);
+  if (m[1] === 'area' && !existsSync(resolve(worktree, m[2]))) throw new UsageError(`--target ${target}: ${m[2]} is not a path in ${worktree}`);
+  return target;
+}
+
 /** @param {Ctx} ctx @param {Record<string, string | true>} f */
 function cycleBegin(ctx, f) {
   const charter = needCharter(ctx);
@@ -507,8 +523,10 @@ function cycleBegin(ctx, f) {
   if (day.ended_at) throw new Refusal(`the day ${day.date} has ended`);
   const c = clockOf(ctx, day);
   if (c.drain) throw new Refusal(c.rate_limited_until ? `draining: rate-limited until ${c.rate_limited_until}` : `draining: ${c.remaining_min} min left before ${c.ends_at}`);
-  if (typeof f.target !== 'string') throw new UsageError('cycle begin needs --target <module>|direction:<id> (or --repo <name> --target <focus>)');
   const repo = typeof f.repo === 'string' ? repoOf(charter, f.repo) : dowserRepo(charter);
+  if (typeof f.target !== 'string') {
+    throw new UsageError(repo.name === 'dowser' ? 'cycle begin needs --target <module>|direction:<id>' : `cycle begin --repo ${repo.name} needs --target <focus>: ${FOCUS_FORMS}`);
+  }
   const openNow = openCycles(ctx.root);
   if (openNow[repo.name]) throw new Refusal(`cycle ${openNow[repo.name].cycle.n} (${openNow[repo.name].cycle.target}) is still open in ${repo.name}: end it first (one open cycle per repo)`);
   /** @type {Record<string, unknown>} */
@@ -516,9 +534,8 @@ function cycleBegin(ctx, f) {
   if (repo.name === 'dowser') t = resolveTarget(ctx, f.target);
   else {
     if (!repo.build) throw new Refusal(`${repo.name} is scanned only (build: false)`);
-    const focus = normFocus(f.target);
-    if (!focus || !/^(goal|area):\S/.test(focus)) throw new UsageError(`a ${repo.name} target is a focus: "area: <path>" or "goal: <text>"`);
     if (!day.repos?.[repo.name]) throw new Refusal(`start ${repo.name} first: repo start --repo ${repo.name}`);
+    const focus = checkFocus(f.target, day.repos[repo.name].worktree);
     t = { kind: 'focus', focus, worktree: day.repos[repo.name].worktree, branch: day.repos[repo.name].branch, item_gates: repo.gates.filter((g) => g.when === 'item').map((g) => g.run) };
   }
   const head = repo.name === 'dowser' ? git(ctx, 'rev-parse', 'HEAD') : gitIn(ctx, day.repos[repo.name].worktree, 'rev-parse', 'HEAD');

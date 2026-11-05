@@ -438,6 +438,26 @@ test('cycles per repo: bp begins while Dowser\'s cycle is open (the first versio
   assert.equal(main(['cycle', 'begin', '--target', 'tooling'], w.ctx).out.n, 3);
 });
 
+test('cycle begin --repo: the target is a focus in the store\'s form (area:<path> in the worktree, goal:<text>), refused clearly otherwise', () => {
+  const w = world();
+  twoRepoDay(w);
+  const begin = (/** @type {string[]} */ ...t) => main(['cycle', 'begin', '--repo', 'bp', ...t], w.ctx);
+  const none = begin();
+  assert.equal(none.code, 2);
+  assert.match(none.out.error, /--repo bp needs --target <focus>: area:<path> .* or goal:<text>, with no space after the colon/);
+  const spaced = begin('--target', 'goal: faster triage');
+  assert.equal(spaced.code, 2);
+  assert.match(spaced.out.error, /write goal:faster triage/);
+  assert.match(begin('--target', 'lenses').out.error, /is not a focus/);
+  assert.match(begin('--target', 'goal:').out.error, /is empty/);
+  assert.match(begin('--target', 'area:no/such/dir').out.error, /no\/such\/dir is not a path in/);
+  assert.equal(existsSync(join(w.root, '.temper', 'cycle-bp.json')), false, 'nothing opened');
+  const ok = begin('--target', 'goal:faster triage');
+  assert.equal(ok.code, 0, JSON.stringify(ok.out));
+  assert.equal(ok.out.focus, 'goal:faster triage');
+  assert.match(ok.out.scan.bp, /--focus "goal:faster triage"/);
+});
+
 test('secretScan: env files and token shapes in added lines, never .env.example, names only', () => {
   assert.deepEqual(secretScan('a.txt\n.env.example\nsub/.env.local', '+++ b/a.txt\n+hello'), { clean: false, hits: [{ file: 'sub/.env.local', pattern: 'env-file' }] });
   assert.equal(secretScan('a.txt', '+++ b/a.txt\n-AKIAABCDEFGHIJKLMNOP\n+fine').clean, true, 'a removed line is no leak');

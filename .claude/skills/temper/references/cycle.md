@@ -6,8 +6,14 @@ in a subagent that writes its result to a file under the OS temp folder. You kee
 ## 1. Pick
 
 The target is the least-stable module (`modules bar` -> `next`) or an approved direction slice
-(`direction:<id>`). In another build repo (bp, personas), the target is a focus (`area: <path>` or
-`goal: <text>`). For that, run `cycle begin --repo <name>`.
+(`direction:<id>`). In another build repo (bp, personas), the target is a focus, and `cycle begin --repo <name>`
+needs one as `--target`. Two forms are accepted, written exactly as the lens-scan store takes them:
+
+- `area:<path>`: a path that exists in the repo's day worktree, for example `area:scripts/lib`.
+- `goal:<text>`: a goal in words, for example `goal:faster triage` (quote it in the shell).
+
+There is no space after the colon: the store refuses `goal: text`, so `cycle begin` refuses it too and names the
+form to write. Any other prefix, an empty goal or an area path the worktree lacks is a usage error (exit 2).
 
 ## 2. Scan
 

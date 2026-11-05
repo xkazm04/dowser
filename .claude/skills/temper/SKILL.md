@@ -32,7 +32,7 @@ scans that the loop starts keep theirs.
 1. `T clock`. When `drain` is true, go to section 2. When `rate_limited_until` is set, follow the wait in
    references/long-run.md.
 2. `T modules bar`. Pick the target: an approved `direction:<id>`, else the bar's `next` module. A build in another
-   repo is `--repo <name> --target "area: <path>"`.
+   repo is `--repo <name> --target area:<path>` (or `goal:<text>`; no space after the colon).
 3. `T cycle begin --target <t> [--repo <r>]`, then run the cycle as references/cycle.md says. Its steps are scan,
    triage, build, simulated UAT and update.
    Each repo has its own open cycle (`.temper/cycle-<repo>.json`), so a bp cycle can run beside a Dowser one. Cycle
