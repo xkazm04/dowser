@@ -1,0 +1,114 @@
+// @ts-check
+// scan-workspace - the mechanics a headless /dowser scan of a real repository shares between tools/dogfood.mjs (mock
+// Forge) and tools/temper-scan.mjs (the live Forge app): a clone of the source's committed HEAD in a temp work folder
+// (hidden paths left out by a sparse checkout), the skill installed there at project scope, the dowser CLI run against
+// the clone with its own DOWSER_HOME, one `claude -p` scan, and the cards the scan created or moved. Nothing here
+// writes into the source repository.
+import { execFileSync, spawnSync } from 'node:child_process';
+import { appendFileSync, lstatSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { resolveClaude, spawnClaude } from './claude-bin.mjs';
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+const CLI = join(ROOT, 'skill/scripts/dowser.mjs');
+const INSTALL = join(ROOT, 'skill/install.mjs');
+
+/** The tools a scan may use; `mcp__dowser__*` reaches the dowser server, mock or live. */
+export const SCAN_TOOLS = ['Bash', 'Read', 'Grep', 'Glob', 'Write', 'Edit', 'Skill', 'mcp__dowser__*'];
+
+/** @typedef {{repo: string, home: string}} Workspace */
+
+/** @param {string} repo @param {string[]} args @param {Record<string, string>} [env] */
+export const git = (repo, args, env = {}) => execFileSync('git', ['-C', repo, '-c', 'core.autocrlf=false', ...args],
+  { encoding: 'utf8', env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+
+/**
+ * Clones the source's HEAD with the hidden paths left out of the working tree by a sparse checkout. HEAD stays the
+ * source's real commit, so a later incremental scan finds the previous scan's head in the clone's history. `origin`,
+ * when given, replaces the clone's origin URL (the skill derives its project key from it: skill/scripts/lib/paths.mjs).
+ * @param {string} source @param {string} repo @param {string[]} hide @param {{origin?: string}} [o]
+ * @returns {{head: string, hidden: string[]}}
+ */
+export function cloneRepo(source, repo, hide, o = {}) {
+  execFileSync('git', ['clone', '-q', '--no-hardlinks', '--no-checkout', source, repo], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const head = git(repo, ['rev-parse', '--short', 'HEAD']);
+  const hidden = hide.filter((p) => git(repo, ['ls-tree', '-r', '--name-only', 'HEAD', '--', p]) !== '');
+  if (hidden.length) git(repo, ['sparse-checkout', 'set', '--no-cone', '/*', ...hidden.map((p) => `!/${p.replace(/\/+$/, '')}/`)]);
+  git(repo, ['checkout', '-q']);
+  if (o.origin) git(repo, ['remote', 'set-url', 'origin', o.origin]);
+  // The project-scope install lands in .claude/skills/dowser; keep it out of the scan's git view.
+  appendFileSync(join(repo, '.git/info/exclude'), '\n.claude/skills/dowser/\n');
+  return { head, hidden };
+}
+
+/** Installs this checkout's skill into the clone at project scope (a copy: tests/ left out). @param {string} repo */
+export function installSkill(repo) {
+  const r = spawnSync(process.execPath, [INSTALL, '--harness', 'claude', '--scope', 'project'], { cwd: repo, encoding: 'utf8' });
+  if (r.status !== 0) throw new Error(`install -> ${r.status}\n${r.stderr}`);
+}
+
+/** Runs the dowser CLI on the clone with the workspace's home; throws on failure. @param {Workspace} w @param {...string} args @returns {any} */
+export function dowserCli(w, ...args) {
+  const r = spawnSync(process.execPath, [CLI, ...args, '--repo', w.repo], { encoding: 'utf8', env: { ...process.env, DOWSER_HOME: w.home } });
+  if (r.status !== 0) throw new Error(`dowser ${args.join(' ')} -> ${r.status}\n${r.stderr}${r.stdout}`);
+  return JSON.parse(r.stdout);
+}
+
+/** Removes the work folder (and a dev-link install inside the clone first). @param {string} work @param {string} repo */
+export function removeWork(work, repo) {
+  const link = join(repo, '.claude/skills/dowser');
+  try {
+    if (lstatSync(link).isSymbolicLink()) { try { unlinkSync(link); } catch { rmdirSync(link); } }
+  } catch { /* no install */ }
+  rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+}
+
+/**
+ * The `claude -p` arguments of one scan. `--setting-sources` without `user`: a user-scope dowser skill
+ * (~/.claude/skills/dowser, often a link to another checkout) otherwise wins over the project-scope copy installed in
+ * the clone, and the scan runs that skill. `--strict-mcp-config`: only the server in `mcpConfig` is connected.
+ * ScheduleWakeup is denied: a scan that sets a fallback heartbeat while its lens agents run keeps `claude -p` alive
+ * until the wakeup fires (a 30-minute heartbeat held a finished 11-minute scan open for 33 minutes, 2026-11-05),
+ * and the answer is then the wakeup's turn, not the run summary.
+ * @param {{prompt: string, mcpConfig: string, addDir: string, model?: string, budget?: string}} o
+ * @returns {string[]}
+ */
+export function scanArgs(o) {
+  return ['-p', o.prompt, '--setting-sources', 'project,local', '--mcp-config', o.mcpConfig, '--strict-mcp-config', '--add-dir', o.addDir,
+    '--allowedTools', ...SCAN_TOOLS, '--disallowedTools', 'ScheduleWakeup', '--output-format', 'json', ...(o.model ? ['--model', o.model] : []), ...(o.budget ? ['--max-budget-usd', o.budget] : [])];
+}
+
+/**
+ * Runs one scan in the clone and keeps its output in the work folder. `ok` is false on a non-zero exit, an
+ * unparseable answer or `is_error`.
+ * @param {string[]} args @param {{work: string, w: Workspace, timeoutMs?: number}} o
+ * @returns {{ok: boolean, status: number | null, error?: string, result: any, minutes: number}}
+ */
+export function runScan(args, o) {
+  const started = Date.now();
+  const r = spawnClaude(args, { cwd: o.w.repo, env: { ...process.env, DOWSER_HOME: o.w.home }, encoding: 'utf8', timeout: o.timeoutMs ?? 90 * 60000,
+    maxBuffer: 64 * 1024 * 1024 }, resolveClaude());
+  writeFileSync(join(o.work, 'claude.json'), r.stdout ?? '');
+  writeFileSync(join(o.work, 'claude.stderr.txt'), r.stderr ?? '');
+  /** @type {any} */
+  let result = {};
+  try { result = JSON.parse(r.stdout); } catch { /* not JSON: ok is false below */ }
+  const ok = r.status === 0 && typeof result === 'object' && result !== null && !result.is_error && 'result' in result;
+  return { ok, status: r.status, ...(r.error ? { error: r.error.message } : {}), result, minutes: Math.round((Date.now() - started) / 60000) };
+}
+
+/** The store's fp -> status map, taken before a scan. @param {Workspace} w @returns {Map<string, string>} */
+export const statusMap = (w) => new Map(dowserCli(w, 'list').proposals.map((/** @type {{fp: string, status: string}} */ p) => [p.fp, p.status]));
+
+/**
+ * `show` of every card the scan created or moved (its status differs from `before`).
+ * @param {Workspace} w @param {Map<string, string>} before @returns {any[]}
+ */
+export function changedCards(w, before) {
+  const { proposals } = dowserCli(w, 'list');
+  return proposals.filter((/** @type {{fp: string, status: string}} */ p) => before.get(p.fp) !== p.status).map((/** @type {{fp: string}} */ p) => dowserCli(w, 'show', p.fp));
+}
+
+/** A file-name-safe UTC stamp, `2026-11-05T09-30-00`. */
+export const stamp = () => new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
