@@ -338,3 +338,37 @@ test('inbox summaries cost the same few statements for 1 or 20 inboxes, and keep
     assert.deepEqual([i.last_push.run_id, i.last_push.head_sha, i.open], ['r-2', 'new', 2], i.project_key);
   }
 });
+
+test('a bulk reject of 50 refs is about a dozen statements, logs 50 verdicts in order, and answers the same cards', async () => {
+  const d = counted();
+  await tool(d, 'dowser_proposals_push', pushArgs(records(50, 2), { run_id: 'r-1' }));
+  const refs = Array.from({ length: 50 }, (_, i) => `DW-${i + 1}`);
+  d.clock.tick(1000);
+  d.db.reset();
+  const out = await res(d, 'verdict.reject', { refs, reason: 'already-known' });
+  const n = d.db.count();
+  assert.ok(n <= 14, `${n} statements for 50 refs`);
+  assert.deepEqual(out.cards.map((/** @type {any} */ c) => [c.ref, c.status, c.reason]), refs.map((r) => [r, 'rejected', 'already-known']));
+  const one = await res(d, 'proposal.get', { ref: 'DW-7' });
+  assert.deepEqual(out.cards[6], one.card, 'the card answered is the card as read');
+  const pull = await tool(d, 'dowser_verdicts_pull', { project_key: PK });
+  assert.deepEqual(pull.verdicts.map((/** @type {any} */ v) => v.external_ref), refs);
+  const row = d.db.raw.prepare("SELECT refs_at_status, types_at_status FROM proposals WHERE ref = 'DW-3'").get();
+  assert.deepEqual({ ...row }, { refs_at_status: 2, types_at_status: 'code' }, 'the stamp keeps the evidence at decision time');
+});
+
+test('GUARD: an item decided by someone else between the check and the bulk update keeps their decision, and the answer says so', async () => {
+  const d = counted();
+  await tool(d, 'dowser_proposals_push', pushArgs(records(3, 1), { run_id: 'r-1' }));
+  d.db.before = async (s) => {
+    if (/^UPDATE proposals SET status/.test(s.sql)) {
+      d.db.before = undefined;
+      await d.db.inner.exec("UPDATE proposals SET status = 'snoozed', decided_by = 'forge:someone', decided_at = '2026-10-27T09:00:00.000Z' WHERE ref = 'DW-2'");
+    }
+  };
+  const out = await res(d, 'verdict.reject', { refs: ['DW-1', 'DW-2', 'DW-3'], reason: 'already-known' });
+  assert.equal(out.error, 'bad-input');
+  assert.match(out.message, /DW-2 is snoozed, not open; reload it; already rejected: DW-1, DW-3/);
+  const st = d.db.raw.prepare('SELECT ref, status, decided_by FROM proposals ORDER BY id').all().map((/** @type {any} */ r) => [r.ref, r.status, r.decided_by]);
+  assert.deepEqual(st, [['DW-1', 'rejected', `forge:${ME}`], ['DW-2', 'snoozed', 'forge:someone'], ['DW-3', 'rejected', `forge:${ME}`]]);
+});

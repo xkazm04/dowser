@@ -57,7 +57,8 @@ test('a bulk dated snooze dates every item; a rebuilt verdict keeps the date', a
   await res(d, 'verdict.snooze', { refs: ['DW-1', 'DW-2'], until: '2026-12-01' });
   d.clock.tick(GRACE_MS + 1000);
   const pull = await tool(d, 'dowser_verdicts_pull', { project_key: PK });
-  assert.deepEqual(pull.verdicts.map((/** @type {any} */ v) => [v.external_ref, v.snooze_until]), [['DW-2', '2026-12-01'], ['DW-1', '2026-12-01']]);
+  // the bulk verdicts are one multi-row INSERT, so the failure loses both rows and the repair rebuilds both, in order
+  assert.deepEqual(pull.verdicts.map((/** @type {any} */ v) => [v.external_ref, v.snooze_until]), [['DW-1', '2026-12-01'], ['DW-2', '2026-12-01']]);
 });
 
 test('a later decision clears the date: a reopened item rejected later carries no snooze_until', async () => {

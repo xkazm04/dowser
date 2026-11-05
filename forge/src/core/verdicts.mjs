@@ -9,9 +9,9 @@
 // FIRST; a Jira failure writes nothing and the item stays open.
 import { REASONS, decisionProblem, isOneOf } from '../shared/model.mjs';
 import { issueDescription, mergeComment } from './adf.mjs';
-import { cardOf, toVerdict } from './cards.mjs';
+import { cardOf, toCard, toVerdict } from './cards.mjs';
 import { writeIssueProperty } from './issue-property.mjs';
-import { counterValue, findProposal, isSampleKey, needInbox, nextCounter, toProposal } from './store.mjs';
+import { counterValue, evidenceOfMany, findProposal, inboxRowsByKey, insertMany, isSampleKey, needInbox, nextCounter, nextCounterBlock, proposalsMatching, toProposal } from './store.mjs';
 import { NOTE_MAX, REF_RE, SAMPLE_LABEL, VERDICT_STATUSES } from './types.mjs';
 import { AppError, DuplicateKey, FP_RE, errTag, ISSUE_KEY_RE, needStr, optStr, sqlv, str } from './util.mjs';
 
@@ -206,35 +206,110 @@ export async function accept(deps, args, who) {
 async function openItems(db, refs) {
   if (!Array.isArray(refs) || refs.length === 0 || !refs.every(str)) throw new AppError('bad-input', 'refs must be a non-empty array of inbox refs');
   if (refs.length > 200) throw new AppError('bad-input', 'at most 200 refs per call');
-  const items = [];
-  for (const r of new Set(refs)) {
-    const p = await findProposal(db, r);
-    needOpen(p);
-    items.push(p);
+  const found = await proposalsMatching(db, refs);
+  /** @type {Map<number, ProposalRow>} */
+  const items = new Map();
+  for (const ref of refs) {
+    const r = ref.trim();
+    const rows = found.get(r) ?? [];
+    if (rows.length === 0) throw new AppError('bad-input', `no Dowser proposal ${r}`);
+    if (rows.length > 1) throw new AppError('bad-input', `fingerprint ${r} is in more than one inbox; use its DW ref`);
+    needOpen(rows[0]);
+    items.set(rows[0].id, rows[0]);
   }
-  return items;
+  return [...items.values()];
+}
+
+/** The verdicts table's columns, in the order `appendVerdicts` writes them. */
+const VERDICT_COLS = ['seq', 'project_key', 'fp', 'status', 'reason', 'note', 'merged_into', 'decided_by', 'decided_at', 'external_ref',
+  'issue_ref', 'issue_url', 'via', 'snooze_until'];
+
+/**
+ * Appends the verdict rows of decisions just stamped on `after` (one decision, so one `decided_at`): per inbox, one
+ * read of what is logged already, one block of seqs and one multi-row INSERT. Best effort as in `decide`: a failure
+ * is logged and `repairVerdicts` appends the missing rows before the next pull.
+ * @param {Db} db
+ * @param {ProposalRow[]} after
+ */
+async function appendVerdicts(db, after) {
+  /** @type {Map<string, ProposalRow[]>} */
+  const byInbox = new Map();
+  for (const p of after) byInbox.set(p.project_key, [...(byInbox.get(p.project_key) ?? []), p]);
+  for (const [projectKey, ps] of byInbox) {
+    try {
+      const at = /** @type {string} */ (ps[0].decided_at);
+      const have = new Set((await db.query(`SELECT fp FROM verdicts WHERE project_key = ? AND decided_at = ? AND fp IN (${ps.map(() => '?').join(', ')})`,
+        [projectKey, at, ...ps.map((p) => p.fp)])).map((r) => String(r.fp)));
+      const todo = ps.filter((p) => !have.has(p.fp));
+      if (!todo.length) continue;
+      const first = await nextCounterBlock(db, seqName(projectKey), todo.length);
+      await insertMany(db, 'verdicts', VERDICT_COLS, todo.map((p, i) => [first + i, p.project_key, p.fp, p.status, sqlv(p.reason), sqlv(p.note),
+        sqlv(p.merged_into), p.decided_by, p.decided_at, p.ref, null, null, p.via ?? 'inbox', p.status === 'snoozed' ? sqlv(p.snooze_until) : null]));
+    } catch (e) {
+      console.warn(`dowser: ${ps.length} verdicts of one inbox not logged yet (${errTag(e)}); the next pull repairs them`);
+    }
+  }
 }
 
 /**
- * Applies one decision to many items; a failure part-way names what landed.
+ * Applies one decision (reject or snooze) to many items as sets: one CAS UPDATE over every id still open, one read
+ * back, the verdict rows in blocks and the cards from one evidence read, so a page of 50 cards is about a dozen
+ * statements, not 550, and stays inside the resolver time limit. An item someone decided in between is left as they
+ * decided it (the CAS), and the answer names it and what landed. An item whose last decision is not older than now
+ * (a clock tie) is decided on its own, so `decided_at` stays unique per fp.
  * @param {Deps} deps
  * @param {ProposalRow[]} items
- * @param {Parameters<typeof decide>[2]} d
+ * @param {{to: 'rejected' | 'snoozed', reason?: string, note?: string, snooze_until?: string}} d
  * @param {Decider} who
  * @returns {Promise<{cards: Card[]}>}
  */
 async function decideAll(deps, items, d, who) {
-  /** @type {Card[]} */
-  const cards = [];
-  for (const p of items) {
+  const { db } = deps;
+  const at = deps.now().toISOString();
+  const tied = items.filter((p) => p.decided_at && at <= p.decided_at);
+  const batch = items.filter((p) => !tied.includes(p));
+  /** @type {Map<number, ProposalRow>} */
+  const landed = new Map();
+  /** @type {ProposalRow | undefined} */
+  let lost;
+  if (batch.length) {
+    const ids = batch.map((p) => p.id);
+    const marks = ids.map(() => '?').join(', ');
+    await db.exec(
+      `UPDATE proposals SET status = ?, reason = ?, note = ?, merged_into = NULL, decided_by = ?, decided_at = ?, via = ?,
+        reopened = 0, refs_at_status = evidence_count, types_at_status = evidence_types, accept_claim = NULL, snooze_until = ?
+        WHERE id IN (${marks}) AND status = 'open'`,
+      [d.to, sqlv(d.reason), sqlv(d.note), who.by, at, who.via, sqlv(d.snooze_until), ...ids],
+    );
+    const now = new Map((await db.query(`SELECT * FROM proposals WHERE id IN (${marks})`, ids)).map((r) => [Number(r.id), toProposal(r)]));
+    /** @type {ProposalRow[]} */
+    const mine = [];
+    for (const p of batch) {
+      const n = now.get(p.id);
+      if (n && n.status === d.to && n.decided_at === at && n.decided_by === who.by) mine.push(n);
+      else lost ??= n ?? p;
+    }
+    await appendVerdicts(db, mine);
+    for (const n of mine) landed.set(n.id, n);
+  }
+  for (const p of tied) {
+    if (lost) break;
     try {
-      cards.push(await cardOf(deps.db, await decide(deps, p, d, who)));
+      const n = await decide(deps, p, d, who);
+      landed.set(n.id, n);
     } catch (e) {
-      if (!cards.length || !(e instanceof AppError)) throw e;
-      throw new AppError(e.code, `${e.message}; already ${d.to}: ${cards.map((c) => c.ref).join(', ')}`);
+      if (!(e instanceof AppError)) throw e;
+      lost = p;
     }
   }
-  return { cards };
+  const after = /** @type {ProposalRow[]} */ (items.map((p) => landed.get(p.id)).filter((p) => p !== undefined));
+  if (lost) {
+    const why = `${lost.ref} is ${lost.status === 'open' ? 'no longer open' : `${lost.status}, not open`}; reload it`;
+    throw new AppError('bad-input', after.length ? `${why}; already ${d.to}: ${after.map((p) => p.ref).join(', ')}` : why);
+  }
+  const repos = await inboxRowsByKey(db, after.map((p) => p.project_key));
+  const evidence = await evidenceOfMany(db, after);
+  return { cards: after.map((p) => toCard(p, evidence.get(p.id) ?? [], repos.get(p.project_key)?.repo_url)) };
 }
 
 /**
