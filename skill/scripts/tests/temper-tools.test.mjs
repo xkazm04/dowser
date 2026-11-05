@@ -337,7 +337,7 @@ test('temper-cards: lists a scan home\'s cards (status, lens, title, evidence re
     // the real checkout's origin differs, which is why `dowser.mjs list --repo <real path>` answers nothing
     const out = listCards({ home: temperHome, key });
     assert.equal(out.db, scanStore(temperHome, key));
-    assert.deepEqual(out.cards.map((c) => [c.fp, c.lens, c.title]), [[fp, 'security-cra', 'Password compared in plaintext']]);
+    assert.deepEqual(out.cards.map((/** @type {any} */ c) => [c.fp, c.lens, c.title]), [[fp, 'security-cra', 'Password compared in plaintext']]);
     assert.deepEqual(out.cards[0].evidence, [{ type: 'code', ref: 'src/auth.js:2', path: 'src/auth.js', line: 2 }], 'quotes only with --quotes');
     assert.equal(listCards({ home: temperHome, key, quotes: true }).cards[0].evidence[0].quote, 'return check(user.password);');
     assert.deepEqual(listCards({ home: temperHome, key, status: 'rejected' }).cards, []);
