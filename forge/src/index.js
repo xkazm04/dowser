@@ -86,8 +86,10 @@ export { handler as resolver };
 
 /**
  * rovo:mcp tools (forge-mcp-2). Every tool is an `action` routed to this one function. The action key is
- * `getAppContext().moduleKey` (@forge/api runtime typings), else a `moduleKey` on the context or payload,
- * else inferred from the argument shape (core/app.mjs `actionName`). The caller is the invocation principal
+ * `getAppContext().moduleKey` (@forge/api runtime typings), else a `moduleKey` on the context or on
+ * `payload.context`, else inferred from the argument shape (core/app.mjs `actionName`). `payload.context` is set by
+ * the platform, not the model (Forge rovo-action docs: "done deterministically"); the model fills only the declared
+ * inputs, and no action declares one named `context`. The caller is the invocation principal
  * (`context.principal.accountId`, Forge function-arguments docs), never an argument. The answer is the tool's
  * JSON object, or `{error, message}`.
  * @param {Record<string, unknown>} payload  the tool inputs (scalars only)

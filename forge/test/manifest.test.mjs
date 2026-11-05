@@ -110,3 +110,8 @@ test('src/index.js defines every core resolver key (KEYS)', () => {
   const listed = [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
   assert.deepEqual(sorted(listed), sorted(Object.keys(RESOLVERS)), 'KEYS must list every RESOLVERS key; derive it from Object.keys(RESOLVERS)');
 });
+
+test('no action declares an input named context (payload.context is the platform\'s, src/index.js actionName)', () => {
+  const text = readFileSync(new URL('../manifest.yml', import.meta.url), 'utf8');
+  assert.doesNotMatch(text, /^ {8}context:/m);
+});
