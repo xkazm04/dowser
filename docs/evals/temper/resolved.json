@@ -1,0 +1,18 @@
+{
+  "p-a3b5bd": {
+    "commit": "22117e8773dd26964b7deef48072dddb7dbeb3c0",
+    "subject": "fix(install): --check ends git options with -- and refuses a source that starts with -",
+    "resolved_at": "2026-11-05T19:11:55.370Z",
+    "by": "delegate:temper",
+    "status_then": "proposed",
+    "tier": 1
+  },
+  "p-0337bb": {
+    "commit": "072954f6d7f8076181eeeafe63974271fc22598b",
+    "subject": "fix(forge): define every core resolver, so Draft the fix reaches byline.draftFix",
+    "resolved_at": "2026-11-05T19:11:56.167Z",
+    "by": "delegate:temper",
+    "status_then": "proposed",
+    "tier": 1
+  }
+}

@@ -1,0 +1,248 @@
+{
+  "at": "2026-11-05T18:58:13.613Z",
+  "modules": {
+    "skill-store": {
+      "met": false,
+      "parts": {
+        "uat": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "no quality-snapshot row with the gates (its surface is the CLI and its tests)"
+        },
+        "proposals": {
+          "state": "verified",
+          "ok": true,
+          "detail": "2 open, none at tier 0-2 (3 features)"
+        },
+        "scan_yield": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "0 scan(s) with focus area:skill/scripts/lib in the ledger; the bar needs two"
+        },
+        "quality": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "0 quality-snapshot row(s); the bar compares two"
+        },
+        "coverage": {
+          "state": "verified",
+          "ok": true,
+          "detail": "no routes or resolver keys"
+        }
+      }
+    },
+    "lenses": {
+      "met": false,
+      "parts": {
+        "uat": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "no quality-snapshot row with the gates (its surface is the CLI and its tests)"
+        },
+        "proposals": {
+          "state": "verified",
+          "ok": false,
+          "detail": "open at tier 0-2: p-a3b5bd (t1)"
+        },
+        "scan_yield": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "0 scan(s) with focus area:skill/lenses in the ledger; the bar needs two"
+        },
+        "quality": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "0 quality-snapshot row(s); the bar compares two"
+        },
+        "coverage": {
+          "state": "verified",
+          "ok": true,
+          "detail": "no routes or resolver keys"
+        }
+      }
+    },
+    "triage": {
+      "met": false,
+      "parts": {
+        "uat": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "no quality-snapshot row with the gates (its surface is the CLI and its tests)"
+        },
+        "proposals": {
+          "state": "verified",
+          "ok": true,
+          "detail": "1 open, none at tier 0-2 (3 features)"
+        },
+        "scan_yield": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "0 scan(s) with focus area:skill/scripts/lib/memory.mjs in the ledger; the bar needs two"
+        },
+        "quality": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "0 quality-snapshot row(s); the bar compares two"
+        },
+        "coverage": {
+          "state": "verified",
+          "ok": true,
+          "detail": "no routes or resolver keys"
+        }
+      }
+    },
+    "forge-core": {
+      "met": false,
+      "parts": {
+        "uat": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "no local results (npm run e2e:local)"
+        },
+        "proposals": {
+          "state": "verified",
+          "ok": false,
+          "detail": "open at tier 0-2: p-0337bb (t1), p-a0950f (t2)"
+        },
+        "scan_yield": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "0 scan(s) with focus area:forge/src in the ledger; the bar needs two"
+        },
+        "quality": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "0 quality-snapshot row(s); the bar compares two"
+        },
+        "coverage": {
+          "state": "verified",
+          "ok": true,
+          "detail": "42 ids covered"
+        }
+      }
+    },
+    "inbox-ui": {
+      "met": false,
+      "parts": {
+        "uat": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "no fixture results (npm run e2e:fixture)"
+        },
+        "proposals": {
+          "state": "verified",
+          "ok": false,
+          "detail": "open at tier 0-2: p-0337bb (t1)"
+        },
+        "scan_yield": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "0 scan(s) with focus area:forge/static/app/src/routes/inbox in the ledger; the bar needs two"
+        },
+        "quality": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "0 quality-snapshot row(s); the bar compares two"
+        },
+        "coverage": {
+          "state": "verified",
+          "ok": true,
+          "detail": "42 ids covered"
+        }
+      }
+    },
+    "insights-ui": {
+      "met": false,
+      "parts": {
+        "uat": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "no fixture results (npm run e2e:fixture)"
+        },
+        "proposals": {
+          "state": "verified",
+          "ok": true,
+          "detail": "2 open, none at tier 0-2 (3 features)"
+        },
+        "scan_yield": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "0 scan(s) with focus area:forge/static/app/src/routes/reflect in the ledger; the bar needs two"
+        },
+        "quality": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "0 quality-snapshot row(s); the bar compares two"
+        },
+        "coverage": {
+          "state": "verified",
+          "ok": true,
+          "detail": "22 ids covered"
+        }
+      }
+    },
+    "connections": {
+      "met": false,
+      "parts": {
+        "uat": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "no local results (npm run e2e:local)"
+        },
+        "proposals": {
+          "state": "verified",
+          "ok": true,
+          "detail": "1 open, none at tier 0-2 (3 features)"
+        },
+        "scan_yield": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "0 scan(s) with focus area:skill/scripts/lib/sync.mjs in the ledger; the bar needs two"
+        },
+        "quality": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "0 quality-snapshot row(s); the bar compares two"
+        },
+        "coverage": {
+          "state": "verified",
+          "ok": true,
+          "detail": "no routes or resolver keys"
+        }
+      }
+    },
+    "tooling": {
+      "met": false,
+      "parts": {
+        "uat": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "no quality-snapshot row with the gates (its surface is the CLI and its tests)"
+        },
+        "proposals": {
+          "state": "verified",
+          "ok": true,
+          "detail": "1 open, none at tier 0-2 (2 features)"
+        },
+        "scan_yield": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "0 scan(s) with focus area:tools in the ledger; the bar needs two"
+        },
+        "quality": {
+          "state": "unverifiable",
+          "ok": false,
+          "detail": "0 quality-snapshot row(s); the bar compares two"
+        },
+        "coverage": {
+          "state": "verified",
+          "ok": true,
+          "detail": "no routes or resolver keys"
+        }
+      }
+    }
+  },
+  "next": "lenses",
+  "directions": [],
+  "directions_log": {}
+}
