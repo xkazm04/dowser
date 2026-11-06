@@ -289,12 +289,15 @@ export const users = {
   },
 };
 
-/** The goals query (Cypher over TWG, shape per developer.atlassian.com/platform/forge/call-the-teamwork-graph-api/). */
+/**
+ * The goals query (Cypher over TWG, shape per developer.atlassian.com/platform/forge/call-the-teamwork-graph-api/). A field
+ * AtlassianGoal does not have fails the whole query with a ValidationError (test/goals-real-call.test.mjs holds the list).
+ */
 const GOALS_QUERY = `query dowser_goals($cypherQuery: String!) {
   cypherQuery(query: $cypherQuery) {
     edges { node { columns { key value { __typename
       ... on CypherQueryResultListNode { nodes { id data { __typename
-        ... on AtlassianGoal { id name url description status } } } } } } } }
+        ... on AtlassianGoal { id name url description archived } } } } } } } }
   }
 }`;
 

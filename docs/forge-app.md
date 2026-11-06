@@ -222,7 +222,9 @@ only what the person can see. The first source call may ask the person to allow 
 allowlisted for that API. To request it, send Atlassian support the app id from `manifest.yml` and a
 one-line use case ("read the site's goals as scan sources for backlog proposals"). Do this in week one,
 because approval takes time. Until the app is allowlisted, the tool answers `unavailable` with a message
-that names the allowlist, and the skill continues without goals.
+that names the allowlist, and the skill continues without goals. The kind in that message tells the causes apart:
+`ValidationError` is Dowser's query, not the allowlist (`test/goals-real-call.test.mjs` holds the query to the object type's
+fields). No answer from an allowlisted app has been seen yet: check with `dowser_sources_goals` after a deploy.
 
 ## Judges' setup
 

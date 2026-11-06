@@ -157,8 +157,9 @@ text, and `updated_at` is the last edit time.
 
 Input: `{}`.
 
-Output: `{items: [{ref, title, url, body, status?}]}`. These are the team's goals (TWG). `status` is the goal's
-state as TWG names it (for example `on-track`, `at-risk`), and is omitted when the goal has none.
+Output: `{items: [{ref, title, url, body, status?}]}`. These are the team's goals (TWG). `status` is `archived`
+for an archived goal and is omitted otherwise: TWG's `AtlassianGoal` lists no state field. A state TWG adds later is passed on
+as it names it (`at-risk`).
 
 ### `dowser_direction_get`
 

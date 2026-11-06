@@ -80,7 +80,7 @@ export function ticketItem(issue, site) {
 
 /**
  * A Teamwork Graph goal node as a source item. Field names are read defensively (TWG's `AtlassianGoal` shape is in
- * preview): name|displayName, url|link, status|state.
+ * preview): name|displayName, url|link, status|state. The reference page lists no status, only `archived`, which becomes one.
  * @param {any} g
  * @returns {SourceItem | undefined}
  */
@@ -89,11 +89,11 @@ function goalItem(g) {
   const ref = d?.id ?? g?.id;
   if (!ref) return undefined;
   const title = d.name ?? d.displayName ?? String(ref);
-  const status = d.status ?? d.state ?? d.phase;
+  const status = d.status ?? d.state ?? d.phase ?? (d.archived === true ? 'archived' : undefined);
   return /** @type {SourceItem} */ (omitAbsent({
     ref: String(ref), title: String(title), url: String(d.url ?? d.link ?? ''),
     body: trimText(String(d.description ?? d.summary ?? title), BODY_MAX),
-    status: status ? String(status).toLowerCase().replace(/[_s]+/g, '-') : undefined,
+    status: status ? String(status).toLowerCase().replace(/[_\s]+/g, '-') : undefined,
   }));
 }
 
