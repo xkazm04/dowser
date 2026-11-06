@@ -12,6 +12,9 @@ import { Markdown } from '../../components/Markdown.jsx';
 import { Artifact } from '../../components/Artifact.jsx';
 import { safeHref } from '../../safeHref.js';
 
+/** Escape while a call runs: the call cannot be taken back, so the dialog stays until it answers. */
+const ignoreClose = () => {};
+
 /**
  * Accept: target Jira project + issue type, pre-filled with the inbox default; preview of the issue.
  * @param {{card: any, onClose: () => void, onDone: (card: any) => void, onFailed: (ref: string, message: string) => void, onBeforeSubmit?: () => void}} props
@@ -66,9 +69,9 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
   return (
     <Dialog
       title={`Accept ${card.ref}`}
-      onClose={onClose}
+      onClose={busy ? ignoreClose : onClose}
       footer={<>
-        <Button appearance="subtle" onClick={onClose}>Cancel</Button>
+        <Button appearance="subtle" onClick={onClose} disabled={busy}>Cancel</Button>
         <Button appearance="primary" onClick={submit} disabled={!canSubmit} busy={busy}>Create issue</Button>
       </>}
     >
@@ -165,12 +168,14 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
 }
 
 /**
- * Merge into another open/accepted item (by ref or title) or into a Jira issue key.
- * @param {{card: any, openCards: any[], onClose: () => void, onDone: (card: any) => void, onFailed: (ref: string, message: string) => void, onBeforeSubmit?: () => void}} props
+ * Merge into another open/accepted item (by ref or title) or into a Jira issue key. Both lists follow every page of the
+ * card's inbox, unfiltered; `openCards` (the rows on the page) stay listed while they load or when they fail, and `hidden`
+ * holds what this page already decided, which the server may still list in its undo window.
+ * @param {{card: any, openCards: any[], hidden: Set<string>, onClose: () => void, onDone: (card: any) => void, onFailed: (ref: string, message: string) => void, onBeforeSubmit?: () => void}} props
  */
-export function MergeDialog({ card, openCards, onClose, onDone, onFailed, onBeforeSubmit }) {
-  // null while loading, 'error' when the accepted proposals could not load (then only open ones are listed)
-  const [accepted, setAccepted] = useState(/** @type {any[] | null | 'error'} */ (null));
+export function MergeDialog({ card, openCards, hidden, onClose, onDone, onFailed, onBeforeSubmit }) {
+  // null while loading; `failed` when a list could not load (then the list says it may be short)
+  const [loaded, setLoaded] = useState(/** @type {{items: any[], failed: boolean} | null} */ (null));
   const [cutShort, setCutShort] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [query, setQuery] = useState('');
@@ -181,22 +186,25 @@ export function MergeDialog({ card, openCards, onClose, onDone, onFailed, onBefo
 
   useEffect(() => {
     let live = true;
-    setAccepted(null);
-    // every page, not the first 50: an older accepted item must be findable, or a duplicate gets accepted instead
-    allPages((cursor) => call('inbox.list', { project_key: card.project_key, status: 'accepted', ...(cursor ? { cursor } : {}) })).then(
-      (res) => { if (live) { setAccepted(res.items); setCutShort(res.more); } },
-      () => { if (live) setAccepted('error'); },
-    );
+    setLoaded(null);
+    // every page, not the first 50, whatever the page is filtered to: the duplicate must be findable, or it gets accepted instead
+    const list = (/** @type {string} */ status) => allPages((cursor) => call('inbox.list', { project_key: card.project_key, status, ...(cursor ? { cursor } : {}) }));
+    Promise.allSettled([list('open'), list('accepted')]).then((res) => {
+      if (!live) return;
+      const ok = res.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+      setLoaded({ items: ok.flatMap((r) => r.items), failed: ok.length < res.length });
+      setCutShort(ok.some((r) => r.more));
+    });
     return () => { live = false; };
   }, [card.project_key, attempt]);
-  const acceptedList = Array.isArray(accepted) ? accepted : [];
+  const fetched = loaded?.items ?? [];
 
   const candidates = useMemo(() => {
-    const all = [...openCards.filter((c) => c.project_key === card.project_key), ...acceptedList]
-      .filter((c, i, arr) => c.ref !== card.ref && arr.findIndex((o) => o.ref === c.ref) === i);
+    const all = [...openCards.filter((c) => c.project_key === card.project_key), ...fetched]
+      .filter((c, i, arr) => c.ref !== card.ref && !hidden.has(c.ref) && arr.findIndex((o) => o.ref === c.ref) === i);
     const q = query.trim().toLowerCase();
     return q ? all.filter((c) => c.ref.toLowerCase().includes(q) || c.title.toLowerCase().includes(q)) : all;
-  }, [openCards, accepted, query, card]);
+  }, [openCards, loaded, hidden, query, card]);
 
   const key = jiraKey.trim().toUpperCase();
   const into = key || picked;
@@ -217,9 +225,9 @@ export function MergeDialog({ card, openCards, onClose, onDone, onFailed, onBefo
   return (
     <Dialog
       title={`Merge ${card.ref}`}
-      onClose={onClose}
+      onClose={busy ? ignoreClose : onClose}
       footer={<>
-        <Button appearance="subtle" onClick={onClose}>Cancel</Button>
+        <Button appearance="subtle" onClick={onClose} disabled={busy}>Cancel</Button>
         <Button appearance="primary" onClick={submit} disabled={!into || keyInvalid || busy} busy={busy}>Merge</Button>
       </>}
     >
@@ -229,18 +237,18 @@ export function MergeDialog({ card, openCards, onClose, onDone, onFailed, onBefo
         <input id="dw-merge-q" className="dw-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="DW-12 or words from the title" autoComplete="off" />
       </div>
       <fieldset className="dw-radio-list" aria-label="Merge into" style={{ maxHeight: 200, overflow: 'auto' }} disabled={Boolean(key)}>
-        {accepted === null && <span><Spinner label="Loading accepted proposals" /> Loading…</span>}
-        {accepted === 'error' && (
+        {loaded === null && <span><Spinner label="Loading proposals" /> Loading…</span>}
+        {loaded?.failed && (
           <span role="alert" className="dw-subtle">
-            Accepted proposals could not load, so only open ones are listed.{' '}
+            Some proposals could not load, so the list may be short.{' '}
             <Button compact onClick={() => setAttempt((n) => n + 1)}>Retry</Button>
           </span>
         )}
-        {Array.isArray(accepted) && candidates.length === 0 && (
-          <span className="dw-subtle">{cutShort ? `No match among the first ${acceptedList.length} accepted proposals. Type its DW number in the field below.` : 'No matching proposal.'}</span>
+        {loaded && !loaded.failed && candidates.length === 0 && (
+          <span className="dw-subtle">{cutShort ? `No match among the first ${fetched.length} proposals. Type its DW number in the field below.` : 'No matching proposal.'}</span>
         )}
-        {Array.isArray(accepted) && cutShort && candidates.length > 0 && (
-          <span className="dw-subtlest">Showing the first {acceptedList.length} accepted proposals; type a DW number below to merge into an older one.</span>
+        {loaded && cutShort && candidates.length > 0 && (
+          <span className="dw-subtlest">Showing the first {fetched.length} proposals; type a DW number below to merge into an older one.</span>
         )}
         {candidates.map((c) => (
           <label key={c.ref} className="dw-radio">

@@ -8,11 +8,11 @@ import { safeHref } from '../../safeHref.js';
 import { REASONS } from '../../components/labels.js';
 
 /**
- * @param {{dialog: {kind: string, refs: string[]} | null, dialogCards: any[], flat: any[], closeDialog: () => void,
+ * @param {{dialog: {kind: string, refs: string[]} | null, dialogCards: any[], flat: any[], decided: Set<string>, closeDialog: () => void,
  *   fail: (refs: string[], message: string) => void, leave: (cards: any[], to: string) => void,
  *   deferReject: (cards: any[], decision: any) => void, cw: any}} props
  */
-export function InboxDialogs({ dialog, dialogCards, flat, closeDialog, fail, leave, deferReject, cw }) {
+export function InboxDialogs({ dialog, dialogCards, flat, decided, closeDialog, fail, leave, deferReject, cw }) {
   return (
     <>
       {dialog?.kind === 'help' && <HelpDialog onClose={closeDialog} />}
@@ -29,7 +29,7 @@ export function InboxDialogs({ dialog, dialogCards, flat, closeDialog, fail, lea
       )}
       {dialog?.kind === 'merge' && dialogCards[0] && (
         <MergeDialog
-          card={dialogCards[0]} openCards={flat.filter((c) => c.status === 'open')} onClose={closeDialog} onFailed={(ref, m) => fail([ref], m)} onBeforeSubmit={cw.flush}
+          card={dialogCards[0]} openCards={flat.filter((c) => c.status === 'open')} hidden={decided} onClose={closeDialog} onFailed={(ref, m) => fail([ref], m)} onBeforeSubmit={cw.flush}
           onDone={(card) => {
             const c = card ?? dialogCards[0];
             closeDialog(); leave([c], 'merged');
