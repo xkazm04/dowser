@@ -9,7 +9,7 @@ const at = (/** @type {string} */ hash) => `${needEnv('E2E_FIXTURE_URL')}#${hash
 /** A claim about pushes, either way. A neutral "Loading..." or no run line at all is fine. */
 const PUSH_CLAIM = /no push|last push/i;
 
-test.fixme('DOW-6: while the inbox loads the toolbar makes no claim about pushes', async ({ page }) => {
+test('DOW-6: while the inbox loads the toolbar makes no claim about pushes', async ({ page }) => {
   await page.goto(at('inbox&slow'));
   // One read of the skeleton and the toolbar together: a second read could already see the loaded list, whose run
   // line is a true claim, and a retrying assertion would pass the moment the list arrives.
@@ -22,14 +22,14 @@ test.fixme('DOW-6: while the inbox loads the toolbar makes no claim about pushes
   expect(toolbar, 'the toolbar over the loading skeleton').not.toMatch(PUSH_CLAIM);
 });
 
-test.fixme('DOW-6: when the inbox failed to load the toolbar makes no claim about pushes', async ({ page }) => {
+test('DOW-6: when the inbox failed to load the toolbar makes no claim about pushes', async ({ page }) => {
   await page.goto(at('inbox&fail=inbox.list'));
   await expect(page.getByRole('alert').filter({ hasText: 'The inbox could not load.' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Keyboard shortcuts' }), 'the toolbar is on the page').toBeVisible();
   expect(await page.locator('.dwr-toolbar').innerText(), 'the toolbar beside the error').not.toMatch(PUSH_CLAIM);
 });
 
-test.fixme('DOW-7: Accept with settings.get failed says the read failed, not that the inbox has no default', async ({ page }) => {
+test('DOW-7: Accept with settings.get failed says the read failed, not that the inbox has no default', async ({ page }) => {
   await page.goto(at('inbox&ref=DW-6&fail=settings.get'));
   await expect(page.getByRole('region', { name: 'Selected proposal' }).getByRole('heading', { level: 2 })).toBeVisible();
   await page.keyboard.press('a');
@@ -43,7 +43,7 @@ test.fixme('DOW-7: Accept with settings.get failed says the read failed, not tha
   expect.soft(text, 'the settings read failure is what is said').toMatch(/settings(\.get)?\b[^.]*(could not load|unavailable|failed)|default[^.]*(unknown|could not)/i);
 });
 
-test.fixme('DOW-11: a deep link to a ref that does not exist says so, with Close and no Retry', async ({ page }) => {
+test('DOW-11: a deep link to a ref that does not exist says so, with Close and no Retry', async ({ page }) => {
   await page.goto(at('inbox&ref=DW-999'));
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('button', { name: 'Close', exact: true }).first()).toBeVisible();
@@ -55,7 +55,7 @@ test.fixme('DOW-11: a deep link to a ref that does not exist says so, with Close
   await expect.soft(dialog, 'Close closes it').toBeHidden();
 });
 
-test.fixme('DOW-12: an empty status tab has copy that fits the status, and no scan advice', async ({ page }) => {
+test('DOW-12: an empty status tab has copy that fits the status, and no scan advice', async ({ page }) => {
   await page.goto(at('inbox'));
   await page.getByRole('combobox', { name: 'Inbox' }).selectOption('github.com/acme/billing');
   const status = page.getByRole('group', { name: /^Filter by status/ });

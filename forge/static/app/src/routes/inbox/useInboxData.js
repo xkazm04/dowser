@@ -23,10 +23,10 @@ function appendGroups(prev, more) {
 export const LINKED = 'linked';
 
 /**
- * @param {{cw: {flush: () => Promise<unknown>}, removed: Set<string>, leaving: Set<string>, onReset: () => void,
+ * @param {{cw: {flush: () => Promise<unknown>, pending: () => string[], notify: (message: string) => unknown}, removed: Set<string>, leaving: Set<string>, onReset: () => void,
  *   link: import('../../components/deeplink.js').InboxLink | undefined}} page
  *   `removed` and `leaving` hide decided cards from the views; `onReset` clears the page's decisions and selection
- *   when a reload starts. `link` is the deep link (undefined until it is read): its project, lens and area are the
+ *   when a reload's answer arrives, not before: until then the counts as loaded do not yet hold those decisions. `link` is the deep link (undefined until it is read): its project, lens and area are the
  *   first filters, and nothing loads before it is read.
  */
 export function useInboxData({ cw, removed, leaving, onReset, link }) {
@@ -67,19 +67,22 @@ export function useInboxData({ cw, removed, leaving, onReset, link }) {
   const reload = useCallback(() => {
     const mine = ++seq.current;
     // the pending decisions land first: two resolver calls have no order, and a list read that won would bring the card back
+    const sent = cw.pending();
     const landed = cw.flush();
+    if (sent.length > 0) cw.notify(`${sent.join('; ')}: changing the view sent it, so it can no longer be undone.`);
     setLoad({ status: 'loading' });
-    onReset(); setLastPush(undefined);
+    setLastPush(undefined);
     setMoreState('idle');
     landed.then(() => call('inbox.list', filters)).then(
       (res) => {
         if (mine !== seq.current) return;
+        onReset();
         setInboxes(res.inboxes ?? []);
         setGroups(appendGroups([], res.groups ?? []));
         setNext(res.next);
         setLoad({ status: 'ready' });
       },
-      (error) => { if (mine === seq.current) setLoad({ status: 'error', error }); },
+      (error) => { if (mine === seq.current) { onReset(); setLoad({ status: 'error', error }); } },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);

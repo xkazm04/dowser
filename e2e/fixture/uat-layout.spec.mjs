@@ -11,7 +11,7 @@ const rows = (/** @type {import('@playwright/test').Page} */ page) => page.getBy
 test.describe('narrow inbox (400 x 800)', () => {
   test.use({ viewport: { width: 400, height: 800 } });
 
-  test.fixme('DOW-8: j moves to a card whose title is in view below the sticky toolbar', async ({ page }) => {
+  test('DOW-8: j moves to a card whose title is in view below the sticky toolbar', async ({ page }) => {
     await page.goto(at('inbox'));
     await expect(rows(page).first()).toBeVisible();
     const current = page.locator('.dwr-row__main[aria-current="true"]');
@@ -31,7 +31,7 @@ test.describe('narrow inbox (400 x 800)', () => {
     }), { message: 'the title of the newly selected card', timeout: 5000 }).toBe('in view');
   });
 
-  test.fixme('DOW-9: the status segments stay inside the window and the page has no sideways scroll', async ({ page }) => {
+  test('DOW-9: the status segments stay inside the window and the page has no sideways scroll', async ({ page }) => {
     await page.goto(at('inbox'));
     await expect(rows(page).first()).toBeVisible();
     const merged = page.getByRole('group', { name: /^Filter by status/ }).getByRole('button', { name: /^Merged/ });
@@ -58,7 +58,7 @@ test.describe('narrow inbox (400 x 800)', () => {
 });
 
 for (const how of /** @type {const} */ (['Escape', 'Cancel'])) {
-  test.fixme(`DOW-10: ${how} on the bulk Snooze step returns focus to the selected row or the bulk Snooze button`, async ({ page }) => {
+  test(`DOW-10: ${how} on the bulk Snooze step returns focus to the selected row or the bulk Snooze button`, async ({ page }) => {
     await page.goto(at('inbox'));
     await expect(rows(page).first()).toBeVisible();
     const current = page.locator('.dwr-row__main[aria-current="true"]');
@@ -146,7 +146,7 @@ const measureMarks = (page) => page.evaluate(() => {
 });
 
 for (const mode of /** @type {const} */ (['light', 'dark'])) {
-  test.fixme(`DOW-16: every blast radius mark has 3:1 contrast against the plot (${mode})`, async ({ page }) => {
+  test(`DOW-16: every blast radius mark has 3:1 contrast against the plot (${mode})`, async ({ page }) => {
     await page.goto(at(`map&mode=${mode}`));
     await expect(page.locator('html')).toHaveAttribute('data-color-mode', mode);
     await expect(page.locator('.dw-scatter .dw-blast--low').first(), 'a low blast dot is on the plot').toBeVisible();

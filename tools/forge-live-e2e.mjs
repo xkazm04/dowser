@@ -71,7 +71,7 @@ if (cmd === 'prep') {
   mkdirSync(repo, { recursive: true });
   gitRepo(repo, {
     'src/auth.js': 'export function login(user) {\n  return check(user.password);\n}\n',
-    'src/api/rate.js': 'export const limit = null; // TODO rate limit\n',
+    'src/api/rate.js': 'export const limit = null; // no rate limit yet\n',
     'docs/guide/setup.md': '# Setup\nRun `npm start`.\n',
   });
   execFileSync('git', ['-C', repo, 'remote', 'add', 'origin', 'https://github.com/xkazm04/dowser-e2e.git']);
@@ -81,7 +81,7 @@ if (cmd === 'prep') {
   writeFileSync(join(WORK, 'sec.jsonl'), [
     candidate({ kind: 'secret-exposure', evidence: [code] }),
     candidate({ topic: 'Login has no rate limit', title: 'Login can be brute-forced', kind: 'risky-pattern', anchors: ['src/api/rate.js#limit'],
-      evidence: [code, { type: 'code', ref: 'src/api/rate.js:1', quote: 'export const limit = null; // TODO rate limit' }] }),
+      evidence: [code, { type: 'code', ref: 'src/api/rate.js:1', quote: 'export const limit = null; // no rate limit yet' }] }),
   ].map((c) => JSON.stringify(c)).join('\n') + '\n');
   const lines = cli('propose', '--run', start.run_id, '--file', join(WORK, 'sec.jsonl')); // kinds from the lens packs
   cli('verify', '--run', start.run_id);

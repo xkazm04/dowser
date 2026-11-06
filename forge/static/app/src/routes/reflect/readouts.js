@@ -8,8 +8,21 @@ export function readDupRate(push) {
   if (push.dup_rate === undefined) return 'This push carried no proposals, so there is no repeat rate to read.';
   const pct = Math.round(push.dup_rate * 100);
   if (push.dup_rate >= 0.6) return `${pct}% of this push re-found proposals you already had. The scan is mostly confirming, not discovering: a narrower lens set or a longer gap between scans would surface more that is new.`;
+  if (pct === 0) return 'None of this push was already known: every proposal was new to the inbox.';
   if (push.dup_rate <= 0.2) return `Only ${pct}% of this push was already known. Almost everything it found was new to the inbox.`;
   return `${pct}% of this push re-found known proposals; the rest was new.`;
+}
+
+/**
+ * A trust level change in the page's own words. The stored reason of a reversal holds a decider id and a fingerprint,
+ * which the server resolves to a name and a DW number when it can; the raw ids are never shown.
+ * @param {{reason: string, reversal?: {by_name?: string, verb?: string, ref?: string, title?: string}}} e
+ */
+export function trustChangeReason(e) {
+  if (!e.reversal && !e.reason.startsWith('reversal:')) return e.reason;
+  const { by_name = 'A person', verb = 'overruled', ref, title } = e.reversal ?? {};
+  const what = ref ? `${ref}${title ? ` (${title})` : ''}` : 'a proposal';
+  return `${by_name} ${verb} ${what}, which the scan had pre-triaged.`;
 }
 
 // ---- local patches from a write's own answer ------------------------------------------------------------------

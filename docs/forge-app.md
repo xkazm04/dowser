@@ -370,7 +370,10 @@ push, not a sortable table.
     A view that cannot be drawn becomes its text alternative.
   - **Merge** picks another open or accepted proposal of the inbox by ref or title, over every page and whatever the
     page is filtered to, or takes a typed Jira key. When a list fails to load, the dialog says "Some proposals could not
-    load, so the list may be short." with **Retry**; "No matching proposal." shows only for a real empty result.
+    load, so the list may be short." with **Retry**; "No matching proposal." shows only for a real empty result. A pick
+    the search hides does not count: **Merge** is off, and the list says so, until the search shows it again.
+  - While **Accept** or **Merge** runs, the fields are locked, and a line with the focus says what is being done and
+    that it cannot be cancelled now.
   - When the Accept dialog cannot list the Jira projects, it says so with **Retry**, which reloads both lists.
   - **Reject** takes one of six reasons: false positive, already known, not our direction, not worth it,
     wrong size, other. Other needs a note.
@@ -388,8 +391,12 @@ push, not a sortable table.
   `u` undoes a reject or snooze while its notice shows, `?` shows help. In an open dialog, `Ctrl+Enter`
   confirms and `1`-`6` pick a reject reason. The keys work only when no text field or select has focus; a ticked checkbox keeps them working.
 - A decided row leaves the queue and the selection moves to the next one. A failed action shows its message,
-  and the row stays. **Load more** fetches the next page (50 items): the rows after the last one listed, however many were decided since.
-- An empty view names the last push. To get new proposals, run `/dowser` in Claude Code or
+  and the row stays. A reject or snooze that fails after its undo window says the card is back in Open. Changing a
+  filter during the window sends the decision and says it can no longer be undone; the counts keep it while it lands.
+- **Load more** fetches the next page (50 items): the rows after the last one listed, however many were decided since.
+  When every listed card is decided it takes the focus, `j` past the last row reaches it, and a keyboard press moves
+  the focus on to the first new row.
+- An empty Open view names the last push; an empty decided tab says what lands there. To get new proposals, run `/dowser` in Claude Code or
   Codex, in the repository.
 
 ### Learning (Apps > Dowser > Learning)

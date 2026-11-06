@@ -2,7 +2,7 @@
 // The one dispatch door (mcp-tools: "Schemas are contracts; enforcement is the server's"): every MCP tool,
 // resolver and Rovo action passes through here, which checks the caller, validates, runs the core and turns a
 // failure into `{error, message}`. Forge-free: index.js supplies the Deps and the caller's accountId.
-import { getProposal, bylineForPage, inboxSummaries, listInbox, panelForIssue, cardOf, historyOf } from './cards.mjs';
+import { getProposal, bylineForPage, inboxSummaries, listInbox, panelForIssue } from './cards.mjs';
 import { mapData, pushAreas } from './areas.mjs';
 import { pushProposals } from './push.mjs';
 import { observed, recordCall } from './observe.mjs';
@@ -86,8 +86,9 @@ async function openRef(acc, a, key = 'ref') {
  */
 async function needJira(acc, perm, on) {
   if (await acc.may(perm, on)) return;
-  const what = perm === 'CREATE_ISSUES' ? `create issues in Jira project ${on.projectKey}` : `comment on ${on.issueKey}`;
-  throw new AppError('forbidden', `You do not have permission to ${what}, so Dowser will not do it for you`);
+  // Jira answers the same for an issue that is not there (atlassian.mjs: 404), and a typed key may simply be a typo.
+  if (perm !== 'CREATE_ISSUES') throw new AppError('forbidden', `You do not have permission to comment on ${on.issueKey}, or that issue does not exist. Check the key; Dowser will not do this for you without the permission`);
+  throw new AppError('forbidden', `You do not have permission to create issues in Jira project ${on.projectKey}, so Dowser will not do it for you`);
 }
 
 /**
@@ -436,9 +437,7 @@ async function rovoList(d, a, _, acc) {
  * @param {Access} acc
  */
 async function rovoExplain(d, a, _, acc) {
-  const p = await acc.proposal(needStr(a, 'ref'));
-  const card = await cardOf(d.db, p);
-  return { card, history: await historyOf(d.db, p) };
+  return getProposal(d, (await acc.proposal(needStr(a, 'ref'))).ref);
 }
 
 /** @type {Record<typeof ROVO_ACTIONS[number], Handler>} */

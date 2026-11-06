@@ -112,6 +112,26 @@ test('accept: the created issue opens with the facts table, then the rationale',
   assert.equal(txt(content[1]), 'Customers keep asking for csv export.', 'the rationale follows the table');
 });
 
+test('reflect.data resolves a reversal for reading: a name and a DW number when they can be found, never a guess', async () => {
+  const d = makeDeps();
+  const out = await tool(d, 'dowser_proposals_push', pushArgs([record()]));
+  const { fp, external_ref: ref } = out.results[0];
+  const event = (/** @type {string} */ reason) => ({ slice: 'product|opportunity|-|M', from: 1, to: 0, reason, n: 20, at: '2026-10-27T09:00:00.000Z' });
+  const events = [
+    event(`reversal: ${ME} rejected ${fp}, which machine:dowser pre-triaged`),
+    event(`reversal: forge:someone-else snoozed ${'b'.repeat(16)}, which machine:dowser pre-triaged`),
+    event('earned: 100 %'),
+  ];
+  await tool(d, 'dowser_reflect_sync', { project_key: PK, trust_json: JSON.stringify({ slices: [], events }) });
+  const got = (await res(d, 'reflect.data', { project_key: PK })).trust.events;
+  assert.deepEqual(got.map((/** @type {any} */ e) => e.reason), events.map((e) => e.reason), 'the stored reason is kept');
+  assert.equal(got[0].reversal.verb, 'rejected');
+  assert.equal(got[0].reversal.ref, ref);
+  assert.equal(typeof got[0].reversal.title, 'string');
+  assert.equal(got[1].reversal.ref, undefined, 'a fingerprint with no proposal stays unnamed');
+  assert.equal(got[2].reversal, undefined);
+});
+
 test('dowser_reflect_sync stores trust_json whole; reflect.data shows it; a bad one is refused; omitted keeps the last', async () => {
   const d = makeDeps();
   await tool(d, 'dowser_proposals_push', pushArgs([record()]));

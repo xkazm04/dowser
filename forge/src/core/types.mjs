@@ -104,7 +104,8 @@ export const RECORD_MAX = 50;
  *   trust_json = a Trust object (the skill store's per-slice trust), stored whole for the Learning tab
  * @typedef {{slice: string, level: number, ceiling: number, start: number, n: number, agreement?: number, changed_at?: string, reason?: string}} TrustSlice
  *   slice = `<category>|<lens>|<risk_class>|<size>` (scan-finding/1); level 0-1 for Dowser (ceiling L1); n and agreement over the current window
- * @typedef {{slice: string, from: number, to: number, reason: string, agreement?: number, n: number, item_id?: string, at: string}} TrustEvent
+ * @typedef {{by_name?: string, verb: string, ref?: string, title?: string}} TrustReversal  a reversal's reason, resolved for reading (reflect.data only)
+ * @typedef {{slice: string, from: number, to: number, reason: string, agreement?: number, n: number, item_id?: string, at: string, reversal?: TrustReversal}} TrustEvent
  * @typedef {{slices: TrustSlice[], events: TrustEvent[]}} Trust
  * @typedef {{id: string, lens: string, state: 'accepted' | 'declined', text: string, decided_by: string, decided_at: string}} RuleDecision
  * @typedef {{ref: string, fp: string, rating: OutcomeRating, note?: string, issue_ref: string, decided_by: string, recorded_at: string}} Outcome

@@ -10,7 +10,7 @@ import {
   deciderName, formatDate, formatDay, plural,
 } from '../../components/labels.js';
 import { BarTrend, HBars, StackedBar } from './charts.jsx';
-import { readDupRate, readyToRate, withOutcome, withRule } from './readouts.js';
+import { readDupRate, readyToRate, trustChangeReason, withOutcome, withRule } from './readouts.js';
 import './reflect.css';
 import './learn.css';
 import { LensDot } from '../inbox/parts.jsx';
@@ -207,6 +207,19 @@ function NeedsYou({ d, projectKey, onPatch }) {
   }, [focusAt]);
   /** @param {number} at @param {string} message @param {(data: any) => any} fn */
   const decided = (at, message, fn) => { setSaid(message); setFocusAt(at); onPatch(fn); };
+  // A rating in Not built yet keeps the person there: the focus goes to the item now in its place (or the section's
+  // summary when none is left), and the line says what happened, on screen, since the outcome is listed far below.
+  const builtList = useRef(/** @type {HTMLUListElement | null} */ (null));
+  const builtSummary = useRef(/** @type {HTMLElement | null} */ (null));
+  const [builtAt, setBuiltAt] = useState(/** @type {number | null} */ (null));
+  const [builtSaid, setBuiltSaid] = useState('');
+  useEffect(() => {
+    if (builtAt === null) return;
+    setBuiltAt(null);
+    const items = builtList.current ? [...builtList.current.children] : [];
+    const target = items[Math.min(builtAt, items.length - 1)]?.querySelector('textarea, input, button, a[href]');
+    if (target instanceof HTMLElement) target.focus(); else builtSummary.current?.focus();
+  }, [builtAt]);
   return (
     <section className="dwr-needs" aria-labelledby="dwr-needs-h">
       <h2 className="dwr-page__sub" id="dwr-needs-h" ref={headRef} tabIndex={-1}>Needs you <span className="dwr-count">{n}</span></h2>
@@ -219,12 +232,13 @@ function NeedsYou({ d, projectKey, onPatch }) {
             {cands.map((c, i) => <li key={c.ref}><Candidate cand={c} onRecorded={(res) => decided(offers.length + i, `Recorded ${c.ref}.`, (data) => withOutcome(data, res))} /></li>)}
           </ul>
         )}
-      {notBuilt.length > 0 && (
+      {(notBuilt.length > 0 || builtSaid) && (
         <details className="dwr-more">
-          <summary>Not built yet ({notBuilt.length})</summary>
+          <summary ref={builtSummary}>Not built yet ({notBuilt.length})</summary>
           <p className="dwr-muted">Accepted, and Jira does not say they are done. You can rate one now if you already know how it turned out.</p>
-          <ul className="dwr-needs__list">
-            {notBuilt.map((c) => <li key={c.ref}><Candidate cand={c} onRecorded={(res) => { setSaid(`Recorded ${c.ref}.`); onPatch((data) => withOutcome(data, res)); headRef.current?.focus(); }} /></li>)}
+          <p role="status">{builtSaid}</p>
+          <ul className="dwr-needs__list" ref={builtList}>
+            {notBuilt.map((c, i) => <li key={c.ref}><Candidate cand={c} onRecorded={(res) => { setBuiltSaid(`Recorded ${c.ref}. It is listed under Recorded outcomes, further down.`); setBuiltAt(i); onPatch((data) => withOutcome(data, res)); }} /></li>)}
           </ul>
         </details>
       )}
@@ -545,7 +559,7 @@ function Trust({ trust }) {
                       <Lozenge appearance={e.to > e.from ? 'success' : 'removed'}>L{e.from} to L{e.to}</Lozenge>
                       <LensDot lens={p.lens} /><span>{LENS_LABELS[p.lens] ?? p.lens}{p.size && <span className="dwr-muted"> · size {p.size}</span>}</span>
                     </div>
-                    <p className="dwr-notes__text">{e.reason}</p>
+                    <p className="dwr-notes__text">{trustChangeReason(e)}</p>
                     <div className="dwr-need__when">{formatDate(e.at)}{e.agreement !== undefined && <> · {Math.round(e.agreement * 100)}% of {e.n}</>}</div>
                   </li>
                 );

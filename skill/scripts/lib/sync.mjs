@@ -296,12 +296,17 @@ export function readResponse(file) {
   try { doc = JSON.parse(readFileSync(file, 'utf8').replace(/^﻿/, '')); } catch (e) {
     throw new DowserError(`--file ${file} is not readable JSON (${/** @type {Error} */ (e).message})`, 2);
   }
-  if (isObj(doc) && doc.isError === true) throw new DowserError(`--file ${file} holds a tool error, not a response`, 2, { error: 'tool-error', response: doc });
-  if (isObj(doc) && isObj(doc.structuredContent)) return doc.structuredContent;
-  if (isObj(doc) && Array.isArray(doc.content) && doc.content.length === 1 && isObj(doc.content[0]) && typeof doc.content[0].text === 'string') {
-    try { return JSON.parse(doc.content[0].text); } catch { /* not JSON text: fall through */ }
+  const toolError = () => new DowserError(`--file ${file} holds a tool error, not a response`, 2, { error: 'tool-error', response: doc });
+  if (isObj(doc) && doc.isError === true) throw toolError();
+  /** @type {unknown} */
+  let body = doc;
+  if (isObj(doc) && isObj(doc.structuredContent)) body = doc.structuredContent;
+  else if (isObj(doc) && Array.isArray(doc.content) && doc.content.length === 1 && isObj(doc.content[0]) && typeof doc.content[0].text === 'string') {
+    try { body = JSON.parse(doc.content[0].text); } catch { /* not JSON text: fall through */ }
   }
-  return doc;
+  // the live app sends {error, message} with no isError flag (docs/contracts/forge-mcp-2.md, Errors)
+  if (isObj(body) && typeof body.error === 'string') throw toolError();
+  return body;
 }
 
 /** @param {unknown} v */

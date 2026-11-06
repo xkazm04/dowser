@@ -6,7 +6,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-const FIXME = /\btest(?:\.describe)?(?:\.only)?\.fixme\(/;
+const FIXME_CALL = /\btest(?:\.describe)?(?:\.only)?\.fixme\(/;
 const COMMENT = /^\s*(?:\/\/|\/\*|\*)/;
 const TICKET = /\b[A-Z][A-Z0-9]*-\d+\b/;
 const SPEC = /\.spec\.[cm]?[jt]sx?$/;
@@ -21,7 +21,7 @@ const SKIP = new Set(['node_modules', 'results', 'dist', 'build', 'out', 'covera
 export function fixmesIn(text) {
   const lines = text.split(/\r?\n/);
   return lines.flatMap((l, i) => {
-    if (!FIXME.test(l) || COMMENT.test(l)) return [];
+    if (!FIXME_CALL.test(l) || COMMENT.test(l)) return [];
     const near = [l, lines[i + 1] ?? '', lines[i - 1] ?? ''].map((x) => x.match(TICKET)?.[0]).find(Boolean);
     return [{ line: i + 1, ticket: near ?? null }];
   });

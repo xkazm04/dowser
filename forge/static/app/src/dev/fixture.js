@@ -396,7 +396,7 @@ export const REFLECT = {
       ],
       events: [
         { slice: 'product|opportunity|-|M', from: 0, to: 1, reason: 'earned: predicted verdicts agreed on 90 % of the last 20 decisions', agreement: 0.9, n: 20, item_id: '41526a7b8c9d0e1f', at: '2026-10-12T09:00:00.000Z' },
-        { slice: 'product|opportunity|-|M', from: 1, to: 0, reason: 'reversal: forge:712020:7d1c rejected 5a6b7c8d9e0f1a2b, which machine:dowser pre-triaged', agreement: 0.85, n: 20, item_id: '5a6b7c8d9e0f1a2b', at: '2026-10-21T10:02:00.000Z' },
+        { slice: 'product|opportunity|-|M', from: 1, to: 0, reason: 'reversal: forge:712020:7d1c rejected 5a6b7c8d9e0f1a2b, which machine:dowser pre-triaged', agreement: 0.85, n: 20, item_id: '5a6b7c8d9e0f1a2b', at: '2026-10-21T10:02:00.000Z', reversal: { by_name: 'Priya Natarajan', verb: 'rejected', ref: 'DW-5', title: 'Add a loyalty points ledger' } },
         { slice: 'technical|doc-drift|-|XS', from: 0, to: 1, reason: 'earned: predicted verdicts agreed on 95 % of the last 20 decisions', agreement: 0.95, n: 20, item_id: '7a8b9c0d1e2f3a4b', at: '2026-10-26T08:00:00.000Z' },
       ],
     },

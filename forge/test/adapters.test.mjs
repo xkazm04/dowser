@@ -136,6 +136,22 @@ test('goals: a refused Teamwork Graph is unavailable with the allowlist step; go
   await assert.rejects(() => sources.goals(), (e) => e instanceof AppError && /FORBIDDEN/.test(e.message) && !/tenant 42/.test(e.message));
 });
 
+test('goals: the documented answer maps to source items, a goal without a link is left out, and no goals is an empty list', async () => {
+  /** @type {Answer} */
+  let next = { status: 200, body: { data: { cypherQuery: { edges: [{ node: { columns: [{ key: 'goals', value: { nodes: [
+    { id: 'ari:goal/1', data: { id: 'g1', name: 'Grow revenue', url: 'https://home.atlassian.com/goal/1', description: 'Grow it', status: 'ON_TRACK' } },
+    { id: 'ari:goal/2', data: { id: 'g2', displayName: 'At risk goal', link: 'https://home.atlassian.com/goal/2', state: 'At Risk' } },
+    { id: 'ari:goal/3', data: { id: 'g3', name: 'No link here' } },
+  ] } }] } }] } } } };
+  script(() => next);
+  assert.deepEqual(await sources.goals(), [
+    { ref: 'g1', title: 'Grow revenue', url: 'https://home.atlassian.com/goal/1', body: 'Grow it', status: 'on-track' },
+    { ref: 'g2', title: 'At risk goal', url: 'https://home.atlassian.com/goal/2', body: 'At risk goal', status: 'at-risk' },
+  ]);
+  next = { status: 200, body: { data: { cypherQuery: { edges: [] } } } };
+  assert.deepEqual(await sources.goals(), []);
+});
+
 test('forgeDb: a TiDB duplicate-entry error is DuplicateKey; any other error is rethrown as it is', async () => {
   const prepare = sql.prepare;
   const fail = (/** @type {Error} */ err) => /** @type {any} */ (() => ({ bindParams: () => ({ execute: async () => { throw err; } }) }));

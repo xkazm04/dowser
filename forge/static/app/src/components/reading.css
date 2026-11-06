@@ -214,6 +214,7 @@
 :root .dwr-inline .dwr-decide { margin: 8px -16px 0 -20px; padding-left: 20px; padding-right: 16px; }
 :root .dwr-root:not(.dwr-root--wide) .dwr-toolbar { position: sticky; top: 0; z-index: 5; }
 :root .dwr-root:not(.dwr-root--wide) .dwr-runline { display: none; }
+:root .dwr-root:not(.dwr-root--wide) .dwr-seg { flex-wrap: wrap; max-width: 100%; }
 :root .dwr-root:not(.dwr-root--wide) .dwr-group__head { top: 0; }
 
 /* Loading skeleton */
@@ -279,9 +280,10 @@
 }
 
 /* The toolbar stays one 48px row down to 960px; the run line gives way (ellipsis) before "?" wraps. Below 960px it
-   wraps to a second row: with the "Pre-triaged" filter its controls need about 910px, and nowrap scrolled sideways. */
+   wraps to a second row: with the "Pre-triaged" filter its controls need about 910px, and nowrap scrolled sideways.
+   A map cell's area chip and the counts note add width at any size, so with either on the toolbar wraps as well. */
 @media (min-width: 960px) {
-  :root .dwr-toolbar { flex-wrap: nowrap; }
+  :root .dwr-toolbar:not(:has(.dwr-chip, .dwr-seg__note)) { flex-wrap: nowrap; }
   :root .dwr-runline { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   :root .dwr-toolbar > :not(.dwr-runline):not(.dwr-spacer) { flex: none; }
 }

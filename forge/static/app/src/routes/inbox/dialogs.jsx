@@ -2,7 +2,7 @@
 // help. Accept and Merge run their resolver call themselves and report through onDone / onFailed (a failure stays
 // visible in the dialog so the person can correct the input). Reject and Snooze only COLLECT the decision: the
 // inbox sends them after the undo window (useCommitWindow).
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { call } from '../../api.js';
 import { allPages } from './triage.js';
 import { COMMIT_MS } from '../../components/useCommitWindow.js';
@@ -16,11 +16,22 @@ import { safeHref } from '../../safeHref.js';
 const ignoreClose = () => {};
 
 /**
+ * A line that takes the focus when it appears: the control that had it was just disabled or is gone, and a dialog with
+ * the focus on the page body has lost its keyboard user.
+ * @param {{role: 'status' | 'alert', children: React.ReactNode}} props
+ */
+function FocusedLine({ role, children }) {
+  const ref = useRef(/** @type {HTMLDivElement | null} */ (null));
+  useEffect(() => { ref.current?.focus(); }, []);
+  return <div ref={ref} role={role} tabIndex={-1} style={{ outline: 'none', marginTop: 8 }}>{children}</div>;
+}
+
+/**
  * Accept: target Jira project + issue type, pre-filled with the inbox default; preview of the issue.
  * @param {{card: any, onClose: () => void, onDone: (card: any) => void, onFailed: (ref: string, message: string) => void, onBeforeSubmit?: () => void}} props
  */
 export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }) {
-  const [meta, setMeta] = useState(/** @type {{inbox?: any, projects?: any[], error?: string} | null} */ (null));
+  const [meta, setMeta] = useState(/** @type {{inbox?: any, projects?: any[], error?: string, settingsFailed?: boolean} | null} */ (null));
   const [project, setProject] = useState('');
   const [issueType, setIssueType] = useState('');
   const [note, setNote] = useState('');
@@ -37,7 +48,7 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
       const inbox = s.status === 'fulfilled' ? (s.value.inboxes ?? []).find((i) => i.project_key === card.project_key) : undefined;
       const projects = p.status === 'fulfilled' ? (p.value.projects ?? []) : undefined;
       const failed = [s, p].find((r) => r.status === 'rejected');
-      setMeta({ inbox, projects, error: failed ? String(failed.reason?.message ?? 'Jira projects could not load.') : undefined });
+      setMeta({ inbox, projects, settingsFailed: s.status === 'rejected', error: failed ? String(failed.reason?.message ?? 'Jira projects could not load.') : undefined });
       if (inbox?.jira_project_key) setProject(inbox.jira_project_key);
       if (inbox?.issue_type_id) setIssueType(inbox.issue_type_id);
     });
@@ -49,6 +60,10 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
   // With no project list (jira.projects failed) the server default is the only safe target.
   const hasDefault = Boolean(meta?.inbox?.jira_project_key && meta?.inbox?.issue_type_id);
   const canSubmit = meta && !busy && (meta.projects ? Boolean(project && issueType) : hasDefault);
+  // A failed settings read says nothing about the inbox's default: only that it is unknown right now.
+  const whatToDo = meta?.settingsFailed
+    ? (meta.projects ? "This inbox's default target could not load: choose the project and issue type for this issue, or retry." : "This inbox's default target could not load either: retry.")
+    : (hasDefault ? 'Accepting uses the inbox default target.' : 'Set a default target in Settings, or retry.');
 
   async function submit() {
     setBusy(true); setError('');
@@ -79,7 +94,7 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
       {meta?.error && (
         <SectionMessage appearance="warning">
           <p>
-            {meta.error} {hasDefault ? 'Accepting uses the inbox default target.' : 'Set a default target in Settings, or retry.'}
+            {meta.error} {whatToDo}
             {' '}<Button compact onClick={() => setAttempt((n) => n + 1)}>Retry</Button>
           </p>
         </SectionMessage>
@@ -88,19 +103,21 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
         <>
           <div className="dw-field">
             <label htmlFor="dw-acc-project">Jira project</label>
-            <select id="dw-acc-project" className="dw-select" value={project} onChange={(e) => { setProject(e.target.value); setIssueType(''); }}>
+            <select id="dw-acc-project" className="dw-select" value={project} disabled={busy} onChange={(e) => { setProject(e.target.value); setIssueType(''); }}>
               <option value="">Choose a project</option>
               {meta.projects.map((p) => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
             </select>
             <span className="dw-subtlest">
-              {meta.inbox?.jira_project_key
+              {meta.settingsFailed
+                ? "This inbox's default could not be read, so nothing is filled in."
+                : meta.inbox?.jira_project_key
                 ? `Filled in from this inbox's default (${meta.inbox.jira_project_key}). Change it for this issue here; change the default in Settings.`
                 : 'This inbox has no default project yet. Set one in Settings so every accept starts there.'}
             </span>
           </div>
           <div className="dw-field">
             <label htmlFor="dw-acc-type">Issue type</label>
-            <select id="dw-acc-type" className="dw-select" value={issueType} onChange={(e) => setIssueType(e.target.value)} disabled={!project}>
+            <select id="dw-acc-type" className="dw-select" value={issueType} onChange={(e) => setIssueType(e.target.value)} disabled={!project || busy}>
               <option value="">Choose an issue type</option>
               {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
@@ -109,7 +126,7 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
       )}
       <div className="dw-field">
         <label htmlFor="dw-acc-note">What made this worth doing? (optional)</label>
-        <textarea id="dw-acc-note" className="dw-textarea" value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} aria-describedby="dw-acc-note-help" />
+        <textarea id="dw-acc-note" className="dw-textarea" value={note} disabled={busy} onChange={(e) => setNote(e.target.value)} maxLength={1000} aria-describedby="dw-acc-note-help" />
         <span id="dw-acc-note-help" className="dw-subtlest">Kept in the triage history. Dowser reads these notes to learn what you value.</span>
       </div>
       <div className="dw-field">
@@ -162,7 +179,8 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
           </div>
         </div>
       </div>
-      {error && <SectionMessage appearance="error"><p>{error}</p></SectionMessage>}
+      {busy && <FocusedLine role="status"><Spinner label="Working" /> Creating the issue in {project || meta?.inbox?.jira_project_key || 'the default project'}. It cannot be cancelled now.</FocusedLine>}
+      {error && <FocusedLine role="alert"><SectionMessage appearance="error"><p>{error}</p></SectionMessage></FocusedLine>}
     </Dialog>
   );
 }
@@ -207,7 +225,9 @@ export function MergeDialog({ card, openCards, hidden, onClose, onDone, onFailed
   }, [openCards, loaded, hidden, query, card]);
 
   const key = jiraKey.trim().toUpperCase();
-  const into = key || picked;
+  // a pick the search has hidden is not on screen, so it is not what the person confirms: it counts again when it shows
+  const pickHidden = Boolean(picked) && !candidates.some((c) => c.ref === picked);
+  const into = key || (pickHidden ? '' : picked);
   const keyInvalid = Boolean(key) && !JIRA_KEY_RE.test(key) && !DW_REF_RE.test(key);
 
   async function submit() {
@@ -234,10 +254,11 @@ export function MergeDialog({ card, openCards, hidden, onClose, onDone, onFailed
       <p className="dw-subtle" style={{ marginTop: 0 }}>Merge only the same work: the same capability or defect in the same place.</p>
       <div className="dw-field">
         <label htmlFor="dw-merge-q">Find an open or accepted proposal</label>
-        <input id="dw-merge-q" className="dw-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="DW-12 or words from the title" autoComplete="off" />
+        <input id="dw-merge-q" className="dw-input" value={query} disabled={busy} onChange={(e) => setQuery(e.target.value)} placeholder="DW-12 or words from the title" autoComplete="off" />
       </div>
-      <fieldset className="dw-radio-list" aria-label="Merge into" style={{ maxHeight: 200, overflow: 'auto' }} disabled={Boolean(key)}>
+      <fieldset className="dw-radio-list" aria-label="Merge into" style={{ maxHeight: 200, overflow: 'auto' }} disabled={Boolean(key) || busy}>
         {loaded === null && <span><Spinner label="Loading proposals" /> Loading…</span>}
+        {pickHidden && !key && <span className="dw-subtlest">This search hides {picked}, so nothing is picked. Clear the search to merge into it.</span>}
         {loaded?.failed && (
           <span role="alert" className="dw-subtle">
             Some proposals could not load, so the list may be short.{' '}
@@ -259,10 +280,11 @@ export function MergeDialog({ card, openCards, hidden, onClose, onDone, onFailed
       </fieldset>
       <div className="dw-field">
         <label htmlFor="dw-merge-key">Or merge into a Jira issue</label>
-        <input id="dw-merge-key" className="dw-input" value={jiraKey} onChange={(e) => setJiraKey(e.target.value)} placeholder="SHOP-123" autoComplete="off" aria-invalid={keyInvalid || undefined} aria-describedby="dw-merge-key-help" />
+        <input id="dw-merge-key" className="dw-input" value={jiraKey} disabled={busy} onChange={(e) => setJiraKey(e.target.value)} placeholder="SHOP-123" autoComplete="off" aria-invalid={keyInvalid || undefined} aria-describedby="dw-merge-key-help" />
         <span id="dw-merge-key-help" className="dw-subtlest">{keyInvalid ? 'Type a Jira key such as SHOP-123, or a DW number.' : 'A Jira key or a DW number. A typed key wins over the picked proposal.'}</span>
       </div>
-      {error && <SectionMessage appearance="error"><p>{error}</p></SectionMessage>}
+      {busy && <FocusedLine role="status"><Spinner label="Working" /> Merging {card.ref} into {into}. It cannot be cancelled now.</FocusedLine>}
+      {error && <FocusedLine role="alert"><SectionMessage appearance="error"><p>{error}</p></SectionMessage></FocusedLine>}
     </Dialog>
   );
 }

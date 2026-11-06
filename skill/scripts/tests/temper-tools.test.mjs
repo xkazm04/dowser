@@ -172,7 +172,7 @@ test('runScanStream: a heartbeat line every interval on the side channel (elapse
     writeFileSync(fake, [
       "const say = (o) => process.stdout.write(JSON.stringify(o) + '\\n');",
       "say({ type: 'system', subtype: 'init' });",
-      "say({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Grep', input: { pattern: 'TODO' } }] } });",
+      "say({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Grep', input: { pattern: 'needle' } }] } });",
       "setTimeout(() => { say({ type: 'result', subtype: 'success', is_error: false, result: 'summary', total_cost_usd: 0.25, num_turns: 3 }); }, 400);",
     ].join('\n'));
     /** @type {string[]} */
@@ -183,7 +183,7 @@ test('runScanStream: a heartbeat line every interval on the side channel (elapse
     assert.deepEqual([r.result.result, r.result.total_cost_usd, r.result.num_turns], ['summary', 0.25, 3]);
     assert.ok(beats.length >= 2, `beats: ${beats.length}`);
     assert.ok(beats.every((l) => /^temper-scan bp-temper: \d+ min elapsed/.test(l)));
-    assert.match(beats.at(-1) ?? '', /, last step: Grep TODO$/);
+    assert.match(beats.at(-1) ?? '', /, last step: Grep needle$/);
     assert.match(readFileSync(join(work, 'claude.json'), 'utf8'), /"type":"result"/, 'the whole stream is kept');
     writeFileSync(fake, "process.stdout.write(JSON.stringify({ type: 'result', is_error: true, result: 'x' }) + '\\n'); process.exit(1);");
     const bad = await runScanStream([], { work, w: { repo: work, home: work }, beat: () => {}, claude: { command: process.execPath, args: [fake], shell: false, resolved: fake } });
@@ -260,6 +260,15 @@ test('adfOf: a valid ADF doc with the surface, ordered steps, expected/actual, s
   assert.ok(summaryOf(parseFindings([finding({ title: 'x'.repeat(400) })])[0]).length <= 255);
   assert.equal(summaryOf(f), 'UAT: Load more drops the open filter');
 });
+
+/** A git repo at <work>/clone whose origin is the inbox key, as a scan's clone is. @param {string} work @param {string} key @param {Record<string, string>} files */
+function originClone(work, key, files) {
+  const repo = join(work, 'clone');
+  mkdirSync(repo);
+  gitRepo(repo, files);
+  spawnSync('git', ['-C', repo, 'remote', 'add', 'origin', key]);
+  return repo;
+}
 
 /**
  * A stub Jira: a DOW project with Bug and Task, issues in memory, a search that can lag behind creation.
@@ -436,10 +445,7 @@ test('temper-cards: lists a scan home\'s cards (status, lens, title, evidence re
   const work = tempDir('temper-cards');
   try {
     const temperHome = join(work, 'temper'), key = 'bp-temper';
-    const repo = join(work, 'clone');
-    mkdirSync(repo);
-    gitRepo(repo, { 'src/auth.js': 'export function login(user) {\n  return check(user.password);\n}\n' });
-    spawnSync('git', ['-C', repo, 'remote', 'add', 'origin', key]);
+    const repo = originClone(work, key, { 'src/auth.js': 'export function login(user) {\n  return check(user.password);\n}\n' });
     const CLI = join(ROOT, 'skill', 'scripts', 'dowser.mjs');
     const env = { ...process.env, DOWSER_HOME: join(temperHome, 'homes', key) };
     const cli = (/** @type {string[]} */ ...a) => { const r = spawnSync(process.execPath, [CLI, ...a, '--repo', repo], { encoding: 'utf8', env, cwd: work }); assert.equal(r.status, 0, r.stderr + r.stdout); return r.stdout; };
@@ -488,10 +494,7 @@ test('temper-cards: joins the day ledger\'s verdicts, so a card decided locally 
   const work = tempDir('temper-cards-ledger');
   try {
     const temperHome = join(work, 'temper'), key = 'bp-temper';
-    const repo = join(work, 'clone');
-    mkdirSync(repo);
-    gitRepo(repo, { 'src/auth.js': 'export function login(user) {\n  return check(user.password);\n}\n', 'src/b.js': 'export const token = "x";\n', 'src/c.js': 'eval(input);\n' });
-    spawnSync('git', ['-C', repo, 'remote', 'add', 'origin', key]);
+    const repo = originClone(work, key, { 'src/auth.js': 'export function login(user) {\n  return check(user.password);\n}\n', 'src/b.js': 'export const token = "x";\n', 'src/c.js': 'eval(input);\n' });
     const CLI = join(ROOT, 'skill', 'scripts', 'dowser.mjs');
     const env = { ...process.env, DOWSER_HOME: join(temperHome, 'homes', key) };
     const cli = (/** @type {string[]} */ ...a) => { const r = spawnSync(process.execPath, [CLI, ...a, '--repo', repo], { encoding: 'utf8', env, cwd: work }); assert.equal(r.status, 0, r.stderr + r.stdout); return r.stdout; };

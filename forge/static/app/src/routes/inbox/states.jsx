@@ -37,6 +37,30 @@ export function narrowingFilters({ area = '', pretriaged = false }) {
   return out;
 }
 
+/** What the empty Open view says about the last push: undefined while it is being read, null when there is none. */
+function LastPushLine({ lastPush }) {
+  return (
+    <>
+      {lastPush === undefined && <p className="dwr-muted">Checking the last push...</p>}
+      {lastPush && (
+        <p className="dwr-muted">
+          The last push was run {lastPush.run_id} on {formatDate(lastPush.at)}
+          {lastPush.lenses.length > 0 && <> ({lastPush.lenses.map((l) => LENS_LABELS[l] ?? l).join(', ')})</>}.
+        </p>
+      )}
+      {lastPush === null && <p className="dwr-muted">No push has reached this inbox yet.</p>}
+    </>
+  );
+}
+
+/** What an empty decided tab is waiting for: a person's decision, never a scan (a scan's pushes land in Open). */
+const DECIDED_HERE = {
+  accepted: 'A proposal you accept moves here, with its Jira issue.',
+  rejected: 'A proposal you reject moves here, with the reason you gave.',
+  snoozed: 'A proposal you snooze waits here until it comes back.',
+  merged: 'A proposal you merge into another moves here, with where it went.',
+};
+
 /**
  * The healthiest state is empty, and when the person got it there it says so. Under an area or pre-triaged
  * filter an empty list says nothing about the inbox: the view names the filter and offers to clear it, and never
@@ -61,18 +85,7 @@ export function EmptyState({ status, lens, lastPush, tally, area = '', pretriage
       </SectionMessage>
     );
   }
-  const lastLine = (
-    <>
-      {lastPush === undefined && <p className="dwr-muted">Checking the last push...</p>}
-      {lastPush && (
-        <p className="dwr-muted">
-          The last push was run {lastPush.run_id} on {formatDate(lastPush.at)}
-          {lastPush.lenses.length > 0 && <> ({lastPush.lenses.map((l) => LENS_LABELS[l] ?? l).join(', ')})</>}.
-        </p>
-      )}
-      {lastPush === null && <p className="dwr-muted">No push has reached this inbox yet.</p>}
-    </>
-  );
+  const lastLine = <LastPushLine lastPush={lastPush} />;
   if (status === 'open' && !lens) {
     const parts = [['accepted', 'accepted'], ['rejected', 'rejected'], ['snoozed', 'snoozed'], ['merged', 'merged']].filter(([k]) => tally[k] > 0).map(([k, w]) => `${tally[k]} ${w}`);
     return (
@@ -92,6 +105,13 @@ export function EmptyState({ status, lens, lastPush, tally, area = '', pretriage
         {lastLine}
         <p className="dwr-muted">To file new proposals, run a scan: <code>/dowser</code> in Claude Code or Codex, in the repository.</p>
       </section>
+    );
+  }
+  if (status !== 'open') {
+    return (
+      <SectionMessage appearance="information" title={`No ${what} here.`} role="status">
+        <p>{DECIDED_HERE[status]}</p>
+      </SectionMessage>
     );
   }
   return (

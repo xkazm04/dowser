@@ -62,11 +62,14 @@ account's permissions, and only while a person has switched on delegated triage 
 
 ## Errors
 
-A failure the caller can act on is a tool result with `isError: true`. Its JSON is:
+A failure the caller can act on is a tool result whose JSON is:
 
 ```json
 {"error": "<code>", "message": "<one sentence for a person>"}
 ```
+
+The `error` key is the signal. The MCP result's `isError` flag is not: the mock and the local server set it, and the
+Forge app does not (one live failing call answered without it; the gateway's own behaviour is not documented here).
 
 | `error` | meaning |
 |---|---|
@@ -102,7 +105,9 @@ reveals nothing, not even that it holds the item. An fp is looked up among the i
 
 A protocol fault (unknown method, malformed JSON-RPC) is a JSON-RPC `error`, not a tool result. When any tool
 errors, the skill says so in plain words and continues **unconnected**. A failed `dowser_verdicts_pull` also
-disables the push for that run (a half-synced memory must not push).
+disables the push for that run (a half-synced memory must not push). `unknown-project` from a read tool before any
+push is not such a failure: there is no inbox yet and nothing to half-sync, so a first connected scan goes on connected
+and its push creates the inbox. Any other pull error disables the push.
 
 ## Read tools (sources)
 
@@ -512,7 +517,7 @@ Output: `{results: [{ref, result, why?, issue_ref?}], more?}`, one result per ve
 | field | type | rule |
 |---|---|---|
 | `results[].result` | string | `recorded`, or `refused` with `why` |
-| `results[].why` | string | only on `refused`: the cap that is reached ("today's delegate accept cap (3) is reached; it resets at 00:00 UTC", "today's delegate cap of 10 rejects, snoozes and merges is reached; ..."), or why the decision did not land (not open, another inbox, a missing reason, no permission, Jira refused) |
+| `results[].why` | string | only on `refused`: the cap that is reached ("today's delegate accept cap (3) is reached; it resets at 00:00 UTC", "today's delegate cap of 10 rejects, snoozes and merges is reached; ..."), or why the decision did not land (not open, another inbox, a missing reason, no permission, Jira refused). An `accept` of an item already accepted is not refused: an accept can be retried, so it answers `recorded` with the item's `issue_ref`, even when a person made that decision, and it counts toward the day's delegate accepts |
 | `results[].issue_ref` | string | only on a recorded `accept`: the Jira issue it created |
 | `more` | boolean | only when the call's time budget (15 s of the ~25 s a call has) ran out: the verdicts after the last result were not looked at, so send them again. Omitted otherwise |
 

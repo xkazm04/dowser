@@ -5,7 +5,7 @@ import { SnoozeStep } from './dialogs.jsx';
 import { Detail } from './Detail.jsx';
 import { Kbd } from './parts.jsx';
 
-export function ReadingPane({ current, currentChange, history, onHistoryRetry, paneScroll, snoozeFor, errors, actions }) {
+export function ReadingPane({ current, currentChange, history, onHistoryRetry, paneScroll, snoozeFor, errors, actions, pageCleared = false }) {
   return (
     <section className="dwr-pane" aria-label="Selected proposal">
       {current ? (
@@ -17,7 +17,7 @@ export function ReadingPane({ current, currentChange, history, onHistoryRetry, p
           </div>
           <Decide card={current} snoozing={snoozeFor === current.ref} error={errors[current.ref]} actions={actions} />
         </>
-      ) : <p className="dwr-pane__none">Select a proposal to read it.</p>}
+      ) : <p className="dwr-pane__none">{pageCleared ? 'Every listed proposal is decided. Load more for the next ones.' : 'Select a proposal to read it.'}</p>}
     </section>
   );
 }

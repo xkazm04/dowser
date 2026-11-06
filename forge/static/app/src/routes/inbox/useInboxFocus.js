@@ -1,22 +1,64 @@
 // The selected row, which is also the keyboard focus and drives the pane: the deep link, the first row on arrival,
 // the next row after a decision, the focus back on a restored card, and j/k movement. The selection itself is in the
 // triage reducer (triage.js, which also moves it after a decision); this hook holds the DOM side.
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { call } from '../../api.js';
+
+const focusLoadMore = () => {
+  const el = document.querySelector('.dwr-more-rows .dw-btn');
+  if (el instanceof HTMLElement) el.focus();
+};
+
+/**
+ * The keyboard's way past the listed rows: Load more takes the focus when every listed card is decided, and after a
+ * load that a keyboard or an emptied list asked for, the focus goes on to the first new row.
+ * @param {{loadStatus: string, flat: any[], hasMore: boolean, loadMore: () => unknown, blocked: boolean, land: (ref: string) => void}} page
+ * @returns {(e?: {detail?: number}) => void} Load more, for its button. A mouse click (detail > 0) on a list with rows leaves the person reading where they were.
+ */
+function useLoadMoreFocus({ loadStatus, flat, hasMore, loadMore, blocked, land }) {
+  useEffect(() => {
+    if (loadStatus === 'ready' && flat.length === 0 && hasMore && !blocked) requestAnimationFrame(focusLoadMore);
+  }, [loadStatus, flat.length, hasMore, blocked]);
+  const afterMore = useRef(-1);
+  useEffect(() => {
+    if (loadStatus !== 'ready') { afterMore.current = -1; return; }
+    if (afterMore.current < 0 || flat.length <= afterMore.current) return;
+    const ref = flat[afterMore.current].ref;
+    afterMore.current = -1;
+    land(ref);
+  }, [flat, loadStatus]);
+  return (e) => {
+    if (e?.detail === 0 || flat.length === 0) afterMore.current = flat.length;
+    loadMore();
+  };
+}
+
+/**
+ * Bring a row into view below the toolbar. The narrow toolbar is sticky and as tall as its wrapped controls, so the
+ * row's scroll margin is measured, not a constant.
+ * @param {HTMLElement} el
+ */
+function revealRow(el) {
+  const bar = document.querySelector('.dwr-toolbar');
+  const sticky = bar && getComputedStyle(bar).position === 'sticky';
+  el.style.scrollMarginTop = sticky ? `${Math.ceil(bar.getBoundingClientRect().height) + 8}px` : '';
+  el.scrollIntoView?.({ block: 'nearest' });
+}
 
 /**
  * @param {{linkRef: string | undefined, filters: {project_key?: string, status?: string}, pin: (card: any) => void,
- *   loadStatus: string, flat: any[], byRef: Map<string, any>, tri: import('./triage.js').TriageState,
+ *   hasMore: boolean, loadMore: () => unknown, loadStatus: string, flat: any[], byRef: Map<string, any>, tri: import('./triage.js').TriageState,
  *   dispatch: (ev: import('./triage.js').TriageEvent) => void}} page
  *   `linkRef` is the deep link's card ('' for none, undefined until the link is read).
  */
-export function useInboxFocus({ linkRef, filters, pin, loadStatus, flat, byRef, tri, dispatch }) {
+export function useInboxFocus({ linkRef, filters, pin, hasMore, loadMore, loadStatus, flat, byRef, tri, dispatch }) {
   const { focus: focusRef, focusRequest: focusReq, dialog, step, decided } = tri;
   /** @param {string} ref */
   const setFocusRef = (ref) => dispatch({ type: 'focus', ref });
   const rowEls = useRef(/** @type {Record<string, HTMLElement | null>} */ ({}));
   const paneScroll = useRef(/** @type {HTMLElement | null} */ (null));
   const linkDone = useRef(false);
+  const revealNext = useRef('');
 
   /** Select a row and bring it into view (once it is in the DOM). @param {string} ref */
   function land(ref) {
@@ -71,18 +113,29 @@ export function useInboxFocus({ linkRef, filters, pin, loadStatus, flat, byRef, 
     if (el) { el.focus(); el.scrollIntoView?.({ block: 'nearest' }); dispatch({ type: 'focusDone' }); }
   }, [focusReq, decided]);
 
+  // After j/k's commit, not before it: the narrow accordion has closed one card and opened the next, and that moves the row.
+  useLayoutEffect(() => {
+    if (!revealNext.current || revealNext.current !== focusRef) return;
+    revealNext.current = '';
+    const el = rowEls.current[focusRef];
+    if (el) revealRow(el);
+  }, [focusRef, tri.expanded]);
+
+  const loadMoreFromList = useLoadMoreFocus({ loadStatus, flat, hasMore, loadMore, blocked: Boolean(dialog || step), land });
+
   // A new selection reads from the top.
   useEffect(() => { if (paneScroll.current) paneScroll.current.scrollTop = 0; }, [focusRef]);
 
   /** j/k: the selection moves and the narrow layout's accordion opens under it. @param {number} delta */
   function moveFocus(delta) {
-    if (flat.length === 0) { dispatch({ type: 'focus', ref: focusRef, expand: true }); return; }
+    if (flat.length === 0) { dispatch({ type: 'focus', ref: focusRef, expand: true }); if (hasMore) focusLoadMore(); return; }
+    if (delta > 0 && hasMore && focusIndex === flat.length - 1) { focusLoadMore(); return; }
     const i = focusIndex < 0 ? 0 : Math.max(0, Math.min(flat.length - 1, focusIndex + delta));
     const ref = flat[i].ref;
+    revealNext.current = ref;
     dispatch({ type: 'focus', ref, expand: true });
-    const el = rowEls.current[ref];
-    if (el) { el.focus(); el.scrollIntoView?.({ block: 'nearest' }); }
+    rowEls.current[ref]?.focus({ preventScroll: true });
   }
 
-  return { rowEls, paneScroll, focusIndex, moveFocus };
+  return { rowEls, paneScroll, focusIndex, moveFocus, loadMoreFromList };
 }
