@@ -83,7 +83,8 @@ with 3 evidence items each costs about 12 statements, an unchanged re-push about
 The core runs against these ports (`ports.mjs`); the adapters map them to the platform.
 
 - `Db`: Forge SQL. `Jira`: create issue, add comment, list projects, and `issueStatuses(keys)`, which
-  reads the status name and status category (`new`, `indeterminate`, `done`) of issues, as the app.
+  reads the status name and status category (`new`, `indeterminate`, `done`) of issues, as the user: the
+  Learning tab must not show the status of an issue in a project the viewer cannot browse.
 - `Users`: `names(accountIds)` reads display names through `/rest/api/3/user/bulk`, as the app. It is best
   effort. A failed batch or a missing name leaves the name out and never fails the call.
 - `Perms`: `mine(keys, on?)` asks Jira's `/rest/api/3/mypermissions` **as the user** whether they hold
@@ -96,7 +97,8 @@ The core runs against these ports (`ports.mjs`); the adapters map them to the pl
 - `Sources`, `Links`.
 
 Each Custom UI module calls only its own resolver keys (`MODULE_KEYS` in `core/app.mjs`): the issue panel
-only `panel.forIssue`, the Confluence byline only `byline.forPage`, the inbox page everything else.
+only `panel.forIssue`, the Confluence byline `byline.forPage` and `byline.draftFix` (which posts Draft the fix
+as a page comment), the banner only `byline.forPage`, the inbox page everything else.
 
 ### The Learning tab backend (reflection)
 
@@ -104,7 +106,7 @@ Three resolvers serve the Learning tab (page route `reflect`), and tool 7 serves
 
 | Key | Does |
 |---|---|
-| `reflect.data` `{project_key}` | Everything the tab shows, derived from the existing tables plus `rules` and `outcomes`: `totals` by status, `rejects` by lens and reason, the newest 10 decision `notes`, the newest 8 `pushes` with today's status of their items, `lens_yield`, `rules`, `candidates`, `outcomes`, and `trust` (table `trust`, migration v023: the skill's per-slice trust as its last `dowser_reflect_sync` sent it, with `updated_at`; omitted until it sends one) |
+| `reflect.data` `{project_key}` | What the tab shows, derived from the existing tables plus `rules` and `outcomes`: `rejects` by lens and reason, the newest 10 decision `notes`, the newest 8 `pushes` with today's status of their items, `lens_yield`, `rules`, `candidates`, `outcomes`, `verdicts_by` (the verdict log counted apart for people and a delegate, which the digest reads), and `trust` (table `trust`, migration v023: the skill's per-slice trust as its last `dowser_reflect_sync` sent it, with `updated_at`; omitted until it sends one). `totals` by status is sent too, and the tab does not show it |
 | `rule.decide` `{project_key, id, state, text?}` | Moves a rule `offered` -> `accepted` or `declined` as the caller (compare-and-set). `text` replaces the draft and goes only with accept. A rule that is no longer offered is refused with its current state |
 | `outcome.record` `{ref, rating, note?}` | Records how an accepted item turned out, once per ref, as the caller. It refuses an item that is not accepted and never overwrites. It answers the outcome and the refreshed candidates |
 
@@ -237,7 +239,7 @@ that names the allowlist, and the skill continues without goals.
 
 ## Sample inbox
 
-A judge who has no coding agent connected can still see a real inbox. **Load a sample scan** on the inbox's
+A judge who has no coding agent connected can still see a real inbox. **Load the sample** on the inbox's
 first-run screen (resolver `sample.load`) files a real Dowser scan of Dowser's own public repository
 (`https://github.com/xkazm04/dowser`) into an inbox with the reserved key `dowser-sample`.
 
@@ -387,7 +389,7 @@ push, not a sortable table.
   confirms and `1`-`6` pick a reject reason. The keys work only when no text field has focus.
 - A decided row leaves the queue and the selection moves to the next one. A failed action shows its message,
   and the row stays. **Load more** fetches the next page (50 items).
-- An empty view names the last push and its lenses. To get new proposals, run `/dowser` in Claude Code or
+- An empty view names the last push. To get new proposals, run `/dowser` in Claude Code or
   Codex, in the repository.
 
 ### Learning (Apps > Dowser > Learning)
