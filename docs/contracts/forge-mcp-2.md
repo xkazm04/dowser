@@ -284,7 +284,8 @@ writes no verdict; the item is simply open again.
 An unknown `fp`, a malformed result, a ref that already belongs to another local item, or an item whose local
 status is no longer `verified`/`pushed` is reported (`unknown`, `invalid`, `conflict`) and never forced.
 Exit 0 when every result applied, 1 when any was refused, unknown, invalid or in conflict. Refused items stay
-`verified` and go out on the next push.
+`verified` and go out on the next run's push. A run's outbox does not send again what Forge refused in that run
+(sync_state `refused:<run_id>`), so a page of refused cards cannot repeat forever and the pass ends.
 
 **What goes into the outbox.** Every `verified` item that was not pushed yet, plus every `pushed` item whose
 evidence grew since its last push. Only evidence `verify` has checked goes out: a row a re-propose added to a
@@ -342,7 +343,12 @@ does not allow (`conflict`, with the `current` status) is reported and never for
 locally is a conflict. A `delegate:` verdict may move a `pushed` item like a `forge:` one; it never moves a
 `verified` one, and it never counts toward trust (the skill's ladder stays human-earned), while the memory
 still learns from it. An `accepted` verdict also records `issue_ref` and `issue_url` on the local item.
-Exit 0 when every verdict applied or was already applied, 1 otherwise. The `cursor` is stored in
+A `conflict` or an `unknown` verdict is kept (sync_state `pending_verdict:<fp>@<decided_at>`), because no later pull
+repeats it: it is retried oldest first at the start of each `ingest-verdicts` and at the end of each `ingest-push`, the
+output lists it under `pending` until it lands (a landed retry is under `retried`), and a newer verdict of the same `fp`
+that applies drops it. Exit 0 when every verdict is `applied`, `already-applied` or `in-sync`, and also `unknown` on a
+fresh store (no proposal yet, with `fresh_store: true`; those are not kept). Exit 1 otherwise, for a verdict first seen
+in this ingest: one still pending is listed, not a new failure. The `cursor` is stored in
 `sync_state` key `verdicts_cursor`, and `init` prints it as `verdicts_cursor`.
 
 ## `dowser_areas_push`

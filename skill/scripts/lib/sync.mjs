@@ -21,8 +21,11 @@
 //   outbox:last                {run_id, at, seqs: {fp: seq}} - the evidence seq each fp had in the last outbox,
 //                              so ingest-push records what was actually sent, not what grew in between
 //   verdict:<fp>@<decided_at>  {status, outcome, at} - a verdict already ingested (the idempotency key)
+//   pending_verdict:<fp>@<decided_at>  {verdict, why} - a pulled verdict the store could not apply yet: the pull will
+//                              not repeat it, so it is kept and retried on each ingest until it lands (or a newer one does)
+//   refused:<run_id>           [fp, ...] - the cards Forge refused in this run, which its outbox does not send again
 import { readFileSync } from 'node:fs';
-import { DowserError, MoveRefused, QUOTED_TYPES, REASONS, isOneOf } from './model.mjs';
+import { ARTIFACT_LIMITS, DowserError, FIELD_LIMITS, MoveRefused, QUOTED_TYPES, REASONS, TITLE_MAX, isOneOf } from './model.mjs';
 import { quoteSha } from './fingerprint.mjs';
 import * as store from './store.mjs';
 import { commitDate, commitsSince, lastChange, treeFiles } from './git.mjs';
@@ -155,9 +158,13 @@ export function outbox(db, { projectKey, runId, repoUrl, limit = PUSH_MAX, quote
     /** @type {Record<string, number>} */
     const seqs = {};
     let more = false;
+    // a card Forge refused in this run stays out of this run's pages, so a push pass ends; a later run sends it again
+    db.prepare("DELETE FROM sync_state WHERE key LIKE 'refused:%' AND key <> ?").run(`refused:${runId}`);
+    const refused = new Set(refusedIn(db, runId));
     const rows = /** @type {Row[]} */ (db.prepare("SELECT fp, status FROM proposals WHERE status IN ('verified', 'pushed') ORDER BY lens, fp").all());
     for (const r of rows) {
       const fp = String(r.fp);
+      if (refused.has(fp)) continue;
       // the newest evidence it may send: a grown card's unchecked rows neither go out nor count as growth
       const seq = sentSeq(db, fp);
       if (r.status === 'pushed') {
@@ -185,36 +192,85 @@ export function outbox(db, { projectKey, runId, repoUrl, limit = PUSH_MAX, quote
   });
 }
 
-/** The card fields a withheld quote is masked in: every text field a person reads, views included. */
-const MASKED_FIELDS = /** @type {const} */ (['title', 'rationale', 'body', 'confidence_why', 'artifacts', 'impact_why', 'predicted_why']);
+/** The cards Forge refused in `runId`, from sync_state `refused:<run_id>`. @param {Db} db @param {string} runId @returns {string[]} */
+function refusedIn(db, runId) {
+  try { return JSON.parse(getState(db, `refused:${runId}`) ?? '[]'); } catch { return []; }
+}
+
+/** The card fields a withheld quote is masked in, with their caps: every text field a person reads. Views apart. */
+const MASKED_FIELDS = /** @type {const} */ ({ title: TITLE_MAX, rationale: FIELD_LIMITS.rationale, body: FIELD_LIMITS.body,
+  confidence_why: FIELD_LIMITS.confidence_why, impact_why: FIELD_LIMITS.impact_why, predicted_why: FIELD_LIMITS.predicted_why });
+
+/** A view's keys that hold no text a person reads: an evidence ref must stay exactly as the evidence names it. */
+const VIEW_KEPT = new Set(['refs', 'kind', 'mark']);
 
 /**
- * `value` with every string in it (deeply, so a view's message, alt, cells and step labels too) passed through `f`.
- * @param {unknown} value @param {(s: string) => string} f @returns {unknown}
+ * The cap of a view's text under `key`. `rows` is a table's cells (arrays of cells) or a matrix's labels.
+ * @param {string} key @param {unknown} kind @returns {number | undefined}
  */
-const mapStrings = (value, f) => typeof value === 'string' ? f(value)
-  : Array.isArray(value) ? value.map((v) => mapStrings(v, f))
-    : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, mapStrings(v, f)]))
-      : value;
+const viewCap = (key, kind) => {
+  const L = ARTIFACT_LIMITS;
+  if (key === 'message') return L.message;
+  if (key === 'alt') return L.alt;
+  if (key === 'before' || key === 'after') return L.cell;
+  if (key === 'rows') return kind === 'table' ? L.cell : L.label;
+  return ['label', 'measure', 'columns', 'v'].includes(key) ? L.label : undefined;
+};
+
+/**
+ * `text` at most `max` characters, cut at a word boundary when it has one. The mask makes a text longer, and a card
+ * valid with its quotes must stay valid without them: a shortened field beats a card refused on every push.
+ * @param {string} text @param {number | undefined} max @returns {string}
+ */
+function within(text, max) {
+  if (max === undefined || text.length <= max) return text;
+  const head = text.slice(0, max);
+  const space = text[max] === ' ' ? max : head.lastIndexOf(' ');
+  return (space > 0 ? head.slice(0, space) : head).trimEnd();
+}
+
+/**
+ * `view` (one of `artifacts[]`) with each text in it passed through `f` and kept inside its cap; refs are never touched.
+ * @param {Row} view @param {(s: string) => string} f @returns {Row}
+ */
+function maskedView(view, f) {
+  /** @param {unknown} value @param {string} key @returns {unknown} */
+  const walk = (value, key) => typeof value === 'string' ? within(f(value), viewCap(key, view.kind))
+    : Array.isArray(value) ? value.map((v) => walk(v, key))
+      : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, VIEW_KEPT.has(k) ? v : walk(v, k)]))
+        : value;
+  return /** @type {Row} */ (walk(view, ''));
+}
 
 /**
  * The record with each code/doc evidence quote replaced by its `quote_sha` (`quotes=omit`); type, ref and url
- * stay. A quoted line the card repeats verbatim in any text a person reads (MASKED_FIELDS) becomes "the line at
- * <ref>" (backticks around it included), so the sentence still reads and the line does not leave. The procedure
- * asks the agent to describe such lines in words under `omit`; this is the backstop. Fragments of a line are not
- * matched. A new record and new evidence objects: the stored row is not touched.
+ * stay. A quoted line the card repeats verbatim in any text a person reads (MASKED_FIELDS, views) becomes "the line at
+ * <ref>" (backticks around it included), so the sentence still reads and the line does not leave. One pass, longest
+ * quote first, so a fragment cited before its whole line cannot leave the rest of the line behind, and a replacement
+ * is never masked again. A field the mask takes past its cap is cut, and a view's refs are never masked, so the card stays
+ * valid. The procedure asks the agent to describe such lines in words under `omit`; this is the backstop. Fragments of a
+ * line are not matched. A new record and new evidence objects: the stored row is not touched.
  * @param {Row} record
  * @returns {Row}
  */
 export function withheldQuotes(record) {
   if (!Array.isArray(record.evidence)) return record;
-  const quoted = record.evidence.filter((/** @type {Row} */ e) => isOneOf(QUOTED_TYPES, e.type) && typeof e.quote === 'string' && e.quote.trim().length >= 8);
+  /** @type {Map<string, string>} */
+  const refOf = new Map();
+  for (const e of record.evidence) {
+    if (!isOneOf(QUOTED_TYPES, e.type) || typeof e.quote !== 'string' || e.quote.trim().length < 8) continue;
+    const q = e.quote.trim();
+    if (!refOf.has(q)) refOf.set(q, String(e.ref));
+  }
+  const alternatives = [...refOf.keys()].sort((x, y) => y.length - x.length)
+    .map((q) => q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).map((q) => `\`${q}\`|${q}`);
+  const quoted = alternatives.length ? new RegExp(alternatives.join('|'), 'g') : undefined;
   /** @param {string} t */
-  const mask = (t) => quoted.reduce((acc, /** @type {Row} */ e) => {
-    const q = String(e.quote).trim();
-    return acc.split(`\`${q}\``).join(`the line at ${e.ref}`).split(q).join(`the line at ${e.ref}`);
-  }, t);
-  const text = Object.fromEntries(MASKED_FIELDS.filter((k) => record[k] !== undefined).map((k) => [k, mapStrings(record[k], mask)]));
+  const mask = (t) => (quoted ? t.replace(quoted, (m) => `the line at ${refOf.get(refOf.has(m) ? m : m.slice(1, -1))}`) : t);
+  /** @type {Row} */
+  const text = {};
+  for (const [k, cap] of Object.entries(MASKED_FIELDS)) if (typeof record[k] === 'string') text[k] = within(mask(record[k]), cap);
+  if (Array.isArray(record.artifacts)) text.artifacts = record.artifacts.map((/** @type {Row} */ a) => maskedView(a, mask));
   const evidence = record.evidence.map((/** @type {Row} */ e) => {
     if (!isOneOf(QUOTED_TYPES, e.type) || typeof e.quote !== 'string') return e;
     const { quote, ...rest } = e;
@@ -310,9 +366,11 @@ function link(db, fp, ref, url) {
  *    already `pushed` stays pushed (outcome `updated`); any other local status is a `conflict`, nothing changed.
  *  - merged-existing: the item merged into the local fp that owns external_ref (outcome `merged`); when no local
  *    item owns it, the item is linked to that inbox item and moved to `pushed` (outcome `linked`) - see the contract.
- *  - refused: status unchanged, reported with `why`.
+ *  - refused: status unchanged, reported with `why`, and left out of the rest of this run's outbox pages
+ *    (sync_state `refused:<run_id>`, the run of the last outbox), so a page of refused cards cannot repeat forever.
  *  - unknown fp, a malformed result, or a CAS refusal: reported, never forced.
  * The evidence seq sent (from `outbox:last`, else the current one) is stored as `push_seq:<fp>`.
+ * Then the pending verdicts are retried (a verdict that waited for this push result lands here).
  * @param {Db} db
  * @param {unknown} doc
  * @returns {{code: number, out: Row}}
@@ -321,7 +379,13 @@ export function ingestPush(db, doc) {
   const results = listOf(doc, 'results', 'dowser_proposals_push');
   /** @type {Record<string, number>} */
   let sent = {};
-  try { sent = JSON.parse(getState(db, 'outbox:last') ?? '{}').seqs ?? {}; } catch { /* no usable snapshot */ }
+  /** @type {string | undefined} */
+  let sentRun;
+  try {
+    const last = JSON.parse(getState(db, 'outbox:last') ?? '{}');
+    sent = last.seqs ?? {};
+    sentRun = typeof last.run_id === 'string' ? last.run_id : undefined;
+  } catch { /* no usable snapshot */ }
   /** @type {Row[]} */
   const items = [];
   /** @type {Record<string, number>} */
@@ -331,8 +395,12 @@ export function ingestPush(db, doc) {
     summary[String(item.outcome)] = (summary[String(item.outcome)] ?? 0) + 1;
     items.push(item);
   }
+  const refused = items.filter((x) => x.outcome === 'refused').map((x) => String(x.fp));
+  if (sentRun !== undefined && refused.length) setState(db, `refused:${sentRun}`, JSON.stringify([...new Set([...refusedIn(db, sentRun), ...refused])]));
   const bad = items.filter((x) => !['pushed', 'updated', 'merged', 'linked'].includes(String(x.outcome))).length;
-  return { code: bad > 0 ? 1 : 0, out: { results: items, summary } };
+  const retried = retryPending(db);
+  if (retried.length) syncTrust(db);
+  return { code: bad > 0 ? 1 : 0, out: /** @type {Row} */ (store.clean({ results: items, summary, retried: retried.length ? retried : undefined, pending: pendingList(db) })) };
 }
 
 /**
@@ -401,6 +469,10 @@ function pushOne(db, raw, i, sent) {
  * illegal transition is reported (`unknown`, `invalid`, `conflict`), never forced. The cursor is stored as `verdicts_cursor`.
  * Any of those makes the code 1 - except `unknown` on a FRESH store (no proposal at all: a new machine, a CI runner, a
  * cleared ~/.dowser), where every verdict is expected to be unknown: code 0, with `fresh_store` and a note saying so.
+ * A `conflict` or `unknown` verdict (not on a fresh store) is kept pending, because the pull will not repeat it: retried
+ * oldest first at the start of each ingest and at the end of ingestPush, listed under `pending` until it lands, and dropped
+ * when a newer verdict of the same fp applies. A landed retry is under `retried`. Only a verdict first seen in this
+ * ingest makes the code 1: one still pending is reported, not a new failure.
  * @param {Db} db
  * @param {unknown} doc
  * @returns {{code: number, out: Row}}
@@ -411,12 +483,14 @@ export function ingestVerdicts(db, doc) {
   if (d.cursor !== undefined && typeof d.cursor !== 'string') throw new DowserError('cursor must be a string (omit it when absent)', 2);
   // read before the loop: ingesting verdicts never creates a proposal
   const fresh = db.prepare('SELECT 1 FROM proposals LIMIT 1').get() === undefined;
+  const retried = retryPending(db);
+  const stillPending = new Set(pendingRows(db).map((r) => r.key));
   /** @type {Row[]} */
   const items = [];
   /** @type {Record<string, number>} */
   const summary = {};
   for (const [i, raw] of verdicts.entries()) {
-    const item = store.tx(db, () => verdictOne(db, raw, i));
+    const item = store.tx(db, () => settled(db, raw, verdictOne(db, raw, i), fresh));
     summary[String(item.outcome)] = (summary[String(item.outcome)] ?? 0) + 1;
     items.push(item);
   }
@@ -424,11 +498,11 @@ export function ingestVerdicts(db, doc) {
   // the people's verdicts are what each slice's trust is measured against (trust.mjs)
   const trust = syncTrust(db);
   const fine = fresh ? ['applied', 'already-applied', 'in-sync', 'unknown'] : ['applied', 'already-applied', 'in-sync'];
-  const bad = items.filter((x) => !fine.includes(String(x.outcome))).length;
+  const bad = items.filter((x) => !fine.includes(String(x.outcome)) && !stillPending.has(pendingKey(x))).length;
   const note = fresh && summary.unknown
     ? `fresh store: ${summary.unknown} verdict(s) belong to cards this store never proposed (another machine, or a cleared ~/.dowser); they are not applied; pull the team memory first (dowser_memory_pull, then hydrate) and they come back in-sync`
     : undefined;
-  return { code: bad > 0 ? 1 : 0, out: store.clean({ verdicts: items, summary, cursor: typeof d.cursor === 'string' ? d.cursor : undefined, fresh_store: fresh && summary.unknown ? true : undefined, note, trust_events: trust.length ? trust : undefined }) ?? {} };
+  return { code: bad > 0 ? 1 : 0, out: store.clean({ verdicts: items, summary, cursor: typeof d.cursor === 'string' ? d.cursor : undefined, fresh_store: fresh && summary.unknown ? true : undefined, note, retried: retried.length ? retried : undefined, pending: pendingList(db), trust_events: trust.length ? trust : undefined }) ?? {} };
 }
 
 /**
@@ -492,6 +566,66 @@ function verdictOne(db, raw, i) {
   setState(db, key, JSON.stringify({ status: to, outcome: 'applied', at: store.now() }));
   return /** @type {Row} */ (store.clean({ ...base, outcome: 'applied', from: current, merged_into: into, link_conflict: clash,
     snooze_until: to === 'snoozed' && str(raw.snooze_until) ? String(raw.snooze_until) : undefined }));
+}
+
+/** @param {Row} x @returns {string} the pending key of a verdict or of its outcome row */
+const pendingKey = (x) => `pending_verdict:${String(x.fp)}@${String(x.decided_at)}`;
+
+/**
+ * Keeps or clears the pending copy of a verdict after its try. `conflict` and `unknown` wait (never `unknown` on a fresh
+ * store: those come back in-sync from hydrate). A verdict that took effect drops the older pending ones of its fp.
+ * @param {Db} db @param {unknown} raw @param {Row} item @param {boolean} fresh @returns {Row}
+ */
+function settled(db, raw, item, fresh) {
+  if (item.outcome === 'conflict' || (item.outcome === 'unknown' && !fresh)) {
+    setState(db, pendingKey(item), JSON.stringify({ verdict: raw, why: String(item.why ?? item.outcome) }));
+    return item;
+  }
+  if (item.fp !== undefined && item.decided_at !== undefined) db.prepare('DELETE FROM sync_state WHERE key = ?').run(pendingKey(item));
+  if (item.outcome === 'applied' || item.outcome === 'in-sync') {
+    for (const r of pendingRows(db)) if (r.fp === item.fp && r.decided_at < String(item.decided_at)) db.prepare('DELETE FROM sync_state WHERE key = ?').run(r.key);
+  }
+  return item;
+}
+
+/**
+ * The kept verdicts, oldest first.
+ * @param {Db} db
+ * @returns {{key: string, verdict: Row, why: string, fp: string, status: string, decided_at: string}[]}
+ */
+function pendingRows(db) {
+  const rows = /** @type {Row[]} */ (db.prepare("SELECT key, value FROM sync_state WHERE key LIKE 'pending_verdict:%'").all());
+  return rows.map((r) => {
+    const { verdict, why } = JSON.parse(String(r.value));
+    return { key: String(r.key), verdict, why: String(why), fp: String(verdict.fp), status: String(verdict.status), decided_at: String(verdict.decided_at) };
+  }).sort((a, b) => a.decided_at.localeCompare(b.decided_at) || a.key.localeCompare(b.key));
+}
+
+/** @param {Db} db @returns {{fp: string, status: string, decided_at: string, why: string}[] | undefined} what `pending` reports; absent when none */
+function pendingList(db) {
+  const list = pendingRows(db).map(({ fp, status, decided_at, why }) => ({ fp, status, decided_at, why }));
+  return list.length ? list : undefined;
+}
+
+/**
+ * One more try for every kept verdict, oldest first.
+ * @param {Db} db
+ * @returns {Row[]} the outcomes of those that took effect
+ */
+function retryPending(db) {
+  /** @type {Row[]} */
+  const landed = [];
+  for (const { key } of pendingRows(db)) {
+    store.tx(db, () => {
+      // an earlier retry of this pass can have dropped it
+      const held = getState(db, key);
+      if (held === undefined) return;
+      const raw = JSON.parse(held).verdict;
+      const item = settled(db, raw, verdictOne(db, raw, 0), false);
+      if (item.outcome === 'applied' || item.outcome === 'in-sync') landed.push(item);
+    });
+  }
+  return landed;
 }
 
 /**

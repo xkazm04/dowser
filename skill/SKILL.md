@@ -122,6 +122,8 @@ Memory must reflect Jira before the scan, so a rejection made in Jira suppresses
 2. Save the tool response verbatim to `<work>/verdicts.json`.
 3. Run `ingest-verdicts --file <work>/verdicts.json`. Exit 1 means some verdicts could not be
    applied (an unknown fingerprint, or a conflict). List them in the summary. Never force them.
+   The store keeps them and retries them on each ingest: its `pending` lists what is still waiting,
+   so list that too (it does not exit 1 by itself).
    On a fresh store (no proposal yet: a new machine or CI runner) unknown verdicts are expected:
    the output carries `fresh_store: true` and a `note`, exits 0, and needs no listing.
    An accepted verdict carries the Jira issue the person created (`issue_ref`, `issue_url`). Show
@@ -422,7 +424,7 @@ or from "looks good".
 3. Call `dowser_proposals_push` with every field except `more`, exactly as printed. Do not edit
    them. Save the response verbatim to `<work>/push.json`.
 4. Run `ingest-push --file <work>/push.json`. Exit 1 means some were refused. List each refused
-   item with its `why`. They stay local and go out on the next push.
+   item with its `why`. They stay local and go out on the next run's push; this run's outbox skips them.
 5. If the outbox printed `"more": true`, go back to step 1. Stop when `more` is absent.
 6. **Areas** (skip when `dowser_areas_push` is missing). Run `areas --run <run_id>`, call
    `dowser_areas_push` with its output exactly as printed, and check the response is `{stored}`.
