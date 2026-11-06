@@ -1,8 +1,20 @@
 // The selected row, which is also the keyboard focus and drives the pane: the deep link, the first row on arrival,
 // the next row after a decision, the focus back on a restored card, and j/k movement. The selection itself is in the
 // triage reducer (triage.js, which also moves it after a decision); this hook holds the DOM side.
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { call } from '../../api.js';
+
+/**
+ * Bring a row into view below the toolbar. The narrow toolbar is sticky and as tall as its wrapped controls, so the
+ * row's scroll margin is measured, not a constant.
+ * @param {HTMLElement} el
+ */
+function revealRow(el) {
+  const bar = document.querySelector('.dwr-toolbar');
+  const sticky = bar && getComputedStyle(bar).position === 'sticky';
+  el.style.scrollMarginTop = sticky ? `${Math.ceil(bar.getBoundingClientRect().height) + 8}px` : '';
+  el.scrollIntoView?.({ block: 'nearest' });
+}
 
 /**
  * @param {{linkRef: string | undefined, filters: {project_key?: string, status?: string}, pin: (card: any) => void,
@@ -17,6 +29,7 @@ export function useInboxFocus({ linkRef, filters, pin, loadStatus, flat, byRef, 
   const rowEls = useRef(/** @type {Record<string, HTMLElement | null>} */ ({}));
   const paneScroll = useRef(/** @type {HTMLElement | null} */ (null));
   const linkDone = useRef(false);
+  const revealNext = useRef('');
 
   /** Select a row and bring it into view (once it is in the DOM). @param {string} ref */
   function land(ref) {
@@ -71,6 +84,14 @@ export function useInboxFocus({ linkRef, filters, pin, loadStatus, flat, byRef, 
     if (el) { el.focus(); el.scrollIntoView?.({ block: 'nearest' }); dispatch({ type: 'focusDone' }); }
   }, [focusReq, decided]);
 
+  // After j/k's commit, not before it: the narrow accordion has closed one card and opened the next, and that moves the row.
+  useLayoutEffect(() => {
+    if (!revealNext.current || revealNext.current !== focusRef) return;
+    revealNext.current = '';
+    const el = rowEls.current[focusRef];
+    if (el) revealRow(el);
+  }, [focusRef, tri.expanded]);
+
   // A new selection reads from the top.
   useEffect(() => { if (paneScroll.current) paneScroll.current.scrollTop = 0; }, [focusRef]);
 
@@ -79,9 +100,9 @@ export function useInboxFocus({ linkRef, filters, pin, loadStatus, flat, byRef, 
     if (flat.length === 0) { dispatch({ type: 'focus', ref: focusRef, expand: true }); return; }
     const i = focusIndex < 0 ? 0 : Math.max(0, Math.min(flat.length - 1, focusIndex + delta));
     const ref = flat[i].ref;
+    revealNext.current = ref;
     dispatch({ type: 'focus', ref, expand: true });
-    const el = rowEls.current[ref];
-    if (el) { el.focus(); el.scrollIntoView?.({ block: 'nearest' }); }
+    rowEls.current[ref]?.focus({ preventScroll: true });
   }
 
   return { rowEls, paneScroll, focusIndex, moveFocus };

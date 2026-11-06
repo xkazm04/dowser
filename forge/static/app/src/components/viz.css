@@ -42,7 +42,7 @@
 .dw-dot__hit { fill: transparent; }
 .dw-dot:hover .dw-dot__ring, .dw-dot:focus-visible .dw-dot__ring { stroke: var(--ds-border-focused, #4688EC); stroke-width: 2; fill: none; }
 .dw-dot__ring { fill: none; stroke: none; }
-.dw-blast--low { fill: var(--ds-background-accent-orange-subtle, #FCA700); }
+.dw-blast--low { fill: var(--ds-border-accent-yellow, #B38600); } /* 3:1 on the plot in light and dark; the orange-subtle token was 2:1 and 2.7:1 */
 .dw-blast--medium { fill: var(--ds-background-accent-orange-bolder, #9E4C00); }
 .dw-blast--high { fill: var(--ds-background-accent-red-bolder, #AE2E24); }
 .dw-blast--none { fill: var(--ds-surface, #FFFFFF); stroke: var(--ds-text-subtle, #505258) !important; stroke-width: 1.5 !important; }

@@ -21,7 +21,8 @@ export function InboxList({
   return (
     <section className="dwr-list" aria-label="Proposals">
       {checkedVisible.length > 0 && (
-        <BulkBar checkedVisible={checkedVisible} byRef={byRef} bulkStep={step?.kind === 'bulk'} dispatch={dispatch} open={open} deferSnooze={deferSnooze} />
+        <BulkBar checkedVisible={checkedVisible} byRef={byRef} bulkStep={step?.kind === 'bulk'} dispatch={dispatch} open={open} deferSnooze={deferSnooze}
+          onCancelled={() => requestAnimationFrame(() => rowEls.current[focusRef]?.focus())} />
       )}
       {visible.map((g) => {
         const row = (card) => (
@@ -61,7 +62,7 @@ export function InboxList({
   );
 }
 
-function BulkBar({ checkedVisible, byRef, bulkStep, dispatch, open, deferSnooze }) {
+function BulkBar({ checkedVisible, byRef, bulkStep, dispatch, open, deferSnooze, onCancelled }) {
   return (
     <div className="dwr-bulk" role="region" aria-label="Bulk actions">
       <strong>{checkedVisible.length} checked</strong>
@@ -72,7 +73,7 @@ function BulkBar({ checkedVisible, byRef, bulkStep, dispatch, open, deferSnooze 
       {bulkStep && (
         <SnoozeStep
           cardRef="bulk" label={plural(checkedVisible.length, 'proposal')} withNote={false}
-          onSubmit={(_, until) => deferSnooze(checkedVisible.map((r) => byRef.get(r)), '', until)} onCancel={() => dispatch({ type: 'closeSnooze' })}
+          onSubmit={(_, until) => deferSnooze(checkedVisible.map((r) => byRef.get(r)), '', until)} onCancel={() => { dispatch({ type: 'closeSnooze' }); onCancelled(); }}
         />
       )}
     </div>

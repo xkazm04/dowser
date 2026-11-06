@@ -11,7 +11,7 @@ const at = (/** @type {string} */ hash) => `${needEnv('E2E_LOCAL_URL')}#${hash}`
 
 // The fixture has its own form (uat-states.spec.mjs). The real core answers `forbidden` with its own text, not the
 // fixture's `bad-input`, so a fix keyed on the fixture's error alone would still fail here.
-test.fixme('DOW-11: a deep link to a ref that does not exist says so, with Close and no Retry', async ({ page }) => {
+test('DOW-11: a deep link to a ref that does not exist says so, with Close and no Retry', async ({ page }) => {
   await page.goto(at('inbox&ref=DW-999'));
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('button', { name: 'Close', exact: true }).first()).toBeVisible();
@@ -23,7 +23,7 @@ test.fixme('DOW-11: a deep link to a ref that does not exist says so, with Close
   await expect.soft(dialog, 'Close closes it').toBeHidden();
 });
 
-test.fixme('DOW-14: the Scan retro of a push with no repeats says every proposal was new', async ({ page }) => {
+test('DOW-14: the Scan retro of a push with no repeats says every proposal was new', async ({ page }) => {
   await page.goto(at('reflect'));
   await page.getByRole('combobox', { name: 'Inbox' }).selectOption(E2E_INBOX);
   const retro = page.getByRole('region', { name: 'Scan retro' });
@@ -37,7 +37,7 @@ test.fixme('DOW-14: the Scan retro of a push with no repeats says every proposal
 test.describe('a map cell deep link at 1280 x 900', () => {
   test.use({ viewport: { width: 1280, height: 900 } });
 
-  test.fixme('DOW-15: the filtered inbox fits the window, with the help button on screen', async ({ page }) => {
+  test('DOW-15: the filtered inbox fits the window, with the help button on screen', async ({ page }) => {
     await page.goto(at('map'));
     await page.getByRole('combobox', { name: 'Inbox' }).selectOption(E2E_INBOX);
     await page.getByRole('link', { name: /^Open the \d+ open Opportunity proposals in / }).first().click();
