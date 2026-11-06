@@ -13,6 +13,8 @@ import { REASONS } from '../../components/labels.js';
  *   deferReject: (cards: any[], decision: any) => void, cw: any}} props
  */
 export function InboxDialogs({ dialog, dialogCards, flat, decided, closeDialog, fail, leave, deferReject, cw }) {
+  // The call's answer holds the card's new status; the counts need the one it left, which is the listed card's.
+  const left = (c) => ({ ...c, status: dialogCards[0].status });
   return (
     <>
       {dialog?.kind === 'help' && <HelpDialog onClose={closeDialog} />}
@@ -22,7 +24,7 @@ export function InboxDialogs({ dialog, dialogCards, flat, decided, closeDialog, 
           card={dialogCards[0]} onClose={closeDialog} onFailed={(ref, m) => fail([ref], m)} onBeforeSubmit={cw.flush}
           onDone={(card) => {
             const c = card ?? dialogCards[0];
-            closeDialog(); leave([c], 'accepted');
+            closeDialog(); leave([left(c)], 'accepted');
             cw.notify(<>{c.ref} accepted{c.issue_ref && <> as {safeHref(c.issue_url) ? <a href={safeHref(c.issue_url)} target="_blank" rel="noreferrer noopener">{c.issue_ref}</a> : c.issue_ref}</>}.</>);
           }}
         />
@@ -32,7 +34,7 @@ export function InboxDialogs({ dialog, dialogCards, flat, decided, closeDialog, 
           card={dialogCards[0]} openCards={flat.filter((c) => c.status === 'open')} hidden={decided} onClose={closeDialog} onFailed={(ref, m) => fail([ref], m)} onBeforeSubmit={cw.flush}
           onDone={(card) => {
             const c = card ?? dialogCards[0];
-            closeDialog(); leave([c], 'merged');
+            closeDialog(); leave([left(c)], 'merged');
             cw.notify(`${c.ref} merged${c.merged_into ? ` into ${c.merged_into}` : ''}.`);
           }}
         />
