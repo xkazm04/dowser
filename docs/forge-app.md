@@ -368,9 +368,9 @@ push, not a sortable table.
     highlighted row is bold. A flow becomes a numbered list, and a marked step ends with "(friction)", "(failure)",
     "(missing)" or "(new)". A before/after becomes a table with the measure on top and Today / After columns.
     A view that cannot be drawn becomes its text alternative.
-  - **Merge** picks another open or accepted proposal by ref or title, or takes a typed Jira key. When the
-    accepted proposals fail to load, the dialog says "Accepted proposals could not load, so only open ones are
-    listed." with **Retry**; "No matching proposal." shows only for a real empty result.
+  - **Merge** picks another open or accepted proposal of the inbox by ref or title, over every page and whatever the
+    page is filtered to, or takes a typed Jira key. When a list fails to load, the dialog says "Some proposals could not
+    load, so the list may be short." with **Retry**; "No matching proposal." shows only for a real empty result.
   - When the Accept dialog cannot list the Jira projects, it says so with **Retry**, which reloads both lists.
   - **Reject** takes one of six reasons: false positive, already known, not our direction, not worth it,
     wrong size, other. Other needs a note.
@@ -386,9 +386,9 @@ push, not a sortable table.
   date for every ticked item (no note).
 - **Keyboard.** `j`/`k` move the selection, `x` ticks, `a` accepts, `r` rejects, `s` snoozes, `m` merges,
   `u` undoes a reject or snooze while its notice shows, `?` shows help. In an open dialog, `Ctrl+Enter`
-  confirms and `1`-`6` pick a reject reason. The keys work only when no text field has focus.
+  confirms and `1`-`6` pick a reject reason. The keys work only when no text field or select has focus; a ticked checkbox keeps them working.
 - A decided row leaves the queue and the selection moves to the next one. A failed action shows its message,
-  and the row stays. **Load more** fetches the next page (50 items).
+  and the row stays. **Load more** fetches the next page (50 items): the rows after the last one listed, however many were decided since.
 - An empty view names the last push. To get new proposals, run `/dowser` in Claude Code or
   Codex, in the repository.
 
@@ -404,8 +404,8 @@ issue events report it (Done, or closed without the work / deleted), and the cod
 problem is still in the code" leads, and an item a later scan found again after delivery says the problem came back. Then the supporting detail: lens yield, reject reasons with the
 latest decision notes, the scan retro with the trend over recent pushes, and **Trust**: per slice (lens, category,
 size) the level against its ceiling (Dowser's is 1), how often the scan's predicted verdict matched yours and over
-how many decisions, then the level changes with their reasons (earned at 90 % of 20, lost on a reject of a
-pre-triaged card). The skill computes trust in its store and sends it with `dowser_reflect_sync` (`trust_json`);
+how many decisions, then the level changes with their reasons (technical slices start at level 1 and product slices
+at 0; earned at 90 % of 20, lost on a reject or snooze of a pre-triaged card). The skill computes trust in its store and sends it with `dowser_reflect_sync` (`trust_json`);
 Forge only shows it.
 
 ### Settings (Apps > Dowser > Settings)
