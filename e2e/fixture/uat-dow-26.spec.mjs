@@ -9,7 +9,7 @@ import { expect, needEnv, test } from '../lib/guard.mjs';
 /** @typedef {import('@playwright/test').Page} Page */
 
 const at = (/** @type {string} */ hash) => `${needEnv('E2E_FIXTURE_URL')}#${hash}`;
-const checks = (page) => page.locator('input.dwr-checkbox');
+const checks = (/** @type {Page} */ page) => page.locator('input.dwr-checkbox');
 const loadMore = (/** @type {Page} */ page) => page.getByRole('button', { name: 'Load more' });
 const current = (/** @type {Page} */ page) => page.locator('button[aria-current="true"]');
 
@@ -30,7 +30,7 @@ test('DOW-26: when the next page starts in the reserve, the focus still lands on
   }
   await loadMore(page).focus();
   // the race, decided against the code: every frame callback runs before React's next commit
-  await page.evaluate(() => { window.requestAnimationFrame = (cb) => { queueMicrotask(() => cb(performance.now())); return 0; }; });
+  await page.evaluate('window.requestAnimationFrame = (cb) => { queueMicrotask(() => cb(performance.now())); return 0; }');
   await page.keyboard.press('Enter');
   await expect(checks(page).first()).toBeAttached();
   await expect(page.locator('details.dwr-reserve button[aria-current="true"]'), 'the fixture\'s next page starts in the reserve').toHaveCount(1);
