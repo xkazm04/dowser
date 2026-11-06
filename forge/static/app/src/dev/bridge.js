@@ -12,6 +12,7 @@
 //                         twice), so a later Retry succeeds
 //   <key>:<status>        in fail / failonce: only calls with that status (inbox.list:accepted = the Merge dialog's list)
 //   &slow                 every call takes 1.5 s (to see skeletons)
+//   &delay=<key>:<ms>[,<key>:<ms>]   those keys answer that much later; the others keep their time
 //   #reflect              the Learning tab (`reflect.data`; github.com/acme/shop has data and trust, billing is empty)
 //   The latest push of the shop inbox shows the scan-finding/1 order: three MVPs pinned, a ranked card, two in reserve;
 //   DW-9 is machine pre-triaged (the toolbar's "Machine pre-triaged" filter keeps it alone).
@@ -329,8 +330,17 @@ function fails(key, payload) {
   return Boolean(once && match(once) && Date.now() - LOADED_AT < 1000);
 }
 
+/** The extra time `&delay=` gives a key, in ms. */
+function delayOf(key) {
+  for (const spec of (params().get('delay') ?? '').split(',')) {
+    const [k, ms] = spec.split(':');
+    if (k === key) return Number(ms) || 0;
+  }
+  return 0;
+}
+
 export async function invoke(key, payload = {}) {
-  await new Promise((r) => setTimeout(r, params().has('slow') ? 1500 : 150));
+  await new Promise((r) => setTimeout(r, (params().has('slow') ? 1500 : 150) + delayOf(key)));
   if (fails(key, payload)) return err('unavailable', `The ${key} resolver is unavailable (fixture).`);
   const h = handlers[key];
   if (!h) return err('bad-input', `Unknown resolver ${key}.`);
