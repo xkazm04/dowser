@@ -37,6 +37,22 @@ export function narrowingFilters({ area = '', pretriaged = false }) {
   return out;
 }
 
+/** What the empty Open view says about the last push: undefined while it is being read, null when there is none. */
+function LastPushLine({ lastPush }) {
+  return (
+    <>
+      {lastPush === undefined && <p className="dwr-muted">Checking the last push...</p>}
+      {lastPush && (
+        <p className="dwr-muted">
+          The last push was run {lastPush.run_id} on {formatDate(lastPush.at)}
+          {lastPush.lenses.length > 0 && <> ({lastPush.lenses.map((l) => LENS_LABELS[l] ?? l).join(', ')})</>}.
+        </p>
+      )}
+      {lastPush === null && <p className="dwr-muted">No push has reached this inbox yet.</p>}
+    </>
+  );
+}
+
 /** What an empty decided tab is waiting for: a person's decision, never a scan (a scan's pushes land in Open). */
 const DECIDED_HERE = {
   accepted: 'A proposal you accept moves here, with its Jira issue.',
@@ -69,18 +85,7 @@ export function EmptyState({ status, lens, lastPush, tally, area = '', pretriage
       </SectionMessage>
     );
   }
-  const lastLine = (
-    <>
-      {lastPush === undefined && <p className="dwr-muted">Checking the last push...</p>}
-      {lastPush && (
-        <p className="dwr-muted">
-          The last push was run {lastPush.run_id} on {formatDate(lastPush.at)}
-          {lastPush.lenses.length > 0 && <> ({lastPush.lenses.map((l) => LENS_LABELS[l] ?? l).join(', ')})</>}.
-        </p>
-      )}
-      {lastPush === null && <p className="dwr-muted">No push has reached this inbox yet.</p>}
-    </>
-  );
+  const lastLine = <LastPushLine lastPush={lastPush} />;
   if (status === 'open' && !lens) {
     const parts = [['accepted', 'accepted'], ['rejected', 'rejected'], ['snoozed', 'snoozed'], ['merged', 'merged']].filter(([k]) => tally[k] > 0).map(([k, w]) => `${tally[k]} ${w}`);
     return (

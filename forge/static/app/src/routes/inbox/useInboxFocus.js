@@ -10,6 +10,30 @@ const focusLoadMore = () => {
 };
 
 /**
+ * The keyboard's way past the listed rows: Load more takes the focus when every listed card is decided, and after a
+ * load that a keyboard or an emptied list asked for, the focus goes on to the first new row.
+ * @param {{loadStatus: string, flat: any[], hasMore: boolean, loadMore: () => unknown, blocked: boolean, land: (ref: string) => void}} page
+ * @returns {(e?: {detail?: number}) => void} Load more, for its button. A mouse click (detail > 0) on a list with rows leaves the person reading where they were.
+ */
+function useLoadMoreFocus({ loadStatus, flat, hasMore, loadMore, blocked, land }) {
+  useEffect(() => {
+    if (loadStatus === 'ready' && flat.length === 0 && hasMore && !blocked) requestAnimationFrame(focusLoadMore);
+  }, [loadStatus, flat.length, hasMore, blocked]);
+  const afterMore = useRef(-1);
+  useEffect(() => {
+    if (loadStatus !== 'ready') { afterMore.current = -1; return; }
+    if (afterMore.current < 0 || flat.length <= afterMore.current) return;
+    const ref = flat[afterMore.current].ref;
+    afterMore.current = -1;
+    land(ref);
+  }, [flat, loadStatus]);
+  return (e) => {
+    if (e?.detail === 0 || flat.length === 0) afterMore.current = flat.length;
+    loadMore();
+  };
+}
+
+/**
  * Bring a row into view below the toolbar. The narrow toolbar is sticky and as tall as its wrapped controls, so the
  * row's scroll margin is measured, not a constant.
  * @param {HTMLElement} el
@@ -97,26 +121,7 @@ export function useInboxFocus({ linkRef, filters, pin, hasMore, loadMore, loadSt
     if (el) revealRow(el);
   }, [focusRef, tri.expanded]);
 
-  // Every listed card is decided and more wait: Load more is the way on, so it takes the focus.
-  useEffect(() => {
-    if (loadStatus === 'ready' && flat.length === 0 && hasMore && !dialog && !step) requestAnimationFrame(focusLoadMore);
-  }, [loadStatus, flat.length, hasMore, dialog, step]);
-
-  // After a load that a keyboard or an emptied list asked for, the focus goes on to the first new row.
-  const afterMore = useRef(-1);
-  useEffect(() => {
-    if (loadStatus !== 'ready') { afterMore.current = -1; return; }
-    if (afterMore.current < 0 || flat.length <= afterMore.current) return;
-    const ref = flat[afterMore.current].ref;
-    afterMore.current = -1;
-    land(ref);
-  }, [flat, loadStatus]);
-
-  /** Load more, from its button. A mouse click (detail > 0) on a list with rows leaves the person reading where they were. @param {{detail?: number}} [e] */
-  function loadMoreFromList(e) {
-    if (e?.detail === 0 || flat.length === 0) afterMore.current = flat.length;
-    loadMore();
-  }
+  const loadMoreFromList = useLoadMoreFocus({ loadStatus, flat, hasMore, loadMore, blocked: Boolean(dialog || step), land });
 
   // A new selection reads from the top.
   useEffect(() => { if (paneScroll.current) paneScroll.current.scrollTop = 0; }, [focusRef]);
