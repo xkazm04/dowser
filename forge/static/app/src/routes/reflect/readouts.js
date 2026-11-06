@@ -1,5 +1,8 @@
 // Plain-language readings of the Learning numbers.
 
+/** An accepted item a person can judge now: Jira says done, or it was closed without the work. @param {{done?: boolean, delivery?: string}} c */
+export const readyToRate = (c) => Boolean(c.done) || c.delivery === 'abandoned';
+
 /** @param {{dup_rate?: number}} push */
 export function readDupRate(push) {
   if (push.dup_rate === undefined) return 'This push carried no proposals, so there is no repeat rate to read.';
