@@ -31,7 +31,7 @@ test('deciding the whole first page, then Load more: the rest shows, never Queue
   await expect(checks(page)).toHaveCount(5);
   const first = await listedRefs(page);
   // bulk-check them one by one, so the reserve rows of the page count too
-  await page.locator('details.dwr-reserve').evaluateAll((els) => els.forEach((d) => { /** @type {HTMLDetailsElement} */ (d).open = true; }));
+  await page.locator('details.dwr-reserve').evaluateAll((els) => els.forEach((d) => d.setAttribute('open', '')));
   for (const ref of first) await page.getByRole('checkbox', { name: `Check ${ref}` }).check();
   const bulk = page.getByRole('region', { name: 'Bulk actions' });
   await expect(bulk.getByText('5 checked')).toBeVisible();
