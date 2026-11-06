@@ -383,6 +383,8 @@ export const REFLECT = {
     candidates: [
       { ref: 'DW-1', title: 'Explain shipping costs before the payment step', issue_ref: 'SHOP-101', issue_url: 'https://acme.atlassian.net/browse/SHOP-101', issue_status: 'Done', done: true, delivery: 'delivered', code_state: 'present', still_in_code: true },
       { ref: 'DW-4', title: 'Show stock levels on the product page', issue_ref: 'SHOP-97', issue_url: 'https://acme.atlassian.net/browse/SHOP-97', issue_status: 'In Progress', done: false, delivery: 'in_progress', code_state: 'partly' },
+      { ref: 'DW-7', title: 'Drop the legacy coupon screen', issue_ref: 'SHOP-90', issue_url: 'https://acme.atlassian.net/browse/SHOP-90', issue_status: 'Won\'t do', done: false, delivery: 'abandoned' },
+      { ref: 'DW-8', title: 'Rate limit the password reset form', issue_ref: 'SHOP-88', issue_url: 'https://acme.atlassian.net/browse/SHOP-88', issue_status: 'unknown', done: false },
     ],
     trust: {
       updated_at: '2026-10-27T09:20:00.000Z',
