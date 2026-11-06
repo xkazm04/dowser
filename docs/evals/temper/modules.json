@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-06T17:53:06.200Z",
+  "at": "2026-11-06T18:00:26.214Z",
   "modules": {
     "skill-store": {
       "met": false,
@@ -7,7 +7,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (347) at be96bd1"
+          "detail": "typecheck pass, tests pass (380) at 58bac60"
         },
         "proposals": {
           "state": "verified",
@@ -22,7 +22,7 @@
         "quality": {
           "state": "verified",
           "ok": false,
-          "detail": "grew: dup_windows 65 -> 66"
+          "detail": "grew: todos 4 -> 6"
         },
         "coverage": {
           "state": "verified",
@@ -37,7 +37,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (347) at be96bd1"
+          "detail": "typecheck pass, tests pass (380) at 58bac60"
         },
         "proposals": {
           "state": "verified",
@@ -52,7 +52,7 @@
         "quality": {
           "state": "verified",
           "ok": false,
-          "detail": "grew: dup_windows 65 -> 66"
+          "detail": "grew: todos 4 -> 6"
         },
         "coverage": {
           "state": "verified",
@@ -67,7 +67,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (347) at be96bd1"
+          "detail": "typecheck pass, tests pass (380) at 58bac60"
         },
         "proposals": {
           "state": "verified",
@@ -82,7 +82,7 @@
         "quality": {
           "state": "verified",
           "ok": false,
-          "detail": "grew: dup_windows 65 -> 66"
+          "detail": "grew: todos 4 -> 6"
         },
         "coverage": {
           "state": "verified",
@@ -112,7 +112,7 @@
         "quality": {
           "state": "verified",
           "ok": false,
-          "detail": "grew: dup_windows 65 -> 66"
+          "detail": "grew: todos 4 -> 6"
         },
         "coverage": {
           "state": "verified",
@@ -142,7 +142,7 @@
         "quality": {
           "state": "verified",
           "ok": false,
-          "detail": "grew: dup_windows 65 -> 66"
+          "detail": "grew: todos 4 -> 6"
         },
         "coverage": {
           "state": "verified",
@@ -172,7 +172,7 @@
         "quality": {
           "state": "verified",
           "ok": false,
-          "detail": "grew: dup_windows 65 -> 66"
+          "detail": "grew: todos 4 -> 6"
         },
         "coverage": {
           "state": "verified",
@@ -202,7 +202,7 @@
         "quality": {
           "state": "verified",
           "ok": false,
-          "detail": "grew: dup_windows 65 -> 66"
+          "detail": "grew: todos 4 -> 6"
         },
         "coverage": {
           "state": "verified",
@@ -217,7 +217,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (347) at be96bd1"
+          "detail": "typecheck pass, tests pass (380) at 58bac60"
         },
         "proposals": {
           "state": "verified",
@@ -232,7 +232,7 @@
         "quality": {
           "state": "verified",
           "ok": false,
-          "detail": "grew: dup_windows 65 -> 66"
+          "detail": "grew: todos 4 -> 6"
         },
         "coverage": {
           "state": "verified",
