@@ -9,8 +9,8 @@ import { LENSES, LENS_LABELS, STATUSES, STATUS_LABELS, formatDate } from '../../
 /** "28 Oct, 19:21": several pushes a day are common, so the time is what tells them apart; the year is noise. */
 export const shortWhen = (iso) => formatDate(iso).replace(/ \d{4}/, '');
 
-/** The counts as loaded, moved by the decisions made since: every listed card had the filtered status. */
-function summarise(inboxes, projectKey, status, decided) {
+/** The counts as loaded, moved by the decisions made since. */
+function summarise(inboxes, projectKey, decided) {
   const all = inboxes ?? [];
   // "All inboxes" leaves the sample out unless it is the only inbox, as the server's all-inbox list does.
   const real = all.filter((i) => !i.sample);
@@ -18,8 +18,8 @@ function summarise(inboxes, projectKey, status, decided) {
   // by_status is newer than open: an older backend sends only open, and the other segments then show no count.
   const by = Object.fromEntries(STATUSES.map((s) => [s, list.some((i) => i.by_status) ? list.reduce((n, i) => n + (i.by_status?.[s] ?? 0), 0) : undefined]));
   by.open = list.reduce((n, i) => n + (i.open ?? 0), 0);
-  for (const { to } of decided?.values() ?? []) {
-    if (by[status] !== undefined) by[status] -= 1;
+  for (const { from, to } of decided?.values() ?? []) {
+    if (by[from] !== undefined) by[from] -= 1;
     if (by[to] !== undefined) by[to] += 1;
   }
   const last = list.map((i) => i.last_push).filter(Boolean).sort((a, b) => String(b.at).localeCompare(String(a.at)))[0];
@@ -30,17 +30,17 @@ function summarise(inboxes, projectKey, status, decided) {
 
 /**
  * Each inbox's open count as loaded, less the open cards decided on this page since (an undo or a failed call takes
- * the decision back, and the count with it). Only an open list holds open cards.
+ * the decision back, and the count with it).
  */
-function openPer(inboxes, status, decided) {
+function openPer(inboxes, decided) {
   const gone = new Map();
-  if (status === 'open') for (const { project_key } of decided?.values() ?? []) gone.set(project_key, (gone.get(project_key) ?? 0) + 1);
+  for (const { from, project_key } of decided?.values() ?? []) if (from === 'open') gone.set(project_key, (gone.get(project_key) ?? 0) + 1);
   return new Map((inboxes ?? []).map((i) => [i.project_key, Math.max(0, (i.open ?? 0) - (gone.get(i.project_key) ?? 0))]));
 }
 
 export function Toolbar({ inboxes, decided, projectKey, onProject, status, onStatus, lens, onLens, area = '', onClearArea, pretriaged = false, onPretriaged, onHelp, bare = false }) {
-  const { by, last, count, sampleOnly } = summarise(inboxes, projectKey, status, decided);
-  const open = openPer(inboxes, status, decided);
+  const { by, last, count, sampleOnly } = summarise(inboxes, projectKey, decided);
+  const open = openPer(inboxes, decided);
   // The counts are per inbox: a lens, area or pre-triaged filter narrows the list, not them. Say so while one is on.
   const narrowed = Boolean(lens || (area && projectKey) || pretriaged);
   const countTitle = narrowed ? 'Whole inbox: the lens, area and pre-triaged filters do not change this count' : undefined;

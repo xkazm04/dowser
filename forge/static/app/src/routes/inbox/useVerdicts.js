@@ -59,7 +59,7 @@ export function useVerdicts({ cw, dispatch, order }) {
     const message = String(e?.message ?? `The ${what} failed.`);
     clearTimers(refs);
     dispatch({ type: 'commitFailed', refs, message });
-    cw.notify(`Could not ${what} ${refs.length === 1 ? refs[0] : plural(refs.length, 'proposal')}: ${message} It is back in the list.`, 'error');
+    cw.notify(`Could not ${what} ${refs.length === 1 ? refs[0] : plural(refs.length, 'proposal')}: ${message} It is back in Open.`, 'error');
   }
 
   function deferSnooze(cards, note = '', until = '') {

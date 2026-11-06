@@ -36,6 +36,9 @@ export function useCommitWindow({ ms = COMMIT_MS } = {}) {
     return (async () => { await e.run(); })().catch((err) => e.onError(err));
   }, [dismiss]);
 
+  /** The messages of the open windows, oldest first. */
+  const pending = useCallback(() => [...entries.current.values()].map((e) => e.message), []);
+
   /** Commits every open window. The answer settles when each call has (a failed one has been to its onError). */
   const flush = useCallback(() => Promise.all([...entries.current.keys()].map((id) => commit(id))), [commit]);
 
@@ -99,5 +102,5 @@ export function useCommitWindow({ ms = COMMIT_MS } = {}) {
   // Unmount (route change inside the app): same.
   useEffect(() => () => { flush(); }, [flush]);
 
-  return { toasts, schedule, undo, undoLatest, flush, pause, resume, notify, dismiss, NOTICE_MS };
+  return { toasts, schedule, undo, undoLatest, flush, pending, pause, resume, notify, dismiss, NOTICE_MS };
 }

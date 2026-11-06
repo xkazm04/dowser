@@ -5,9 +5,9 @@
 // the undo window (useCommitWindow), the resolver calls and the DOM focus. Plain JS, no React: forge/test imports it.
 
 /**
- * @typedef {{phase: 'leaving' | 'gone', to: string, project_key: string}} Decided
- *   a card decided on this page: the status it moved to and its inbox (the picker counts follow it). A card with no
- *   entry is open.
+ * @typedef {{phase: 'leaving' | 'gone', from: string, to: string, project_key: string}} Decided
+ *   a card decided on this page: the status it left, the status it moved to and its inbox (the counts follow it, also
+ *   while a changed filter's list is on its way). A card with no entry is open.
  * @typedef {{kind: 'card', ref: string} | {kind: 'bulk'}} Step the snooze step: one card's, or the bulk bar's
  * @typedef {{kind: string, refs: string[]}} Dialog
  * @typedef {{
@@ -93,7 +93,7 @@ export function triage(state, ev) {
       const refs = ev.cards.map((c) => c.ref);
       if (refs.length === 0) return state;
       const decided = new Map(state.decided);
-      for (const c of ev.cards) decided.set(c.ref, { phase: ev.instant ? 'gone' : 'leaving', to: ev.to, project_key: c.project_key ?? '' });
+      for (const c of ev.cards) decided.set(c.ref, { phase: ev.instant ? 'gone' : 'leaving', from: c.status ?? 'open', to: ev.to, project_key: c.project_key ?? '' });
       const focus = nextFocus(state.focus, ev.order, refs);
       const moved = focus !== state.focus;
       return {
