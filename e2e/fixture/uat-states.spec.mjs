@@ -69,7 +69,7 @@ test.fixme('DOW-12: an empty status tab has copy that fits the status, and no sc
   }
 });
 
-test.fixme('DOW-13: one failed reflect.data call reads as one failure with one Retry', async ({ page }) => {
+test('DOW-13: one failed reflect.data call reads as one failure with one Retry', async ({ page }) => {
   await page.goto(at('reflect&fail=reflect.data'));
   await expect(page.getByRole('heading', { name: 'What Dowser learned', level: 1 })).toBeVisible();
   const message = page.getByText('The reflect.data resolver is unavailable (fixture).');
