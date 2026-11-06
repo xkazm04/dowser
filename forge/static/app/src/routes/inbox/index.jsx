@@ -84,8 +84,8 @@ export default function Inbox({ context }) {
   const data = useInboxData({ cw, removed, leaving, onReset: verdicts.reset, link });
   const { load, visible, shown, flat, byRef, groupOf, next } = data;
   order.current = flat.map((c) => c.ref);
-  const { rowEls, paneScroll, focusIndex, moveFocus } = useInboxFocus({
-    linkRef: link === undefined ? undefined : (link.ref ?? ''), filters: data.filters, pin: data.pin, loadStatus: load.status, flat, byRef, tri, dispatch,
+  const { rowEls, paneScroll, focusIndex, moveFocus, loadMoreFromList } = useInboxFocus({
+    linkRef: link === undefined ? undefined : (link.ref ?? ''), filters: data.filters, pin: data.pin, hasMore: Boolean(next), loadMore: data.loadMore, loadStatus: load.status, flat, byRef, tri, dispatch,
   });
 
   /** @param {string} kind @param {string[]} refs */
@@ -153,12 +153,12 @@ export default function Inbox({ context }) {
             visible={visible} leaving={leaving} checked={tri.checked} checkedVisible={checked} byRef={byRef}
             focusRef={focusRef} wide={wide} expanded={expanded} history={history} onHistoryRetry={retryHistory} errors={tri.errors} step={tri.step}
             dispatch={dispatch} actions={actions} open={open} deferSnooze={verdicts.deferSnooze}
-            select={select} rowEls={rowEls} next={next} moreState={data.moreState} loadMore={data.loadMore}
+            select={select} rowEls={rowEls} next={next} moreState={data.moreState} loadMore={loadMoreFromList}
           />
           {wide && (
             <ReadingPane
               current={current} currentChange={currentChange} history={history} onHistoryRetry={retryHistory} paneScroll={paneScroll} snoozeFor={snoozeFor}
-              errors={tri.errors} actions={actions}
+              errors={tri.errors} actions={actions} pageCleared={flat.length === 0 && Boolean(next)}
             />
           )}
         </div>

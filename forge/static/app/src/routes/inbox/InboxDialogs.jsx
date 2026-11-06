@@ -48,7 +48,7 @@ export function InboxDialogs({ dialog, dialogCards, flat, decided, closeDialog, 
 }
 
 const KEYS = [
-  ['j / k', 'Move to the next / previous proposal; the pane follows'],
+  ['j / k', 'Move to the next / previous proposal; the pane follows. Past the last one, j goes to Load more'],
   ['x', 'Check or uncheck the proposal for a bulk action'],
   ['a', 'Accept; then Ctrl+Enter creates the issue'],
   ['r', `Reject (all checked, when some are checked); 1 to ${REASONS.length} picks the reason, Ctrl+Enter confirms`],

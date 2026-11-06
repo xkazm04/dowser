@@ -4,6 +4,11 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { call } from '../../api.js';
 
+const focusLoadMore = () => {
+  const el = document.querySelector('.dwr-more-rows .dw-btn');
+  if (el instanceof HTMLElement) el.focus();
+};
+
 /**
  * Bring a row into view below the toolbar. The narrow toolbar is sticky and as tall as its wrapped controls, so the
  * row's scroll margin is measured, not a constant.
@@ -18,11 +23,11 @@ function revealRow(el) {
 
 /**
  * @param {{linkRef: string | undefined, filters: {project_key?: string, status?: string}, pin: (card: any) => void,
- *   loadStatus: string, flat: any[], byRef: Map<string, any>, tri: import('./triage.js').TriageState,
+ *   hasMore: boolean, loadMore: () => unknown, loadStatus: string, flat: any[], byRef: Map<string, any>, tri: import('./triage.js').TriageState,
  *   dispatch: (ev: import('./triage.js').TriageEvent) => void}} page
  *   `linkRef` is the deep link's card ('' for none, undefined until the link is read).
  */
-export function useInboxFocus({ linkRef, filters, pin, loadStatus, flat, byRef, tri, dispatch }) {
+export function useInboxFocus({ linkRef, filters, pin, hasMore, loadMore, loadStatus, flat, byRef, tri, dispatch }) {
   const { focus: focusRef, focusRequest: focusReq, dialog, step, decided } = tri;
   /** @param {string} ref */
   const setFocusRef = (ref) => dispatch({ type: 'focus', ref });
@@ -92,12 +97,34 @@ export function useInboxFocus({ linkRef, filters, pin, loadStatus, flat, byRef, 
     if (el) revealRow(el);
   }, [focusRef, tri.expanded]);
 
+  // Every listed card is decided and more wait: Load more is the way on, so it takes the focus.
+  useEffect(() => {
+    if (loadStatus === 'ready' && flat.length === 0 && hasMore && !dialog && !step) requestAnimationFrame(focusLoadMore);
+  }, [loadStatus, flat.length, hasMore, dialog, step]);
+
+  // After a load that a keyboard or an emptied list asked for, the focus goes on to the first new row.
+  const afterMore = useRef(-1);
+  useEffect(() => {
+    if (loadStatus !== 'ready') { afterMore.current = -1; return; }
+    if (afterMore.current < 0 || flat.length <= afterMore.current) return;
+    const ref = flat[afterMore.current].ref;
+    afterMore.current = -1;
+    land(ref);
+  }, [flat, loadStatus]);
+
+  /** Load more, from its button. A mouse click (detail > 0) on a list with rows leaves the person reading where they were. @param {{detail?: number}} [e] */
+  function loadMoreFromList(e) {
+    if (e?.detail === 0 || flat.length === 0) afterMore.current = flat.length;
+    loadMore();
+  }
+
   // A new selection reads from the top.
   useEffect(() => { if (paneScroll.current) paneScroll.current.scrollTop = 0; }, [focusRef]);
 
   /** j/k: the selection moves and the narrow layout's accordion opens under it. @param {number} delta */
   function moveFocus(delta) {
-    if (flat.length === 0) { dispatch({ type: 'focus', ref: focusRef, expand: true }); return; }
+    if (flat.length === 0) { dispatch({ type: 'focus', ref: focusRef, expand: true }); if (hasMore) focusLoadMore(); return; }
+    if (delta > 0 && hasMore && focusIndex === flat.length - 1) { focusLoadMore(); return; }
     const i = focusIndex < 0 ? 0 : Math.max(0, Math.min(flat.length - 1, focusIndex + delta));
     const ref = flat[i].ref;
     revealNext.current = ref;
@@ -105,5 +132,5 @@ export function useInboxFocus({ linkRef, filters, pin, loadStatus, flat, byRef, 
     rowEls.current[ref]?.focus({ preventScroll: true });
   }
 
-  return { rowEls, paneScroll, focusIndex, moveFocus };
+  return { rowEls, paneScroll, focusIndex, moveFocus, loadMoreFromList };
 }
