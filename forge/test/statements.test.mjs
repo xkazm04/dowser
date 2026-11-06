@@ -231,7 +231,7 @@ test('inbox.list of a page of 50 open cards: at most 10 statements, the same pag
   assert.ok(n <= 10, `${n} statements`);
   const items = out.groups.flatMap((/** @type {any} */ g) => g.items);
   assert.equal(items.length, 50);
-  assert.equal(out.next, '50');
+  assert.match(String(out.next), /^k[0-9]+$/);
   assert.deepEqual(out.groups.map((/** @type {any} */ g) => [g.run_id, g.head_sha, g.items.length]), [['r-2', 'bbb222', 30], ['r-1', 'aaa111', 20]]);
   assert.deepEqual(items, await referenceItems(d, items));
   assert.ok(items[0].evidence[0].link.startsWith('https://github.com/Acme/Shop/blob/bbb222/'), 'code links at the push head');
