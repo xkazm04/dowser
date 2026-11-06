@@ -20,7 +20,7 @@ const ignoreClose = () => {};
  * @param {{card: any, onClose: () => void, onDone: (card: any) => void, onFailed: (ref: string, message: string) => void, onBeforeSubmit?: () => void}} props
  */
 export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }) {
-  const [meta, setMeta] = useState(/** @type {{inbox?: any, projects?: any[], error?: string} | null} */ (null));
+  const [meta, setMeta] = useState(/** @type {{inbox?: any, projects?: any[], error?: string, settingsFailed?: boolean} | null} */ (null));
   const [project, setProject] = useState('');
   const [issueType, setIssueType] = useState('');
   const [note, setNote] = useState('');
@@ -37,7 +37,7 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
       const inbox = s.status === 'fulfilled' ? (s.value.inboxes ?? []).find((i) => i.project_key === card.project_key) : undefined;
       const projects = p.status === 'fulfilled' ? (p.value.projects ?? []) : undefined;
       const failed = [s, p].find((r) => r.status === 'rejected');
-      setMeta({ inbox, projects, error: failed ? String(failed.reason?.message ?? 'Jira projects could not load.') : undefined });
+      setMeta({ inbox, projects, settingsFailed: s.status === 'rejected', error: failed ? String(failed.reason?.message ?? 'Jira projects could not load.') : undefined });
       if (inbox?.jira_project_key) setProject(inbox.jira_project_key);
       if (inbox?.issue_type_id) setIssueType(inbox.issue_type_id);
     });
@@ -49,6 +49,10 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
   // With no project list (jira.projects failed) the server default is the only safe target.
   const hasDefault = Boolean(meta?.inbox?.jira_project_key && meta?.inbox?.issue_type_id);
   const canSubmit = meta && !busy && (meta.projects ? Boolean(project && issueType) : hasDefault);
+  // A failed settings read says nothing about the inbox's default: only that it is unknown right now.
+  const whatToDo = meta?.settingsFailed
+    ? (meta.projects ? "This inbox's default target could not load: choose the project and issue type for this issue, or retry." : "This inbox's default target could not load either: retry.")
+    : (hasDefault ? 'Accepting uses the inbox default target.' : 'Set a default target in Settings, or retry.');
 
   async function submit() {
     setBusy(true); setError('');
@@ -79,7 +83,7 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
       {meta?.error && (
         <SectionMessage appearance="warning">
           <p>
-            {meta.error} {hasDefault ? 'Accepting uses the inbox default target.' : 'Set a default target in Settings, or retry.'}
+            {meta.error} {whatToDo}
             {' '}<Button compact onClick={() => setAttempt((n) => n + 1)}>Retry</Button>
           </p>
         </SectionMessage>
@@ -93,7 +97,9 @@ export function AcceptDialog({ card, onClose, onDone, onFailed, onBeforeSubmit }
               {meta.projects.map((p) => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
             </select>
             <span className="dw-subtlest">
-              {meta.inbox?.jira_project_key
+              {meta.settingsFailed
+                ? "This inbox's default could not be read, so nothing is filled in."
+                : meta.inbox?.jira_project_key
                 ? `Filled in from this inbox's default (${meta.inbox.jira_project_key}). Change it for this issue here; change the default in Settings.`
                 : 'This inbox has no default project yet. Set one in Settings so every accept starts there.'}
             </span>

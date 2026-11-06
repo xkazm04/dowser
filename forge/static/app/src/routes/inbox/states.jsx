@@ -37,6 +37,14 @@ export function narrowingFilters({ area = '', pretriaged = false }) {
   return out;
 }
 
+/** What an empty decided tab is waiting for: a person's decision, never a scan (a scan's pushes land in Open). */
+const DECIDED_HERE = {
+  accepted: 'A proposal you accept moves here, with its Jira issue.',
+  rejected: 'A proposal you reject moves here, with the reason you gave.',
+  snoozed: 'A proposal you snooze waits here until it comes back.',
+  merged: 'A proposal you merge into another moves here, with where it went.',
+};
+
 /**
  * The healthiest state is empty, and when the person got it there it says so. Under an area or pre-triaged
  * filter an empty list says nothing about the inbox: the view names the filter and offers to clear it, and never
@@ -92,6 +100,13 @@ export function EmptyState({ status, lens, lastPush, tally, area = '', pretriage
         {lastLine}
         <p className="dwr-muted">To file new proposals, run a scan: <code>/dowser</code> in Claude Code or Codex, in the repository.</p>
       </section>
+    );
+  }
+  if (status !== 'open') {
+    return (
+      <SectionMessage appearance="information" title={`No ${what} here.`} role="status">
+        <p>{DECIDED_HERE[status]}</p>
+      </SectionMessage>
     );
   }
   return (

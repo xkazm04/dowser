@@ -89,13 +89,16 @@ export function Toolbar({ inboxes, decided, projectKey, onProject, status, onSta
         </button>
       )}
       <span className="dwr-spacer" />
-      <p className="dwr-runline" aria-label="Run summary">
-        {sampleOnly
-          ? <>Sample scanned {shortWhen(sampleOnly.source?.scanned_at ?? sampleOnly.last_push?.at)}</>
-          : last
-          ? <>Last push {shortWhen(last.at)} · {last.created ?? 0} new, {last.updated ?? 0} updated</>
-          : <>No push has reached {count > 1 ? 'these inboxes' : 'this inbox'} yet</>}
-      </p>
+      {/* no inbox known yet (it is loading, or the load failed): nothing true can be said about pushes */}
+      {inboxes.length > 0 && (
+        <p className="dwr-runline" aria-label="Run summary">
+          {sampleOnly
+            ? <>Sample scanned {shortWhen(sampleOnly.source?.scanned_at ?? sampleOnly.last_push?.at)}</>
+            : last
+            ? <>Last push {shortWhen(last.at)} · {last.created ?? 0} new, {last.updated ?? 0} updated</>
+            : <>No push has reached {count > 1 ? 'these inboxes' : 'this inbox'} yet</>}
+        </p>
+      )}
       </>}
       <button type="button" className="dwr-iconbtn" onClick={onHelp} aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button>
     </header>
