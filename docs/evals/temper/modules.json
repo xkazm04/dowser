@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-06T18:00:26.214Z",
+  "at": "2026-11-06T18:48:37.720Z",
   "modules": {
     "skill-store": {
       "met": false,
@@ -7,7 +7,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (380) at 58bac60"
+          "detail": "typecheck pass, tests pass (394) at 28c2011"
         },
         "proposals": {
           "state": "verified",
@@ -21,8 +21,8 @@
         },
         "quality": {
           "state": "verified",
-          "ok": false,
-          "detail": "grew: todos 4 -> 6"
+          "ok": true,
+          "detail": "not growing (58bac60 -> 28c2011)"
         },
         "coverage": {
           "state": "verified",
@@ -37,7 +37,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (380) at 58bac60"
+          "detail": "typecheck pass, tests pass (394) at 28c2011"
         },
         "proposals": {
           "state": "verified",
@@ -51,8 +51,8 @@
         },
         "quality": {
           "state": "verified",
-          "ok": false,
-          "detail": "grew: todos 4 -> 6"
+          "ok": true,
+          "detail": "not growing (58bac60 -> 28c2011)"
         },
         "coverage": {
           "state": "verified",
@@ -67,7 +67,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (380) at 58bac60"
+          "detail": "typecheck pass, tests pass (394) at 28c2011"
         },
         "proposals": {
           "state": "verified",
@@ -81,8 +81,8 @@
         },
         "quality": {
           "state": "verified",
-          "ok": false,
-          "detail": "grew: todos 4 -> 6"
+          "ok": true,
+          "detail": "not growing (58bac60 -> 28c2011)"
         },
         "coverage": {
           "state": "verified",
@@ -107,12 +107,12 @@
         "scan_yield": {
           "state": "verified",
           "ok": false,
-          "detail": "last two scans created 7, 10 cards"
+          "detail": "last two scans created 10, 6 cards"
         },
         "quality": {
           "state": "verified",
-          "ok": false,
-          "detail": "grew: todos 4 -> 6"
+          "ok": true,
+          "detail": "not growing (58bac60 -> 28c2011)"
         },
         "coverage": {
           "state": "verified",
@@ -141,8 +141,8 @@
         },
         "quality": {
           "state": "verified",
-          "ok": false,
-          "detail": "grew: todos 4 -> 6"
+          "ok": true,
+          "detail": "not growing (58bac60 -> 28c2011)"
         },
         "coverage": {
           "state": "verified",
@@ -171,8 +171,8 @@
         },
         "quality": {
           "state": "verified",
-          "ok": false,
-          "detail": "grew: todos 4 -> 6"
+          "ok": true,
+          "detail": "not growing (58bac60 -> 28c2011)"
         },
         "coverage": {
           "state": "verified",
@@ -201,8 +201,8 @@
         },
         "quality": {
           "state": "verified",
-          "ok": false,
-          "detail": "grew: todos 4 -> 6"
+          "ok": true,
+          "detail": "not growing (58bac60 -> 28c2011)"
         },
         "coverage": {
           "state": "verified",
@@ -217,7 +217,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (380) at 58bac60"
+          "detail": "typecheck pass, tests pass (394) at 28c2011"
         },
         "proposals": {
           "state": "verified",
@@ -231,8 +231,8 @@
         },
         "quality": {
           "state": "verified",
-          "ok": false,
-          "detail": "grew: todos 4 -> 6"
+          "ok": true,
+          "detail": "not growing (58bac60 -> 28c2011)"
         },
         "coverage": {
           "state": "verified",
