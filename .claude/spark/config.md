@@ -62,8 +62,13 @@ context map is provisional until the first scaffold commit.
 - At the go-gate of a spark framed as "a plan for tomorrow", picked Build now over Park (2026-10-28). Offer Build as a real option, with its cost, even when the spark says plan.
 - On product-capability questions picks the richer option even against the recommendation (forge-app: Rovo records verdicts; area stats pushed from the skill; all four v1 surfaces). Do not default-recommend the lean option there; state the cost and let the operator pick (2026-10-27).
 
+- Overrides caution on autonomy: chose "any size" builds over the recommended size limit, and extended build targets to bp and Personas at the last moment (2026-11-05). Ask what bounds an unattended run, since the operator will not bound it by default.
+
 ## Skill improvement log
 
+- 2026-11-05 daily-perfection-loop: a default that bounds a whole unattended run (the accept caps) is a go-gate question; copied silently into the charter, it ended a 12 h night at 4 h.
+- 2026-11-05 daily-perfection-loop: never chain a deploy after a build by hand; twice now a command list hid a failure (a `;` before a commit, a failed UI build before a deploy).
+- 2026-11-05 daily-perfection-loop: this overlay is CRLF; a script's text replace misses silently here, so edit it with the Edit tool and check the result.
 - 2026-10-27 local-scan-skill: a brief that declares both a status transition table and resurfacing rules must cross-check them (builders found 3 contradictions); write the table FROM the rules.
 - 2026-10-27 local-scan-skill: a parallel builder briefed against another package's BRIEF (not its code) surfaced command-set gaps early - keep doing it for doc/procedure packages.
 - 2026-10-27 local-scan-skill: Windows - leave the worktree (cd to main checkout) before `git worktree remove`, or the session cwd lock fails the delete.

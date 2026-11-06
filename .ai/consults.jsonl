@@ -8,3 +8,5 @@
 {"ts":"2026-11-04T19:11:02Z","bundle":"software-engineering","subjects":["migrations","triage-queues"],"techniques":["transactional-ddl","bulk-triage"],"deviations":1}
 {"ts":"2026-11-04T19:54:52.142Z","bundle":"software-engineering","subjects":["packaging","agent-instruction-files"],"techniques":["installer-authoring"],"deviations":2}
 {"ts":"2026-11-04T20:12:34Z","bundle":"software-engineering","subjects":["remediation-roadmaps"],"techniques":["weighted-upside-ranking"],"deviations":0}
+{"ts":"2026-11-05T22:56:10.870Z","bundle":"software-engineering","subjects":["hitl-approval"],"techniques":["fixed-policy-amendable-plan","unattended-mode"],"deviations":0}
+{"ts":"2026-11-05T22:56:10.870Z","bundle":"game-production","subjects":["unattended-build-loop"],"techniques":["no-gate-self-certifies","rollback-to-last-green","budget-reservation-and-drain-not-kill"],"deviations":0}
