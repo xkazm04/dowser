@@ -41,7 +41,7 @@
       "coverage": [
         "^route:(inbox|dowser-evidence|dowser-doc-impact|dowser-doc-banner)$",
         "^(resolver|fail):(inbox|proposal|verdict|panel|byline|sample|setup)\\.",
-        "^fixture:(area|calls|empty|fail|failonce|lens|mode|nocomment|nomcp|page|project|ref|sample|slow)$"
+        "^fixture:(area|calls|delay|empty|fail|failonce|lens|mode|nocomment|nomcp|page|project|ref|sample|slow)$"
       ]
     },
     "insights-ui": {
@@ -58,7 +58,7 @@
       "coverage": [
         "^route:(map|reflect|settings)$",
         "^(resolver|fail):(map|reflect|rule|outcome|settings|jira|direction)\\.",
-        "^fixture:delegation$"
+        "^fixture:(delegation|latest|noevents)$"
       ]
     },
     "connections": {
