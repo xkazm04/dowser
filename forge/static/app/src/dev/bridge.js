@@ -127,14 +127,16 @@ const handlers = {
     // As the server: "All inboxes" leaves the sample out unless it is the only inbox.
     const live = liveCards();
     const hideSample = !project_key && live.some((c) => !c.sample);
-    const pick = live.filter((c) => !(hideSample && c.sample) && (!project_key || c.project_key === project_key) && (!status || c.status === status) && (!lens || c.lens === lens)
+    // Any status here: as on the server, the cursor's row keeps its place in the order after a decision moved it.
+    const pick = live.filter((c) => !(hideSample && c.sample) && (!project_key || c.project_key === project_key) && (!lens || c.lens === lens)
       && (!pretriaged || c.pretriaged_by) && (area === undefined || (paths.includes(area) && areasOf(c, paths).has(area))));
-    const ordered = [...PUSHES].sort((a, b) => b.at.localeCompare(a.at))
+    const every = [...PUSHES].sort((a, b) => b.at.localeCompare(a.at))
       .flatMap((p) => pick.filter((c) => GROUP_OF[c.ref] === p.run_id).sort(policy).map((c) => [p, c]));
-    const start = cursor ? Number(cursor) : 0;
-    if (!Number.isInteger(start) || start < 0 || start > ordered.length) throw err('bad-cursor', 'The cursor is not valid.');
+    const start = cursor === undefined ? 0 : every.findIndex(([, c]) => `k${c.ref}` === cursor) + 1;
+    if (cursor !== undefined && start === 0) throw err('bad-cursor', 'The cursor is not valid.');
+    const ordered = every.slice(start).filter(([, c]) => !status || c.status === status);
     const size = Number(params().get('page')) || PAGE;
-    const page = ordered.slice(start, start + size);
+    const page = ordered.slice(0, size);
     const groups = [];
     for (const [p, c] of page) {
       let g = groups[groups.length - 1];
@@ -149,7 +151,7 @@ const handlers = {
       inboxes: allInboxes().map(summary),
       groups,
     };
-    if (start + size < ordered.length) out.next = String(start + size);
+    if (size < ordered.length) out.next = `k${page[page.length - 1][1].ref}`;
     return out;
   },
   'proposal.get'({ ref }) {
