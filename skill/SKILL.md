@@ -164,7 +164,9 @@ presented.
 A rule the runner decides in the triage dialog (section 7) is decided locally; Forge's later
 decision for the same rule is skipped. Whichever is first wins.
 
-When the pull tool errors, say "could not read decisions from Jira" and go on unconnected for
+When a tool of this section answers `unknown-project`, no push has made this inbox yet, so there is nothing to
+read: this is a first connected scan. Skip the rest of this section's calls, stay connected and go on to the push in
+section 8, which creates the inbox. When the pull tool answers any other error, say "could not read decisions from Jira" and go on unconnected for
 the push step too. A half-synced memory must not push. A `forbidden` error means the runner's Jira
 account may not open this project's inbox (it follows a Jira project's Browse permission, or its
 creator until one is set): quote its message, which says what would allow it, and do not retry. Guided
