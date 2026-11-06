@@ -53,20 +53,20 @@ function revealRow(el) {
  */
 export function useInboxFocus({ linkRef, filters, pin, hasMore, loadMore, loadStatus, flat, byRef, tri, dispatch }) {
   const { focus: focusRef, focusRequest: focusReq, dialog, step, decided } = tri;
-  /** @param {string} ref */
-  const setFocusRef = (ref) => dispatch({ type: 'focus', ref });
   const rowEls = useRef(/** @type {Record<string, HTMLElement | null>} */ ({}));
   const paneScroll = useRef(/** @type {HTMLElement | null} */ (null));
   const linkDone = useRef(false);
   const revealNext = useRef('');
+  const centerNext = useRef('');
 
-  /** Select a row and bring it into view (once it is in the DOM). @param {string} ref */
+  /**
+   * Select a row and bring it into view. The focus waits for the commit that selects it, not for a frame: a reserve row
+   * sits in a closed <details> until that commit opens it, and focus() on it before then does nothing (DOW-26).
+   * @param {string} ref
+   */
   function land(ref) {
-    setFocusRef(ref);
-    requestAnimationFrame(() => {
-      const el = rowEls.current[ref];
-      if (el) { el.focus(); el.scrollIntoView?.({ block: 'center' }); }
-    });
+    centerNext.current = ref;
+    dispatch({ type: 'focus', ref, request: true });
   }
 
   // Deep link (`inbox?ref=DW-n`): select and scroll to the row. A card outside the loaded pages that the list's
@@ -101,8 +101,7 @@ export function useInboxFocus({ linkRef, filters, pin, hasMore, loadMore, loadSt
     if (focusIndex >= 0) { lastIndex.current = focusIndex; return; }
     if (!focusRef || flat.length === 0) return;
     const ref = flat[Math.min(lastIndex.current, flat.length - 1)].ref;
-    setFocusRef(ref);
-    if (!dialog && !step) rowEls.current[ref]?.focus();
+    dispatch({ type: 'focus', ref, request: !dialog && !step });
   }, [focusIndex, focusRef, flat, dialog, step]);
 
   // A row the reducer asked to focus (the next row after a decision, the card back after an Undo): give it the focus
@@ -110,15 +109,22 @@ export function useInboxFocus({ linkRef, filters, pin, hasMore, loadMore, loadSt
   useEffect(() => {
     if (!focusReq) return;
     const el = rowEls.current[focusReq];
-    if (el) { el.focus(); el.scrollIntoView?.({ block: 'nearest' }); dispatch({ type: 'focusDone' }); }
-  }, [focusReq, decided]);
+    if (!el) return;
+    el.focus();
+    el.scrollIntoView?.({ block: centerNext.current === focusReq ? 'center' : 'nearest' });
+    centerNext.current = '';
+    dispatch({ type: 'focusDone' });
+  }, [focusReq, decided, flat]);
 
   // After j/k's commit, not before it: the narrow accordion has closed one card and opened the next, and that moves the row.
   useLayoutEffect(() => {
     if (!revealNext.current || revealNext.current !== focusRef) return;
     revealNext.current = '';
     const el = rowEls.current[focusRef];
-    if (el) revealRow(el);
+    if (el) {
+      el.focus({ preventScroll: true }); // moveFocus's own focus() misses a reserve row: this commit is what opens the reserve
+      revealRow(el);
+    }
   }, [focusRef, tri.expanded]);
 
   const loadMoreFromList = useLoadMoreFocus({ loadStatus, flat, hasMore, loadMore, blocked: Boolean(dialog || step), land });

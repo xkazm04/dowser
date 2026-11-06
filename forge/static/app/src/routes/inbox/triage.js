@@ -30,7 +30,7 @@
  *   {type: 'closeSnooze'} |
  *   {type: 'openDialog', kind: string, refs: string[]} |
  *   {type: 'closeDialog'} |
- *   {type: 'focus', ref: string, expand?: boolean} |
+ *   {type: 'focus', ref: string, expand?: boolean, request?: boolean} |
  *   {type: 'focusFirst', ref: string} |
  *   {type: 'focusDone'} |
  *   {type: 'select', ref: string, wide: boolean}
@@ -137,7 +137,8 @@ export function triage(state, ev) {
       return state.dialog ? { ...state, dialog: null } : state;
     case 'focus': {
       const expanded = ev.expand ? true : state.expanded;
-      return ev.ref === state.focus && expanded === state.expanded ? state : { ...state, focus: ev.ref, expanded };
+      const focusRequest = ev.request ? ev.ref : state.focusRequest;
+      return ev.ref === state.focus && expanded === state.expanded && focusRequest === state.focusRequest ? state : { ...state, focus: ev.ref, expanded, focusRequest };
     }
     case 'focusFirst':
       return state.focus || !ev.ref ? state : { ...state, focus: ev.ref };
