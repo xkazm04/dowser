@@ -25,7 +25,7 @@ test('&fail=<key>:<status>: only the Merge dialog\'s accepted list fails', async
   await page.goto(at('inbox&fail=inbox.list:accepted'));
   await expect(rows(page).first()).toBeVisible();
   await pane(page).getByRole('button', { name: /^Merge/ }).click();
-  await expect(page.getByRole('dialog').getByText('Accepted proposals could not load, so only open ones are listed.')).toBeVisible();
+  await expect(page.getByRole('dialog').getByText('Some proposals could not load, so the list may be short.')).toBeVisible();
   await screen(page, 'fail-status-scoped');
 });
 

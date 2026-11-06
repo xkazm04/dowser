@@ -208,14 +208,25 @@ export async function inboxSummaries(db, visible, inboxRows) {
  * then the older tie-breakers: confidence desc, evidence count desc, first seen asc. Cards pushed before v019 have no
  * score, band or mvp and keep the old order among themselves.
  */
-const ORDER = `ORDER BY last_push_at DESC, last_run_id,
-  CASE WHEN mvp = 1 THEN 0 ELSE 1 END, CASE WHEN band = 'reserve' THEN 1 ELSE 0 END, CASE WHEN score IS NULL THEN 1 ELSE 0 END, score DESC,
-  CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, evidence_count DESC, first_seen, id`;
+const SORT = /** @type {const} */ ([
+  ['last_push_at', 'DESC'], ['last_run_id', 'ASC'],
+  ['CASE WHEN mvp = 1 THEN 0 ELSE 1 END', 'ASC'], ["CASE WHEN band = 'reserve' THEN 1 ELSE 0 END", 'ASC'], ['CASE WHEN score IS NULL THEN 1 ELSE 0 END', 'ASC'], ['COALESCE(score, 0)', 'DESC'],
+  ["CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END", 'ASC'], ['evidence_count', 'DESC'], ['first_seen', 'ASC'], ['id', 'ASC'],
+]);
+const ORDER = `ORDER BY ${SORT.map(([e, dir]) => `${e} ${dir}`).join(', ')}`;
+/** What the anchor row of a cursor is read for: its value of each sort key. */
+const SORT_KEYS = SORT.map(([e], i) => `${e} AS k${i}`).join(', ');
+/** The rows after an anchor in list order, nested so each key is named twice at most; takes `afterParams` in this order. */
+const AFTER = SORT.slice(0, -1).reduceRight((rest, [e, dir]) => `(${e} ${dir === 'DESC' ? '<' : '>'} ? OR (${e} = ? AND ${rest}))`, 'id > ?');
+/** @param {Record<string, unknown>} anchor @returns {unknown[]} */
+const afterParams = (anchor) => SORT.flatMap((_, i) => (i === SORT.length - 1 ? [anchor[`k${i}`]] : [anchor[`k${i}`], anchor[`k${i}`]]));
 
 /**
  * `inbox.list` (F8): the items of one status (default `open`), newest push first, grouped by the push that
- * created, grew or reopened them; policy order inside a group. Pages of PAGE_SIZE items; `next` is an opaque
- * offset cursor. A group can continue on the next page under the same `run_id`. `visible` (core/access.mjs)
+ * created, grew or reopened them; policy order inside a group. Pages of PAGE_SIZE items; `next` is an opaque keyset
+ * cursor naming the page's last row and read as "the rows after it in list order", whatever that row's status is now:
+ * a decision never moves the next page, so Load more skips nothing and repeats nothing. A group can continue on the
+ * next page under the same `run_id`. `visible` (core/access.mjs)
  * limits the items and the summaries to those inboxes; the dispatch door always passes it. `pretriaged: true`
  * keeps only the cards the skill's L1 trust gate pre-triaged (`pretriaged_by` set). `area` (with `project_key`) keeps
  * the cards that count in that map area (`inArea`), so a map cell links to exactly what it counts.
@@ -227,8 +238,8 @@ export async function listInbox(db, q) {
   const status = q.status ?? 'open';
   if (!isOneOf(INBOX_STATUSES, status)) throw new AppError('bad-input', `status must be one of ${INBOX_STATUSES.join(', ')}`);
   if (q.lens !== undefined && !isOneOf(LENSES, q.lens)) throw new AppError('bad-input', `lens must be one of ${LENSES.join(', ')}`);
-  if (q.cursor !== undefined && !/^(0|[1-9][0-9]{0,8})$/.test(String(q.cursor))) throw new AppError('bad-cursor', 'this inbox cursor was not issued here; reload the inbox');
-  const offset = q.cursor === undefined ? 0 : Number(q.cursor);
+  const badCursor = () => new AppError('bad-cursor', 'this inbox cursor was not issued here; reload the inbox');
+  if (q.cursor !== undefined && !/^k[1-9][0-9]{0,14}$/.test(String(q.cursor))) throw badCursor();
   const where = ['status = ?'];
   /** @type {unknown[]} */
   const params = [status];
@@ -246,10 +257,18 @@ export async function listInbox(db, q) {
     where.push(`project_key IN (${scope.map(() => '?').join(', ')})`);
     params.push(...scope);
   }
+  if (q.cursor !== undefined) {
+    // the anchor keeps its place in the order after its status moved, so the read does not filter on status
+    const inScope = scope ? ` AND project_key IN (${scope.map(() => '?').join(', ')})` : '';
+    const anchor = (await db.query(`SELECT ${SORT_KEYS} FROM proposals WHERE id = ?${inScope}`, [Number(String(q.cursor).slice(1)), ...(scope ?? [])]))[0];
+    if (!anchor) throw badCursor();
+    where.push(AFTER);
+    params.push(...afterParams(anchor));
+  }
   const rows = q.area === undefined
-    ? await db.query(`SELECT * FROM proposals WHERE ${where.join(' AND ')} ${ORDER} LIMIT ${PAGE_SIZE + 1} OFFSET ${offset}`, params)
+    ? await db.query(`SELECT * FROM proposals WHERE ${where.join(' AND ')} ${ORDER} LIMIT ${PAGE_SIZE + 1}`, params)
     : (await inArea(db, q.project_key ?? '', q.area, await db.query(`SELECT * FROM proposals WHERE ${where.join(' AND ')} ${ORDER}`, params)))
-      .slice(offset, offset + PAGE_SIZE + 1);
+      .slice(0, PAGE_SIZE + 1);
   const page = rows.slice(0, PAGE_SIZE).map(toProposal);
   const repos = new Map((await allInboxes()).map((i) => [i.project_key, i.repo_url]));
   // One read each for the page: the evidence of its cards, and the head of the push behind each of its groups.
@@ -270,7 +289,7 @@ ${p.last_run_id}`), items: [] }));
     if (p.status === 'open') card.change = p.change_kind;
     g.items.push(card);
   }
-  return omitAbsent({ inboxes: await inboxSummaries(db, q.visible, await allInboxes()), groups, next: rows.length > PAGE_SIZE ? String(offset + PAGE_SIZE) : undefined });
+  return omitAbsent({ inboxes: await inboxSummaries(db, q.visible, await allInboxes()), groups, next: rows.length > PAGE_SIZE ? `k${page[page.length - 1].id}` : undefined });
 }
 
 /**

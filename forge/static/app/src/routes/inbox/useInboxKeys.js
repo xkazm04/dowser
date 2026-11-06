@@ -7,6 +7,8 @@ import { REASONS } from '../../components/labels.js';
 function isTyping(target) {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName;
+  // a ticked row keeps the focus: a checkbox or a radio takes no text, so the keys go on working
+  if (target instanceof HTMLInputElement && (target.type === 'checkbox' || target.type === 'radio')) return false;
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
 }
 

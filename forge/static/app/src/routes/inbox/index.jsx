@@ -165,7 +165,7 @@ export default function Inbox({ context }) {
       )}
 
       <InboxDialogs
-        dialog={dialog} dialogCards={dialogCards} flat={flat} closeDialog={closeDialog} fail={verdicts.fail} leave={verdicts.leave}
+        dialog={dialog} dialogCards={dialogCards} flat={flat} decided={new Set(tri.decided.keys())} closeDialog={closeDialog} fail={verdicts.fail} leave={verdicts.leave}
         deferReject={verdicts.deferReject} cw={cw}
       />
       <ToastRegion cw={cw} />

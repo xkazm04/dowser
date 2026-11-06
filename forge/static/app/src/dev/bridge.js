@@ -12,9 +12,12 @@
 //                         twice), so a later Retry succeeds
 //   <key>:<status>        in fail / failonce: only calls with that status (inbox.list:accepted = the Merge dialog's list)
 //   &slow                 every call takes 1.5 s (to see skeletons)
+//   &delay=<key>:<ms>[,<key>:<ms>]   those keys answer that much later; the others keep their time
 //   #reflect              the Learning tab (`reflect.data`; github.com/acme/shop has data and trust, billing is empty)
 //   The latest push of the shop inbox shows the scan-finding/1 order: three MVPs pinned, a ranked card, two in reserve;
 //   DW-9 is machine pre-triaged (the toolbar's "Machine pre-triaged" filter keeps it alone).
+//   &latest=<created>:<updated>   the latest push of the shop inbox carried those counts, none decided yet
+//   &noevents             the shop inbox's trust has no level change
 //   &fail=reflect.data | rule.decide | outcome.record | verdict.snooze | verdict.reject   that call fails
 //   #settings             accept targets and Lens direction (shop has Opportunity set)   &fail=direction.set
 //                         Delegated triage: shop is on (until 2099-12-31), billing off; &delegation=ended ends shop's
@@ -124,14 +127,16 @@ const handlers = {
     // As the server: "All inboxes" leaves the sample out unless it is the only inbox.
     const live = liveCards();
     const hideSample = !project_key && live.some((c) => !c.sample);
-    const pick = live.filter((c) => !(hideSample && c.sample) && (!project_key || c.project_key === project_key) && (!status || c.status === status) && (!lens || c.lens === lens)
+    // Any status here: as on the server, the cursor's row keeps its place in the order after a decision moved it.
+    const pick = live.filter((c) => !(hideSample && c.sample) && (!project_key || c.project_key === project_key) && (!lens || c.lens === lens)
       && (!pretriaged || c.pretriaged_by) && (area === undefined || (paths.includes(area) && areasOf(c, paths).has(area))));
-    const ordered = [...PUSHES].sort((a, b) => b.at.localeCompare(a.at))
+    const every = [...PUSHES].sort((a, b) => b.at.localeCompare(a.at))
       .flatMap((p) => pick.filter((c) => GROUP_OF[c.ref] === p.run_id).sort(policy).map((c) => [p, c]));
-    const start = cursor ? Number(cursor) : 0;
-    if (!Number.isInteger(start) || start < 0 || start > ordered.length) throw err('bad-cursor', 'The cursor is not valid.');
+    const start = cursor === undefined ? 0 : every.findIndex(([, c]) => `k${c.ref}` === cursor) + 1;
+    if (cursor !== undefined && start === 0) throw err('bad-cursor', 'The cursor is not valid.');
+    const ordered = every.slice(start).filter(([, c]) => !status || c.status === status);
     const size = Number(params().get('page')) || PAGE;
-    const page = ordered.slice(start, start + size);
+    const page = ordered.slice(0, size);
     const groups = [];
     for (const [p, c] of page) {
       let g = groups[groups.length - 1];
@@ -146,7 +151,7 @@ const handlers = {
       inboxes: allInboxes().map(summary),
       groups,
     };
-    if (start + size < ordered.length) out.next = String(start + size);
+    if (size < ordered.length) out.next = `k${page[page.length - 1][1].ref}`;
     return out;
   },
   'proposal.get'({ ref }) {
@@ -258,7 +263,15 @@ const handlers = {
     if (!known(project_key)) throw err('unknown-project', `No inbox ${project_key}.`);
     if (project_key === SAMPLE_KEY) return SAMPLE_REFLECT;
     if (empty()) return EMPTY_REFLECT;
-    return reflect[project_key] ?? EMPTY_REFLECT;
+    let out = reflect[project_key] ?? EMPTY_REFLECT;
+    const latest = params().get('latest');
+    if (latest && out.pushes[0]) {
+      const [created, updated] = latest.split(':').map(Number);
+      const { dup_rate: _, ...push } = out.pushes[0];
+      out = { ...out, pushes: [{ ...push, created, updated, open: created, accepted: 0, rejected: 0, snoozed: 0, ...(created + updated > 0 ? { dup_rate: updated / (created + updated) } : {}) }, ...out.pushes.slice(1)] };
+    }
+    if (params().has('noevents') && out.trust) out = { ...out, trust: { ...out.trust, events: [] } };
+    return out;
   },
   // The sample inbox (forge/src/core/sample.mjs on the server): load is idempotent, remove keeps the Jira issues.
   'sample.load'() {
@@ -329,8 +342,17 @@ function fails(key, payload) {
   return Boolean(once && match(once) && Date.now() - LOADED_AT < 1000);
 }
 
+/** The extra time `&delay=` gives a key, in ms. */
+function delayOf(key) {
+  for (const spec of (params().get('delay') ?? '').split(',')) {
+    const [k, ms] = spec.split(':');
+    if (k === key) return Number(ms) || 0;
+  }
+  return 0;
+}
+
 export async function invoke(key, payload = {}) {
-  await new Promise((r) => setTimeout(r, params().has('slow') ? 1500 : 150));
+  await new Promise((r) => setTimeout(r, (params().has('slow') ? 1500 : 150) + delayOf(key)));
   if (fails(key, payload)) return err('unavailable', `The ${key} resolver is unavailable (fixture).`);
   const h = handlers[key];
   if (!h) return err('bad-input', `Unknown resolver ${key}.`);

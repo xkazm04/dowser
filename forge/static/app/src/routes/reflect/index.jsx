@@ -10,7 +10,7 @@ import {
   deciderName, formatDate, formatDay, plural,
 } from '../../components/labels.js';
 import { BarTrend, HBars, StackedBar } from './charts.jsx';
-import { readDupRate, withOutcome, withRule } from './readouts.js';
+import { readDupRate, readyToRate, withOutcome, withRule } from './readouts.js';
 import './reflect.css';
 import './learn.css';
 import { LensDot } from '../inbox/parts.jsx';
@@ -100,7 +100,7 @@ export function digestLines(d) {
   const accepted = (d.lens_yield ?? []).reduce((n, y) => n + y.accepted, 0);
   if (proposed > 0) {
     const best = [...(d.lens_yield ?? [])].filter((y) => y.proposed >= 2 && y.accepted > 0).sort((a, b) => b.accepted / b.proposed - a.accepted / a.proposed)[0];
-    lines.push(<>You have accepted <strong>{accepted} of {proposed}</strong> proposals so far{best ? <>; <strong>{LENS_LABELS[best.lens]}</strong> converts best ({best.accepted} of {best.proposed}).</> : '.'}</>);
+    lines.push(<><strong>{accepted} of {proposed}</strong> proposals accepted so far{best ? <>; <strong>{LENS_LABELS[best.lens]}</strong> converts best ({best.accepted} of {best.proposed}).</> : '.'}</>);
   }
   // a delegate's verdicts apart from people's (delegated triage); trust is earned by people's only
   const del = d.verdicts_by?.delegate;
@@ -118,7 +118,7 @@ export function digestLines(d) {
     lines.push(<>The most common reason to say no is <strong>{(REASON_LABELS[reason] ?? reason).toLowerCase()}</strong> ({n} of {plural(totalRej, 'reject')}).</>);
   }
   const offered = (d.rules ?? []).filter((x) => x.state === 'offered').length;
-  const toRate = (d.candidates ?? []).length;
+  const toRate = (d.candidates ?? []).filter(readyToRate).length;
   lines.push(offered + toRate > 0
     ? <><strong>{[offered > 0 && plural(offered, 'rule offer'), toRate > 0 && `${plural(toRate, 'accepted item')} to rate`].filter(Boolean).join(' and ')}</strong> {offered + toRate === 1 ? 'is' : 'are'} waiting for you.</>
     : <>Nothing is waiting for you.</>);
@@ -128,6 +128,8 @@ export function digestLines(d) {
 function Body({ projectKey }) {
   const r = useReflect(projectKey);
   const d = r.data;
+  // one call feeds the whole page, so one failure reads as one failure, in place of everything it feeds
+  if (r.status === 'error') return <ErrorState what="The Learning data" error={r.error} onRetry={r.reload} />;
   return (
     <>
       <section className="dwr-digest" aria-label="Summary">
@@ -136,7 +138,6 @@ function Body({ projectKey }) {
             {[90, 70, 80].map((w) => <div key={w} className="dw-skel dwr-skel-line" style={{ width: `${w}%` }} />)}
           </div>
         )}
-        {r.status === 'error' && <ErrorState what="The Learning digest" error={r.error} onRetry={r.reload} />}
         {r.status === 'ready' && (digestLines(d).length > 0 && (d.pushes ?? []).length + (d.lens_yield ?? []).length + (d.rules ?? []).length + (d.candidates ?? []).length > 0
           ? <ul className="dwr-digest__list">{digestLines(d).map((l, i) => <li key={i}>{l}</li>)}</ul>
           : <p className="dwr-muted">No push has reached this inbox yet. The digest appears after the first scan.</p>)}
@@ -158,7 +159,7 @@ function Body({ projectKey }) {
         <Section id="decided" wide title="Decided rules and recorded outcomes" hint="What you already answered." r={r} empty={!d || ((d.rules ?? []).filter((x) => x.state !== 'offered').length === 0 && (d.outcomes ?? []).length === 0)} emptyText="No rule has been decided and no outcome recorded yet.">
           {d && <Decided rules={(d.rules ?? []).filter((x) => x.state !== 'offered')} outcomes={d.outcomes ?? []} />}
         </Section>
-        <Section id="trust" wide title="Trust" hint="How often the scan's predicted verdict matched yours, per kind of proposal. At level 1 a slice's top proposals skip the pre-triage in the scan and arrive marked machine pre-triaged; accepting one stays your click. One reject of a pre-triaged proposal drops the slice back to level 0." r={r} empty={!d || !d.trust || (d.trust.slices.length === 0 && d.trust.events.length === 0)} emptyText="No trust yet. It grows from your accept, reject and snooze decisions once the scan sends it.">
+        <Section id="trust" wide title="Trust" hint="How often the scan's predicted verdict matched yours, per kind of proposal. A technical slice starts at level 1 and a product slice at level 0. At level 1 a slice's top proposals skip the pre-triage in the scan and arrive marked machine pre-triaged; accepting one stays your click. A reject or snooze of a pre-triaged proposal drops the slice a level." r={r} empty={!d || !d.trust || (d.trust.slices.length === 0 && d.trust.events.length === 0)} emptyText="No trust yet. It grows from your accept, reject and snooze decisions once the scan sends it.">
           {d?.trust && <Trust trust={d.trust} />}
         </Section>
       </div>
@@ -177,7 +178,6 @@ function Section({ id, title, hint, r, empty, emptyText, wide = false, children 
           <div className="dw-skel" style={{ height: 72 }} />
         </div>
       )}
-      {r.status === 'error' && <ErrorState what={title} error={r.error} onRetry={r.reload} />}
       {r.status === 'ready' && (empty ? <p className="dwr-muted" role="status">{emptyText}</p> : children)}
     </section>
   );
@@ -187,7 +187,9 @@ function Section({ id, title, hint, r, empty, emptyText, wide = false, children 
 
 function NeedsYou({ d, projectKey, onPatch }) {
   const offers = (d.rules ?? []).filter((x) => x.state === 'offered');
-  const cands = d.candidates ?? [];
+  const cands = (d.candidates ?? []).filter(readyToRate);
+  // nothing to judge yet: shown apart and not counted, and still rateable, so an issue Jira cannot answer for is never hidden
+  const notBuilt = (d.candidates ?? []).filter((c) => !readyToRate(c));
   const n = offers.length + cands.length;
   const listRef = useRef(/** @type {HTMLUListElement | null} */ (null));
   const headRef = useRef(/** @type {HTMLHeadingElement | null} */ (null));
@@ -210,13 +212,22 @@ function NeedsYou({ d, projectKey, onPatch }) {
       <h2 className="dwr-page__sub" id="dwr-needs-h" ref={headRef} tabIndex={-1}>Needs you <span className="dwr-count">{n}</span></h2>
       <p className="dwr-visually-hidden" role="status">{said}</p>
       {n === 0
-        ? <p className="dwr-muted" role="status">Nothing to decide. Dowser drafts a rule when the same kind of proposal keeps getting the same answer, and lists an accepted item here once its Jira issue moves.</p>
+        ? <p className="dwr-muted" role="status">Nothing to decide. Dowser drafts a rule when the same kind of proposal keeps getting the same answer, and lists an accepted item here once its Jira issue is done or closed.</p>
         : (
           <ul className="dwr-needs__list" ref={listRef}>
             {offers.map((x, i) => <li key={x.id}><RuleOffer rule={x} projectKey={projectKey} onDecided={(res) => decided(i, `Rule ${res.rule.state}.`, (data) => withRule(data, res.rule))} /></li>)}
             {cands.map((c, i) => <li key={c.ref}><Candidate cand={c} onRecorded={(res) => decided(offers.length + i, `Recorded ${c.ref}.`, (data) => withOutcome(data, res))} /></li>)}
           </ul>
         )}
+      {notBuilt.length > 0 && (
+        <details className="dwr-more">
+          <summary>Not built yet ({notBuilt.length})</summary>
+          <p className="dwr-muted">Accepted, and Jira does not say they are done. You can rate one now if you already know how it turned out.</p>
+          <ul className="dwr-needs__list">
+            {notBuilt.map((c) => <li key={c.ref}><Candidate cand={c} onRecorded={(res) => { setSaid(`Recorded ${c.ref}.`); onPatch((data) => withOutcome(data, res)); headRef.current?.focus(); }} /></li>)}
+          </ul>
+        </details>
+      )}
     </section>
   );
 }
@@ -351,8 +362,11 @@ function YieldRows({ rows }) {
   );
 }
 
+/** The items a push's decisions count: those it found first. */
+const firstFound = (p) => p.open + p.accepted + p.rejected + p.snoozed;
+
 const acceptedShare = (p) => {
-  const total = p.open + p.accepted + p.rejected + p.snoozed;
+  const total = firstFound(p);
   return total > 0 ? p.accepted / total : undefined;
 };
 
@@ -394,7 +408,10 @@ function Retro({ pushes }) {
       </dl>
       <p className="dwr-reading">{readDupRate(latest)}</p>
       <h4 className="dwr-h4">Decisions so far on this push</h4>
-      <StackedBar label="Decisions on the items of the latest push" values={latest} />
+      {firstFound(latest) === 0 && latest.updated > 0
+        ? <p className="dw-subtle">All {latest.updated} were found by earlier pushes; their decisions count there.</p>
+        : <StackedBar label="Decisions on the items of the latest push" values={latest} />}
+      {firstFound(latest) > 0 && latest.updated > 0 && <p className="dw-subtle">Counts the {firstFound(latest)} items this push found first; the {latest.updated} it re-found count on their first push.</p>}
       <h4 className="dwr-h4">Trend{older.length > 0 ? ` over the last ${plural(pushes.length, 'push', 'pushes')}` : ''}</h4>
       {older.length === 0
         ? <p className="dwr-muted">The trend appears after a second push.</p>
@@ -517,7 +534,7 @@ function Trust({ trust }) {
       <div>
         <h4 className="dwr-h4 dwr-h4--first">Changes</h4>
         {events.length === 0
-          ? <p className="dwr-muted">No slice has changed level yet. A slice reaches level 1 after 20 decisions with at least 90% agreement.</p>
+          ? <p className="dwr-muted">No slice has changed level yet. A product slice earns level 1 after 20 decisions with at least 90% agreement.</p>
           : (
             <ul className="dwr-notes">
               {events.map((e, i) => {
