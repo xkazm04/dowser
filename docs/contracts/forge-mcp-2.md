@@ -274,7 +274,8 @@ switching a team between modes gives its already-pushed items new evidence keys 
 evidence-grew push (an `updated`, and a snoozed item reopens). That one-time growth is expected.
 
 **Reopening.** When an `updated` push grew the evidence of an item a person snoozed, the item returns to the
-inbox as reopened. A rejected item returns only under the store's resurfacing rule (a new evidence type and
+inbox as reopened. So does a dated snooze whose day has come when the skill wakes it and pushes it again, even
+with no new evidence (Forge does not reopen it on the date by itself). A rejected item returns only under the store's resurfacing rule (a new evidence type and
 at least twice the evidence it had when rejected). An accepted or merged item only gains evidence. A reopen
 writes no verdict; the item is simply open again.
 
