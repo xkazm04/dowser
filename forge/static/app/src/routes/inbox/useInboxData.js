@@ -23,7 +23,7 @@ function appendGroups(prev, more) {
 export const LINKED = 'linked';
 
 /**
- * @param {{cw: {flush: () => void}, removed: Set<string>, leaving: Set<string>, onReset: () => void,
+ * @param {{cw: {flush: () => Promise<unknown>}, removed: Set<string>, leaving: Set<string>, onReset: () => void,
  *   link: import('../../components/deeplink.js').InboxLink | undefined}} page
  *   `removed` and `leaving` hide decided cards from the views; `onReset` clears the page's decisions and selection
  *   when a reload starts. `link` is the deep link (undefined until it is read): its project, lens and area are the
@@ -66,11 +66,12 @@ export function useInboxData({ cw, removed, leaving, onReset, link }) {
 
   const reload = useCallback(() => {
     const mine = ++seq.current;
-    cw.flush();
+    // the pending decisions land first: two resolver calls have no order, and a list read that won would bring the card back
+    const landed = cw.flush();
     setLoad({ status: 'loading' });
     onReset(); setLastPush(undefined);
     setMoreState('idle');
-    call('inbox.list', filters).then(
+    landed.then(() => call('inbox.list', filters)).then(
       (res) => {
         if (mine !== seq.current) return;
         setInboxes(res.inboxes ?? []);
