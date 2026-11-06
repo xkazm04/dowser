@@ -13,6 +13,18 @@ export function readDupRate(push) {
   return `${pct}% of this push re-found known proposals; the rest was new.`;
 }
 
+/**
+ * A trust level change in the page's own words. The stored reason of a reversal holds a decider id and a fingerprint,
+ * which the server resolves to a name and a DW number when it can; the raw ids are never shown.
+ * @param {{reason: string, reversal?: {by_name?: string, verb?: string, ref?: string, title?: string}}} e
+ */
+export function trustChangeReason(e) {
+  if (!e.reversal && !e.reason.startsWith('reversal:')) return e.reason;
+  const { by_name = 'A person', verb = 'overruled', ref, title } = e.reversal ?? {};
+  const what = ref ? `${ref}${title ? ` (${title})` : ''}` : 'a proposal';
+  return `${by_name} ${verb} ${what}, which the scan had pre-triaged.`;
+}
+
 // ---- local patches from a write's own answer ------------------------------------------------------------------
 // rule.decide answers the decided rule and outcome.record the outcome plus the new candidate list, so the page
 // patches what it shows from that answer instead of re-reading the whole reflect.data aggregate.

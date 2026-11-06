@@ -207,6 +207,36 @@ async function trustOf(db, projectKey) {
   try { return { ...JSON.parse(String(rows[0].trust_json)), updated_at: String(rows[0].updated_at) }; } catch { return undefined; }
 }
 
+/** The reason the skill's trust.mjs writes for a reversal: `reversal: <decider> <verb> <fp>, which <machine> pre-triaged`. */
+const REVERSAL_REASON = /^reversal: (\S+) (\S+) ([0-9a-f]+), which \S+ pre-triaged$/;
+
+/**
+ * Trust events with each reversal's decider and proposal resolved for reading: the stored reason holds ids a person
+ * cannot read. Best effort: a name or a proposal that cannot be found is left out.
+ * @template {import('./types.mjs').Trust} T
+ * @param {Deps} deps
+ * @param {string} projectKey
+ * @param {T} trust
+ * @returns {Promise<T>}
+ */
+async function readableTrust(deps, projectKey, trust) {
+  const parsed = trust.events.map((e) => REVERSAL_REASON.exec(e.reason));
+  const hits = parsed.filter((m) => m !== null);
+  if (hits.length === 0) return trust;
+  const fps = [...new Set(hits.map((m) => m[3]))];
+  const rows = await deps.db.query(`SELECT fp, ref, title FROM proposals WHERE project_key = ? AND fp IN (${fps.map(() => '?').join(', ')})`, [projectKey, ...fps]);
+  const byFp = new Map(rows.map((r) => [String(r.fp), r]));
+  const names = await namesOf(deps, hits.map((m) => m[1]));
+  return { ...trust, events: trust.events.map((e, i) => {
+    const m = parsed[i];
+    if (!m) return e;
+    const row = byFp.get(m[3]);
+    return { ...e, reversal: /** @type {import('./types.mjs').TrustReversal} */ (omitAbsent({
+      by_name: names[m[1]], verb: m[2], ref: row ? String(row.ref) : undefined, title: row ? String(row.title) : undefined,
+    })) };
+  }) };
+}
+
 // ---------------------------------------------------------------------------------------------- row mapping
 
 /** @param {Row} r @returns {Outcome} */
@@ -392,7 +422,8 @@ export async function reflectData(deps, p) {
     [projectKey],
   );
   const names = await namesOf(deps, [...noteRows.map((r) => r.decided_by), ...ruleRows.map((r) => r.decided_by), ...outcomeRows.map((r) => r.decided_by)]);
-  const trust = await trustOf(db, projectKey);
+  const stored = await trustOf(db, projectKey);
+  const trust = stored && await readableTrust(deps, projectKey, stored);
   // the verdict log counted apart for people and for a delegate (core/delegate.mjs): a delegate's verdicts teach the
   // memory, but the tab never lets them pass for a person's
   const zero = () => /** @type {Record<VerdictStatus, number>} */ (Object.fromEntries(VERDICT_STATUSES.map((s) => [s, 0])));
