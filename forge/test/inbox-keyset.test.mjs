@@ -57,8 +57,7 @@ test('next is an opaque keyset cursor k<id> naming the last row of the page', as
   await push(d, 60);
   const first = await res(d, 'inbox.list', {});
   assert.match(String(first.next), /^k[0-9]+$/);
-  const last = refs(first).at(-1);
-  const row = d.db.raw.prepare('SELECT id FROM proposals WHERE ref = ?').get(last);
+  const row = /** @type {any} */ (d.db.raw.prepare('SELECT id FROM proposals WHERE ref = ?').get(String(refs(first).at(-1))));
   assert.equal(first.next, `k${row.id}`);
 });
 
