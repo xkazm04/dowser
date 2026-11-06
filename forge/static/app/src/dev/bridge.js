@@ -16,6 +16,8 @@
 //   #reflect              the Learning tab (`reflect.data`; github.com/acme/shop has data and trust, billing is empty)
 //   The latest push of the shop inbox shows the scan-finding/1 order: three MVPs pinned, a ranked card, two in reserve;
 //   DW-9 is machine pre-triaged (the toolbar's "Machine pre-triaged" filter keeps it alone).
+//   &latest=<created>:<updated>   the latest push of the shop inbox carried those counts, none decided yet
+//   &noevents             the shop inbox's trust has no level change
 //   &fail=reflect.data | rule.decide | outcome.record | verdict.snooze | verdict.reject   that call fails
 //   #settings             accept targets and Lens direction (shop has Opportunity set)   &fail=direction.set
 //                         Delegated triage: shop is on (until 2099-12-31), billing off; &delegation=ended ends shop's
@@ -259,7 +261,15 @@ const handlers = {
     if (!known(project_key)) throw err('unknown-project', `No inbox ${project_key}.`);
     if (project_key === SAMPLE_KEY) return SAMPLE_REFLECT;
     if (empty()) return EMPTY_REFLECT;
-    return reflect[project_key] ?? EMPTY_REFLECT;
+    let out = reflect[project_key] ?? EMPTY_REFLECT;
+    const latest = params().get('latest');
+    if (latest && out.pushes[0]) {
+      const [created, updated] = latest.split(':').map(Number);
+      const { dup_rate: _, ...push } = out.pushes[0];
+      out = { ...out, pushes: [{ ...push, created, updated, open: created, accepted: 0, rejected: 0, snoozed: 0, ...(created + updated > 0 ? { dup_rate: updated / (created + updated) } : {}) }, ...out.pushes.slice(1)] };
+    }
+    if (params().has('noevents') && out.trust) out = { ...out, trust: { ...out.trust, events: [] } };
+    return out;
   },
   // The sample inbox (forge/src/core/sample.mjs on the server): load is idempotent, remove keeps the Jira issues.
   'sample.load'() {
