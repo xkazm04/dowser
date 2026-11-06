@@ -302,4 +302,6 @@ export const MIGRATIONS = Object.freeze([
   { name: 'v032_inboxes_delegate_until', statement: 'ALTER TABLE inboxes ADD COLUMN delegate_until VARCHAR(10)' },
   { name: 'v033_inboxes_delegate_accepts', statement: 'ALTER TABLE inboxes ADD COLUMN delegate_accepts_per_day INT' },
   { name: 'v034_inboxes_delegate_rejects', statement: 'ALTER TABLE inboxes ADD COLUMN delegate_rejects_per_day INT' },
+  // The Jira issue a merge of this open item already commented on, so a retry after a failed record posts no second copy.
+  { name: 'v035_proposals_merge_comment_on', statement: 'ALTER TABLE proposals ADD COLUMN merge_comment_on VARCHAR(255)' },
 ]);
