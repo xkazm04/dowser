@@ -31,7 +31,7 @@
 //   Teamwork Graph cypherQuery (requestTeamworkGraph)   -> goals (asUser)
 import * as forgeApi from '@forge/api';
 import { htmlToText, trimText } from '../core/adf.mjs';
-import { BODY_MAX, TICKET_FIELDS, ticketItem } from '../core/sources.mjs';
+import { BODY_MAX, TICKET_FIELDS, goalItems, ticketItem } from '../core/sources.mjs';
 import { AppError, GRANT_MESSAGE, ISSUE_KEY_RE, errTag, omitAbsent } from '../core/util.mjs';
 
 /**
@@ -289,25 +289,6 @@ export const users = {
   },
 };
 
-/**
- * A Teamwork Graph goal node as a source item. Field names are read defensively (TWG's `AtlassianGoal` object
- * shape is not in the public docs yet): name|displayName, url|link, status|state.
- * @param {any} g
- * @returns {SourceItem | undefined}
- */
-function goalItem(g) {
-  const d = g?.data ?? g;
-  const ref = d?.id ?? g?.id;
-  if (!ref) return undefined;
-  const title = d.name ?? d.displayName ?? String(ref);
-  const status = d.status ?? d.state ?? d.phase;
-  return /** @type {SourceItem} */ (omitAbsent({
-    ref: String(ref), title: String(title), url: String(d.url ?? d.link ?? ''),
-    body: trimText(String(d.description ?? d.summary ?? title), BODY_MAX),
-    status: status ? String(status).toLowerCase().replace(/[_\s]+/g, '-') : undefined,
-  }));
-}
-
 /** The goals query (Cypher over TWG, shape per developer.atlassian.com/platform/forge/call-the-teamwork-graph-api/). */
 const GOALS_QUERY = `query dowser_goals($cypherQuery: String!) {
   cypherQuery(query: $cypherQuery) {
@@ -355,18 +336,7 @@ export const sources = {
         const kind = [out.errors[0]?.extensions?.errorType, out.errors[0]?.extensions?.classification].find((k) => typeof k === 'string' && /^[A-Za-z0-9_.-]{1,64}$/.test(k));
         throw new AppError('unavailable', `Teamwork Graph did not answer the goals query (${kind ?? 'an error'}); if the app is not allowlisted for the Teamwork Graph API, request it from Atlassian support`);
       }
-      /** @type {SourceItem[]} */
-      const items = [];
-      let seen = 0;
-      for (const edge of out.data?.cypherQuery?.edges ?? []) {
-        for (const col of edge?.node?.columns ?? []) {
-          for (const n of col?.value?.nodes ?? []) {
-            seen++;
-            const it = goalItem(n);
-            if (it && it.url) items.push(it); // the contract requires a link; a goal without one is not citable
-          }
-        }
-      }
+      const { items, seen } = goalItems(out);
       if (seen > 0 && items.length === 0) throw new AppError('unavailable', `Teamwork Graph returned ${seen} goals without links; the goal fields Dowser reads need updating`);
       return items;
     });
