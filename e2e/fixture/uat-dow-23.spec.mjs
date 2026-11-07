@@ -16,8 +16,11 @@ async function clearThePage(page) {
   await page.goto(at('inbox&page=4'));
   await expect(checks(page)).toHaveCount(4);
   for (let left = 3; left >= 0; left -= 1) {
-    await page.keyboard.press('r');
-    await expect(page.getByRole('dialog')).toBeVisible();
+    // A key press in the same tick as the commit can reach the listener before it knows the selection or the closed dialog.
+    await expect(async () => {
+      await page.keyboard.press('r');
+      await expect(page.getByRole('dialog')).toBeVisible({ timeout: 250 });
+    }).toPass();
     await page.keyboard.press('1');
     await page.keyboard.press('Control+Enter');
     await expect(page.getByRole('dialog')).toHaveCount(0);

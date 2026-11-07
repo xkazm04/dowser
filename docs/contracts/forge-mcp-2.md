@@ -157,8 +157,9 @@ text, and `updated_at` is the last edit time.
 
 Input: `{}`.
 
-Output: `{items: [{ref, title, url, body, status?}]}`. These are the team's goals (TWG). `status` is the goal's
-state as TWG names it (for example `on-track`, `at-risk`), and is omitted when the goal has none.
+Output: `{items: [{ref, title, url, body, status?}]}`. These are the team's goals (TWG). `status` is `archived`
+for an archived goal and is omitted otherwise: TWG's `AtlassianGoal` lists no state field. A state TWG adds later is passed on
+as it names it (`at-risk`).
 
 ### `dowser_direction_get`
 
@@ -273,7 +274,8 @@ switching a team between modes gives its already-pushed items new evidence keys 
 evidence-grew push (an `updated`, and a snoozed item reopens). That one-time growth is expected.
 
 **Reopening.** When an `updated` push grew the evidence of an item a person snoozed, the item returns to the
-inbox as reopened. A rejected item returns only under the store's resurfacing rule (a new evidence type and
+inbox as reopened. So does a dated snooze whose day has come when the skill wakes it and pushes it again, even
+with no new evidence (Forge does not reopen it on the date by itself). A rejected item returns only under the store's resurfacing rule (a new evidence type and
 at least twice the evidence it had when rejected). An accepted or merged item only gains evidence. A reopen
 writes no verdict; the item is simply open again.
 

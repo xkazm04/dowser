@@ -95,7 +95,12 @@ test('a sample load is completed on a MySQL-semantics store when nothing was cut
 test('a sample load whose areas step was cut short part-way is completed by the next load (MySQL affected rows)', async () => {
   const d = makeDeps();
   const db = mysqlSemantics(d);
-  db.failOn(/^\s*INSERT INTO areas\b/i, 2); // the first area is written, the call dies on the second
+  // An earlier cut call already stored the first area with these very values; this one dies on its first area INSERT,
+  // however many rows that statement carries (DW-235 writes new areas in multi-row statements).
+  const [a] = AREAS;
+  d.db.raw.prepare('INSERT INTO areas (project_key, path, files, churn_90d, authors_90d, run_id) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(SAMPLE_KEY, a.path, a.files, a.churn_90d, a.authors_90d ?? null, sample().source.run_id);
+  db.failOn(/^\s*INSERT INTO areas\b/i, 1);
   await assert.rejects(() => loadSample(d, ME, sample()), /function timed out/);
   assert.equal(areaRows(d, SAMPLE_KEY).length, 1, 'setup: the areas step stopped part-way, one area of three stored');
 

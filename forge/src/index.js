@@ -61,7 +61,7 @@ const resolver = new Resolver();
 const KEYS = /** @type {(keyof ResolverContract)[]} */ (Object.keys(RESOLVERS));
 for (const key of KEYS) {
   resolver.define(key, async ({ payload, context }) => {
-    // The issue panel is the only surface that decides from inside an issue; everything else is the inbox.
+    // The issue panel only reads (MODULE_KEYS): nothing decides from inside an issue, so a decision here is the inbox's.
     const via = context?.extension?.type === 'jira:issuePanel' || context?.moduleKey === 'dowser-evidence' ? 'panel' : 'inbox';
     /** @type {Record<string, unknown>} */
     const p = { ...(payload ?? {}) };

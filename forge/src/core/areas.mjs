@@ -5,9 +5,9 @@
 import { normalizeAnchor, parseRef } from '../shared/fingerprint.mjs';
 import { AREAS_MAX } from './types.mjs';
 import { PROJECT_KEY_RE, parseJsonArray } from './push.mjs';
-import { ensureInbox, needInbox, refuseSampleKey, toProposal } from './store.mjs';
+import { ensureInbox, insertMany, needInbox, refuseSampleKey, toProposal } from './store.mjs';
 import { deciderOf } from './verdicts.mjs';
-import { AppError, DuplicateKey, isIso, isObj, needStr, num, omitAbsent, sqlv } from './util.mjs';
+import { AppError, isIso, isObj, needStr, num, omitAbsent, sqlv } from './util.mjs';
 
 /**
  * @typedef {import('./ports.mjs').Deps} Deps
@@ -43,6 +43,8 @@ export function areaProblem(a) {
   return undefined;
 }
 
+const AREA_COLS = ['files', 'churn_90d', 'authors_90d', 'last_change', 'run_id', 'project_key', 'path'];
+
 /**
  * `dowser_areas_push`: validate every area, then make the stored set equal to it. Without a transaction the
  * replace is upsert-each then delete-the-rest, so an interrupted push leaves old plus new areas, never none.
@@ -69,23 +71,16 @@ export async function pushAreas(deps, args, accountId, o = {}) {
     seen.add(path);
   }
   await ensureInbox(db, projectKey, { at: deps.now().toISOString(), by: deciderOf(accountId) });
-  for (const raw of areas) {
-    const a = /** @type {Area} */ (raw);
-    const vals = [a.files, a.churn_90d, sqlv(a.authors_90d), sqlv(a.last_change), runId];
-    const update = () => db.exec('UPDATE areas SET files = ?, churn_90d = ?, authors_90d = ?, last_change = ?, run_id = ? WHERE project_key = ? AND path = ?',
-      [...vals, projectKey, a.path]);
-    if ((await update()).affectedRows === 0) {
-      try {
-        await db.exec('INSERT INTO areas (files, churn_90d, authors_90d, last_change, run_id, project_key, path) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [...vals, projectKey, a.path]);
-      } catch (e) {
-        // MySQL counts an UPDATE that changed nothing as 0 rows (a push re-run after one cut short writes the same
-        // values), and a concurrent push may have inserted first: the row exists either way, so write ours over it.
-        if (!(e instanceof DuplicateKey)) throw e;
-        await update();
-      }
-    }
-  }
+  // Every statement is one Forge SQL request and a call has about 25 s: new paths go in one multi-row INSERT, so a first
+  // map of 200 folders is a few statements. A row that exists, or that a concurrent push filed first, is updated.
+  const rowOf = (/** @type {Area} */ a) => [a.files, a.churn_90d, sqlv(a.authors_90d), sqlv(a.last_change), runId, projectKey, a.path];
+  const update = (/** @type {unknown[]} */ row) => db.exec('UPDATE areas SET files = ?, churn_90d = ?, authors_90d = ?, last_change = ?, run_id = ? WHERE project_key = ? AND path = ?', row);
+  const existing = new Set((await db.query('SELECT path FROM areas WHERE project_key = ?', [projectKey])).map((r) => String(r.path)));
+  const list = /** @type {Area[]} */ (areas);
+  const fresh = list.filter((a) => !existing.has(a.path)).map(rowOf);
+  const inserted = await insertMany(db, 'areas', AREA_COLS, fresh);
+  for (const row of fresh.filter((_, i) => !inserted[i])) await update(row);
+  for (const a of list) if (existing.has(a.path)) await update(rowOf(a));
   const keep = [...seen];
   if (keep.length) {
     await db.exec(`DELETE FROM areas WHERE project_key = ? AND path NOT IN (${keep.map(() => '?').join(', ')})`, [projectKey, ...keep]);

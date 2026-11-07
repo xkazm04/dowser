@@ -79,6 +79,47 @@ export function ticketItem(issue, site) {
 }
 
 /**
+ * A Teamwork Graph goal node as a source item. Field names are read defensively (TWG's `AtlassianGoal` shape is in
+ * preview): name|displayName, url|link, status|state. The reference page lists no status, only `archived`, which becomes one.
+ * @param {any} g
+ * @returns {SourceItem | undefined}
+ */
+function goalItem(g) {
+  const d = g?.data ?? g;
+  const ref = d?.id ?? g?.id;
+  if (!ref) return undefined;
+  const title = d.name ?? d.displayName ?? String(ref);
+  const status = d.status ?? d.state ?? d.phase ?? (d.archived === true ? 'archived' : undefined);
+  return /** @type {SourceItem} */ (omitAbsent({
+    ref: String(ref), title: String(title), url: String(d.url ?? d.link ?? ''),
+    body: trimText(String(d.description ?? d.summary ?? title), BODY_MAX),
+    status: status ? String(status).toLowerCase().replace(/[_\s]+/g, '-') : undefined,
+  }));
+}
+
+/**
+ * The goals in a Teamwork Graph cypherQuery answer, and how many it held: a goal without a link is not citable, so it is
+ * counted and left out. Pure, so the mapping is tested without @forge/api.
+ * @param {any} answer the GraphQL response body
+ * @returns {{items: SourceItem[], seen: number}}
+ */
+export function goalItems(answer) {
+  /** @type {SourceItem[]} */
+  const items = [];
+  let seen = 0;
+  for (const edge of answer?.data?.cypherQuery?.edges ?? []) {
+    for (const col of edge?.node?.columns ?? []) {
+      for (const n of col?.value?.nodes ?? []) {
+        seen++;
+        const it = goalItem(n);
+        if (it && it.url) items.push(it);
+      }
+    }
+  }
+  return { items, seen };
+}
+
+/**
  * Runs a source call; a port failure that is not already an AppError becomes `unavailable`.
  * @template T
  * @param {string} what

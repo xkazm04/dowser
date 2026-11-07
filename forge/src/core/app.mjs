@@ -50,7 +50,8 @@ const openProject = (acc, a) => acc.inbox(needStr(a, 'project_key'));
 
 /** @param {Deps} d @param {Access} acc @param {Record<string, any>} a */
 async function openIfExists(d, acc, a) {
-  if (typeof a.project_key === 'string' && (await getInbox(d.db, a.project_key))) await openProject(acc, a);
+  // The key as the handler will read it (needStr trims): looked up untrimmed, a spaced key finds no inbox and skips the check.
+  if (typeof a.project_key === 'string' && a.project_key.trim() && (await getInbox(d.db, needStr(a, 'project_key')))) await openProject(acc, a);
 }
 
 /**

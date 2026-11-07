@@ -2,8 +2,8 @@
 
 Dowser for Jira is the Forge app in `forge/`. It receives the local skill's verified proposals over a
 `rovo:mcp` server and files them in a triage inbox inside Jira. The inbox reads like a pull request for the
-backlog. A Jira issue is created only when a person accepts a proposal. Every verdict made in the inbox, in
-the evidence panel or through the Rovo agent flows back to the skill through the same contract,
+backlog. A Jira issue is created only when a person accepts a proposal. Every verdict made in the inbox or
+through the Rovo agent flows back to the skill through the same contract,
 [`forge-mcp-2`](contracts/forge-mcp-2.md). The app also serves Jira tickets, Confluence pages and Teamwork
 Graph goals to the skill as scan sources.
 
@@ -222,7 +222,9 @@ only what the person can see. The first source call may ask the person to allow 
 allowlisted for that API. To request it, send Atlassian support the app id from `manifest.yml` and a
 one-line use case ("read the site's goals as scan sources for backlog proposals"). Do this in week one,
 because approval takes time. Until the app is allowlisted, the tool answers `unavailable` with a message
-that names the allowlist, and the skill continues without goals.
+that names the allowlist, and the skill continues without goals. The kind in that message tells the causes apart:
+`ValidationError` is Dowser's query, not the allowlist (`test/goals-real-call.test.mjs` holds the query to the object type's
+fields). No answer from an allowlisted app has been seen yet: check with `dowser_sources_goals` after a deploy.
 
 ## Judges' setup
 

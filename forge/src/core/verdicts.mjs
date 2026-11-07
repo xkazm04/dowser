@@ -1,6 +1,6 @@
 // @ts-check
-// Triage decisions and the verdict log (F4, F5). One code path for the inbox, the evidence panel and the Rovo
-// agent: `via` records which. The log is append-only; the pull returns it oldest first behind a cursor.
+// Triage decisions and the verdict log (F4, F5). One code path for the inbox, the Rovo agent and a delegate's
+// tool: `via` records which. The log is append-only; the pull returns it oldest first behind a cursor.
 //
 // Write-back must land (triage-queues, "Verdict write-back"): a decision is a CAS on the proposal row that
 // also stamps the decision (reason, note, merged_into, decided_by, decided_at, via), then the verdict row is
@@ -416,11 +416,16 @@ export async function merge(deps, args, who) {
   // A DW ref or fp names an inbox item, even when it also looks like a Jira key (`DW-3`).
   if (!REF_RE.test(into) && !FP_RE.test(into) && ISSUE_KEY_RE.test(into)) {
     if (!deps.jira) throw new AppError('unavailable', 'Jira is not reachable from this module');
-    const card = await cardOf(db, p);
-    try {
-      await deps.jira.addComment(into, mergeComment(card, await deps.links.inboxUrl(p.ref)));
-    } catch (e) {
-      throw new AppError('unavailable', `Jira did not take the comment on ${into} (${errTag(e)}); ${p.ref} stays open`);
+    // As accept stamps its issue: the comment is noted on the open row before the decision, so a retry after a failed
+    // record does not post it again. Only a failure between Jira's answer and the stamp can still leave a second copy.
+    if (p.merge_comment_on !== into) {
+      const card = await cardOf(db, p);
+      try {
+        await deps.jira.addComment(into, mergeComment(card, await deps.links.inboxUrl(p.ref)));
+      } catch (e) {
+        throw new AppError('unavailable', `Jira did not take the comment on ${into} (${errTag(e)}); ${p.ref} stays open`);
+      }
+      await db.exec("UPDATE proposals SET merge_comment_on = ? WHERE id = ? AND status = 'open'", [into, p.id]);
     }
     const after = await decide(deps, p, { to: 'merged', merged_into: into }, who);
     await writeIssueProperty(deps, after, into, 'merged'); // best effort: logged, backfilled daily
