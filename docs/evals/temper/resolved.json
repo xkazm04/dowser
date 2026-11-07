@@ -14,5 +14,14 @@
     "by": "delegate:temper",
     "status_then": "proposed",
     "tier": 1
+  },
+  "p-a0950f": {
+    "commit": "735055c7673481d48f40828d351fcbeb20183b59",
+    "subject": "fix(forge-app): the goals query asks only for fields AtlassianGoal has",
+    "resolved_at": "2026-11-07T13:49:53.336Z",
+    "by": "delegate:temper",
+    "status_then": "proposed",
+    "tier": 2,
+    "note": "The goals mapping is the pure, exported goalItems; the real allowlisted call is tested (88f6edc); the test found and 735055c fixed a query field AtlassianGoal does not have. Not re-run against the live app."
   }
 }

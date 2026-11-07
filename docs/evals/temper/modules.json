@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-06T18:48:37.720Z",
+  "at": "2026-11-07T13:49:53.873Z",
   "modules": {
     "skill-store": {
       "met": false,
@@ -7,7 +7,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (394) at 28c2011"
+          "detail": "typecheck pass, tests pass (394) at a622e51"
         },
         "proposals": {
           "state": "verified",
@@ -22,7 +22,7 @@
         "quality": {
           "state": "verified",
           "ok": true,
-          "detail": "not growing (58bac60 -> 28c2011)"
+          "detail": "not growing (28c2011 -> a622e51)"
         },
         "coverage": {
           "state": "verified",
@@ -37,7 +37,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (394) at 28c2011"
+          "detail": "typecheck pass, tests pass (394) at a622e51"
         },
         "proposals": {
           "state": "verified",
@@ -52,7 +52,7 @@
         "quality": {
           "state": "verified",
           "ok": true,
-          "detail": "not growing (58bac60 -> 28c2011)"
+          "detail": "not growing (28c2011 -> a622e51)"
         },
         "coverage": {
           "state": "verified",
@@ -67,7 +67,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (394) at 28c2011"
+          "detail": "typecheck pass, tests pass (394) at a622e51"
         },
         "proposals": {
           "state": "verified",
@@ -82,7 +82,7 @@
         "quality": {
           "state": "verified",
           "ok": true,
-          "detail": "not growing (58bac60 -> 28c2011)"
+          "detail": "not growing (28c2011 -> a622e51)"
         },
         "coverage": {
           "state": "verified",
@@ -95,24 +95,24 @@
       "met": false,
       "parts": {
         "uat": {
-          "state": "unverifiable",
+          "state": "verified",
           "ok": false,
-          "detail": "the local results are older than HEAD"
+          "detail": "15 of 15 specs ran fewer than 3 times (--repeat-each 3)"
         },
         "proposals": {
           "state": "verified",
-          "ok": false,
-          "detail": "open at tier 0-2: p-a0950f (t2)"
+          "ok": true,
+          "detail": "3 open, none at tier 0-2 (10 features); resolved by a landed commit: p-0337bb (072954f), p-a0950f (735055c)"
         },
         "scan_yield": {
           "state": "verified",
           "ok": false,
-          "detail": "last two scans created 10, 6 cards"
+          "detail": "last two scans created 6, 7 cards"
         },
         "quality": {
           "state": "verified",
           "ok": true,
-          "detail": "not growing (58bac60 -> 28c2011)"
+          "detail": "not growing (28c2011 -> a622e51)"
         },
         "coverage": {
           "state": "verified",
@@ -127,7 +127,7 @@
         "uat": {
           "state": "unverifiable",
           "ok": false,
-          "detail": "the fixture results are older than HEAD"
+          "detail": "no live results (npm run e2e:live)"
         },
         "proposals": {
           "state": "verified",
@@ -142,7 +142,7 @@
         "quality": {
           "state": "verified",
           "ok": true,
-          "detail": "not growing (58bac60 -> 28c2011)"
+          "detail": "not growing (28c2011 -> a622e51)"
         },
         "coverage": {
           "state": "verified",
@@ -157,7 +157,7 @@
         "uat": {
           "state": "unverifiable",
           "ok": false,
-          "detail": "the fixture results are older than HEAD"
+          "detail": "no live results (npm run e2e:live)"
         },
         "proposals": {
           "state": "verified",
@@ -172,7 +172,7 @@
         "quality": {
           "state": "verified",
           "ok": true,
-          "detail": "not growing (58bac60 -> 28c2011)"
+          "detail": "not growing (28c2011 -> a622e51)"
         },
         "coverage": {
           "state": "verified",
@@ -185,9 +185,9 @@
       "met": false,
       "parts": {
         "uat": {
-          "state": "unverifiable",
+          "state": "verified",
           "ok": false,
-          "detail": "the local results are older than HEAD"
+          "detail": "5 of 5 specs ran fewer than 3 times (--repeat-each 3)"
         },
         "proposals": {
           "state": "verified",
@@ -202,7 +202,7 @@
         "quality": {
           "state": "verified",
           "ok": true,
-          "detail": "not growing (58bac60 -> 28c2011)"
+          "detail": "not growing (28c2011 -> a622e51)"
         },
         "coverage": {
           "state": "verified",
@@ -217,7 +217,7 @@
         "uat": {
           "state": "verified",
           "ok": true,
-          "detail": "typecheck pass, tests pass (394) at 28c2011"
+          "detail": "typecheck pass, tests pass (394) at a622e51"
         },
         "proposals": {
           "state": "verified",
@@ -232,7 +232,7 @@
         "quality": {
           "state": "verified",
           "ok": true,
-          "detail": "not growing (58bac60 -> 28c2011)"
+          "detail": "not growing (28c2011 -> a622e51)"
         },
         "coverage": {
           "state": "verified",
