@@ -24,8 +24,8 @@
     "check-update": "node skill/install.mjs --check --harness claude"
   },
   "devDependencies": {
-    "@playwright/test": "1.64.1",
-    "@types/node": "~26.6.5",
+    "@playwright/test": "1.65.0",
+    "@types/node": "~26.6.6",
     "typescript": "~7.0.2"
   }
 }
