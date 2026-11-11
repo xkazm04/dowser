@@ -21,7 +21,7 @@
     "@forge/sql": "^4.0.9"
   },
   "devDependencies": {
-    "@types/node": "~26.6.5",
+    "@types/node": "~26.6.6",
     "typescript": "~7.0.2"
   }
 }
