@@ -15,12 +15,12 @@
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
-    "@atlaskit/tokens": "^20.8.2",
+    "@atlaskit/tokens": "^20.9.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@vitejs/plugin-react": "^6.1.2",
+    "@vitejs/plugin-react": "^6.2.1",
     "typescript": "~7.0.2",
-    "vite": "^8.3.5"
+    "vite": "^8.3.6"
   },
   "overrides": {
     "prosemirror-view": "^1.42.3"
