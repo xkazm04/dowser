@@ -23,6 +23,8 @@
     "vite": "^8.3.6"
   },
   "overrides": {
+    "glob": "^14.0.2",
+    "minimatch": "^11.0.1",
     "prosemirror-view": "^1.42.3"
   }
 }
