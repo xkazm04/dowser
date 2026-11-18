@@ -16,9 +16,9 @@
     "build:ui": "npm --prefix static/app run build"
   },
   "dependencies": {
-    "@forge/api": "^8.4.0",
+    "@forge/api": "^8.5.0",
     "@forge/resolver": "^2.0.2",
-    "@forge/sql": "^4.0.9"
+    "@forge/sql": "^4.0.10"
   },
   "devDependencies": {
     "@types/node": "~26.6.6",
